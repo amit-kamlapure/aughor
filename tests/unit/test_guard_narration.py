@@ -12,7 +12,7 @@ with confidence, a number the headline had already retracted.
 """
 from __future__ import annotations
 
-from aughor.routers.investigations import _GUARD_PROSE, _guard_note
+from pramanyx.routers.investigations import _GUARD_PROSE, _guard_note
 
 
 def test_a_clean_turn_adds_nothing():
@@ -76,7 +76,7 @@ def test_the_narrator_is_fed_the_grounded_headline_not_the_raw_one():
     a live DB, a provider and a full request to run."""
     import inspect
 
-    from aughor.routers import investigations
+    from pramanyx.routers import investigations
 
     src = inspect.getsource(investigations)
     assert 'f"Answer: {_grounded_headline}\\n"' in src, (

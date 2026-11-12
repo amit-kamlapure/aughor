@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Health — every metric that has a target, scored against it, laid out to CLARITY (`aughor-v2/CLARITY.md`): four
+ * Health — every metric that has a target, scored against it, laid out to CLARITY (`pramanyx-v2/CLARITY.md`): four
  * figures (on target, warning, off target, not computed), the metrics off target or at a warning in amber with a way
  * to ask why on the row, then the rest. Each metric is said once.
  *

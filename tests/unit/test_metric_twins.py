@@ -16,8 +16,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.semantic import metric_twins as T
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.semantic import metric_twins as T
+from pramanyx.semantic.metrics import MetricDefinition
 
 TODAY = date.today()
 
@@ -118,18 +118,18 @@ def test_figures_that_cannot_be_read_are_said_not_taken_for_no_twin(con):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch, con):
-    from aughor.knowledge import period_brief
-    from aughor.semantic import metrics as m
+    from pramanyx.knowledge import period_brief
+    from pramanyx.semantic import metrics as m
     monkeypatch.setattr(m, "_DEFAULT_PATH", tmp_path / "metrics.json", raising=False)
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
     monkeypatch.setattr(period_brief, "connection_runner", lambda conn_id, **kw: _runner(con)())
-    from aughor.api import app
+    from pramanyx.api import app
     with TestClient(app) as c:
         yield c
 
 
 def test_approving_a_second_definition_of_one_measure_is_refused_with_the_others_name(client):
-    from aughor.semantic.metrics import save_metric
+    from pramanyx.semantic.metrics import save_metric
     conn = f"c{uuid.uuid4().hex[:6]}"
     save_metric(RETURN_RATE.model_copy(update={"connection": conn}))
     save_metric(ITEM_RETURN_RATE.model_copy(update={"connection": conn}))
@@ -150,7 +150,7 @@ def test_approving_a_second_definition_of_one_measure_is_refused_with_the_others
 
 
 def test_a_measure_of_its_own_is_approved_without_asking(client):
-    from aughor.semantic.metrics import save_metric
+    from pramanyx.semantic.metrics import save_metric
     conn = f"c{uuid.uuid4().hex[:6]}"
     save_metric(RETURN_RATE.model_copy(update={"connection": conn}))
     save_metric(_metric("units", "SELECT COUNT(*) AS units FROM order_items", kind="flow",

@@ -15,8 +15,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.govern import departure_store as ds
-from aughor.govern.departure import (
+from pramanyx.govern import departure_store as ds
+from pramanyx.govern.departure import (
     HELD_OWNER,
     Measurement,
     departure_link,
@@ -31,13 +31,13 @@ from aughor.govern.departure import (
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    monkeypatch.delenv("AUGHOR_WEB_URL", raising=False)
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.delenv("PRAMANYX_WEB_URL", raising=False)
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -61,7 +61,7 @@ _READINGS = {
 # ── the pieces ────────────────────────────────────────────────────────────────────
 
 def test_a_number_written_in_full_claims_its_last_significant_digit():
-    from aughor.explorer.grounding import extract_numerals, numeral_matches_measure as m
+    from pramanyx.explorer.grounding import extract_numerals, numeral_matches_measure as m
 
     def n(tok):
         return extract_numerals(tok)[0]
@@ -74,7 +74,7 @@ def test_a_number_written_in_full_claims_its_last_significant_digit():
 
 
 def test_sentence_claims_reads_the_strongest_claim_and_never_a_negation():
-    from aughor.agent.claim_type import sentence_claims
+    from pramanyx.agent.claim_type import sentence_claims
     found = {t for _s, t, _v in sentence_claims(
         "Revenue rose 4%. The campaign drove it. Churn is correlated with tenure. "
         "Orders are on track to double. Delays were not caused by the carrier.")}
@@ -102,7 +102,7 @@ def test_the_receipt_names_source_definition_as_of_guards_and_row(monkeypatch):
                         values=[111456.0, 10423.0], rates=[0.093517],
                         measured_at=datetime.now(timezone.utc).isoformat(),
                         as_of="2018-09-11 19:48:28")
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.declared_thing",
                         lambda s, c: {"kind": "promise", "measured": True,
                                       "label": "promise dispatch of order_to_delivery"})
     v = _gate("Dispatch broke on 10,423 of 111,456 order lines (9.35%).", conn_id="c1",
@@ -121,9 +121,9 @@ def test_the_receipt_names_source_definition_as_of_guards_and_row(monkeypatch):
 
 def test_the_receipt_links_to_the_departures_screen_only_when_the_origin_is_known(monkeypatch):
     assert departure_link("abc123") == ""
-    monkeypatch.setenv("AUGHOR_WEB_URL", "https://aughor.example.test/")
+    monkeypatch.setenv("PRAMANYX_WEB_URL", "https://pramanyx.example.test/")
     link = departure_link("abc123")
-    assert link == ("https://aughor.example.test/?tab=agentic-ops&layer=departures"
+    assert link == ("https://pramanyx.example.test/?tab=agentic-ops&layer=departures"
                     "&departure=abc123")
     assert receipt_line({"source": "x", "departure_id": "abc123", "link": link,
                          "guards": {}}).endswith(link)
@@ -142,7 +142,7 @@ def test_held_lines_are_recorded_and_counted_on_the_receipt():
 # ── law 6 — the owner is asked, once ─────────────────────────────────────────────
 
 def test_divergent_readings_hold_for_the_owner_with_the_question_recorded(monkeypatch):
-    monkeypatch.setattr("aughor.govern.departure_basis.owner_for_disagreement",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.owner_for_disagreement",
                         lambda d, c: "group:finance")
     v = _gate("", conn_id="c1", disagreement=_READINGS)
     assert v.state == HELD_OWNER and v.addressed_to == "group:finance"
@@ -153,14 +153,14 @@ def test_divergent_readings_hold_for_the_owner_with_the_question_recorded(monkey
 
 
 def test_an_accuracy_hold_still_asks_the_owner(monkeypatch):
-    monkeypatch.setattr("aughor.govern.departure_basis.owner_for_disagreement",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.owner_for_disagreement",
                         lambda d, c: "group:finance")
     v = _gate("Reminder: 1,200 refunds are pending.", conn_id="c1", disagreement=_READINGS)
     assert v.state == "held" and v.addressed_to == "group:finance"
 
 
 def test_the_answer_is_remembered_in_the_ambiguity_ledger(client, monkeypatch):
-    monkeypatch.setattr("aughor.govern.departure_basis.owner_for_disagreement",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.owner_for_disagreement",
                         lambda d, c: "")
     v = _gate("", conn_id="conn-law6", disagreement=_READINGS)
     assert v.state == HELD_OWNER
@@ -176,7 +176,7 @@ def test_the_answer_is_remembered_in_the_ambiguity_ledger(client, monkeypatch):
     body = resp.json()
     assert body["departure"]["answer"] == "As I read the question"
     assert body["resolution_id"]
-    from aughor.semantic.ambiguity_ledger import list_resolutions
+    from pramanyx.semantic.ambiguity_ledger import list_resolutions
     remembered = [r for r in list_resolutions("conn-law6")
                   if r.subject == "definition of refund rate"]
     assert remembered and remembered[0].resolved_reading == "As I read the question"
@@ -193,7 +193,7 @@ def test_a_departure_that_asked_nothing_cannot_be_answered(client):
 # ── lines of an assembled message ─────────────────────────────────────────────────
 
 def test_a_line_is_judged_on_its_own(monkeypatch):
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [])
     assert line_holds("Orders rose 4% this week.", conn_id="c1") == []
     assert line_holds("Conversion rate was 3.4% yesterday.", conn_id="c1")
     assert line_holds("Conversion rate [critical]: 3.4% vs 5%", conn_id="c1", declared=True) == []
@@ -225,7 +225,7 @@ def test_a_ledger_written_before_the_remainder_opens_with_its_rows_intact(tmp_pa
     conn = sqlite3.connect(path)
     conn.executescript(_PRE_REMAINDER_DDL)
     conn.close()
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(path))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(path))
 
     old = ds.get_departure("old1")
     assert old["state"] == "departed" and old["question"] == "{}" and old["guards"] == "{}"
@@ -234,7 +234,7 @@ def test_a_ledger_written_before_the_remainder_opens_with_its_rows_intact(tmp_pa
 
 
 def test_the_doors_serve_rows_decoded_and_count_what_is_owed(client, monkeypatch):
-    monkeypatch.setattr("aughor.govern.departure_basis.owner_for_disagreement",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.owner_for_disagreement",
                         lambda d, c: "")
     departed = _gate("Nothing to report.", automation_id="doors")
     asked = _gate("", conn_id="c1", automation_id="doors", disagreement=_READINGS)
@@ -336,7 +336,7 @@ _QUALIFYING = "never broken: none of the 107,903 Order objects that reached ship
 
 
 def _promise_gate(monkeypatch, stamp, text="The refund promise broke on 11,648 of 50,048 returns (23.27%)."):
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.declared_thing",
                         lambda s, c: {"kind": "promise", "measured": True,
                                       "label": "promise refund of Return to refund"})
     return _gate(text, conn_id="c1", about="promise:return_to_refund.refund", measurement=stamp)
@@ -379,8 +379,8 @@ def test_the_gate_matches_the_constant_the_flag_is_written_from(monkeypatch):
     """Round-trip lock, the TRUST_BANNER idiom: the prefix is load-bearing text shared by the
     writer and the reader. Rewording it in `processes.py` alone would unhook the hold silently,
     so this asserts the classifier keys off THAT constant and not a copy."""
-    from aughor.govern.departure_basis import _blocking
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    from pramanyx.govern.departure_basis import _blocking
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_FLAG
 
     assert _IMPOSSIBLE.startswith(IMPOSSIBLE_LAG_FLAG)
     assert _blocking([_IMPOSSIBLE, _QUALIFYING]) == [_IMPOSSIBLE]
@@ -394,7 +394,7 @@ def test_a_measurement_with_no_caveat_leaves_the_receipt_exactly_as_it_was(monke
                         values=[111456.0, 10423.0], rates=[0.093517],
                         measured_at=datetime.now(timezone.utc).isoformat(),
                         as_of="2018-09-11 19:48:28")
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.declared_thing",
                         lambda s, c: {"kind": "promise", "measured": True,
                                       "label": "promise dispatch of order_to_delivery"})
     v = _gate("Dispatch broke on 10,423 of 111,456 order lines (9.35%).", conn_id="c1",
@@ -411,7 +411,7 @@ def test_a_measurement_with_no_caveat_leaves_the_receipt_exactly_as_it_was(monke
 
 def test_a_send_with_no_measurement_records_the_caveat_guard_as_not_applicable(monkeypatch):
     """A guard with nothing to judge records not_applicable, never a silent pass."""
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing", lambda s, c: None)
+    monkeypatch.setattr("pramanyx.govern.departure_basis.declared_thing", lambda s, c: None)
     v = _gate("Nothing numeric here at all.", conn_id="c1")
     assert v.guards["caveat"] == "not_applicable"
 
@@ -419,16 +419,16 @@ def test_a_send_with_no_measurement_records_the_caveat_guard_as_not_applicable(m
 def test_the_materiality_bar_is_the_platforms_own_and_cannot_drift(monkeypatch):
     """The ontology restates the bar rather than importing it (it does not depend on govern),
     so this is the only thing stopping two numbers that must agree from drifting apart."""
-    from aughor.govern.departure import NOISE_REL
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_MATERIAL_REL
+    from pramanyx.govern.departure import NOISE_REL
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_MATERIAL_REL
 
     assert IMPOSSIBLE_LAG_MATERIAL_REL == NOISE_REL
 
 
 def test_a_noise_band_caveat_rides_the_receipt_and_never_holds(monkeypatch):
     """theLook's delivery promise, 8.11% either way. It is said, and it departs."""
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_NOISE_FLAG
-    from aughor.govern.departure_basis import _blocking
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_NOISE_FLAG
+    from pramanyx.govern.departure_basis import _blocking
 
     noise = (f"{IMPOSSIBLE_LAG_NOISE_FLAG}: 23 of the 96,476 Order objects reached delivered "
              "BEFORE dispatched_at — without them the rate is 8.11%, not 8.11%")

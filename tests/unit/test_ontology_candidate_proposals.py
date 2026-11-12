@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.actions import inbox
-from aughor.ontology.candidates import Candidate, proposal_detail
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.actions import inbox
+from pramanyx.ontology.candidates import Candidate, proposal_detail
+from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 
 T2E = {"orders": "Order", "customers": "Customer", "order_items": "OrderItem"}
 
@@ -63,7 +63,7 @@ def _graph():
 
 
 def test_staging_is_idempotent_and_says_what_it_could_not_stage():
-    from aughor.routers.ontology import stage_candidates
+    from pramanyx.routers.ontology import stage_candidates
     cands = [_c("measure", "SUM(gmv_eur)"), _c("join", "orders.region_code = regions.code"),
              _c("filter", "status IN ('shipped')", subject="orders.status")]
     first = stage_candidates(cands, _graph(), "c-stage", "main")
@@ -80,7 +80,7 @@ def test_staging_is_idempotent_and_says_what_it_could_not_stage():
 
 
 def test_a_rejected_candidate_is_kept_and_never_restaged():
-    from aughor.routers.ontology import stage_candidates
+    from pramanyx.routers.ontology import stage_candidates
     seg = _c("filter", "status IN ('returned')", subject="orders.status")
     out = stage_candidates([seg], _graph(), "c-reject", "main")
     pid = out["proposals"][0]["id"]
@@ -100,7 +100,7 @@ def _staged(detail, kind="measure", proposal="SUM(gmv_eur)", conn="c-accept"):
 
 
 def test_accepting_a_join_declares_the_link_through_the_link_door_as_the_persons_declaration(monkeypatch):
-    import aughor.routers.ontology as RO
+    import pramanyx.routers.ontology as RO
     seen = {}
     def fake_declare(spec, connection_id, schema_name):
         seen.update(spec=spec, connection_id=connection_id, schema_name=schema_name)
@@ -119,7 +119,7 @@ def test_accepting_a_join_declares_the_link_through_the_link_door_as_the_persons
 
 
 def test_accepting_a_measure_writes_a_computed_property_override_that_is_bound_first(monkeypatch):
-    import aughor.routers.ontology as RO
+    import pramanyx.routers.ontology as RO
     seen = {}
     def fake_bind(connection_id, schema, ov):
         seen.update(connection_id=connection_id, schema=schema, kind=ov.target_kind, target=ov.target_id, fields=dict(ov.fields))
@@ -134,7 +134,7 @@ def test_accepting_a_measure_writes_a_computed_property_override_that_is_bound_f
 
 
 def test_accepting_a_filter_writes_a_segment_override(monkeypatch):
-    import aughor.routers.ontology as RO
+    import pramanyx.routers.ontology as RO
     seen = {}
     monkeypatch.setattr(RO, "bind_and_persist_override", lambda cid, s, ov: (seen.update(kind=ov.target_kind, target=ov.target_id, fields=dict(ov.fields)), (ov, None))[1])
     monkeypatch.setattr(RO, "served_scope", lambda cid, s: "main")
@@ -147,7 +147,7 @@ def test_accepting_a_filter_writes_a_segment_override(monkeypatch):
 
 
 def test_the_doors_refusal_is_the_outcome_verbatim(monkeypatch):
-    import aughor.routers.ontology as RO
+    import pramanyx.routers.ontology as RO
     from fastapi import HTTPException
     def refuse(spec, connection_id, schema_name):
         raise HTTPException(status_code=400, detail="link 'x' did not bind: 0 of 100 keys found")
@@ -160,7 +160,7 @@ def test_the_doors_refusal_is_the_outcome_verbatim(monkeypatch):
 
 
 def test_a_second_accept_declares_nothing_twice(monkeypatch):
-    import aughor.routers.ontology as RO
+    import pramanyx.routers.ontology as RO
     calls = []
     monkeypatch.setattr(RO, "declare_link_core", lambda spec, c, s: (calls.append(1), {"relationship": "r"})[1])
     p = _staged({"declares": "link", "from_entity": "Customer", "to_entity": "Order", "from_column": "id",
@@ -171,15 +171,15 @@ def test_a_second_accept_declares_nothing_twice(monkeypatch):
 
 
 def test_the_public_door_names_are_bound():
-    import aughor.routers.ontology as RO
+    import pramanyx.routers.ontology as RO
     assert callable(RO.declare_link_core) and callable(RO.bind_and_persist_override) and callable(RO.served_scope)
     assert RO.declare_link_core is RO._declare_link_core
 
 
 def test_the_mining_door_stages_when_asked(monkeypatch):
-    from aughor.db.query_history import HistoryRow, QueryHistory
-    from aughor.orgsettings import allows as A
-    from aughor.routers import ontology as R
+    from pramanyx.db.query_history import HistoryRow, QueryHistory
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import ontology as R
     monkeypatch.setattr(A, "allows", lambda s: True)
     monkeypatch.setattr(R, "_served_scope", lambda cid, s: "main")
     monkeypatch.setattr(R, "_get_ontology_graph", lambda cid, s=None: _graph())
@@ -192,7 +192,7 @@ def test_the_mining_door_stages_when_asked(monkeypatch):
             return True, ""
         def close(self):
             pass
-    import aughor.db.connection as C
+    import pramanyx.db.connection as C
     monkeypatch.setattr(C, "open_connection_for_with_schema", lambda cid, s=None: Conn())
     out = R.mine_ontology_candidates(R._MineCandidatesRequest(stage=True), connection_id="c-door", schema_name="main")
     assert len(out["offered"]) == 1 and out["staged"]["proposals"] == []       # Arc NV-7: a formula is not a card here
@@ -203,4 +203,4 @@ def test_the_mining_door_stages_when_asked(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_trace(monkeypatch):
-    monkeypatch.setattr("aughor.telemetry.current_trace_id", lambda: "", raising=False)
+    monkeypatch.setattr("pramanyx.telemetry.current_trace_id", lambda: "", raising=False)

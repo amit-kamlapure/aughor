@@ -13,9 +13,9 @@ import uuid
 
 import pytest
 
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import north_star as NS
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import north_star as NS
 
 TODAY = dt.datetime.now(dt.timezone.utc)
 CONN = "ns-" + uuid.uuid4().hex[:6]

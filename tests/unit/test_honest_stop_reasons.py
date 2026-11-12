@@ -18,10 +18,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.kernel import jobs as J
-from aughor.kernel import metering
-from aughor.kernel.jobs import JobKernel, JobState, stop_sentence
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel import jobs as J
+from pramanyx.kernel import metering
+from pramanyx.kernel.jobs import JobKernel, JobState, stop_sentence
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()
@@ -47,7 +47,7 @@ async def _wait_terminal(k: JobKernel, ledger: Ledger, jid: str) -> dict:
 
 def test_an_answer_stream_inside_a_job_meters_into_the_job(ledger, monkeypatch):
     """THE regression: every analyst-body job flushed zero spend, 09-10 through 09-16."""
-    from aughor.routers.investigations import _metered_stream
+    from pramanyx.routers.investigations import _metered_stream
 
     monkeypatch.setattr(JobKernel, "_resolve_governance", lambda self, jid: (_gov(), "analyst"))
 
@@ -74,7 +74,7 @@ def test_an_answer_stream_inside_a_job_meters_into_the_job(ledger, monkeypatch):
 
 @pytest.mark.anyio
 async def test_outside_a_job_the_answer_stream_still_meters_itself():
-    from aughor.routers.investigations import _metered_stream
+    from pramanyx.routers.investigations import _metered_stream
 
     seen: dict = {}
 
@@ -177,8 +177,8 @@ def test_each_cause_reads_as_itself(kw, expected):
 async def test_the_bridge_records_the_budget_not_a_disconnect(monkeypatch):
     """End to end through `_job_streamed_body` on the process kernel: the row a budget-killed
     analyst run leaves behind carries the budget sentence."""
-    from aughor.db import history
-    from aughor.routers import investigations as inv
+    from pramanyx.db import history
+    from pramanyx.routers import investigations as inv
 
     monkeypatch.setattr(J, "_HEARTBEAT_SECONDS", 0.05)
     monkeypatch.setattr(JobKernel, "_resolve_governance",
@@ -207,14 +207,14 @@ async def test_the_bridge_records_the_budget_not_a_disconnect(monkeypatch):
 def test_a_failed_step_ends_on_its_advice(monkeypatch):
     """The agent rides the outcome's own `agent_id`; appending it after the advice buried
     the one sentence the reader acts on."""
-    from aughor.automations.engine import _dispatch_investigate
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.runners import InvestigationRun
+    from pramanyx.automations.engine import _dispatch_investigate
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.runners import InvestigationRun
 
     reason = ("Stopped at the Analyst's 900s time budget before answering (54 model calls, "
               "12 queries). Bind a faster model in Settings → Models, or raise time_budget_s "
               "with PATCH /agents/analyst.")
-    monkeypatch.setattr("aughor.runners.run_investigation",
+    monkeypatch.setattr("pramanyx.runners.run_investigation",
                         lambda req, **kw: InvestigationRun("failed", reason, basis="inline"))
     automation = Automation(conn_id="conn-h1", name="Anomalies to Slack",
                             conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],

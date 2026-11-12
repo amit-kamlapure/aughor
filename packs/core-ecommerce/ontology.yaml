@@ -3,7 +3,7 @@
 # order") and its e-commerce relationship chains (catalogue, inventory, commerce, payments, fulfilment, returns).
 #
 # Nothing here creates an object. The builder makes one type per table; this map is read against what it made
-# (`aughor/packs/drafter.py`, `POST /ontology/explore/pack`):
+# (`pramanyx/packs/drafter.py`, `POST /ontology/explore/pack`):
 #   * an object the data has no table for is never proposed and never mentioned — a business whose head office is its
 #     warehouse has no warehouse table, and an object for it would describe someone else's process;
 #   * `parts` — where the data holds an object and the rows the industry reads as part of it (an order's lines), the

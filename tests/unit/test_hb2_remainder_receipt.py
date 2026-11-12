@@ -25,10 +25,10 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.govern import departure_store as ds
-from aughor.govern.departure import Measurement
-from aughor.util.time import now_iso_z
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.govern import departure_store as ds
+from pramanyx.govern.departure import Measurement
+from pramanyx.util.time import now_iso_z
 
 DISPATCH = "promise:order_to_delivery.dispatch"
 LIVE_DISPATCH = (
@@ -40,13 +40,13 @@ LIVE_DISPATCH = (
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    monkeypatch.delenv("AUGHOR_WEB_URL", raising=False)
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.delenv("PRAMANYX_WEB_URL", raising=False)
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -59,13 +59,13 @@ def sent(monkeypatch):
         out.append((trigger, payload))
         return SimpleNamespace(status="ok", error=None, http_status=200, id="log1",
                                resource_ref="", to_dict=lambda: {"status": "ok"})
-    monkeypatch.setattr("aughor.notifications.executor.fire_action", fake_fire)
+    monkeypatch.setattr("pramanyx.notifications.executor.fire_action", fake_fire)
     return out
 
 
 def _trigger(tid="tr_ops"):
-    from aughor.notifications.models import ActionTrigger
-    from aughor.notifications.store import save_trigger
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store import save_trigger
     save_trigger(ActionTrigger(id=tid, name="#ops", type="webhook",
                                url="https://hooks.example.test/ops"))
     return tid
@@ -74,7 +74,7 @@ def _trigger(tid="tr_ops"):
 # ── a monitor alert ───────────────────────────────────────────────────────────────
 
 def _alert(**kw):
-    from aughor.monitors.models import MonitorAlert
+    from pramanyx.monitors.models import MonitorAlert
     base = dict(id="al1", monitor_id="m1", monitor_name="Refund spike", conn_id="c1",
                 metric_name="refunds", triggered_at=now_iso_z(), alert_on="threshold_cross",
                 severity="critical", current_value=12.4, previous_value=8.0, threshold=10.0,
@@ -84,8 +84,8 @@ def _alert(**kw):
 
 
 def test_a_monitor_alert_departs_with_its_receipt_on_the_payload(sent, monkeypatch):
-    from aughor.monitors.notify import dispatch_alert
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [])
+    from pramanyx.monitors.notify import dispatch_alert
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [])
     tid = _trigger()
     dispatch_alert(_alert(), SimpleNamespace(id="m1", name="Refund spike",
                                              notification_channel=tid))
@@ -98,11 +98,11 @@ def test_a_monitor_alert_departs_with_its_receipt_on_the_payload(sent, monkeypat
 
 
 def test_a_draft_metric_holds_the_alert_and_the_alert_row_stays(sent, monkeypatch):
-    from aughor.monitors.notify import dispatch_alert
+    from pramanyx.monitors.notify import dispatch_alert
     draft = SimpleNamespace(name="refunds", label="Refunds", sql="SUM(refund)", tables=[],
                             dimensions=[], quality_tests=[], wrong_usage_examples=[],
                             status="draft", version=0)
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [draft])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [draft])
     tid = _trigger()
     assert dispatch_alert(_alert(), SimpleNamespace(id="m1", name="Refund spike",
                                                     notification_channel=tid)) is None
@@ -114,9 +114,9 @@ def test_a_draft_metric_holds_the_alert_and_the_alert_row_stays(sent, monkeypatc
 # ── a scheduled briefing ──────────────────────────────────────────────────────────
 
 def test_a_briefing_sends_its_sound_lines_and_names_what_it_cut(sent, monkeypatch):
-    from aughor.briefing.delivery import deliver_subscription
-    from aughor.briefing.models import BriefSubscription
-    from aughor.monitors.alert_summary import AlertSummary, AlertSummarySection
+    from pramanyx.briefing.delivery import deliver_subscription
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.monitors.alert_summary import AlertSummary, AlertSummarySection
 
     brief = AlertSummary(conn_id="c1", period="week", generated_at=now_iso_z(), alert_count=1,
                          sections=[
@@ -128,9 +128,9 @@ def test_a_briefing_sends_its_sound_lines_and_names_what_it_cut(sent, monkeypatc
         AlertSummarySection(title="Top Causal Relationships", kind="causal_links", items=[
             "discount → refunds (strength: 0.62)", "carrier → late (strength: 0.41)"]),
     ])
-    monkeypatch.setattr("aughor.monitors.alert_summary.build_alert_summary",
+    monkeypatch.setattr("pramanyx.monitors.alert_summary.build_alert_summary",
                         lambda conn_id, period: brief)
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [])
     sub = BriefSubscription(id="sub1", conn_id="c1", name="Weekly ops", trigger_id=_trigger())
 
     result = deliver_subscription(sub, persist=False)
@@ -148,8 +148,8 @@ def test_a_briefing_sends_its_sound_lines_and_names_what_it_cut(sent, monkeypatc
 # ── an agent alert ────────────────────────────────────────────────────────────────
 
 def test_an_agent_alert_departs_with_its_receipt(sent):
-    from aughor.obs.agent_alert_runner import deliver
-    from aughor.obs.agent_alerts import AgentAlertEvent, AgentAlertRule
+    from pramanyx.obs.agent_alert_runner import deliver
+    from pramanyx.obs.agent_alerts import AgentAlertEvent, AgentAlertRule
     rule = AgentAlertRule(id="r1", name="Error rate", metric="error_rate", comparator="gte",
                           threshold=0.2, window_minutes=1440, channel=_trigger())
     event = AgentAlertEvent(id="e1", rule_id="r1", metric="error_rate", severity="warning",
@@ -164,7 +164,7 @@ def test_an_agent_alert_departs_with_its_receipt(sent):
 # ── a person's Share and Execute ──────────────────────────────────────────────────
 
 def _warehouse(tmp_path, value: int) -> str:
-    from aughor.db import registry
+    from pramanyx.db import registry
     path = tmp_path / f"share-{value}.duckdb"
     con = duckdb.connect(str(path))
     con.execute(f"CREATE TABLE weekly AS SELECT {value} AS orders")
@@ -176,7 +176,7 @@ def _warehouse(tmp_path, value: int) -> str:
 def test_a_shared_finding_is_re_measured_at_departure(client, sent, monkeypatch, tmp_path,
                                                        now_value, expected):
     conn_id = _warehouse(tmp_path, now_value)
-    monkeypatch.setattr("aughor.govern.departure_basis.find_finding",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.find_finding",
                         lambda fid, cid: {"id": fid, "sql": "SELECT orders FROM weekly",
                                           "generated_at": "2026-09-01T00:00:00Z"})
     tid = _trigger()
@@ -199,7 +199,7 @@ def test_a_forecast_recommendation_does_not_leave(client, sent, monkeypatch):
     inv = {"id": "inv1", "connection_id": "c1", "headline": "Volume is climbing",
            "report_json": {"recommended_actions": [
                "Order volume is on track to double next quarter; add warehouse staff."]}}
-    monkeypatch.setattr("aughor.db.history.get_investigation", lambda _id: dict(inv))
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", lambda _id: dict(inv))
     tid = _trigger()
     resp = client.post("/investigations/inv1/recommendations/0/execute", json={"trigger_id": tid})
     assert resp.status_code == 200, resp.text
@@ -222,9 +222,9 @@ def _olist_stamp(_about, _conn):
 @pytest.mark.parametrize("text, held", [(LIVE_DISPATCH, True),
                                          (LIVE_DISPATCH.replace("99,441", "111,456"), False)])
 def test_the_dispatch_watch_is_held_for_stating_an_order_count_as_lines(monkeypatch, text, held):
-    from aughor.automations.engine import _dispatch_slack_post
-    monkeypatch.setattr("aughor.govern.departure_basis.measurement_for_promise", _olist_stamp)
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+    from pramanyx.automations.engine import _dispatch_slack_post
+    monkeypatch.setattr("pramanyx.govern.departure_basis.measurement_for_promise", _olist_stamp)
+    monkeypatch.setattr("pramanyx.govern.departure_basis.declared_thing",
                         lambda s, c: {"kind": "promise", "measured": True,
                                       "label": "promise dispatch of order_to_delivery"})
     effect = Effect(kind="slack_post", config={"bot_id": "sb_missing", "channel": "#canvas",
@@ -245,9 +245,9 @@ def test_the_dispatch_watch_is_held_for_stating_an_order_count_as_lines(monkeypa
 
 def test_an_analysis_paused_on_divergent_readings_asks_the_owner_and_sends_nothing(
         client, monkeypatch):
-    from aughor.automations.engine import run_automation
-    from aughor.automations.store import upsert_automation
-    from aughor.runners.investigation import InvestigationRun
+    from pramanyx.automations.engine import run_automation
+    from pramanyx.automations.store import upsert_automation
+    from pramanyx.runners.investigation import InvestigationRun
 
     readings = {
         "subject": "definition of refund rate", "metric_label": "refund rate",
@@ -257,14 +257,14 @@ def test_an_analysis_paused_on_divergent_readings_asks_the_owner_and_sends_nothi
         "previews": ["= 2.10%", "= 7.80%"],
         "readings": [{"label": "Governed: refund_rate", "sql": "SUM(refunds) / COUNT(*)"},
                      {"label": "As I read the question", "sql": "SUM(rv) / SUM(v)"}]}
-    monkeypatch.setattr("aughor.runners.run_investigation",
+    monkeypatch.setattr("pramanyx.runners.run_investigation",
                         lambda req, **kw: InvestigationRun(
                             "executed", "ran inline (caller waited)", basis="inline",
                             investigation_id="inv-paused", clarify=dict(readings)))
-    monkeypatch.setattr("aughor.govern.departure_basis.owner_for_disagreement",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.owner_for_disagreement",
                         lambda d, c: "group:finance")
     posts: list = []
-    monkeypatch.setattr("aughor.slackbots.post.post_as_bot",
+    monkeypatch.setattr("pramanyx.slackbots.post.post_as_bot",
                         lambda *a, **kw: posts.append(a) or (True, {"ts": "1"}))
 
     auto = upsert_automation(Automation(
@@ -291,7 +291,7 @@ def test_an_analysis_paused_on_divergent_readings_asks_the_owner_and_sends_nothi
     answered = client.post(f"/departures/{row['id']}/answer",
                            json={"reading": "Governed: refund_rate"})
     assert answered.status_code == 200, answered.text
-    from aughor.semantic.ambiguity_ledger import list_resolutions
+    from pramanyx.semantic.ambiguity_ledger import list_resolutions
     assert any(r.subject == "definition of refund rate"
                and r.resolved_reading == "Governed: refund_rate"
                for r in list_resolutions("conn-law6-chain"))
@@ -300,7 +300,7 @@ def test_an_analysis_paused_on_divergent_readings_asks_the_owner_and_sends_nothi
 def test_the_runner_reports_a_pause_on_divergent_readings(monkeypatch):
     import json as _json
 
-    from aughor.runners import InvestigationRequest, run_investigation
+    from pramanyx.runners import InvestigationRequest, run_investigation
 
     frames = [{"type": "start", "investigation_id": "inv-p"},
               {"type": "clarify_pending", "investigation_id": "inv-p",
@@ -316,8 +316,8 @@ def test_the_runner_reports_a_pause_on_divergent_readings(monkeypatch):
                 yield f"data: {_json.dumps(f)}\n\n"
         return _gen()
 
-    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", fake_stream)
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda _id: {"status": "paused"})
     run = run_investigation(InvestigationRequest(question="q", connection_id="c1", wait=True))
     assert run.status == "executed" and run.investigation_id == "inv-p"

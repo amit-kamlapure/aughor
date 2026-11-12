@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from aughor.automations import probes as P
-from aughor.automations.engine import evaluate_conditions, run_automation
-from aughor.automations.models import Automation, Condition, Effect
+from pramanyx.automations import probes as P
+from pramanyx.automations.engine import evaluate_conditions, run_automation
+from pramanyx.automations.models import Automation, Condition, Effect
 
 _NOW = datetime(2026, 9, 16, 9, 0, tzinfo=timezone.utc)
 
@@ -57,7 +57,7 @@ def test_unchanged_since_last_fired_stays_quiet_and_worsening_fires(monkeypatch)
     monkeypatch.setattr(P, "_promise_rows", lambda a, c: ([_promise_row()], ""))
     auto = _auto({"kind": "promise_breached", "config": {"process": "order_to_delivery"}})
     cond = auto.conditions[0]
-    from aughor.automations.store import set_probe_baseline
+    from pramanyx.automations.store import set_probe_baseline
     set_probe_baseline(auto.id, "promise:order_to_delivery.dispatch",
                        "breached=120|rate=0.0935")
     fired, detail, _ = P.evaluate_promise_condition(cond, auto)
@@ -69,7 +69,7 @@ def test_unchanged_since_last_fired_stays_quiet_and_worsening_fires(monkeypatch)
 
 
 def test_an_undeclared_process_is_a_loud_probe_failure(monkeypatch):
-    from aughor.automations.engine import ProbeUnavailable
+    from pramanyx.automations.engine import ProbeUnavailable
     monkeypatch.setattr(P, "_promise_rows", lambda a, c: ([], "promise_breached(x): process not declared"))
     cond = Condition(kind="promise_breached", config={"process": "x"})
     with pytest.raises(ProbeUnavailable):
@@ -81,7 +81,7 @@ def test_commit_advances_the_promise_fingerprint(monkeypatch):
     auto = _auto({"kind": "promise_breached", "config": {"process": "order_to_delivery"}},
                  id="hb3commit")
     P.commit_hub_baselines(auto)
-    from aughor.automations.store import get_probe_baseline
+    from pramanyx.automations.store import get_probe_baseline
     assert get_probe_baseline("hb3commit",
                               "promise:order_to_delivery.dispatch") == "breached=120|rate=0.0935"
 
@@ -98,7 +98,7 @@ def _findings():
 
 
 def test_first_observation_fires_with_the_newest_finding(monkeypatch):
-    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda cid: _findings())
+    monkeypatch.setattr("pramanyx.explorer.store.get_findings", lambda cid: _findings())
     cond = Condition(kind="finding_created", config={})
     fired, detail, payload = P.evaluate_finding_condition(cond, _auto(cond.model_dump(), id="hb3f1"))
     assert fired and payload["finding_id"] == "f2" and payload["count_new"] == 2
@@ -106,7 +106,7 @@ def test_first_observation_fires_with_the_newest_finding(monkeypatch):
 
 
 def test_cursor_quiets_old_findings_and_filters_narrow(monkeypatch):
-    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda cid: _findings())
+    monkeypatch.setattr("pramanyx.explorer.store.get_findings", lambda cid: _findings())
     auto = _auto({"kind": "finding_created", "config": {}}, id="hb3f2")
     P.commit_hub_baselines(auto)          # cursor = newest generated_at
     fired, detail, _ = P.evaluate_finding_condition(auto.conditions[0], auto)
@@ -127,7 +127,7 @@ def test_trigger_payload_binds_into_a_step(monkeypatch):
                                                  "breach_rate": 0.0935}
 
     def dispatch(effect, automation):
-        from aughor.automations.models import EffectOutcome
+        from pramanyx.automations.models import EffectOutcome
         seen["config"] = dict(effect.config)
         return EffectOutcome(kind=effect.kind, target="t1", status="executed")
 

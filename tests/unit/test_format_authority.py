@@ -1,4 +1,4 @@
-"""The platform number-format authority — `aughor.util.format`.
+"""The platform number-format authority — `pramanyx.util.format`.
 
 Pramanyx quotes its own grounded numbers verbatim, so one raw float64 entering an LLM prompt
 surfaces unchanged in a headline ("…is 43.959061407888164%"). The policy is therefore applied
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from aughor.util.format import (
+from pramanyx.util.format import (
     round_cell,
     round_long_decimals,
     round_number,
@@ -116,7 +116,7 @@ def test_rows_for_prompt_caps_rows_and_is_safe_on_empty():
 def test_served_findings_are_normalized_for_every_consumer():
     """Findings written before emit-time rounding still live in the store; the domains read
     path cleans them so cards, tiles and the key-figure extractor all quote the short form."""
-    from aughor.routers.exploration import _normalize_insight_numbers
+    from pramanyx.routers.exploration import _normalize_insight_numbers
 
     by_domain = {
         "Content": {"insights": [

@@ -11,13 +11,13 @@ localhost mode (identity off) stays unfiltered.
 """
 from __future__ import annotations
 
-from aughor.db.history import (
+from pramanyx.db.history import (
     find_prior_answers,
     get_session_turns,
     reconstruct_session_history,
     save_chat_turn,
 )
-from aughor.org.context import using_org
+from pramanyx.org.context import using_org
 
 
 def _seed(org: str, session: str, question: str, headline: str, conn: str):
@@ -28,7 +28,7 @@ def _seed(org: str, session: str, question: str, headline: str, conn: str):
 
 
 def test_session_turns_are_org_scoped(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     _seed("memscope_a", "sess-shared-id", "what is revenue?", "A's answer", "conn-a")
 
     with using_org("memscope_a"):
@@ -41,7 +41,7 @@ def test_session_turns_are_org_scoped(monkeypatch):
 def test_reconstruction_is_org_scoped(monkeypatch):
     """The CI-1a path: an empty client history + a session id rebuilds memory from the
     store. It must rebuild only the caller's own."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     _seed("memrec_a", "sess-rec", "where are we losing money?", "West leads", "conn-r")
 
     with using_org("memrec_a"):
@@ -53,7 +53,7 @@ def test_reconstruction_is_org_scoped(monkeypatch):
 
 def test_cross_session_recall_is_org_scoped(monkeypatch):
     """The CI-1b path: recall crosses SESSIONS, so it must not cross tenants."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     _seed("memrecall_a", "sess-old-a", "total revenue?", "A: 12M", "conn-shared")
     _seed("memrecall_b", "sess-old-b", "total revenue?", "B: 99M", "conn-shared")
 
@@ -66,7 +66,7 @@ def test_cross_session_recall_is_org_scoped(monkeypatch):
 def test_localhost_mode_is_unscoped(monkeypatch):
     """Identity OFF (the default local posture): one operator owns every row, and
     filtering would hide their own history."""
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     _seed("memlocal_a", "sess-local", "a local question?", "local answer", "conn-l")
     assert len(get_session_turns("sess-local")) >= 1
     assert len(reconstruct_session_history("sess-local")) >= 1

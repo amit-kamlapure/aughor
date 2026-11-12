@@ -17,19 +17,19 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel import freeze as fz
-from aughor.kernel.freeze import FreezeRefused, FrozenDataGoneError
+from pramanyx.kernel import freeze as fz
+from pramanyx.kernel.freeze import FreezeRefused, FrozenDataGoneError
 
 KIND, NK = "savedquery", "savedquery:q1"
 
 
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch, tmp_path):
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(fz, "_store",
                         KeyedJsonStore(tmp_path / "freeze_state.json", max_entries=50))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
 class _Conn:
@@ -39,13 +39,13 @@ class _Conn:
 
 def _storage(monkeypatch, *, token, as_of=False):
     """Stand in for the connector: what data_version/as_of_supported report."""
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _Conn())
-    monkeypatch.setattr("aughor.db.snapshot.data_version", lambda conn, tables: token)
-    monkeypatch.setattr("aughor.db.snapshot.as_of_supported", lambda conn: as_of)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _Conn())
+    monkeypatch.setattr("pramanyx.db.snapshot.data_version", lambda conn, tables: token)
+    monkeypatch.setattr("pramanyx.db.snapshot.as_of_supported", lambda conn: as_of)
 
 
 def _saved(body=None):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     return save_draft(KIND, NK, body or {"sql": "SELECT 1"})
 
@@ -65,7 +65,7 @@ def test_gate_unopenable_connection_refuses_the_freeze(monkeypatch):
     def boom(_):
         raise RuntimeError("no such connection")
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", boom)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", boom)
     with pytest.raises(FreezeRefused, match="cannot open connection"):
         fz.freeze(KIND, NK, version=1, connection_id="nope")
 
@@ -174,7 +174,7 @@ def test_read_frozen_on_a_live_artifact_raises(monkeypatch):
 
 
 def test_read_frozen_returns_the_pinned_version_not_the_latest(monkeypatch):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"sql": "PINNED"})
     _storage(monkeypatch, token="fp:x", as_of=False)

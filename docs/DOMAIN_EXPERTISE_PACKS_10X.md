@@ -8,7 +8,7 @@
 > per-schema bindings · steering · evals-as-spec · flywheel) are built; remaining: deeper recipe
 > dry-run, a fleet of packs, and marketplace import.
 
-> **Thesis.** v1 makes aughor *configurable per domain* — a themed lens authored once. The
+> **Thesis.** v1 makes pramanyx *configurable per domain* — a themed lens authored once. The
 > ceiling is low: the folder format is copyable in a weekend, and a pack is only as good as the
 > day it was written. The 10x is not more pack features — it is changing **what a specialist is**:
 > from a static config object into a **self-improving, trust-earning teammate** inside an **expert
@@ -111,7 +111,7 @@ Increments 0-I and 0-II ship in this arc. 0-III–0-V are the next slices and ga
 
 ## The seven bets (ranked by leverage; all ride on §0)
 
-For each: **from → to**, the unlock, why only aughor, the new seam, **UI**, and a **build · wire ·
+For each: **from → to**, the unlock, why only pramanyx, the new seam, **UI**, and a **build · wire ·
 test · leverage** note.
 
 ### Bet 1 · The flywheel — self-distilling experts *(the moat; gated by §0)*
@@ -119,7 +119,7 @@ test · leverage** note.
 - **Unlock:** a `pack-learning` distiller proposes versioned pack deltas (caveats, binding
   corrections, new diagnostics) from run receipts + human verdicts. On day 90 the expert is far
   sharper than day 1, and that delta lives in *our* grounded run history.
-- **Why only aughor:** the deltas are grounded + verified (§0) + eval-gated (Bet 2), so the loop
+- **Why only pramanyx:** the deltas are grounded + verified (§0) + eval-gated (Bet 2), so the loop
   compounds learning, not drift.
 - **Seam:** distiller over Governed Dives + `_learn_from_exploration` writeback + Trust Receipts.
 - **UI:** an expert "changelog" — what it learned, from which run, accept/revert per delta.
@@ -131,7 +131,7 @@ test · leverage** note.
 - **From** evals as an optional folder → **to** evals as the *definition*; a pack can't reach
   `active` until its golden + adversarial cases pass *on the target warehouse*. AI-author writes
   evals **first**.
-- **Why only aughor:** grounding lets evals assert *behaviour on real data*, not string matches.
+- **Why only pramanyx:** grounding lets evals assert *behaviour on real data*, not string matches.
 - **Seam:** promotion gate `(pack, connection) → active iff evals green`, in CI + at bind time.
 - **UI:** a pack "report card" — eval pass/fail per warehouse, blocking the activate button.
 - **build·wire·test·leverage:** build the eval runner; wire to the activate gate; test a failing
@@ -150,7 +150,7 @@ test · leverage** note.
 - **From** "the kernel guarantees correctness" → **to** experts with a *measurable track record*
   (eval pass-rate, adversarial-survival rate, human-acceptance rate) that governs their rope.
   New/weak experts run **shadow** (propose-only); proven ones earn routing weight + autonomy.
-- **Why only aughor / non-circular:** calibrated against captured human verdicts (§0.7), not self-grading.
+- **Why only pramanyx / non-circular:** calibrated against captured human verdicts (§0.7), not self-grading.
 - **Seam:** a per-`(pack, connection)` trust ledger → routing weight + autonomy tier.
 - **UI:** an expert trust dashboard; per-finding "this expert is at tier N here".
 - **build·wire·test·leverage:** build the ledger; wire human verdicts → score → routing; test a
@@ -168,7 +168,7 @@ test · leverage** note.
 ### Bet 6 · The marketplace — portable expertise as a network
 - **From** a folder you write → **to** a tradeable asset: a world-class consultant encodes "the
   canonical SaaS Retention expert" once and it lights up on *anyone's* warehouse via the resolver.
-- **Why only aughor:** everyone else's "expert" is a prompt that hallucinates on an unseen schema;
+- **Why only pramanyx:** everyone else's "expert" is a prompt that hallucinates on an unseen schema;
   ours is correct-by-construction (binds + re-evals locally before it can answer).
 - **Seam:** pack as an installable, re-grounding, re-eval'd registry artifact (extend the metastore
   securable to cross-org import).

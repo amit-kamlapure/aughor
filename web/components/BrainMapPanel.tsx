@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * PENDING item 9 — the company-brain map, redone to `aughor-v2/CLARITY.md` (2026-10-13). A map leads with its picture:
+ * PENDING item 9 — the company-brain map, redone to `pramanyx-v2/CLARITY.md` (2026-10-13). A map leads with its picture:
  * every store behind what Pramanyx knows is a box in its vault's column, with its live count and one line, and every
  * measured link is an arrow between two boxes carrying its count — never a drawn relationship. Below the picture, the
  * one list only this screen shows: the facts that changed since first seen, and what each replaced (CB-1).

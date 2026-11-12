@@ -1,4 +1,4 @@
-"""Tests for the LLM provider resilience layer (aughor/llm/provider.py):
+"""Tests for the LLM provider resilience layer (pramanyx/llm/provider.py):
 per-endpoint concurrency semaphore + transient-error retry/backoff/deadline.
 
 This is platform robustness — every Pramanyx LLM call goes through _run_resilient — so the contract
@@ -10,8 +10,8 @@ import threading
 
 import pytest
 
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
 
 
 class _Transient(Exception):
@@ -55,7 +55,7 @@ def test_is_transient_classification():
 
 def test_retries_transient_then_succeeds(monkeypatch):
     monkeypatch.setattr(P.time, "sleep", lambda *_: None)      # no real backoff in tests
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "3")
     calls = {"n": 0}
     def do():
         calls["n"] += 1
@@ -79,7 +79,7 @@ def test_non_transient_raises_immediately(monkeypatch):
 
 def test_retries_bounded_by_max(monkeypatch):
     monkeypatch.setattr(P.time, "sleep", lambda *_: None)
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "2")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "2")
     calls = {"n": 0}
     def do():
         calls["n"] += 1
@@ -173,8 +173,8 @@ def test_openrouter_daily_cap_is_an_exhausted_allowance():
 # ── Fallback chain ───────────────────────────────────────────────────────────
 
 def test_fallback_chain_skips_primary_and_unkeyed_backends(monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
     monkeypatch.setattr(P, "_active_key", lambda b: "k" if b in ("gemini", "openrouter") else "")
     prov = P.LLMProvider.__new__(P.LLMProvider)   # no network in a unit test
     prov.backend, prov.role = "openrouter", "narrator"
@@ -183,7 +183,7 @@ def test_fallback_chain_skips_primary_and_unkeyed_backends(monkeypatch):
 
 
 def test_fallback_chain_is_empty_when_disabled(monkeypatch):
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
     prov = P.LLMProvider.__new__(P.LLMProvider)
     prov.backend, prov.role = "openrouter", "narrator"
@@ -191,8 +191,8 @@ def test_fallback_chain_is_empty_when_disabled(monkeypatch):
 
 
 def test_fallback_order_is_overridable_and_drops_typos(monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini, nosuchbackend ,groq")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini, nosuchbackend ,groq")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
     prov = P.LLMProvider.__new__(P.LLMProvider)
     prov.backend, prov.role = "openrouter", "narrator"
@@ -200,21 +200,21 @@ def test_fallback_order_is_overridable_and_drops_typos(monkeypatch):
 
 
 def test_anthropic_keeps_its_pinned_model_others_need_their_own(monkeypatch):
-    """The pre-existing AUGHOR_FALLBACK_MODEL contract is Anthropic's alone — a narrator
+    """The pre-existing PRAMANYX_FALLBACK_MODEL contract is Anthropic's alone — a narrator
     falling back to Gemini must not inherit a model id from another vendor.
 
     A backend nobody has configured still resolves to "" and is still SKIPPED: the
     alternative is dispatching to a vendor with an id tuned for a different one, and the
     chain answering from somewhere else is precisely how a dead binding used to look
     healthy."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL", "vendor/pinned")
-    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_MODEL", "vendor/pinned")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_MODEL_GEMINI", raising=False)
     monkeypatch.setattr(P, "_cfg", lambda: {})
     assert P._fallback_model_for("anthropic", "narrator") == "vendor/pinned"
     assert P._fallback_model_for("gemini", "narrator") == ""
     assert P._fallback_model_for("openrouter", "fast") == ""
 
-    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "operator/choice")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_MODEL_GEMINI", "operator/choice")
     assert P._fallback_model_for("gemini", "narrator") == "operator/choice"
 
 
@@ -227,7 +227,7 @@ def test_a_backend_configured_in_settings_becomes_a_usable_fallback(monkeypatch)
     whole run down while a healthy provider sat unused. The operator's own remembered
     choice is read instead; no id is invented, it came from the picker for that backend.
     """
-    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_MODEL_GEMINI", raising=False)
     monkeypatch.setattr(P, "_cfg", lambda: {
         "backend": "openrouter",
         "models_by_backend": {"gemini": {"coder": "g/coder", "narrator": "g/narrator"}},
@@ -242,13 +242,13 @@ def test_a_backend_configured_in_settings_becomes_a_usable_fallback(monkeypatch)
 def test_settings_can_choose_the_fallback_provider_and_model(monkeypatch):
     """The chain is an operator decision, not an env-file one.
 
-    Before this it could only be steered by AUGHOR_FALLBACK_BACKENDS /
-    AUGHOR_FALLBACK_MODEL_<BACKEND> — invisible from the product, and on a deployment
+    Before this it could only be steered by PRAMANYX_FALLBACK_BACKENDS /
+    PRAMANYX_FALLBACK_MODEL_<BACKEND> — invisible from the product, and on a deployment
     where nobody had set them the chain silently used the built-in order with no model to
     dispatch with. One model serves every role, which is what Settings offers.
     """
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
-    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_MODEL_GEMINI", raising=False)
     monkeypatch.setattr(P, "_cfg", lambda: {
         "backend": "openrouter",
         "fallback": {"backend": "gemini", "model": "vendor/chosen"},
@@ -263,7 +263,7 @@ def test_settings_can_choose_the_fallback_provider_and_model(monkeypatch):
 def test_settings_can_switch_the_fallback_off_entirely(monkeypatch):
     """"none" has to be spelled, because "" already means "the built-in order" — the same
     reason the env var carries the word."""
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
     monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": "none"}})
     assert P._fallback_backends() == ()
 
@@ -274,7 +274,7 @@ def test_settings_can_switch_the_fallback_off_entirely(monkeypatch):
 def test_the_env_chain_still_outranks_the_settings_choice(monkeypatch):
     """How a deployment nobody can open Settings on is steered."""
     monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": "gemini"}})
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "groq")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "groq")
     assert P._fallback_backends() == ("groq",)
 
 
@@ -283,7 +283,7 @@ def test_an_env_pin_still_outranks_the_remembered_binding(monkeypatch):
     operator overrides a deployment they cannot open Settings on."""
     monkeypatch.setattr(P, "_cfg", lambda: {
         "models_by_backend": {"gemini": {"coder": "from/settings"}}})
-    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "from/env")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_MODEL_GEMINI", "from/env")
     assert P._fallback_model_for("gemini", "coder") == "from/env"
 
 
@@ -297,8 +297,8 @@ def test_quota_exhausted_primary_fails_over_to_the_next_backend(monkeypatch):
     class _Out(BaseModel):
         text: str = "ok"
 
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
 
     seen: list[str] = []
@@ -335,8 +335,8 @@ def test_original_cause_is_raised_when_every_link_fails(monkeypatch):
     class _Out(BaseModel):
         text: str = "ok"
 
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
 
     def fake_complete_on(client, backend, model, system, user, response_model,
@@ -369,8 +369,8 @@ def test_exhausted_backend_is_skipped_on_the_next_call(monkeypatch):
     class _Out(BaseModel):
         text: str = "ok"
 
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
 
     seen: list[str] = []
@@ -402,7 +402,7 @@ def test_exhausted_backend_is_skipped_on_the_next_call(monkeypatch):
 
 def test_cooldown_expires_so_a_topped_up_account_recovers(monkeypatch):
     """Self-healing matters: adding credits must not require a restart."""
-    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "0")
+    monkeypatch.setenv("PRAMANYX_QUOTA_COOLDOWN_S", "0")
     P._mark_quota_exhausted("openrouter")
     assert not P._in_quota_cooldown("openrouter")
     # expired entry is DROPPED, not merely reported false — otherwise a long-lived
@@ -411,7 +411,7 @@ def test_cooldown_expires_so_a_topped_up_account_recovers(monkeypatch):
 
 
 def test_cooldown_holds_within_its_window(monkeypatch):
-    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "900")
+    monkeypatch.setenv("PRAMANYX_QUOTA_COOLDOWN_S", "900")
     P._mark_quota_exhausted("openrouter")
     assert P._in_quota_cooldown("openrouter")
     assert not P._in_quota_cooldown("gemini")        # scoped to the backend that failed
@@ -419,9 +419,9 @@ def test_cooldown_holds_within_its_window(monkeypatch):
 
 def test_cooled_backend_is_dropped_from_the_fallback_chain(monkeypatch):
     """A spent FALLBACK deserves the same treatment as a spent primary."""
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini,groq")
-    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "900")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini,groq")
+    monkeypatch.setenv("PRAMANYX_QUOTA_COOLDOWN_S", "900")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
     prov = P.LLMProvider.__new__(P.LLMProvider)
     prov.backend, prov.role = "openrouter", "narrator"
@@ -438,8 +438,8 @@ def test_primary_still_tried_when_it_is_the_only_option(monkeypatch):
     class _Out(BaseModel):
         text: str = "ok"
 
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
-    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "900")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_QUOTA_COOLDOWN_S", "900")
     P._mark_quota_exhausted("openrouter")
 
     seen: list[str] = []
@@ -489,7 +489,7 @@ def test_retry_after_is_capped():
 def test_ladder_waits_the_server_stated_delay(monkeypatch):
     slept: list[float] = []
     monkeypatch.setattr(P.time, "sleep", lambda s: slept.append(s))
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "1")
     calls = {"n": 0}
 
     def do():
@@ -507,7 +507,7 @@ def test_ladder_keeps_its_own_backoff_when_the_delay_is_shorter(monkeypatch):
     turn the ladder into a hot loop."""
     slept: list[float] = []
     monkeypatch.setattr(P.time, "sleep", lambda s: slept.append(s))
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "1")
     calls = {"n": 0}
 
     def do():
@@ -564,14 +564,14 @@ def test_reasoning_effort_is_sent_only_where_it_is_understood(monkeypatch):
     unknown fields, so sending it everywhere would break them. The VALUE is pinned
     via env because the default is model-sized (A1 ModelProfile) — asserting the
     tier default here would make the test depend on this box's llm_config binding."""
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "low")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "low")
     assert P._reasoning_extra_body("openrouter") == {"reasoning": {"effort": "low"}}
     assert P._reasoning_extra_body("gemini") == {}
     assert P._reasoning_extra_body("groq") == {}
 
 
 def test_reasoning_can_be_turned_off_for_a_binding_that_rejects_it(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "off")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "off")
     assert P._reasoning_extra_body("openrouter") == {}
 
 
@@ -618,7 +618,7 @@ def test_a_rate_limit_gets_one_retry_not_the_full_ladder(monkeypatch):
     """THE SPIRAL. Every retry is itself another REQUEST against the limit that just
     rejected us. The live Gemini account peaked at 19 RPM against a 15 RPM cap."""
     monkeypatch.setattr(P.time, "sleep", lambda *_: None)
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "3")
     calls = {"n": 0}
 
     def do():
@@ -633,7 +633,7 @@ def test_a_rate_limit_gets_one_retry_not_the_full_ladder(monkeypatch):
 def test_a_non_rate_limit_transient_keeps_the_full_ladder(monkeypatch):
     """A network blip is not a volume refusal — retrying it costs the endpoint nothing."""
     monkeypatch.setattr(P.time, "sleep", lambda *_: None)
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "3")
     calls = {"n": 0}
 
     def do():

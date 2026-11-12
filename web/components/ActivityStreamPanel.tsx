@@ -37,7 +37,7 @@ const KIND_HUE: Record<string, "positive" | "negative" | "caution" | "info" | "a
 const MAX_ROWS = 300;
 
 /** A guardrail check that let its call through — the same line the governance feed draws between an allow and a block
- *  (`aughor/govern/audit_categories.py`): blocked when its payload says so or the event failed. */
+ *  (`pramanyx/govern/audit_categories.py`): blocked when its payload says so or the event failed. */
 export function isRoutineCheck(e: Pick<SessionEvent, "kind" | "ok" | "payload">): boolean {
   if (e.kind !== "guardrail") return false;
   const blocked = Boolean((e.payload as { blocked?: unknown } | null | undefined)?.blocked);

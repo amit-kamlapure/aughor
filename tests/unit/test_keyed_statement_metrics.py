@@ -13,10 +13,10 @@ import json
 
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic.metrics import MetricDefinition
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, keyed_metrics_for
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic.metrics import MetricDefinition
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query, keyed_metrics_for
 from tests.unit.test_object_bindings import GRAPH, rows, seed
 
 LINE_REVENUE = MetricDefinition(
@@ -111,8 +111,8 @@ def test_without_keyed_metrics_the_door_reads_as_before(graph):
 
 
 def test_the_door_is_handed_the_approved_keyed_metrics_only(monkeypatch, tmp_path):
-    from aughor.semantic import metrics as M
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from pramanyx.semantic import metrics as M
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
     M.save_metric(LINE_REVENUE)
     M.save_metric(LINE_REVENUE.model_copy(update={"name": "draft_revenue", "status": "draft"}))
     M.save_metric(LINE_REVENUE.model_copy(update={"name": "unkeyed", "entity": None}))
@@ -133,7 +133,7 @@ def test_an_entity_with_no_key_cannot_hand_its_objects_to_a_statement(graph):
 def test_a_keyed_metric_wins_over_the_graphs_own_copy_of_the_same_name(db, graph):
     # theLook's graph held each approved metric again as an ontology metric, its whole statement as a formula the
     # compiler cannot re-anchor; the keyed, approved definition is the one read.
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.ontology.models import OntologyMetric
     graph.metrics["line_revenue"] = OntologyMetric(id="line_revenue", display_name="Line revenue", entity="OrderItem",
                                                    formula_sql=LINE_REVENUE.sql, verified=True)
     got = _run(db, {"object_type": "order_item", "measures": [{"metric": "line_revenue"}]}, graph)[0][0]

@@ -9,7 +9,7 @@
  * is in turn authoritative over what Pramanyx infers per connection (override-wins),
  * which is why blank = "use the inferred value".
  *
- * Redone to `aughor-v2/CLARITY.md` (2026-10-12): four figures first — the industries read, this quarter's
+ * Redone to `pramanyx-v2/CLARITY.md` (2026-10-12): four figures first — the industries read, this quarter's
  * priorities, the owners the platform can reach, the Explorer's monthly budget — then what needs a person (an owner
  * nobody can reach), then the form as cards: what the one Save below them writes, then the sections that save
  * themselves (industries, the playbook, the agent policy, the organisation's own keys). The owners' list is its own

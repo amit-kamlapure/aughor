@@ -3,10 +3,10 @@
 With identity on, a door that names a connection answers only the organisation that owns it. Before this, 175 of the
 213 doors that named one never asked whose it was: a caller from one organisation read, edited and withdrew another
 organisation's ontology by naming its connection (proven on the ontology doors first, `test_data06_tenant.py`).
-`aughor.security.authz.connection_owner_guard` is now a router-level dependency on every router with such a door, so
+`pramanyx.security.authz.connection_owner_guard` is now a router-level dependency on every router with such a door, so
 a door added to one later is covered without anyone remembering to.
 
-Both tests read the doors the app actually serves — the population is `aughor.api.app.routes`, never a hand list:
+Both tests read the doors the app actually serves — the population is `pramanyx.api.app.routes`, never a hand list:
 every door whose path or query names a connection depends on the guard (or is argued out below, with why), and
 another organisation naming that connection is refused BY THE GUARD on each of them.
 """
@@ -20,7 +20,7 @@ from fastapi import HTTPException
 from fastapi.dependencies.utils import get_flat_dependant
 from fastapi.routing import APIRoute
 
-from aughor.security.authz import Principal, connection_owner_guard
+from pramanyx.security.authz import Principal, connection_owner_guard
 from starlette.requests import Request
 
 #: Doors whose connection id is not a registry connection, each with why — argued here, never grown silently.
@@ -36,7 +36,7 @@ def _names_a_connection(name: str) -> bool:
 
 
 def _doors() -> list[tuple[APIRoute, list[str]]]:
-    from aughor.api import app
+    from pramanyx.api import app
     found = []
     for route in app.routes:
         if not isinstance(route, APIRoute):
@@ -76,8 +76,8 @@ def _request(path_params: dict | None = None, query: str = "", principal: Princi
 def test_the_guard_reads_every_name_a_connection_goes_by_in_the_path_and_the_query(tmp_path):
     """The guard itself, with no door behind it: fast, and a defect in the names it reads fails here rather than by
     letting the sweep below reach a real handler."""
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
         theirs = registry.add_connection("orgA-names", "duckdb", str(tmp_path / "orgA.duckdb"))
@@ -100,9 +100,9 @@ def test_the_guard_reads_every_name_a_connection_goes_by_in_the_path_and_the_que
 
 
 def test_another_org_is_refused_by_the_guard_on_every_door_that_names_its_connection(client, monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
         theirs = registry.add_connection("orgA-doors", "duckdb", str(tmp_path / "orgA.duckdb"))
@@ -118,7 +118,7 @@ def test_another_org_is_refused_by_the_guard_on_every_door_that_names_its_connec
                 url = re.sub(r"{%s(?::[^}]+)?}" % re.escape(param), theirs if _names_a_connection(param) else "x", url)
             query = {n: theirs for n in named if _names_a_connection(n) and n not in route.param_convertors}
             method = sorted(route.methods)[0]
-            r = client.request(method, url, params=query, headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"})
+            r = client.request(method, url, params=query, headers={"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"})
             answered[_door(route)] = (r.status_code, r.text[:100])
         assert len(answered) >= 140, len(answered)
         # Two refusals count. 403 "belongs to another org" is the guard on the connection; 404 "or not yours" is
@@ -136,10 +136,10 @@ def test_the_grounding_receipt_refuses_another_orgs_connection_and_answers_its_o
     """FA-7's defect: `GET /ask/context` names its connection `connection`, which the guard did not read, so with
     identity on another organisation's grounding — its schema slice, glossary, trusted SQL — was one request away. The
     owner's own read still reaches the door (the read itself is stubbed: no warehouse, no embedder)."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.agent import grounding
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.agent import grounding
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     import duckdb
     duckdb.connect(str(tmp_path / "orgA.duckdb")).close()      # an empty warehouse the door can open read-only
@@ -149,10 +149,10 @@ def test_the_grounding_receipt_refuses_another_orgs_connection_and_answers_its_o
         theirs = registry.add_connection("orgA-grounding", "duckdb", str(tmp_path / "orgA.duckdb"))
     try:
         refused = client.get("/ask/context", params={"connection": theirs, "question": "revenue"},
-                             headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"})
+                             headers={"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"})
         assert refused.status_code == 403 and "belongs to another org" in refused.text
         own = client.get("/ask/context", params={"connection": theirs, "question": "revenue"},
-                         headers={"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"})
+                         headers={"X-Pramanyx-Org": "orgA", "X-Pramanyx-User": "amit"})
         assert own.status_code == 200, own.text
         assert own.json()["receipt"]["connection_id"] == theirs
     finally:

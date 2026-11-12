@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.db.connection import DatabaseConnection, DuckDBConnection, PostgresConnection
+from pramanyx.db.connection import DatabaseConnection, DuckDBConnection, PostgresConnection
 
 
 def test_postgres_has_the_background_path_at_all():

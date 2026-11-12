@@ -1,4 +1,4 @@
-"""IN-1 — `aughor update` fast-forwards, refuses, and never resets.
+"""IN-1 — `pramanyx update` fast-forwards, refuses, and never resets.
 
 Real git repositories in tmp, because the behaviour under test IS git's. The test that
 matters most is `test_a_dirty_data_dir_does_not_block`: 102 files under `data/` are tracked
@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from aughor import update as up
+from pramanyx import update as up
 
 
 def _git(cwd, *args):
@@ -198,9 +198,9 @@ def test_the_installer_updates_a_clone_and_never_fails_on_a_refusal(tmp_path, mo
                                                                     capsys, status):
     """A re-run used to reuse an existing checkout exactly as it was — re-syncing the old code's
     dependencies and never pulling. It now fast-forwards first, through the same function
-    `aughor update` uses. What must NOT change is that an install finishes: a refusal (local
+    `pramanyx update` uses. What must NOT change is that an install finishes: a refusal (local
     changes, a diverged branch) or an error is one line, never an abort."""
-    from aughor import installer
+    from pramanyx import installer
 
     (tmp_path / ".git").mkdir()
     calls = []
@@ -226,6 +226,6 @@ def test_the_installer_updates_a_clone_and_never_fails_on_a_refusal(tmp_path, mo
 def test_a_snapshot_install_is_not_asked_to_update_itself(tmp_path, monkeypatch):
     """No `.git`: the installer that is running IS how a snapshot updates, so `update` — whose
     snapshot answer is "re-run the installer" — must not be called from inside it."""
-    from aughor import installer
+    from pramanyx import installer
     monkeypatch.setattr(up, "update", lambda *a, **k: pytest.fail("update called on a snapshot"))
     installer.update_checkout(tmp_path, installer.Steps())

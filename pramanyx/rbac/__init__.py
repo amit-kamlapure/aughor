@@ -1,0 +1,98 @@
+"""Role-based access control (RBAC P1).
+
+The second authorization axis, orthogonal to licensing capabilities: a licensing
+capability says what the org's *plan* unlocks; an RBAC permission says what *this
+user* may do. A request is authorized when both hold.
+
+**Enforcement is live** (P4): ``policy.py`` maps every ``(method, route)`` to the
+permission it requires, and ``deps.enforce_rbac`` is an app-wide dependency wired at
+``pramanyx/api.py``. It stays a no-op in one situation by design — identity off /
+localhost (the caller resolves to owner). The org's tier was a second until
+2026-11-05 (Track A3 of ``docs/TENX_PROGRAM_2026-11-05.md``): a plan never decides
+whether a permission is evaluated.
+
+This docstring said the opposite until 2026-07-28, describing a P1 in which "no
+enforcement is wired into any route yet". It had been wrong since P3 landed, and the
+cost was not cosmetic: the Wave G program was scoped around "clearances **before**
+roles, roles come later" on the strength of it. Prose drifts; the route table and
+``api.py`` are the authority.
+
+Wave G2 adds a THIRD axis beside these two — ``pramanyx/govern/tags.py`` — for what the
+*data* requires of whoever reads it, which neither a plan nor a role can express.
+
+HB-1 (§3.18) grows the package sideways rather than adding a fourth axis: groups and
+membership (``groups.py``), one level ladder with the built-in roles' defaults (``levels.py``),
+the ONE union resolver with its explain (``access.py``), and where a departure about
+a securable goes (``routing.py``). The routing half only — these decide *where things
+go* today; enforcement over the same rows switches on with identity.
+"""
+from __future__ import annotations
+
+from pramanyx.rbac.access import Decision, may
+from pramanyx.rbac.capabilities import (
+    ceiling_for_roles,
+    effective_capabilities,
+    role_ceiling,
+    role_has_capability,
+)
+from pramanyx.rbac.deps import enforce_rbac, gate_permission, require_permission
+from pramanyx.rbac.permissions import ALL_PERMISSIONS, Permission
+from pramanyx.rbac.policy import required_permission
+from pramanyx.rbac.resolver import (
+    default_role,
+    has_permission,
+    maybe_bootstrap_owner,
+    permissions_for,
+    resolve_roles,
+)
+from pramanyx.rbac.roles import (
+    ANALYST,
+    BUILTIN_ROLES,
+    OWNER,
+    VIEWER,
+    Role,
+    get_role,
+    is_builtin_role,
+    role_permissions,
+)
+
+from pramanyx.rbac.groups import Group, groups_of, list_groups
+from pramanyx.rbac.levels import LADDER, level_covers, role_default_level
+from pramanyx.rbac.routing import Destination, owner_principal, route
+
+__all__ = [
+    "Permission",
+    "ALL_PERMISSIONS",
+    "Decision",
+    "may",
+    "Group",
+    "groups_of",
+    "list_groups",
+    "LADDER",
+    "level_covers",
+    "role_default_level",
+    "Destination",
+    "owner_principal",
+    "route",
+    "Role",
+    "BUILTIN_ROLES",
+    "OWNER",
+    "ANALYST",
+    "VIEWER",
+    "get_role",
+    "is_builtin_role",
+    "role_permissions",
+    "resolve_roles",
+    "permissions_for",
+    "has_permission",
+    "maybe_bootstrap_owner",
+    "default_role",
+    "require_permission",
+    "gate_permission",
+    "enforce_rbac",
+    "required_permission",
+    "effective_capabilities",
+    "role_has_capability",
+    "role_ceiling",
+    "ceiling_for_roles",
+]

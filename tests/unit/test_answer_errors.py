@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import answer_errors as AE
+from pramanyx.agent import answer_errors as AE
 
 
 # ── classification ────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ def test_transport_failures_reach_the_user_classified(message, expected):
 
 
 def test_a_structured_output_failure_keeps_its_taxonomy():
-    from aughor.llm.reliability import Diagnosis, StructuredOutputError, TRUNCATED
+    from pramanyx.llm.reliability import Diagnosis, StructuredOutputError, TRUNCATED
 
     exc = StructuredOutputError(Diagnosis(TRUNCATED, "hit the ceiling"))
     assert AE.classify(exc) == "truncated"
@@ -95,7 +95,7 @@ def test_a_spent_quota_says_switch_model_rather_than_retry():
 def test_a_truncation_says_switch_model_too():
     """R1 proved a truncation recurs on every binding at OUR ceiling — so the recovery is
     a model with more headroom, not the same request again."""
-    from aughor.llm.reliability import Diagnosis, StructuredOutputError, TRUNCATED
+    from pramanyx.llm.reliability import Diagnosis, StructuredOutputError, TRUNCATED
 
     ev = AE.error_event(StructuredOutputError(Diagnosis(TRUNCATED, "ceiling")))
     assert ev["recovery"] == AE.SWITCH_MODEL
@@ -148,13 +148,13 @@ def test_no_error_frame_is_assembled_by_hand_any_more():
     import pathlib
     import re
 
-    src = pathlib.Path("aughor/routers/investigations.py").read_text()
+    src = pathlib.Path("pramanyx/routers/investigations.py").read_text()
     bare = re.findall(r'_sse\(\s*"error"\s*,\s*\{', src)
     assert not bare, f"{len(bare)} error frame(s) built inline — route them through _error_event"
 
 
 def test_every_error_frame_carries_the_typed_fields():
-    from aughor.routers.investigations import _error_event
+    from pramanyx.routers.investigations import _error_event
 
     ev = _error_event(Exception("429 rate limit"))
     assert ev["reason"] == "rate_limited" and ev["recovery"] == AE.SWITCH_MODEL
@@ -228,9 +228,9 @@ def test_a_failed_ask_ends_in_one_typed_error_frame(monkeypatch):
 
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: False)
 
     r = TestClient(app).post("/ask", json={"question": "what were sales last month?",
                                            "connection_id": "no-such-connection-xyz"})

@@ -16,9 +16,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology.models import Backing, OntologyGraph
-from aughor.semantic.object_query import (
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology.models import Backing, OntologyGraph
+from pramanyx.semantic.object_query import (
     ObjectQueryRefused,
     compile_object_query,
     object_catalog,
@@ -142,7 +142,7 @@ def test_a_sum_across_a_to_one_link_is_refused_as_the_fan_out():
 
 
 def test_a_sum_across_a_one_to_one_link_is_allowed_because_nothing_can_repeat():
-    from aughor.ontology.models import OntologyEntity, OntologyRelationship
+    from pramanyx.ontology.models import OntologyEntity, OntologyRelationship
     con = duckdb.connect()
     con.execute("CREATE TABLE accounts (account_id INT, region VARCHAR); "
                 "INSERT INTO accounts VALUES (1, 'EU'), (2, 'EU'), (3, 'US'); "

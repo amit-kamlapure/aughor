@@ -1,7 +1,7 @@
 """The weekly dependency audit (Track A7) audits every dependency, and both audits always run.
 
 Found 2026-11-08: from its first run on 2026-11-05, `pip-audit --strict` stopped on the project's own `-e .` line
-(`aughor 0.1.0`, not on PyPI) before auditing anything, and the npm audit after it was skipped — red on every push
+(`pramanyx 0.1.0`, not on PyPI) before auditing anything, and the npm audit after it was skipped — red on every push
 to main, read by nobody as "the scan never ran". Run whole, it found 186 advisories in 23 Python packages and 29 in
 npm. These pin the two causes; the advisories themselves are the scan's to report, not this test's.
 """

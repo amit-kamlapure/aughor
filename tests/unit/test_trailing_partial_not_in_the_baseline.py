@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import investigate as I
+from pramanyx.agent import investigate as I
 
 # The report's own series: 13 full weeks, then a bucket covering one day.
 FULL = [1290, 1331, 1353, 1338, 1301, 1318, 1322, 1316, 1329, 1318, 1368, 1305, 1442]

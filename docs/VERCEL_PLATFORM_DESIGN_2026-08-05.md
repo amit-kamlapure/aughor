@@ -1,7 +1,7 @@
 # Running Pramanyx on Vercel at full capacity — design note
 
 > 🗃️ **HISTORICAL, 2026-09-23.** BOTH Vercel projects this document describes —
-> `aughor-platform` and `aughor_intelligence` — were deleted by the operator. Pramanyx is
+> `pramanyx-platform` and `pramanyx_intelligence` — were deleted by the operator. Pramanyx is
 > served from the self-hosted API, whose clock is its own apscheduler heartbeat (every
 > 60s) and never depended on Vercel Cron.
 >
@@ -14,7 +14,7 @@
 > "UNTOUCHED". It was true when written and false by the end of the day. It is corrected
 > here rather than left, which is §7's prose-rot lesson arriving inside a single session.
 >
-> What REMAINS on purpose: `/cron/tick` (`aughor/routers/cron.py`) is still a route, and
+> What REMAINS on purpose: `/cron/tick` (`pramanyx/routers/cron.py`) is still a route, and
 > the ~12 modules that branch on `os.environ.get("VERCEL")` are untouched. That variable
 > is set by the platform at runtime and is now never set, so those branches are inert
 > rather than wrong — removing them is a refactor, not a cleanup.
@@ -52,7 +52,7 @@ went from **622 MB to 225 MB**, which fits.
 | **Runtime dependency install — BEFORE the trim** | **622 MB** |
 | Runtime install — after step 1 (statsmodels/polars/export) | 268 MB |
 | **Runtime install — after step 2 (semantic)** | **225 MB** |
-| Application code (`aughor/**.py`) | **7 MB** |
+| Application code (`pramanyx/**.py`) | **7 MB** |
 | **Against the Vercel limit** | **~232 MB — UNDER 250 MB** ✅ |
 
 The two trims removed **397 MB (64%)**. What remains, and why:
@@ -78,7 +78,7 @@ hook or a suggestion lookup. `semantic/vector_store.py` is now the single seam.
 * **`polars` → `[fastread]`** — 192 MB (+120 MB `pyarrow`) for one call site in
   `db/connection.py` that already falls back to DuckDB on `ImportError`.
 * **`reportlab`, `python-pptx`, `matplotlib` → `[export]`** — the PDF/PPTX renderers, reached
-  only via `from aughor.export import export_report` inside a router handler. `aughor/export`
+  only via `from pramanyx.export import export_report` inside a router handler. `pramanyx/export`
   now degrades to `ExportUnavailable` naming the install command, and the route answers
   **501** rather than 500, because a missing extra is a configuration state, not a fault.
 * **`scipy` kept**, with a comment recording why — it is absent from the boot closure but
@@ -93,7 +93,7 @@ imports the API in a subprocess and fails if any heavy package returns to the bo
 and simulates `qdrant-client`'s absence — with a vacuous-pass guard, since the development
 environment has it installed and would otherwise exercise only the happy path.
 
-The boot closure was captured by importing `aughor.api` and diffing `sys.modules` — so it
+The boot closure was captured by importing `pramanyx.api` and diffing `sys.modules` — so it
 is what the process actually loads, not what `pyproject.toml` declares. Absent from it:
 
 > `polars`, `pyarrow`, `pandas`, `numpy`, `scipy`, `statsmodels`, `matplotlib`,
@@ -104,7 +104,7 @@ Those are ~700 MB of the venv and **the API does not import any of them at boot.
 One finding remains open after the trim:
 
 * **`botocore` (21 MB) is in the boot closure** of a *development* environment, though
-  nothing in `aughor/` imports it — it arrives transitively via `boto3` /
+  nothing in `pramanyx/` imports it — it arrives transitively via `boto3` /
   `snowflake-connector-python` / `mlflow-skinny`, all of which live in extras. A
   runtime-only install never pulls it, so it needs no action; it is recorded here because
   it will reappear in any measurement taken against a dev venv.
@@ -134,7 +134,7 @@ That single assumption produces every genuine obstacle:
 | A scheduler lives in-process | APScheduler heartbeat | No always-on process to host it |
 
 **The encouraging half — but measured properly this time.** An AST pass over all of
-`aughor/` (not a grep) finds **40 mutated module-level containers across 32 modules**, not
+`pramanyx/` (not a grep) finds **40 mutated module-level containers across 32 modules**, not
 the 5 first reported. The count is the less important half of the correction: what matters
 is that they fall into three groups, and only the third is a migration blocker.
 
@@ -170,11 +170,11 @@ correctness — spans orphan across invocations.
 > gemini-3.1-flash-lite at **15 RPM / 500 per day**, OpenRouter free at **20 RPM / 1,000
 > per day**.
 >
-> **Made closable — not yet closed** — by `aughor/llm/coordination.py`. The three gates now
+> **Made closable — not yet closed** — by `pramanyx/llm/coordination.py`. The three gates now
 > sit behind a `Coordinator` Protocol, and the default `InProcessCoordinator` is today's
 > exact behaviour, still one instance per process. **The multi-instance defect is therefore
 > still present**; what changed is that closing it is now a backend implementation plus one
-> env var (`AUGHOR_LLM_COORDINATOR`) rather than a provider rewrite. No shared backend ships
+> env var (`PRAMANYX_LLM_COORDINATOR`) rather than a provider rewrite. No shared backend ships
 > here, deliberately: there is no Redis to verify one against, and an unexercised
 > distributed implementation is a liability, not progress.
 >
@@ -252,7 +252,7 @@ Three tiers, all already supported by the dialect layer:
 
 ## 3.3 The falsification spike — RUN, and it passed
 
-Deployed 2026-08-05 to a throwaway Vercel project (`aughor-duckdb-spike`), separate from
+Deployed 2026-08-05 to a throwaway Vercel project (`pramanyx-duckdb-spike`), separate from
 the demo. Source in `scratchpad/spike`; not added to this repo.
 
 | Step | Result | Cold | Warm |
@@ -464,8 +464,8 @@ quarters.
 
 **Phase 1 — externalize state. THE RELATIONAL BULK SHIPPED 2026-08-05 — proven on a live
 Postgres, not asserted.** Every platform SQLite store (~33 modules, the kernel Ledger
-included) now opens through `aughor/db/backend.py`: default is byte-for-byte today's
-tuned sqlite; `AUGHOR_DB_URL=postgres://…` moves the store — schema-per-store in one
+included) now opens through `pramanyx/db/backend.py`: default is byte-for-byte today's
+tuned sqlite; `PRAMANYX_DB_URL=postgres://…` moves the store — schema-per-store in one
 database — behind a wrapper that speaks the sqlite3 surface the stores already use.
 Store SQL stays sqlite-dialect; the seam transpiles per statement (sqlglot, cached) and
 patches what a 420-statement corpus measurement showed survives verbatim (OR
@@ -538,7 +538,7 @@ built.
   import on first touch, Postgres-capable) with purge moving *with* the data — the
   cascade now runs through the agent's purge hooks rather than filename globs, and new
   tests pin that store-seeded state purges as thoroughly as file-seeded did.
-* **Job ownership is a lease** (`AUGHOR_JOB_LEASE_S`, default the existing 120 s
+* **Job ownership is a lease** (`PRAMANYX_JOB_LEASE_S`, default the existing 120 s
   staleness window; no schema change). Boot recovery fails only lapsed leases and
   records live-lease skips as `job.foreign` — proven with two kernel instances on one
   live Postgres, where the old blanket rule demonstrably killed a healthy peer's job.
@@ -550,17 +550,17 @@ built.
 **Phase 2 completed 2026-08-05:**
 
 * **The domain is the slice.** Phase 8's per-domain pass now claims
-  `explore:{store_key}:{domain}` (`AUGHOR_DOMAIN_LEASE_S`, default 900 s) before
+  `explore:{store_key}:{domain}` (`PRAMANYX_DOMAIN_LEASE_S`, default 900 s) before
   working: two workers sharing the database split the domain list instead of
   double-running it, a dead worker's domain frees itself by expiry, and completion
   is recorded in `domain_coverage` state — so claims need no hand release. Claim
   failure is a skip, not an error; a ledger hiccup degrades to single-process
   behaviour. The explorer's existing cross-run resumability (phases that skip when
   their state says done) is what makes the slice boundary this cheap.
-* **Dispatch is a seam** (`aughor/kernel/queue.py`): `WorkQueue` Protocol, in-process
+* **Dispatch is a seam** (`pramanyx/kernel/queue.py`): `WorkQueue` Protocol, in-process
   default submitting supervised kernel jobs by KIND through a runner registry —
   payloads are references, at-least-once via the kernel's idempotency keys. An
-  external queue is `AUGHOR_WORK_QUEUE=…` plus a backend class; none ships until
+  external queue is `PRAMANYX_WORK_QUEUE=…` plus a backend class; none ships until
   there is a real queue to verify against (the coordinator discipline).
 * **The async-LLM requirement, disposed honestly:** every explorer LLM/SQL call runs
   via `run_in_executor` — the event loop is never blocked and a thread parked on a
@@ -635,7 +635,7 @@ explicit release gate, because status codes have repeatedly failed to detect the
 # Boot import closure: what the process actually loads, not what pyproject declares
 python - <<'PY'
 import sys; before = set(sys.modules)
-import aughor.api
+import pramanyx.api
 import sysconfig, pathlib
 sp = pathlib.Path(sysconfig.get_paths()["purelib"])
 tops = {n.split(".")[0] for n in set(sys.modules) - before
@@ -651,7 +651,7 @@ du -sh .venv/lib/python3.11/site-packages
 
 # How deeply a dependency is woven in
 for lib in sqlglot duckdb polars scipy statsmodels; do
-  echo "$lib: $(grep -rl "import $lib" aughor --include='*.py' | wc -l) modules"
+  echo "$lib: $(grep -rl "import $lib" pramanyx --include='*.py' | wc -l) modules"
 done
 
 # State inventory
@@ -674,19 +674,19 @@ is standing, verified end-to-end in a browser:
 
 | Piece | Where | Proof |
 |---|---|---|
-| Platform API | **`https://aughor-platform.vercel.app`** (project `aughor-platform`, CLI-deployed from repo root) | `/health` ok with OpenRouter ready; `/connections` = builtins only |
+| Platform API | **`https://pramanyx-platform.vercel.app`** (project `pramanyx-platform`, CLI-deployed from repo root) | `/health` ok with OpenRouter ready; `/connections` = builtins only |
 | State | Supabase via the Vercel integration (`supabase-rose-kettle`, connected by CLI) | a `/workspaces` row written by one invocation's boot, read by another; nine `store_*` schemas self-booted on first touch |
-| Semantic index | pgvector in the same Supabase | backend auto-selected by `AUGHOR_DB_URL`; no second service |
-| Web UI | branch-preview of `aughor_intelligence` with `NEXT_PUBLIC_API_URL` (preview env only — the production demo is untouched) | browser resource timeline shows every fetch hitting `aughor-platform.vercel.app`; the empty-state "Start exploration" screen is real API truth |
+| Semantic index | pgvector in the same Supabase | backend auto-selected by `PRAMANYX_DB_URL`; no second service |
+| Web UI | branch-preview of `pramanyx_intelligence` with `NEXT_PUBLIC_API_URL` (preview env only — the production demo is untouched) | browser resource timeline shows every fetch hitting `pramanyx-platform.vercel.app`; the empty-state "Start exploration" screen is real API truth |
 
 **Deployment decisions that carry weight:**
 
 * **`POSTGRES_URL_NON_POOLING`, never the pooled DSN** — the stores `SET search_path`
   per connection, session state that transaction-mode pooling does not preserve. The
-  serverless block honours the integration's variable when `AUGHOR_DB_URL` is unset,
+  serverless block honours the integration's variable when `PRAMANYX_DB_URL` is unset,
   and fails LOUDLY with no Postgres at all (sqlite cannot live on a read-only
   filesystem; `/tmp` state vanishes with the instance — as would a generated
-  `AUGHOR_SECRET_KEY` file, which is why a missing key also fails at boot).
+  `PRAMANYX_SECRET_KEY` file, which is why a missing key also fails at boot).
 * **The migration script was not needed** — empty catalogue means stores boot their
   own schemas. It remains the cutover path for moving an existing local workspace.
 
@@ -697,7 +697,7 @@ is standing, verified end-to-end in a browser:
 2. `vercel env add` piped in a shell loop wrote 11-byte garbage; sensitive values
    CANNOT be pulled back (redacted stubs — never re-add them). Write value files,
    redirect stdin, verify by pull-and-length.
-3. `.vercelignore` is gitignore-like: a bare `evals` swallowed `aughor/evals`.
+3. `.vercelignore` is gitignore-like: a bare `evals` swallowed `pramanyx/evals`.
 4. **One root, two projects: a committed `.vercelignore` excluding `/web` starved the
    web project's git builds into a 7-second empty shell whose check PASSED.** It now
    lives as `.vercelignore.platform`, copied into place only for platform CLI deploys.
@@ -749,26 +749,26 @@ rediscovering.
 ### The link is fine; the shelves are empty
 
 From the deployed page itself, a cross-origin fetch to
-`aughor-platform.vercel.app/connections` returns **200** with CORS headers present. The
+`pramanyx-platform.vercel.app/connections` returns **200** with CORS headers present. The
 API is reachable, the browser is allowed to call it, there is no stale base in
 localStorage. Every report of "the frontend cannot reach the backend" this session
 resolved to something else.
 
 What production actually holds: `workspace` (one table, **0 rows**), `fixture`
-(**no schemas at all**), `aughor_ops`. `fixture`'s DSN points at
-`/var/task/data/aughor.duckdb` — a file that was never deployed, because **no `.duckdb`
+(**no schemas at all**), `pramanyx_ops`. `fixture`'s DSN points at
+`/var/task/data/pramanyx.duckdb` — a file that was never deployed, because **no `.duckdb`
 is tracked in git**; `.gitignore` names them one by one. The demo databases exist on one
 laptop.
 
 ### The registry is Postgres-backed, so UI-added connections PERSIST
 
 `db/registry.py` opens through `connect_store(REGISTRY_DB)`, which switches to Postgres
-whenever `AUGHOR_DB_URL` is set — and it is, via the Supabase integration's
+whenever `PRAMANYX_DB_URL` is set — and it is, via the Supabase integration's
 `POSTGRES_URL_NON_POOLING`. A `/workspaces` row created 2026-08-05 has survived every
 deploy since.
 
 **Consequence: a Postgres connection added through the Catalog UI is written to Supabase
-and survives.** `AUGHOR_DEFAULT_POSTGRES_DSN` is therefore optional, not required — the
+and survives.** `PRAMANYX_DEFAULT_POSTGRES_DSN` is therefore optional, not required — the
 env var makes a global builtin (`mydb`, schema defaulting to `public`), while the UI route
 is per-workspace, visible, editable and needs no redeploy. Prefer the UI.
 

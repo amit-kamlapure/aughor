@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.consolidation import FLAG, SCENARIOS, consolidation_target
-from aughor.evals.evaluator import EvalCase
+from pramanyx.evals.consolidation import FLAG, SCENARIOS, consolidation_target
+from pramanyx.evals.evaluator import EvalCase
 
 
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
@@ -46,6 +46,6 @@ def test_consolidation_is_unconditional():
     """`graph.consolidate` was hardwired 2026-08-02: consolidation is how the finding
     corpus is projected now, not an option. Pinned so a re-introduced switch has to
     face this test."""
-    from aughor.kernel.flags import FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_ENV
 
     assert FLAG not in FLAG_ENV

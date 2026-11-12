@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from aughor.obs import prompt_window as PW
+from pramanyx.obs import prompt_window as PW
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +88,7 @@ def test_a_store_failure_means_no_capture(monkeypatch):
 
 def test_capture_prompt_stores_content_only_inside_a_window():
     """The consumer contract, end to end — session_log defers to the window."""
-    from aughor.obs.session_log import capture_prompt
+    from pramanyx.obs.session_log import capture_prompt
 
     assert capture_prompt(system="SYS", user="USER") == {}
     PW.open_window(calls=1, minutes=5)
@@ -99,7 +99,7 @@ def test_capture_prompt_stores_content_only_inside_a_window():
 def test_an_empty_capture_call_does_not_spend_budget():
     """A call with nothing to store must not shorten the operator's window."""
     PW.open_window(calls=1, minutes=5)
-    from aughor.obs.session_log import capture_prompt
+    from pramanyx.obs.session_log import capture_prompt
 
     assert capture_prompt() == {}
     assert PW.status()["remaining"] == 1
@@ -110,10 +110,10 @@ def test_budget_is_not_spent_while_recording_is_off(monkeypatch):
     when the log is off — so consuming there would silently drain an operator's
     window on calls that stored no content at all. Recording is hardwired on today,
     so the guard is pinned by patching the one function that decides."""
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     monkeypatch.setattr(session_log, "enabled", lambda: False)
     PW.open_window(calls=3, minutes=5)
-    from aughor.obs.session_log import capture_prompt
+    from pramanyx.obs.session_log import capture_prompt
 
     assert capture_prompt(system="SYS", user="USER") == {}
     assert PW.status()["remaining"] == 3          # untouched

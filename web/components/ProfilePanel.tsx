@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ProfilePanel — what Pramanyx knows about this business, redone to `aughor-v2/CLARITY.md` (2026-10-13).
+ * ProfilePanel — what Pramanyx knows about this business, redone to `pramanyx-v2/CLARITY.md` (2026-10-13).
  *
  * A profile reads like a page, not a dashboard: it opens on what the business is — its name, the summary in prose and
  * a column of facts beside it (the business model, the currency, a fiscal year a person set), with why Pramanyx thinks

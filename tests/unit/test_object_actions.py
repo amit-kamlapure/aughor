@@ -15,8 +15,8 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.actions import overlay as OVL
-from aughor.actions.executor import (
+from pramanyx.actions import overlay as OVL
+from pramanyx.actions.executor import (
     CriterionError,
     ParamError,
     coerce_params,
@@ -25,16 +25,16 @@ from aughor.actions.executor import (
     evaluate_predicate,
     resolve_objects,
 )
-from aughor.actions.inbox import StagedProposal, accept_proposal, stage_proposal
-from aughor.actions.propose import evaluate_proposal, propose_actions
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import OntologyGraph
-from aughor.org.context import current_org_id
-from aughor.semantic.object_context import object_context
-from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.actions.inbox import StagedProposal, accept_proposal, stage_proposal
+from pramanyx.actions.propose import evaluate_proposal, propose_actions
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.org.context import current_org_id
+from pramanyx.semantic.object_context import object_context
+from pramanyx.semantic.object_instances import get_object
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 CONN = "object-actions-t"
@@ -83,13 +83,13 @@ def _declare(graph, action_id: str, fields: dict) -> None:
 def graph(tmp_path, monkeypatch, db):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
-    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [])
+    monkeypatch.setattr("pramanyx.explorer.store.get_findings", lambda key: [])
     OVL.purge_connections([CONN])
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     _declare(g, "flag_order_for_review", FLAG)
     # The live reads an action makes go to THIS graph and THIS database — through the real resolver.
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn, schema=None: g)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", lambda conn, schema: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda conn, schema=None: g)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", lambda conn, schema: _Borrowed(db))
     yield g
     OVL.purge_connections([CONN])
 

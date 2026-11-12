@@ -270,7 +270,7 @@ export interface ListColumn<T> {
 }
 
 /**
- * A ledger as CLARITY lays it out (`aughor-v2/CLARITY.md` §3): a card on the ground, its small label with the count and
+ * A ledger as CLARITY lays it out (`pramanyx-v2/CLARITY.md` §3): a card on the ground, its small label with the count and
  * Copy · CSV at the right end, then one row per thing — name · its marks · a figure · one muted line. The first `page`
  * rows show; the rest are one click away and the label says how many are held back. Copy and CSV take every row, in the
  * words the record keeps (the full question, not its label), because a table a reader cannot leave with is a picture

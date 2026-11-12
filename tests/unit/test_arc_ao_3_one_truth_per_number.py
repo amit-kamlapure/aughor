@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.custom_agents import create_agent, delete_agent, list_agents
+from pramanyx.custom_agents import create_agent, delete_agent, list_agents
 
 
 @pytest.fixture(autouse=True)
@@ -23,9 +23,9 @@ def _clean_agents():
 
 @pytest.fixture()
 def client(monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "agents.user_defined")
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -33,10 +33,10 @@ def client(monkeypatch):
 #
 # The product ships no model id (`test_llm_model_catalog` holds that), so the rate for a
 # provider with no price endpoint comes from the operator, dated, in one env var. The
-# ids below are a test's: a test may name one, `aughor/` may not.
+# ids below are a test's: a test may name one, `pramanyx/` may not.
 
 def test_the_operator_can_declare_a_dated_price_for_a_model(monkeypatch):
-    import aughor.obs.usage as usage
+    import pramanyx.obs.usage as usage
     monkeypatch.setitem(usage.PRICES, ("gemini", "gemini-3.1-flash-lite"),
                         usage.Price(0.25, 1.50, "2026-09-15"))
     usage.price_for.cache_clear()
@@ -51,7 +51,7 @@ def test_the_operator_can_declare_a_dated_price_for_a_model(monkeypatch):
 
 
 def test_the_declaration_is_parsed_strictly_and_a_bad_entry_is_dropped_not_guessed(caplog):
-    from aughor.obs.usage import Price, declared_prices_from_env
+    from pramanyx.obs.usage import Price, declared_prices_from_env
     got = declared_prices_from_env(
         "gemini:gemini-3.1-flash-lite=0.25/1.50@2026-09-15; OpenAI:gpt-x=2/8@2026-09-01;"
         "broken-entry; acme:m=notanumber/1@2026-01-01")
@@ -74,9 +74,9 @@ def _llm_call(agent_id: str, at: str, *, model: str, prompt: int = 1000, complet
 
 
 def test_observability_is_windowed_and_the_window_rides_on_the_response(client, monkeypatch):
-    import aughor.obs.usage as usage
-    from aughor.kernel.ledger import Ledger
-    from aughor.db import history
+    import pramanyx.obs.usage as usage
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.db import history
 
     # One priced model (declared, as an operator would) and one nobody prices.
     monkeypatch.setitem(usage.PRICES, ("gemini", "gemini-3.1-flash-lite"),
@@ -119,7 +119,7 @@ def test_observability_is_windowed_and_the_window_rides_on_the_response(client, 
 
 
 def test_an_unknown_range_falls_back_to_the_default_and_says_so(client, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setattr(Ledger, "session_events", lambda self, **kw: [])
     a = create_agent("Default", instructions="x")
     body = client.get(f"/agents/custom/{a.id}/observability?range=nonsense").json()
@@ -130,7 +130,7 @@ def test_an_unknown_range_falls_back_to_the_default_and_says_so(client, monkeypa
 # ── the roster's built-in spend is windowed too ─────────────────────────────────────
 
 def test_the_roster_reads_built_in_spend_over_the_shared_window(client, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     captured: dict = {}
 
     def _jobs(self, **kw):
@@ -148,7 +148,7 @@ def test_the_roster_reads_built_in_spend_over_the_shared_window(client, monkeypa
 
 
 def test_jobs_take_a_window(client, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     captured: dict = {}
 
     def _jobs(self, **kw):

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.investigate import _is_loss_question, _spend_measured_as_loss
+from pramanyx.agent.investigate import _is_loss_question, _spend_measured_as_loss
 
 LOSS_Q = "Where are we losing money?"
 

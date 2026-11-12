@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.briefing import deliveries as D
-from aughor.briefing import delivery as sender
-from aughor.briefing import versions as V
+from pramanyx.briefing import deliveries as D
+from pramanyx.briefing import delivery as sender
+from pramanyx.briefing import versions as V
 
 
 def _briefing(revenue: float, narrative: str) -> dict:
@@ -26,14 +26,14 @@ def test_a_delivery_names_the_version_that_left_and_opens_to_it_after_a_restatem
     conn, scope = "dlv1", "dlv1:shop"
     first = _kept(conn, _briefing(100.0, "Revenue rose to 100."), scope)
     assert first["version"]["version"] == 1 and first["version"]["artifact_id"]
-    sent = D.record_delivery(conn_id=conn, scope_key=scope, briefing=first, to="#ask_aughor as Pramanyx", to_kind="slack",
+    sent = D.record_delivery(conn_id=conn, scope_key=scope, briefing=first, to="#ask_pramanyx as Pramanyx", to_kind="slack",
                              subscription_id="s1", subscription_name="Weekly to leadership", departure_id="dep-1",
                              receipt_line="Receipt dep-1", held_lines=2, now="2026-09-28T09:00:00+00:00")
     assert sent
 
     listed = D.deliveries_of(conn, first, scope_key=scope)
     [row] = listed["deliveries"]
-    assert (row["version"], row["to"], row["departure_id"], row["restated_since"]) == (1, "#ask_aughor as Pramanyx", "dep-1", False)
+    assert (row["version"], row["to"], row["departure_id"], row["restated_since"]) == (1, "#ask_pramanyx as Pramanyx", "dep-1", False)
     assert listed["current_version"] == 1 and row["held_lines"] == 2
 
     # the figures move: the Briefing is restated, and a second send delivers the new version

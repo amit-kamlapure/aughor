@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.agent.spotlight_roster import spotlight_roster
-from aughor.api import app
+from pramanyx.agent.spotlight_roster import spotlight_roster
+from pramanyx.api import app
 
 client = TestClient(app)
 
@@ -23,7 +23,7 @@ def _declared() -> dict[str, str]:
 # ── the declaration reaches every transport ────────────────────────────────────────
 
 def test_conversation_carries_exactly_the_declared_roster():
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     declared = _declared()
     conversational = {t.name: t.description for t in converse_tools("parity-conn")}
     missing = set(declared) - set(conversational)
@@ -44,7 +44,7 @@ def test_mcp_registration_diffs_empty_against_the_declaration():
     transport registers FROM the declaration, and the diff is empty."""
     import asyncio
 
-    from aughor.mcp import server as mcp_server
+    from pramanyx.mcp import server as mcp_server
 
     payload = client.get("/spotlight/tools").json()["tools"]
 
@@ -79,7 +79,7 @@ def test_mcp_registration_diffs_empty_against_the_declaration():
 def test_mcp_registration_skips_a_collision_rather_than_shadowing():
     import asyncio
 
-    from aughor.mcp import server as mcp_server
+    from pramanyx.mcp import server as mcp_server
 
     class _StubApi:
         async def list_spotlight_tools(self):
@@ -120,7 +120,7 @@ def test_dispatch_refuses_an_unknown_tool_naming_the_roster():
 
 
 def test_dispatch_relays_a_raising_tool_as_a_refusal(monkeypatch):
-    monkeypatch.setattr("aughor.obs.session_log.recent_sessions",
+    monkeypatch.setattr("pramanyx.obs.session_log.recent_sessions",
                         lambda **kw: (_ for _ in ()).throw(RuntimeError("ledger gone")))
     r = client.post("/spotlight/tools/platform_traces", json={"args": {}})
     assert r.status_code == 200

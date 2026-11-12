@@ -13,12 +13,12 @@ Google accepts the rewritten SQL — the live re-run of the golden suite proves.
 """
 from __future__ import annotations
 
-from aughor.connectors.warehouse.bigquery import (
+from pramanyx.connectors.warehouse.bigquery import (
     BigQueryConnection,
     _is_timestamp_date_clash,
     _retype_date_literals,
 )
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 #: The live error, verbatim shape (job ids trimmed).
 _LIVE_ERROR = (
@@ -151,9 +151,9 @@ def test_agent_eval_generator_sees_the_dialect_rules():
     """The suite must measure the path users drive: the quick path now carries
     `writer_rules`, so the eval generator must too. Both live failure classes on
     BigQuery were rules the dialect block already taught, unseen by the eval."""
-    from aughor.custom_agents.models import UserAgent
-    from aughor.custom_agents.quality import evaluate_agent
-    from aughor.custom_agents.store import add_golden, create_agent
+    from pramanyx.custom_agents.models import UserAgent
+    from pramanyx.custom_agents.quality import evaluate_agent
+    from pramanyx.custom_agents.store import add_golden, create_agent
 
     agent = create_agent("dialect-rules-reach-eval", instructions="A stance.")
     add_golden(agent.id, "how many rows?", "SELECT 1")

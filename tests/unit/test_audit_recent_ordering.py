@@ -17,7 +17,7 @@ It was never only a test problem: this is the read behind the SQL editor's histo
 """
 from __future__ import annotations
 
-from aughor.security.audit import AuditLogger, GuardVerdicts
+from pramanyx.security.audit import AuditLogger, GuardVerdicts
 
 
 def test_one_second_of_statements_comes_back_newest_first():

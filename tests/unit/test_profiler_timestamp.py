@@ -1,7 +1,7 @@
 """Primary-timestamp selection — guards against date-NAMED integer columns being
 vouched as timestamps (ClickBench EventDate::USMALLINT → "USMALLINT vs DATE").
-See aughor/tools/profiler.py:_select_timestamp_cols."""
-from aughor.tools.profiler import _select_timestamp_cols, _NUMERIC_TYPES, _semantic_type
+See pramanyx/tools/profiler.py:_select_timestamp_cols."""
+from pramanyx.tools.profiler import _select_timestamp_cols, _NUMERIC_TYPES, _semantic_type
 
 
 # ── the USMALLINT regex fix ───────────────────────────────────────────────────
@@ -87,7 +87,7 @@ def test_a_column_named_only_id_is_a_key():
     # events, order_items and inventory_items — profiled as summable measures.
     for col in ("id", "ID", "Id", "uuid", "guid", "pk"):
         assert _st(col, "INT64") == "key", f"{col} should be a key, not a measure"
-    from aughor.tools.profiler import is_key_like
+    from pramanyx.tools.profiler import is_key_like
     assert is_key_like("id") and not is_key_like("idle") and not is_key_like("paid")
 
 
@@ -111,7 +111,7 @@ def _months(n_months: int, sparse_head: int, cls=None):
 
     import duckdb
 
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
 
     cls = cls or DuckDBConnection
     c = cls.__new__(cls)
@@ -130,8 +130,8 @@ def test_dense_date_range_reads_every_month_past_the_answer_cap():
     """900 populated months, 1950-01 to 2024-12. The month read went through `execute`, which keeps the first 500
     rows of the ascending list, so the dense region ended at 1991-08, 33 years short of the data, and that is the
     range the explorer's windowing prefers over the raw one (measured 2026-09-17)."""
-    from aughor.db.connection import MAX_ROWS
-    from aughor.tools.profiler import _robust_date_range
+    from pramanyx.db.connection import MAX_ROWS
+    from pramanyx.tools.profiler import _robust_date_range
 
     assert MAX_ROWS < 900
     assert _robust_date_range(_months(900, sparse_head=60), '"ev"', '"ts"') == (
@@ -141,8 +141,8 @@ def test_dense_date_range_reads_every_month_past_the_answer_cap():
 def test_dense_date_range_is_unknown_when_the_connection_cuts_the_month_read():
     """Part of the months cannot place the dense region's end, so a cut read answers None and the caller keeps the
     absolute range."""
-    from aughor.db.connection import DatabaseConnection, DuckDBConnection
-    from aughor.tools.profiler import _robust_date_range
+    from pramanyx.db.connection import DatabaseConnection, DuckDBConnection
+    from pramanyx.tools.profiler import _robust_date_range
 
     class _Capped(DuckDBConnection):
         execute_bounded = DatabaseConnection.execute_bounded

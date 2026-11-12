@@ -20,8 +20,8 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm import provider as P
-from aughor.llm.provider import LLMProvider
+from pramanyx.llm import provider as P
+from pramanyx.llm.provider import LLMProvider
 
 
 class _Out(BaseModel):
@@ -230,12 +230,12 @@ def _anthropic_client(pieces, calls):
 def test_anthropic_branch_streams_text_and_parses_it_as_it_grows(monkeypatch):
     """The current Claude models refuse a forced `tool_choice` (400), and instructor's partial stream reads JSON only
     from a forced tool call — so this branch streams text and parses it as it grows, a fence before it and all."""
-    # `max_tokens` below asserts the BUILT-IN default, which `AUGHOR_MAX_OUTPUT_TOKENS`
+    # `max_tokens` below asserts the BUILT-IN default, which `PRAMANYX_MAX_OUTPUT_TOKENS`
     # overrides at call time. A developer who raises it in their own .env — as the
     # briefing work required (8192, because a ~25-finding synthesis truncates at 4096) —
     # would otherwise see this fail locally and pass in CI, where no .env exists.
-    monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "4096")   # pin: the default is model-sized (A1)
-    import aughor.kernel.metering as metering
+    monkeypatch.setenv("PRAMANYX_MAX_OUTPUT_TOKENS", "4096")   # pin: the default is model-sized (A1)
+    import pramanyx.kernel.metering as metering
     recorded: dict = {}
     monkeypatch.setattr(metering, "record_llm", lambda pt, ct, ms: recorded.setdefault("call", (pt, ct)))
     calls: list[dict] = []
@@ -288,7 +288,7 @@ def test_the_anthropic_client_offers_its_schema_as_a_tool_without_forcing_it(mon
 # ── Metering ───────────────────────────────────────────────────────────────────
 
 def test_metering_records_real_usage_from_stream(monkeypatch):
-    import aughor.kernel.metering as metering
+    import pramanyx.kernel.metering as metering
 
     recorded = {}
     monkeypatch.setattr(metering, "record_llm",
@@ -302,7 +302,7 @@ def test_metering_records_real_usage_from_stream(monkeypatch):
 
 
 def test_metering_honest_zeros_when_stream_has_no_usage(monkeypatch):
-    import aughor.kernel.metering as metering
+    import pramanyx.kernel.metering as metering
 
     recorded = {}
     monkeypatch.setattr(metering, "record_llm",
@@ -320,7 +320,7 @@ def test_metering_budget_exceeded_propagates(monkeypatch):
     # check_budget raising (in-context budget blown) must surface from _stream_on,
     # not be swallowed — complete_streaming's caller-level fallback is a separate
     # concern; the stream path itself must never eat a budget stop.
-    import aughor.kernel.metering as metering
+    import pramanyx.kernel.metering as metering
 
     class _Budget(Exception):
         pass
@@ -354,7 +354,7 @@ def test_streamed_openai_compat_calls_carry_the_output_cap():
 
 
 def test_streamed_openrouter_calls_carry_the_reasoning_bound(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "low")   # pin: default is model-sized (A1)
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "low")   # pin: default is model-sized (A1)
     completions = _FakeRawCompletions(chunks=_happy_chunks())
     _stream_once("openrouter", completions)
     assert completions.calls[0]["extra_body"] == {"reasoning": {"effort": "low"}}
@@ -385,7 +385,7 @@ def test_a_rate_limit_opening_the_stream_is_not_degraded_away(monkeypatch):
     """Every rung of the ladder is another REQUEST against the limit that just refused
     us — that is exactly the 19-vs-15-RPM spiral #200 fixed on the blocking path. A 429
     must propagate to the retry ladder and the fallback chain, never trigger a degrade."""
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "0")
     completions = _FakeRawCompletions(chunks=_happy_chunks(),
                                       exc=RuntimeError("429 rate limit exceeded"))
     with pytest.raises(Exception):
@@ -395,9 +395,9 @@ def test_a_rate_limit_opening_the_stream_is_not_degraded_away(monkeypatch):
 
 
 def test_anthropic_streaming_honours_the_output_cap_override(monkeypatch):
-    """AUGHOR_MAX_OUTPUT_TOKENS is documented as *the* knob on the runaway, but both
+    """PRAMANYX_MAX_OUTPUT_TOKENS is documented as *the* knob on the runaway, but both
     Anthropic branches hardcoded 4096, so it never reached them."""
-    monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "1024")
+    monkeypatch.setenv("PRAMANYX_MAX_OUTPUT_TOKENS", "1024")
     calls: list[dict] = []
     client = _anthropic_client(['{"narrative": "hi", "questions": []}'], calls)
     LLMProvider._stream_on(client, "anthropic", "m", "s", "u", _Out, 0.1,

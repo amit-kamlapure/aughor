@@ -1,5 +1,5 @@
-"""Temporal Tier 3 — query cost governor. See aughor/sql/cost.py."""
-from aughor.sql.cost import approximate_aggregates, sample_aggregates, govern
+"""Temporal Tier 3 — query cost governor. See pramanyx/sql/cost.py."""
+from pramanyx.sql.cost import approximate_aggregates, sample_aggregates, govern
 
 
 def _l(s):

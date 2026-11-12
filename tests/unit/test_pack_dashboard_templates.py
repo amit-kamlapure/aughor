@@ -1,4 +1,4 @@
-"""Arc FA, FA-6 (ROADMAP §3.60) — a pack's dashboard template, kept by a person (`aughor/packs/templates.py`).
+"""Arc FA, FA-6 (ROADMAP §3.60) — a pack's dashboard template, kept by a person (`pramanyx/packs/templates.py`).
 
 What these hold. A template is a declaration in `dashboards/*.yaml`: the pack kit's static gate refuses one whose
 cards name a metric the pack does not carry, or that places a card it does not list. The templates of the active packs
@@ -20,16 +20,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.actions import inbox
-from aughor.cards import doors
-from aughor.dashboards import propose, validate as DV, versions
-from aughor.dashboards.home import Home, approver
-from aughor.packs import bindings as B
-from aughor.packs import kit
-from aughor.packs import templates as T
-from aughor.packs.loader import load_pack
-from aughor.packs.roots import pack_dir
-from aughor.semantic.metrics import MetricDefinition, save_metric
+from pramanyx.actions import inbox
+from pramanyx.cards import doors
+from pramanyx.dashboards import propose, validate as DV, versions
+from pramanyx.dashboards.home import Home, approver
+from pramanyx.packs import bindings as B
+from pramanyx.packs import kit
+from pramanyx.packs import templates as T
+from pramanyx.packs.loader import load_pack
+from pramanyx.packs.roots import pack_dir
+from pramanyx.semantic.metrics import MetricDefinition, save_metric
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not DV._BUNDLE.exists(),
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
@@ -45,7 +45,7 @@ def _conn() -> str:
 
 
 def _client() -> TestClient:
-    from aughor.routers.packs import router
+    from pramanyx.routers.packs import router
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -62,8 +62,8 @@ class Warehouse:
 
 @pytest.fixture
 def warehouse(monkeypatch, tmp_path) -> Warehouse:
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "trusted_queries.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "trusted_queries.json"))
     w = Warehouse()
     monkeypatch.setattr(doors, "run_guarded", w)
     monkeypatch.setattr(propose, "findings", lambda conn_id, schema=None: [])
@@ -84,7 +84,7 @@ def test_the_retail_pack_ships_one_template_over_its_own_metrics_and_passes_the_
     t = retail.dashboards[0]
     assert {c.metric for c in t.cards} <= {m.name for m in retail.metrics}
     assert T.template_problems(retail) == []
-    from aughor.packs.validate import validate_pack
+    from pramanyx.packs.validate import validate_pack
     assert validate_pack(pack_dir("retail")).ok
 
 

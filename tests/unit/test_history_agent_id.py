@@ -13,10 +13,10 @@ import sqlite3
 
 import pytest
 
-from aughor.db import history
-from aughor.db.backend import is_postgres
-from aughor.db.migrations import run_migrations
-from aughor.db.sqlite_util import tune
+from pramanyx.db import history
+from pramanyx.db.backend import is_postgres
+from pramanyx.db.migrations import run_migrations
+from pramanyx.db.sqlite_util import tune
 
 
 _LEGACY_FILE_SKIP = pytest.mark.skipif(

@@ -18,9 +18,9 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from aughor.kernel.registries import execution_hooks as H
-from aughor.llm.faux import FauxToolCall
-from aughor.llm.provider import get_provider
+from pramanyx.kernel.registries import execution_hooks as H
+from pramanyx.llm.faux import FauxToolCall
+from pramanyx.llm.provider import get_provider
 
 
 class Verdict(BaseModel):
@@ -41,8 +41,8 @@ def test_the_tool_call_shape_is_what_the_reader_expects():
     the assertion IS about the wire shape: content empty, payload on the function
     arguments, the chosen tool nameable — what a real TOOLS binding sends and what
     `reliability.response_text` reaches for."""
-    from aughor.llm.faux import _completion
-    from aughor.llm.reliability import response_text
+    from pramanyx.llm.faux import _completion
+    from pramanyx.llm.reliability import response_text
 
     raw = _completion('{"answer": "x"}', system="s", user="u",
                       tool_call=FauxToolCall({"answer": "x"}, name="run_sql"))
@@ -55,7 +55,7 @@ def test_the_tool_call_shape_is_what_the_reader_expects():
 def test_a_malformed_tool_call_still_classifies(faux_llm):
     """Arguments are validated exactly as content would be — a tool call is not a way
     to smuggle past the reliability layer."""
-    from aughor.llm.reliability import StructuredOutputError
+    from pramanyx.llm.reliability import StructuredOutputError
 
     faux_llm.set_responses([FauxToolCall("not json at all")])
     with pytest.raises(StructuredOutputError):

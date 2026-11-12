@@ -1,11 +1,11 @@
 """Trust economy (Bet 4) + evals-as-spec gate (Bet 2) — 2026-06-27.
 
 Trust tiers are earned from human verdicts (external signal). Activation requires evals to
-pass + full binding. See aughor/packs/trust.py, evalgate.py.
+pass + full binding. See pramanyx/packs/trust.py, evalgate.py.
 """
-from aughor.packs.trust import autonomy_tier, routing_weight, tier_allows, SHADOW, ASSISTED, TRUSTED
-from aughor.packs.evalgate import evaluate_activation, EvalResult
-from aughor.packs.models import Pack, PackManifest, PackEval
+from pramanyx.packs.trust import autonomy_tier, routing_weight, tier_allows, SHADOW, ASSISTED, TRUSTED
+from pramanyx.packs.evalgate import evaluate_activation, EvalResult
+from pramanyx.packs.models import Pack, PackManifest, PackEval
 
 
 # ── trust economy ─────────────────────────────────────────────────────────────
@@ -102,26 +102,26 @@ def test_activation_blocked_without_evals():
 def _real_graph(name):
     import json
     from pathlib import Path
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.ontology.models import OntologyGraph
     return OntologyGraph.model_validate(json.loads((Path(__file__).resolve().parents[2] / "evals" / name).read_text()))
 
 
 def _measured(pack_id, graph):
-    from aughor.packs.ontology_map import apply_core_claims, load_pack_by_id, resolve_ontology
+    from pramanyx.packs.ontology_map import apply_core_claims, load_pack_by_id, resolve_ontology
     held = graph.model_copy(deep=True)
     return load_pack_by_id(pack_id), apply_core_claims(held, resolve_ontology(pack_id), pack_id)
 
 
 def test_which_packages_are_a_map_and_nothing_else():
-    from aughor.packs.evalgate import is_map_only
-    from aughor.packs.ontology_map import load_pack_by_id
+    from pramanyx.packs.evalgate import is_map_only
+    from pramanyx.packs.ontology_map import load_pack_by_id
     assert is_map_only(load_pack_by_id("core-ecommerce")) and is_map_only(load_pack_by_id("ecommerce-extended"))
     assert not is_map_only(load_pack_by_id("airline"))     # a map AND recipes and evals: the evals gate stays its gate
     assert not is_map_only(load_pack_by_id("retail"))      # recipes and no map
 
 
 def test_a_map_is_activated_by_its_claims_measured_on_the_connection():
-    from aughor.packs.evalgate import evaluate_map_activation
+    from pramanyx.packs.evalgate import evaluate_map_activation
     pack, report = _measured("ecommerce-extended", _real_graph("ablation_samples_ecommerce_ontology_measured.json"))
     d = evaluate_map_activation(pack, report, binding_pinned=True, graph_built=True)
     assert d.can_activate and d.reasons == [] and d.pass_rate == 1.0
@@ -136,7 +136,7 @@ def test_a_map_is_activated_by_its_claims_measured_on_the_connection():
 def test_a_narrower_link_is_the_business_differing_and_a_reversed_one_is_a_wrong_reading():
     """theLook tracks stock by unit: one inventory row per order line, 1:1 where the map allows N:1. That is a business
     differing from the usual and blocks nothing; the same link measured the other way round blocks."""
-    from aughor.packs.evalgate import evaluate_map_activation
+    from pramanyx.packs.evalgate import evaluate_map_activation
     pack, report = _measured("ecommerce-extended", _real_graph("ablation_thelook_business_ontology.json"))
     false = [c for c in report.claims if c.tier == "measured-false"]
     assert [(c.subject, c.expected, c.measured) for c in false] == [("OrderItem → InventoryLot", "N:1", "1:1")]
@@ -148,8 +148,8 @@ def test_a_narrower_link_is_the_business_differing_and_a_reversed_one_is_a_wrong
 
 
 def test_a_map_that_names_nothing_here_was_measured_on_nothing():
-    from aughor.ontology.models import OntologyGraph
-    from aughor.packs.evalgate import evaluate_map_activation
+    from pramanyx.ontology.models import OntologyGraph
+    from pramanyx.packs.evalgate import evaluate_map_activation
     empty = OntologyGraph.model_construct(connection_id="x", schema_name="s", entities={}, relationships={},
                                           core_claims=[])
     pack, report = _measured("ecommerce-extended", empty)
@@ -159,14 +159,14 @@ def test_a_map_that_names_nothing_here_was_measured_on_nothing():
 
 def test_measuring_a_map_writes_nothing_to_the_ontology_it_is_measured_against(monkeypatch):
     """The door measures on a copy: asking whether a package may be activated must not record its claims."""
-    from aughor.routers import packs as R
+    from pramanyx.routers import packs as R
     graph = _real_graph("ablation_thelook_business_ontology.json")
     before = len(graph.core_claims)
     monkeypatch.setattr(R, "_graph_for", lambda c, s: graph)
     monkeypatch.setattr(R, "load_binding", lambda *a, **k: {"bindings": {}, "verified": True})
-    import aughor.routers.connections as C
+    import pramanyx.routers.connections as C
     monkeypatch.setattr(C, "open_connection_for", lambda cid: (_ for _ in ()).throw(RuntimeError("unreachable")))
-    from aughor.packs.ontology_map import load_pack_by_id
+    from pramanyx.packs.ontology_map import load_pack_by_id
     decision, report = R._map_decision(load_pack_by_id("ecommerce-extended"), "ecommerce-extended", "c1", "s")
     assert decision.can_activate and len(report.matched) == 6
     assert len(graph.core_claims) == before

@@ -26,7 +26,7 @@
  * The mode lives in the URL (`?tab=query&mode=visual|sql`) via the History API, the
  * same contract every other tab here uses — so a mode is linkable and survives reload.
  *
- * Redone to `aughor-v2/CLARITY.md` (2026-10-12): the first row picks — the mode (segmented), the connection, the
+ * Redone to `pramanyx-v2/CLARITY.md` (2026-10-12): the first row picks — the mode (segmented), the connection, the
  * saved query and Save; what the workbench DOES beyond that (version history, the share link, the catalog) is one
  * Tools ▾ — SQL mode's, beside the editor's own tools, or at the end of Visual mode's row.
  */

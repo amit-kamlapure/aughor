@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.investigate import _is_descriptive_question
+from pramanyx.agent.investigate import _is_descriptive_question
 
 
 @pytest.mark.parametrize("q", [
@@ -57,14 +57,14 @@ def test_the_routes_that_already_exist_keep_their_framing(q, why):
 
 def test_the_verdict_is_stamped_on_the_spec():
     """It must reach the report, not just be computable — that is the whole seam."""
-    from aughor.agent.prompts_investigate import IntakeOutput
+    from pramanyx.agent.prompts_investigate import IntakeOutput
     assert IntakeOutput.model_fields["descriptive_only"].default is False
 
 
 def test_a_descriptive_report_carries_no_comparison_basis():
     """"vs No prior period exists in the data" under a breakdown is an answer to an
     unasked question — the same reason a cross-sectional run blanks it."""
-    from aughor.agent.investigate import _comparison_basis
+    from pramanyx.agent.investigate import _comparison_basis
     assert _comparison_basis({"descriptive_only": True,
                               "comparison_label": "No prior period exists in the data"}) == ""
     # …and a run that DID compare still says what against.
@@ -83,7 +83,7 @@ def test_a_descriptive_report_carries_no_comparison_basis():
 # ── how the run is framed to the narrator ────────────────────────────────────
 
 def test_a_descriptive_run_is_told_to_describe():
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
 
     note = _framing_note({"descriptive_only": True, "no_prior_period": True})
 
@@ -99,7 +99,7 @@ def test_a_descriptive_run_is_told_to_describe():
 def test_no_prior_period_still_says_so_when_the_question_asked_about_change():
     """The CA-0 note is right for a change question and must survive: a comparison that
     cannot be made has to be stated."""
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
 
     note = _framing_note({"no_prior_period": True,
                           "observation_start": "2024-06-01", "observation_end": "2024-06-07"})
@@ -113,7 +113,7 @@ def test_descriptive_wins_over_no_prior_period():
     """A listing over a single-span dataset hits BOTH conditions. Ordering is the whole
     fix: told to lament the missing period, the narrator apologises over the breakdown
     it was actually asked for."""
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
 
     note = _framing_note({"descriptive_only": True, "no_prior_period": True,
                           "observation_start": "2024-06-01", "observation_end": "2024-06-07"})
@@ -122,7 +122,7 @@ def test_descriptive_wins_over_no_prior_period():
 
 
 def test_an_ordinary_change_run_gets_no_extra_framing():
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
     assert _framing_note({"comparison_label": "October 2024 (MoM)"}) == ""
 
 
@@ -130,7 +130,7 @@ def test_a_weakness_scan_is_not_asked_to_lament_a_missing_period():
     """A "which is weakest" scan compares dimensions, not periods — a missing prior
     period is as irrelevant to it as to a listing. Found by sweeping the question shapes
     rather than from a screenshot; it had been shipping the apology all along."""
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
 
     assert _framing_note({"cross_sectional": True, "no_prior_period": True,
                           "observation_start": "2024-06-01",
@@ -143,7 +143,7 @@ def test_a_listing_is_never_told_to_hunt_for_weakness():
     FIRST swallowed the descriptive branch whole — so "give me route wise number of
     flights" came back ranking market, origin, destination and haul, each concluding it
     "does not represent a performance deficit"."""
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
 
     note = _framing_note({"descriptive_only": True, "cross_sectional": True,
                           "no_prior_period": True})
@@ -154,5 +154,5 @@ def test_a_listing_is_never_told_to_hunt_for_weakness():
 def test_a_real_weakness_scan_still_gets_its_own_framing():
     """Ordering must not cost the cross-sectional route its behaviour: with no
     descriptive verdict it still yields to its own note."""
-    from aughor.agent.investigate import _framing_note
+    from pramanyx.agent.investigate import _framing_note
     assert _framing_note({"cross_sectional": True, "no_prior_period": True}) == ""

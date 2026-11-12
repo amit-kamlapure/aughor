@@ -1,8 +1,8 @@
 """Wave G1 — a declared governed action must actually be enforced.
 
 **The gap this closes.** ``govern.actions._RISK`` declared 11 mutating actions and their risk
-tiers. Only four of them were ever passed to :func:`aughor.govern.guard`, so with
-``AUGHOR_ACTION_APPROVAL`` on — the only configuration in which governance means anything — an
+tiers. Only four of them were ever passed to :func:`pramanyx.govern.guard`, so with
+``PRAMANYX_ACTION_APPROVAL`` on — the only configuration in which governance means anything — an
 operator was promised that high-risk actions require approval and got it for **three of the
 seven HIGH actions**. Dropping a schema, dropping a table, importing an ontology tree and
 approving a metric all walked straight past the gate they were classified for. Nothing was
@@ -26,9 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from aughor.govern.actions import ActionRisk, _RISK, classify
+from pramanyx.govern.actions import ActionRisk, _RISK, classify
 
-ROUTERS = Path(__file__).resolve().parents[2] / "aughor" / "routers"
+ROUTERS = Path(__file__).resolve().parents[2] / "pramanyx" / "routers"
 
 
 def _guarded_action_names() -> set[str]:
@@ -92,14 +92,14 @@ class TestApprovalActuallyBlocks:
 
     @pytest.fixture(autouse=True)
     def _approval_on(self, monkeypatch):
-        monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+        monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
 
     @pytest.mark.parametrize("action", sorted(a for a, r in _RISK.items()
                                               if r == ActionRisk.HIGH))
     def test_high_action_refuses_without_a_grant(self, action, monkeypatch):
         from fastapi import HTTPException
 
-        from aughor import govern
+        from pramanyx import govern
 
         monkeypatch.setattr(govern.actions, "is_allowed", lambda a, s: False)
         with pytest.raises(HTTPException) as exc:
@@ -113,7 +113,7 @@ class TestApprovalActuallyBlocks:
     def test_low_action_is_allowed_and_audited(self, action, monkeypatch):
         """LOW is auto-allowed — the guard is there for the trail, not the block."""
         seen: list[tuple] = []
-        from aughor import govern
+        from pramanyx import govern
 
         monkeypatch.setattr(govern.actions, "audit",
                             lambda a, s, d, **k: seen.append((a, s, d)))
@@ -121,10 +121,10 @@ class TestApprovalActuallyBlocks:
         assert seen and seen[0][0] == action and seen[0][2] == "auto"
 
     def test_approval_off_is_a_no_op_for_every_action(self, monkeypatch):
-        """The kill switch: with AUGHOR_ACTION_APPROVAL=0 the gate is a no-op for every tier.
+        """The kill switch: with PRAMANYX_ACTION_APPROVAL=0 the gate is a no-op for every tier.
         (On by default since 2026-10-04 — `test_govern_actions` proves the default.)"""
-        monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
-        from aughor import govern
+        monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
+        from pramanyx import govern
 
         for action in _RISK:
             govern.guard(action, "scope")          # must not raise for any tier

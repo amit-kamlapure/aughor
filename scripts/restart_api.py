@@ -8,7 +8,7 @@ serialises those, so two sessions restarting within the same second is a race th
 has already been observed — on 2026-09-08 one session's launch took the port a
 second after another session's kill freed it, and on 2026-09-06 the serving guard
 caught a transient two-process WAL overlap. Every SQLite crash this repo has taken
-shares that shape (see ``aughor/db/serving.py``).
+shares that shape (see ``pramanyx/db/serving.py``).
 
 This makes the sequence mutually exclusive instead of lucky:
 
@@ -44,12 +44,12 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCK_NAME = ".restart.lock"
-DEFAULT_LOG = "/tmp/aughor-api.log"
+DEFAULT_LOG = "/tmp/pramanyx-api.log"
 
 
 def _state_dir() -> Path:
     """The directory whose stores we are protecting, by the app's own rule."""
-    from aughor.db.paths import state_dir
+    from pramanyx.db.paths import state_dir
     return state_dir()
 
 
@@ -152,7 +152,7 @@ def main() -> int:
     repo = args.repo.resolve()
     os.chdir(repo)                   # data/ is cwd-relative; resolve it the way the app does
     sys.path.insert(0, str(repo))
-    from aughor.db import serving
+    from pramanyx.db import serving
 
     state = _state_dir().resolve()   # absolute, so a mismatch is visible in the output
     state.mkdir(parents=True, exist_ok=True)
@@ -206,7 +206,7 @@ def main() -> int:
         log = Path(args.log)
         log.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
-            str(repo / ".venv/bin/uvicorn"), "aughor.api:app",
+            str(repo / ".venv/bin/uvicorn"), "pramanyx.api:app",
             "--host", "0.0.0.0", "--port", str(args.port),
             "--timeout-graceful-shutdown", "3",
         ]

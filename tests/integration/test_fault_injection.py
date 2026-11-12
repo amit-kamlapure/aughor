@@ -37,11 +37,11 @@ class _RaisingProvider:
 @pytest.fixture
 def llm_down(monkeypatch):
     """Make every get_provider(...).complete(...) raise. The hot paths import
-    get_provider at call time from aughor.llm.provider, so patching the attribute
+    get_provider at call time from pramanyx.llm.provider, so patching the attribute
     there reaches them; replacing the factory also bypasses the per-role cache and
     the Anthropic fallback (no real network)."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role="coder": _RaisingProvider())
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role="coder": _RaisingProvider())
 
 
 def _stream_events(client: TestClient, path: str, body: dict, timeout_s: float = 60.0) -> list[dict]:
@@ -89,7 +89,7 @@ def test_sqlwriter_fix_fails_soft_under_llm_failure() -> None:
     'drop this angle, continue'. So fix() must NEVER propagate the LLM exception —
     it must return FixResult(ok=False). If this regresses, one dead LLM call would
     crash the whole exploration instead of losing a single angle."""
-    from aughor.sql.writer import SqlWriter, FixResult
+    from pramanyx.sql.writer import SqlWriter, FixResult
 
     class _FakeDB:
         dialect = "duckdb"
@@ -113,13 +113,13 @@ def test_sqlwriter_fix_fails_soft_under_llm_failure() -> None:
 def test_try_salvage_returns_none_without_evidence() -> None:
     """_try_salvage underpins /investigate's graceful end. With no gathered evidence
     it returns None (caller then emits the error SSE) — and it must never raise."""
-    from aughor.routers.investigations import _try_salvage
+    from pramanyx.routers.investigations import _try_salvage
     assert _try_salvage({}, "inv_none", "why did revenue change?", "fixture") is None
 
 
 def test_try_salvage_never_raises_on_malformed_state() -> None:
     """Even if the partial state is malformed (a non-model object where a model is
     expected), salvage swallows it and returns None — never raises into the stream."""
-    from aughor.routers.investigations import _try_salvage
+    from pramanyx.routers.investigations import _try_salvage
     bad = {"subq_answers": ["not-a-model"], "sub_questions": ["nope"]}
     assert _try_salvage(bad, "inv_bad", "q", "fixture") is None

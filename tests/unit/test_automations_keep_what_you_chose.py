@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 client = TestClient(app)
 
@@ -24,11 +24,11 @@ BODY = {
 
 @pytest.fixture
 def engine_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "automations.engine")
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "automations.engine")
 
 
 def test_a_draft_finished_in_the_editor_keeps_its_clock_and_its_agent(engine_on):
-    from aughor.custom_agents.store import create_agent
+    from pramanyx.custom_agents.store import create_agent
     agent = create_agent("Revenue watcher", purpose="revenue")
     made = client.post("/automations", json={**BODY, "timezone": "Europe/Berlin", "agent_id": agent.id})
     assert made.status_code == 200, made.text
@@ -53,9 +53,9 @@ def test_a_canvas_save_keeps_what_other_doors_set(engine_on):
 
 
 def test_a_reopened_chat_draws_the_approval_cards_its_turns_staged():
-    from aughor.actions.inbox import StagedProposal, stage_proposal
-    from aughor.db.history import save_chat_turn
-    from aughor.telemetry import bind_trace
+    from pramanyx.actions.inbox import StagedProposal, stage_proposal
+    from pramanyx.db.history import save_chat_turn
+    from pramanyx.telemetry import bind_trace
 
     with bind_trace("trace-cards-1"):
         save_chat_turn("draft me a returns dashboard", "conn-keep", "Staged a dashboard draft.", "",

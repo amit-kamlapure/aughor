@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.db import user_prefs
-from aughor.db.user_prefs import ALLOWED_KEYS, get_preferences, set_preference
+from pramanyx.db import user_prefs
+from pramanyx.db.user_prefs import ALLOWED_KEYS, get_preferences, set_preference
 
 LOOK = {"accent": user_prefs.LOOK_ACCENTS, "grey": user_prefs.LOOK_GREYS,
         "radius": user_prefs.LOOK_RADII, "scaling": user_prefs.LOOK_SCALINGS,

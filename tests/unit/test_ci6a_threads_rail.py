@@ -8,8 +8,8 @@ listed another tenant's thread titles would leak questions, which are content).
 """
 from __future__ import annotations
 
-from aughor.db.history import list_chat_sessions, save_chat_turn
-from aughor.org.context import using_org
+from pramanyx.db.history import list_chat_sessions, save_chat_turn
+from pramanyx.org.context import using_org
 
 
 def _turn(question, session_id, conn="c1"):
@@ -54,7 +54,7 @@ def test_turns_without_a_session_never_surface():
 def test_the_rail_is_tenant_scoped(monkeypatch):
     """The same predicate the turns read uses: with identity enabled, one org's
     thread titles never reach another — titles are the user's own questions."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     with using_org("org-a"):
         _turn("org A's confidential question", "sess-org-a")
     with using_org("org-b"):

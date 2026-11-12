@@ -14,12 +14,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.ontology import dedup_decisions as D
+from pramanyx.ontology import dedup_decisions as D
 
 
 @pytest.fixture(autouse=True)
 def _root(tmp_path, monkeypatch):
-    import aughor.ontology.recommendations as R
+    import pramanyx.ontology.recommendations as R
     monkeypatch.setattr(R, "_ROOT", tmp_path / "decisions")
     yield
 
@@ -74,7 +74,7 @@ class TestARejectionIsRemembered:
             D.reject("c1", "main", ["Customer"])
 
     def test_the_detector_stays_pure_and_the_read_applies_decisions(self, monkeypatch):
-        import aughor.ontology.dedup as X
+        import pramanyx.ontology.dedup as X
         monkeypatch.setattr(X, "detect_duplicate_entities", lambda graph, threshold=0.85: [_cluster("Customer", "Client"), _cluster("Order", "SalesOrder")])
         D.reject("c1", "main", ["Customer", "Client"], reason="B2B")
         out = D.detect_with_decisions(SimpleNamespace(), "c1", "main")
@@ -84,8 +84,8 @@ class TestARejectionIsRemembered:
 
 class TestTheDoors:
     def test_reject_then_the_read_hides_it_then_reconsider(self, client, monkeypatch):
-        import aughor.routers.ontology as R
-        import aughor.ontology.dedup as X
+        import pramanyx.routers.ontology as R
+        import pramanyx.ontology.dedup as X
         monkeypatch.setattr(R, "_get_ontology_graph", lambda cid, schema=None: SimpleNamespace())
         monkeypatch.setattr(X, "detect_duplicate_entities", lambda graph, threshold=0.85: [_cluster("Customer", "Client")])
         r = client.get("/ontology/duplicate-entities", params={"connection_id": "fixture"})

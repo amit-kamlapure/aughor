@@ -18,8 +18,8 @@ import threading
 import pytest
 import requests
 
-from aughor.notifications import executor as ex
-from aughor.notifications.models import ActionPayload, ActionTrigger
+from pramanyx.notifications import executor as ex
+from pramanyx.notifications.models import ActionPayload, ActionTrigger
 
 HOOK = "https://hooks.slack.com/services/T-PLACEHOLDER/B-PLACEHOLDER/not-a-real-webhook-secret"
 

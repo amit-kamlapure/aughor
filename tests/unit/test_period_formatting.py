@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.investigate import _fmt_num_or_raw, _fmt_period
+from pramanyx.agent.investigate import _fmt_num_or_raw, _fmt_period
 
 
 @pytest.mark.parametrize("raw,want", [

@@ -17,9 +17,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aughor.packs import gate4
-from aughor.packs.gate3 import run_gate3
-from aughor.packs.loader import load_pack
+from pramanyx.packs import gate4
+from pramanyx.packs.gate3 import run_gate3
+from pramanyx.packs.loader import load_pack
 
 BANKING = Path(__file__).resolve().parents[2] / "packs" / "banking"
 DATASET_ID = "fdic-financials-2025-q2"
@@ -152,9 +152,9 @@ def test_a_quarter_read_without_annualizing_fails_its_figure_and_its_band(synthe
 def test_the_banking_receipt_reproduces_every_published_figure():
     pack = load_pack(BANKING)
     receipt = gate4.read_receipt(pack, DATASET_ID)
-    assert receipt is not None, "no receipt: run `aughor packs measure banking --write` on the cached FDIC file"
+    assert receipt is not None, "no receipt: run `pramanyx packs measure banking --write` on the cached FDIC file"
     assert receipt["package_fingerprint"] == gate4.package_fingerprint(BANKING), \
-        "the package changed since it was measured: run `aughor packs measure banking --write`"
+        "the package changed since it was measured: run `pramanyx packs measure banking --write`"
     assert receipt["ok"] and receipt["findings"] == []
     assert receipt["rows"] == {"call_reports": 4421, "institutions": 4421}
     measured = {g["question"]: g for g in receipt["goldens"]}

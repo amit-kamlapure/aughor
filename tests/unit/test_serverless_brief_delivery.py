@@ -4,7 +4,7 @@
    which a serverless bundle ships EMPTY and read-only: every instance read zero
    subscriptions (so each cron tick evaluated zero briefs, forever) and creating one
    failed on the write. The stores now ride the Ledger (`LedgerListStore`), which is
-   Postgres behind ``AUGHOR_DB_URL`` on serverless — the file stays as legacy import
+   Postgres behind ``PRAMANYX_DB_URL`` on serverless — the file stays as legacy import
    and fallback.
 2. The cron tick only ENQUEUED the delivery (kernel submit → asyncio task) and the
    instance froze at the response, so the work never ran — and its PENDING row then
@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
-from aughor.util.json_store import LedgerListStore
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.util.json_store import LedgerListStore
 
 
 def _iso(dt: datetime) -> str:
@@ -30,7 +30,7 @@ def _iso(dt: datetime) -> str:
 
 def _led(tmp_path, monkeypatch) -> Ledger:
     led = Ledger(tmp_path / "system.db")
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", staticmethod(lambda: led))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", staticmethod(lambda: led))
     return led
 
 
@@ -84,7 +84,7 @@ def test_legacy_file_imports_once(tmp_path, monkeypatch):
 def test_falls_back_to_the_file_when_the_ledger_is_down(tmp_path, monkeypatch):
     def _boom():
         raise RuntimeError("ledger unavailable")
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", staticmethod(_boom))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", staticmethod(_boom))
     store = LedgerListStore(tmp_path / "list.json")
     store.upsert({"id": "a", "v": 1})
     assert [r["id"] for r in store.all()] == ["a"]
@@ -95,8 +95,8 @@ def test_falls_back_to_the_file_when_the_ledger_is_down(tmp_path, monkeypatch):
 
 def test_brief_subscriptions_survive_without_their_file(tmp_path, monkeypatch):
     _led(tmp_path, monkeypatch)
-    from aughor.briefing import store as briefs
-    from aughor.briefing.models import BriefSubscription
+    from pramanyx.briefing import store as briefs
+    from pramanyx.briefing.models import BriefSubscription
 
     monkeypatch.setattr(briefs, "_PATH", tmp_path / "subs.json")
 
@@ -116,17 +116,17 @@ def test_run_one_is_inline_under_vercel(monkeypatch):
     """On serverless the tick must FINISH the work, not enqueue it: the instance
     freezes at the response, and an enqueued PENDING job both never runs and wedges
     the idempotency key. The kernel offer is skipped entirely."""
-    from aughor.automations import scheduler as auto_sched
-    from aughor.kernel import jobs as jobs_mod
+    from pramanyx.automations import scheduler as auto_sched
+    from pramanyx.kernel import jobs as jobs_mod
 
     class _A:
         id, name, conn_id, enabled = "brief:s1", "B", "c1", True
 
     calls = {"submit": 0, "run": 0}
     monkeypatch.setenv("VERCEL", "1")
-    monkeypatch.setattr("aughor.db.registry.get_connection_org",
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org",
                         lambda cid: "default", raising=False)
-    monkeypatch.setattr("aughor.automations.engine.run_automation",
+    monkeypatch.setattr("pramanyx.automations.engine.run_automation",
                         lambda a, **k: calls.__setitem__("run", calls["run"] + 1),
                         raising=False)
     monkeypatch.setattr(jobs_mod, "submit_background_tick",
@@ -139,17 +139,17 @@ def test_run_one_is_inline_under_vercel(monkeypatch):
 
 
 def test_run_one_still_offers_the_kernel_off_vercel(monkeypatch):
-    from aughor.automations import scheduler as auto_sched
-    from aughor.kernel import jobs as jobs_mod
+    from pramanyx.automations import scheduler as auto_sched
+    from pramanyx.kernel import jobs as jobs_mod
 
     class _A:
         id, name, conn_id, enabled = "brief:s1", "B", "c1", True
 
     calls = {"submit": 0, "run": 0}
     monkeypatch.delenv("VERCEL", raising=False)
-    monkeypatch.setattr("aughor.db.registry.get_connection_org",
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org",
                         lambda cid: "default", raising=False)
-    monkeypatch.setattr("aughor.automations.engine.run_automation",
+    monkeypatch.setattr("pramanyx.automations.engine.run_automation",
                         lambda a, **k: calls.__setitem__("run", calls["run"] + 1),
                         raising=False)
     monkeypatch.setattr(jobs_mod, "submit_background_tick",

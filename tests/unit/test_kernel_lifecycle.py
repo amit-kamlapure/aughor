@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.lifecycle import (
+from pramanyx.kernel.lifecycle import (
     PROJECTIONS,
     changelog,
     diff_versions,
@@ -28,10 +28,10 @@ KIND, NK = "savedquery", "savedquery:q1"
 
 @pytest.fixture
 def _on(monkeypatch, tmp_path):
-    # Ledger.default() is keyed on AUGHOR_SYSTEM_DB, so a per-test path gives each test a
+    # Ledger.default() is keyed on PRAMANYX_SYSTEM_DB, so a per-test path gives each test a
     # fresh artifact table — without this, versions written by one test are history in the
     # next and every version assertion drifts.
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
 # ── The flag contract ─────────────────────────────────────────────────────────
@@ -231,8 +231,8 @@ def test_every_projection_lands_on_the_publication_axis():
 
 def test_projections_cover_the_real_state_machines():
     """If a store adds a state, its projection must be decided rather than defaulted."""
-    from aughor.packs.models import _STATUSES
-    from aughor.semantic.governance import STATES
+    from pramanyx.packs.models import _STATUSES
+    from pramanyx.semantic.governance import STATES
 
     assert set(STATES) <= set(PROJECTIONS["governance"])
     assert set(_STATUSES) <= set(PROJECTIONS["packs"])
@@ -241,10 +241,10 @@ def test_projections_cover_the_real_state_machines():
 # ── The savedquery wiring ─────────────────────────────────────────────────────
 
 def test_savedquery_update_records_a_revision(_on, monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_SAVEDQUERY_DB", str(tmp_path / "sq.db"))
+    monkeypatch.setenv("PRAMANYX_SAVEDQUERY_DB", str(tmp_path / "sq.db"))
     import importlib
 
-    from aughor.savedquery import store as sq
+    from pramanyx.savedquery import store as sq
     importlib.reload(sq)
 
     q = sq.create_saved_query(connection_id="c1", name="v1", sql="SELECT 1", spec={"a": 1})

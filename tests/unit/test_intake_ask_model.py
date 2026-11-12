@@ -25,8 +25,8 @@ latter 435 calls against 67 `write`s, i.e. 6.5 repairs per query generated.
 """
 import inspect
 
-from aughor.agent import investigate as I
-from aughor.agent.prompts_investigate import (
+from pramanyx.agent import investigate as I
+from pramanyx.agent.prompts_investigate import (
     _CODE_SET_INTAKE_FIELDS,
     INTAKE_PROMPT,
     IntakeAsk,

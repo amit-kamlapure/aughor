@@ -6,8 +6,8 @@ None of those words says what the platform is doing. The names now are the jobs 
 structure · questions · synthesis — and the five structure passes (docs/GLOSSARY.md › The explorer's passes).
 
 Population, named so the guard cannot pass for the wrong reason: every STRING LITERAL (log lines, journal
-labels, prompt text, docstrings, API descriptions) in ``aughor/explorer/*.py`` and
-``aughor/routers/exploration.py``, plus the one line of ``web/lib/chatTurn.ts`` that writes the thinking row.
+labels, prompt text, docstrings, API descriptions) in ``pramanyx/explorer/*.py`` and
+``pramanyx/routers/exploration.py``, plus the one line of ``web/lib/chatTurn.ts`` that writes the thinking row.
 A comment may still say "durable execution" or "Phase 2 of the 2027 study" — those name plan documents, and
 a comment is not a reader surface, so they are deliberately outside the population.
 """
@@ -29,8 +29,8 @@ def _string_literals(path: Path):
 
 
 def _explorer_files() -> list[Path]:
-    files = sorted((ROOT / "aughor" / "explorer").glob("*.py"))
-    files.append(ROOT / "aughor" / "routers" / "exploration.py")
+    files = sorted((ROOT / "pramanyx" / "explorer").glob("*.py"))
+    files.append(ROOT / "pramanyx" / "routers" / "exploration.py")
     assert len(files) > 10, "the population moved — re-point this guard"
     return files
 
@@ -43,7 +43,7 @@ def test_no_phase_number_reaches_a_reader_from_the_explorer():
 
 def test_the_explorers_retired_words_left_its_strings():
     retired = ("manifest-driven", "baseline cell", "Starting (domain_intel_only", "domain intelligence")
-    hits = [(ln, word) for ln, v in _string_literals(ROOT / "aughor" / "explorer" / "agent.py")
+    hits = [(ln, word) for ln, v in _string_literals(ROOT / "pramanyx" / "explorer" / "agent.py")
             for word in retired if word.lower() in v.lower()]
     assert not hits, hits
 

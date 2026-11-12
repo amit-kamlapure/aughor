@@ -7,7 +7,7 @@ double-count), so the de-fan must be deterministic: DISTINCT(parent-key, measure
 sums each parent once. High-precision — it bails (None) on any shape it can't
 prove correct, and the caller dry-runs the result before adopting it.
 """
-from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite, build_chasm_fanout_rewrite, defan
+from pramanyx.sql.fanout import detect_fanout, build_parent_fanout_rewrite, build_chasm_fanout_rewrite, defan
 
 # orders (parent, root "order") one-to-many lineitem (child) — the classic case.
 TC = {"orders": ["o_orderkey", "o_orderstatus", "o_totalprice"],

@@ -1,7 +1,7 @@
 """RBAC P3 — enforcement dependency, admin roster, first-user-owner bootstrap.
 
 The ``gate_permission`` dependency is a NO-OP unless BOTH conditions hold:
-  * ``AUGHOR_REQUIRE_IDENTITY`` is on (a principal is bound), AND
+  * ``PRAMANYX_REQUIRE_IDENTITY`` is on (a principal is bound), AND
   * (until Track A3, 2026-11-05: the org's tier granted ``Capability.RBAC_SSO`` — no longer a condition).
 When enforced, a caller whose roles don't grant the permission gets 403, and the
 org's first identified caller is bootstrapped as owner.
@@ -13,21 +13,21 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.rbac import OWNER
-from aughor.rbac import store
+from pramanyx.rbac import OWNER
+from pramanyx.rbac import store
 
 
 @pytest.fixture(autouse=True)
 def _identity_on(monkeypatch):
     """Default every test to identity-on, enterprise tier, auto-bootstrap on."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "1")
     yield
 
 
 def _h(org: str, user: str = "u1") -> dict:
-    return {"X-Aughor-Org": org, "X-Aughor-User": user}
+    return {"X-Pramanyx-Org": org, "X-Pramanyx-User": user}
 
 
 # ── The role catalogue + self-introspection ──────────────────────────────────
@@ -41,7 +41,7 @@ def test_role_catalogue(client):
 
 
 def test_me_reflects_assigned_role(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     org = "rbacp3-me"
     store.assign_role(org, "ana", "analyst")
     me = client.get("/rbac/me", headers=_h(org, "ana")).json()
@@ -55,7 +55,7 @@ def test_me_reflects_assigned_role(client, monkeypatch):
 # ── Enforcement: no-op cases ─────────────────────────────────────────────────
 
 def test_localhost_is_unenforced(client, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     # No identity → no principal → the gate no-ops; the admin roster answers with
     # no role at all, and /rbac/me resolves the caller to owner (unchanged behaviour).
     assert client.get("/rbac/assignments").status_code == 200
@@ -66,9 +66,9 @@ def test_the_decision_is_the_same_at_every_tier(client, monkeypatch):
     """Track A3 (docs/TENX_PROGRAM_2026-11-05.md): until 2026-11-05 this test asserted the opposite —
     a tier without ``RBAC_SSO`` made the gate inert, so 'vic', a viewer, read the roster on a free
     plan. The tier is an unsigned env var; an access decision cannot depend on it."""
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     for tier in ("free", "pro", "enterprise"):
-        monkeypatch.setenv("AUGHOR_TIER", tier)
+        monkeypatch.setenv("PRAMANYX_TIER", tier)
         r = client.get("/rbac/assignments", headers=_h("rbacp3-tiers", "vic"))
         assert r.status_code == 403, (tier, r.text)
         assert r.json()["detail"]["permission"] == "admin.manage_roles"
@@ -77,7 +77,7 @@ def test_the_decision_is_the_same_at_every_tier(client, monkeypatch):
 # ── Enforcement: 403 for an insufficient role ────────────────────────────────
 
 def test_viewer_forbidden_on_admin_endpoints(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")  # 'vic' stays a default viewer
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")  # 'vic' stays a default viewer
     org = "rbacp3-viewer"
     assert client.get("/rbac/assignments", headers=_h(org, "vic")).status_code == 403
     r = client.post("/rbac/assignments", headers=_h(org, "vic"),
@@ -86,7 +86,7 @@ def test_viewer_forbidden_on_admin_endpoints(client, monkeypatch):
 
 
 def test_viewer_forbidden_on_resource_and_connection_gates(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     org = "rbacp3-res"
     h = _h(org, "vic")
     # viewer lacks resource.delete / resource.export / connection.delete — the gate
@@ -118,7 +118,7 @@ def test_first_identified_user_becomes_owner(client):
 
 
 def test_bootstrap_disabled_locks_out_first_user(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     # With auto-bootstrap off (pre-seeded-IdP deployments), the first user is a plain
     # viewer and cannot self-administer.
     assert client.get("/rbac/assignments", headers=_h("rbacp3-noboot", "someone")).status_code == 403
@@ -157,7 +157,7 @@ def test_roster_is_org_scoped(client):
 # ── The broad write-floor (P4): the whole mutating surface, not just curated routes ──
 
 def test_write_floor_blocks_a_viewer_on_any_unlisted_mutation(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")  # 'vic' stays a default viewer
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")  # 'vic' stays a default viewer
     h = _h("rbacp4-floor", "vic")
     # A mutation with NO explicit policy entry still 403s a viewer via the write floor…
     assert client.delete("/connections/nope/files/x.csv", headers=h).status_code == 403
@@ -166,7 +166,7 @@ def test_write_floor_blocks_a_viewer_on_any_unlisted_mutation(client, monkeypatc
 
 
 def test_write_floor_lets_an_analyst_mutate(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     org = "rbacp4-floor2"
     store.assign_role(org, "ana", "analyst")  # analyst holds resource.write
     # the same unlisted mutation is NOT 403 for an analyst (the handler then 404s the id)

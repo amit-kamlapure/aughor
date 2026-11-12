@@ -68,7 +68,7 @@ export interface DemoSeedResult {
 /** Provision the bundled demo dataset and return its connection.
  *
  *  Nothing is seeded on boot, so a fresh install has no data at all — this is the
- *  in-app half of `aughor seed`, for the user who never opens a terminal. Idempotent:
+ *  in-app half of `pramanyx seed`, for the user who never opens a terminal. Idempotent:
  *  calling it when the demo already exists returns the connection with `seeded: false`
  *  and leaves the data alone. */
 export async function seedDemoConnection(): Promise<DemoSeedResult> {
@@ -102,7 +102,7 @@ export async function getCapabilities(connectionId?: string): Promise<Capabiliti
  *  'ratio01' a stated 0..1 rate, 'pct100' a stated 0..100 one, 'band' any other stated band ('0..24',
  *  '≥ 1' — `lo`/`hi` is null where the text leaves that end open), 'typical' a band the text only calls
  *  usual (never a bound), 'open' no band at all. One reader — `stated_range` in
- *  `aughor/business_profile/validate.py`, the same one the value audit holds the metric to — so a figure
+ *  `pramanyx/business_profile/validate.py`, the same one the value audit holds the metric to — so a figure
  *  the audit keeps is never hidden here by a bound its text doesn't state. */
 export interface StatedRange {
   kind: "ratio01" | "pct100" | "band" | "typical" | "open";
@@ -1250,7 +1250,7 @@ export async function getMetrics(connectionId?: string): Promise<Metric[]> {
   return res.json();
 }
 
-/** One row of a connection's metric catalogue — see aughor/semantic/metric_catalogue.py. */
+/** One row of a connection's metric catalogue — see pramanyx/semantic/metric_catalogue.py. */
 export interface CatalogueMetric {
   name: string;
   label: string;
@@ -2841,7 +2841,7 @@ export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max
 export type QueryBucket = "" | "day" | "week" | "month" | "quarter" | "year";
 export type QuerySegments = "stacked" | "side_by_side" | "shares";
 
-/** How a card of a person's own query is shown (`aughor/dashboards/queries.py` `Shown`). */
+/** How a card of a person's own query is shown (`pramanyx/dashboards/queries.py` `Shown`). */
 export interface QueryShown {
   as: QueryShownAs;
   /** True: the platform sums the query's rows; false: it is drawn as the query returns it. */
@@ -2899,7 +2899,7 @@ export interface QueryAsked {
   filters?: QueryNarrowing[];
 }
 
-/** One filter a reader has on: this column of this table holds one of these (`aughor/dashboards/queries.py` `narrowed`). */
+/** One filter a reader has on: this column of this table holds one of these (`pramanyx/dashboards/queries.py` `narrowed`). */
 export interface QueryNarrowing { table: string; column: string; values: (string | number)[]; grain?: string }
 
 /** A query that could not be kept: each reason, as the server says it. */
@@ -3400,7 +3400,7 @@ export async function startMyDashboard(connectionId: string): Promise<DashboardK
   return dashboardWrite(res, "Failed to start your dashboard");
 }
 
-/** What a dashboard started from an object is offered (2026-10-10, `aughor/dashboards/from_object.py`): each piece with a
+/** What a dashboard started from an object is offered (2026-10-10, `pramanyx/dashboards/from_object.py`): each piece with a
  *  preview the object door measured. Nothing is kept and no model is asked. */
 export interface DashboardFromObject {
   connection_id: string;
@@ -3424,7 +3424,7 @@ export interface DashboardFromObject {
   caveats: string[];
   /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why. */
   shapes?: ShapeOffer[];
-  /** What the shapes are laid out from, read from the ontology (`aughor/dashboards/shapes.py`). */
+  /** What the shapes are laid out from, read from the ontology (`pramanyx/dashboards/shapes.py`). */
   signals?: ShapeSignals;
 }
 
@@ -4194,7 +4194,7 @@ async function documentError(res: Response, fallback: string): Promise<DocumentE
   return new DocumentError(typeof detail === "string" ? detail : fallback);
 }
 
-/** What the knowledge plane can actually do right now — see `aughor/knowledge/health.py`.
+/** What the knowledge plane can actually do right now — see `pramanyx/knowledge/health.py`.
  *  Exists because an empty search result had four possible causes and one appearance. */
 export interface KnowledgeStatus {
   /** A search can run AND there is something to search. Stricter than "no error": a
@@ -5712,7 +5712,7 @@ export type EffectKind =
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
- * `_EFFECT_REQUIRED` in `aughor/automations/models.py`.
+ * `_EFFECT_REQUIRED` in `pramanyx/automations/models.py`.
  *
  * Here rather than in a component for the same reason the rest of this module is here:
  * it is the backend contract spelled field-for-field, and a UI that re-states a contract
@@ -6941,7 +6941,7 @@ export interface Departure {
   delivery?: "" | "delivered" | "uncertain" | "not_delivered";
   /** SP-15 — on a row that held or asked: the lead sentence and, per guard that held,
    *  what it means, what to change and where. Served from ONE module beside the laws
-   *  (`aughor/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.
+   *  (`pramanyx/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.
    *  Absent on a departed row, and on an API older than the wave. */
   remedy?: DepartureRemedy;
 }
@@ -7676,7 +7676,7 @@ export interface ColumnProfileData {
   value_interpretation?: string | null;
 }
 
-/** The one honest read of a concept — mirrors `aughor.tools.concept.concept_of`.
+/** The one honest read of a concept — mirrors `pramanyx.tools.concept.concept_of`.
  *  Reading `.concept` without its confidence is the "one witness spoke and the system
  *  believed it" failure the whole contract exists to prevent, one level up at the UI. */
 export function conceptIfConfident(col: ColumnProfileData): string {
@@ -8121,7 +8121,7 @@ export interface FindingsReask {
   cached: boolean;
 }
 
-/** One story on the Briefing's desk (`aughor/briefing/desk.py`): read from the Record and the
+/** One story on the Briefing's desk (`pramanyx/briefing/desk.py`): read from the Record and the
  *  metric registry, never written by a model. */
 export interface DeskItem {
   kind: string;
@@ -8837,7 +8837,7 @@ export interface LlmConfig {
    *  and runs are landing on the fallback right now. */
   fallback?: {
     backend: string; model: string; chain: string[]; active: boolean;
-    /** AUGHOR_FALLBACK_BACKENDS is set and outranks the Settings choice. */
+    /** PRAMANYX_FALLBACK_BACKENDS is set and outranks the Settings choice. */
     env_pinned: boolean;
   };
   /** The providers a person added — each an OpenAI-compatible endpoint, already in `backends`.
@@ -10084,7 +10084,7 @@ export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "
 
 // ── Arc FA, FA-6 — the installed version and the upgrade ──────────────────────────────────────
 
-/** One thing a pack offers on a connection, as an upgrade's diff lists it (`aughor/packs/upgrade.py`). */
+/** One thing a pack offers on a connection, as an upgrade's diff lists it (`pramanyx/packs/upgrade.py`). */
 export interface PackOfferedItem {
   key: string;
   kind: "term" | "alert" | "metric" | "structure";
@@ -11641,15 +11641,15 @@ export type CallerFeature = "deep_analysis" | "conversation" | "survey" | "explo
   | "sql_repair" | "sql_writing" | "business_profile" | "semantic_layer" | "ontology";
 
 export const CALLER_FEATURES: ReadonlyArray<readonly [string, CallerFeature]> = [
-  ["aughor.agent.investigate:", "deep_analysis"],
-  ["aughor.agent.tool_loop:", "conversation"],
-  ["aughor.agent.explore:", "survey"],
-  ["aughor.explorer.", "exploration"],
-  ["aughor.sql.writer:fix", "sql_repair"],
-  ["aughor.sql.writer:", "sql_writing"],
-  ["aughor.business_profile.", "business_profile"],
-  ["aughor.semantic.", "semantic_layer"],
-  ["aughor.ontology.", "ontology"],
+  ["pramanyx.agent.investigate:", "deep_analysis"],
+  ["pramanyx.agent.tool_loop:", "conversation"],
+  ["pramanyx.agent.explore:", "survey"],
+  ["pramanyx.explorer.", "exploration"],
+  ["pramanyx.sql.writer:fix", "sql_repair"],
+  ["pramanyx.sql.writer:", "sql_writing"],
+  ["pramanyx.business_profile.", "business_profile"],
+  ["pramanyx.semantic.", "semantic_layer"],
+  ["pramanyx.ontology.", "ontology"],
 ];
 
 export function callerFeature(caller: string): CallerFeature | null {
@@ -11996,7 +11996,7 @@ export async function downloadMetricTemplate(): Promise<void> {
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = url;
-  a.download = "aughor-metrics-template.csv";
+  a.download = "pramanyx-metrics-template.csv";
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -12255,7 +12255,7 @@ export async function downloadAuditFeed(format: "csv" | "jsonl",
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");
   a.href = url;
-  a.download = `aughor-governance-feed.${format}`;
+  a.download = `pramanyx-governance-feed.${format}`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

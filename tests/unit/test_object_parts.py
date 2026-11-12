@@ -14,9 +14,9 @@ import json
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.bindings import binding_problem, binding_spec, spec_problem
-from aughor.ontology.declared import (
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.bindings import binding_problem, binding_spec, spec_problem
+from pramanyx.ontology.declared import (
     backs_existing_type,
     declared_entity,
     entity_fields,
@@ -28,20 +28,20 @@ from aughor.ontology.declared import (
     measure_declared_backing,
     measure_declared_link,
 )
-from aughor.ontology.bindings import describe_with
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, apply_overrides
-from aughor.ontology.parts import absorb_problem, detail_from, lapsed_parts, part_of, parts_of
-from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import (
+from pramanyx.ontology.bindings import describe_with
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.overrides import OntologyOverride, apply_overrides
+from pramanyx.ontology.parts import absorb_problem, detail_from, lapsed_parts, part_of, parts_of
+from pramanyx.semantic.object_instances import get_object
+from pramanyx.semantic.object_query import (
     catalog_names,
     link_problem,
     object_catalog,
     object_links,
     render_object_catalog,
 )
-from aughor.semantic.object_types import describe_object_type, object_type_map
-from aughor.db.connection import open_connection
+from pramanyx.semantic.object_types import describe_object_type, object_type_map
+from pramanyx.db.connection import open_connection
 from tests.unit.test_object_bindings import GRAPH, LUX, bind, compile_, ints, payment_type, refusal, rows, seed
 
 LINES = {"kind": "detail", "table": "order_items", "key": "order_id",
@@ -142,7 +142,7 @@ def test_a_detail_spec_is_refused_without_rollups_and_a_static_one_with_them():
 
 
 def test_a_rollup_over_a_column_the_source_lacks_does_not_bind(db, graph):
-    from aughor.ontology.bindings import bind_binding
+    from pramanyx.ontology.bindings import bind_binding
     entry = bind_binding(graph.entities["Order"], "lines", {**LINES, "rollups": {"n": {"column": "nope", "agg": "sum"}}},
                          graph, describe_with(db))
     assert entry["bound"] is False and "reads 'nope'" in entry["note"]
@@ -162,8 +162,8 @@ def test_the_detail_fragment_groups_by_the_key_and_a_rebuilt_binding_round_trips
 
 
 def test_the_data_proposes_a_table_with_many_rows_per_object_as_a_part(db, graph):
-    from aughor.ontology.backing import apply_backing_measurements
-    from aughor.ontology.bindings import propose_bindings
+    from pramanyx.ontology.backing import apply_backing_measurements
+    from pramanyx.ontology.bindings import propose_bindings
     graph.entities["Payment"] = payment_type()
     apply_backing_measurements(graph, db)
     propose_bindings(graph, db)
@@ -411,9 +411,9 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "d
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
@@ -499,7 +499,7 @@ def test_an_entity_a_link_and_a_part_are_declared_read_back_and_withdrawn_over_h
 
 
 def test_a_declared_type_and_link_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
-    import aughor.routers.ontology as onto
+    import pramanyx.routers.ontology as onto
     monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
     assert client.post("/ontology/entities", params=PARAMS, json=PAYMENT).status_code == 200
     assert client.post("/ontology/links", params=PARAMS, json=PAYS_FOR).status_code == 200

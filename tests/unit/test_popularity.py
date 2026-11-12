@@ -5,13 +5,13 @@ persisted per-table / per-column counter, consumed by: R11 column-config default
 protection, R8 doc-tree table facts + ranking, the overview learned-prior fold,
 and the /suggestions prompt. All consumption flag-gated (`obs.popularity`).
 
-Hermetic: per-test tmp SQLite via AUGHOR_POPULARITY_DB; SQL corpora injected.
+Hermetic: per-test tmp SQLite via PRAMANYX_POPULARITY_DB; SQL corpora injected.
 """
 from __future__ import annotations
 
 import pytest
 
-from aughor.sql.popularity import (
+from pramanyx.sql.popularity import (
     PopularitySignal,
     load_popularity,
     merge_popularity_into_priors,
@@ -24,7 +24,7 @@ from aughor.sql.popularity import (
 
 @pytest.fixture()
 def popdb(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_POPULARITY_DB", str(tmp_path / "popularity.db"))
+    monkeypatch.setenv("PRAMANYX_POPULARITY_DB", str(tmp_path / "popularity.db"))
     return tmp_path / "popularity.db"
 
 
@@ -70,7 +70,7 @@ def test_save_load_roundtrip(popdb):
 
 def test_refresh_replaces_stale_counts(popdb):
     save_popularity(PopularitySignal(connection_id="c1", table_counts={"gone": 9}))
-    import aughor.sql.popularity as P
+    import pramanyx.sql.popularity as P
     sig = P.mine_popularity("c1", sqls=_CORPUS)
     save_popularity(sig)
     pop = load_popularity("c1")
@@ -79,13 +79,13 @@ def test_refresh_replaces_stale_counts(popdb):
 
 
 def test_refresh_popularity_uses_history_sources(popdb, monkeypatch):
-    monkeypatch.setattr("aughor.sql.query_log_miner.collect_logged_sql",
+    monkeypatch.setattr("pramanyx.sql.query_log_miner.collect_logged_sql",
                         lambda cid, limit=5000: list(_CORPUS))
     # The task_history fallback source must be stubbed too: obs.task_table is
     # default-ON, so under the full suite's ordering earlier tests leave real
     # executed SQL in the hermetic ledger and it would leak into the counts
     # (caught in CI — the local ordering happened to leave it empty).
-    monkeypatch.setattr("aughor.sql.popularity._sqls_from_task_history",
+    monkeypatch.setattr("pramanyx.sql.popularity._sqls_from_task_history",
                         lambda cid, limit: [])
     sig = refresh_popularity("c1")
     assert sig.table_counts["sales"] == 2
@@ -120,7 +120,7 @@ def test_most_queried_block(popdb):
 # ── R11 column-config protection: a queried column never default-hides ───────
 
 def test_popularity_protects_queried_column_from_default_hide(popdb):
-    from aughor.ontology.column_config import default_flags
+    from pramanyx.ontology.column_config import default_flags
     hidden = default_flags(name="comments", dtype="VARCHAR", semantic_type="text")
     assert hidden.visible is False                        # blob default (R11)
     kept = default_flags(name="comments", dtype="VARCHAR", semantic_type="text",
@@ -133,7 +133,7 @@ def test_popularity_protects_queried_column_from_default_hide(popdb):
 
 
 def test_defaults_from_profiles_threads_popularity(popdb):
-    from aughor.ontology.column_config import defaults_from_profiles
+    from pramanyx.ontology.column_config import defaults_from_profiles
     profiles = {"sales.comments": dict(table="sales", column="comments", dtype="VARCHAR",
                                        semantic_type="text", is_fk=False, null_rate=0.0)}
     plain = defaults_from_profiles(profiles)
@@ -145,8 +145,8 @@ def test_defaults_from_profiles_threads_popularity(popdb):
 # ── R8 doc-tree: table facts carry query_popularity ──────────────────────────
 
 def test_doctree_table_facts_carry_popularity():
-    from aughor.ontology.doctree import build_doc_tree
-    from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+    from pramanyx.ontology.doctree import build_doc_tree
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
     ent = OntologyEntity(
         id="sales", display_name="Sales", source_tables=["sales"],
         identity_key="id", grain_verified=True,

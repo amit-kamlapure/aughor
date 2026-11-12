@@ -9,8 +9,8 @@ trailing-content pass does not strip.
 """
 from __future__ import annotations
 
-from aughor.ontology.models import OntologyGraph, OntologyRelationship
-from aughor.ontology.semantic_block import render_relationship_block
+from pramanyx.ontology.models import OntologyGraph, OntologyRelationship
+from pramanyx.ontology.semantic_block import render_relationship_block
 
 
 def _rel(rid, ft, fc, tt, tc, *, conf="verified", card="N:1", overlap=None,
@@ -84,7 +84,7 @@ def test_empty_inputs_render_nothing():
 
 
 def test_cap_sheds_exact_edges_before_verified_ones():
-    from aughor.ontology import semantic_block as sb
+    from pramanyx.ontology import semantic_block as sb
     cols = {f"t{i}": ["k"] for i in range(60)}
     cols["hub"] = ["k"]
     rels = [_rel(f"E{i}", f"t{i}", "k", "hub", "k", conf="exact") for i in range(50)]
@@ -119,7 +119,7 @@ def test_enriched_verb_is_shown_and_the_placeholder_is_not():
 # edges are NOT lost the same way. This pins that property.
 
 def test_relationship_lines_survive_schema_linking():
-    from aughor.tools.schema_linker import link_schema
+    from pramanyx.tools.schema_linker import link_schema
     g = _graph(_rel("R1", "orders", "customer_id", "customers", "customer_id",
                     overlap=0.97))
     block = render_relationship_block(g, _TABLE_COLS)
@@ -137,7 +137,7 @@ def test_relationship_lines_survive_schema_linking():
 
 
 def test_parse_schema_tables_does_not_absorb_the_block():
-    from aughor.tools.schema import parse_schema_tables
+    from pramanyx.tools.schema import parse_schema_tables
     g = _graph(_rel("R1", "orders", "customer_id", "customers", "customer_id"))
     block = render_relationship_block(g, _TABLE_COLS)
     schema = "TABLE: orders (100 rows)\n  order_id  INTEGER\n\n" + block + "\n"
@@ -148,8 +148,8 @@ def test_parse_schema_tables_does_not_absorb_the_block():
 # ── Wiring: apply_schema_enrichment appends the block from the cached graph ───
 
 def test_apply_schema_enrichment_appends_the_block(monkeypatch):
-    from aughor.ontology import store as onto_store
-    from aughor.tools.schema import apply_schema_enrichment
+    from pramanyx.ontology import store as onto_store
+    from pramanyx.tools.schema import apply_schema_enrichment
     g = _graph(_rel("R1", "orders", "customer_id", "customers", "customer_id",
                     overlap=0.97))
     monkeypatch.setattr(onto_store, "load_latest_ontology", lambda cid, sn=None: g)
@@ -161,8 +161,8 @@ def test_apply_schema_enrichment_appends_the_block(monkeypatch):
 
 
 def test_apply_schema_enrichment_without_a_graph_is_unchanged(monkeypatch):
-    from aughor.ontology import store as onto_store
-    from aughor.tools.schema import apply_schema_enrichment
+    from pramanyx.ontology import store as onto_store
+    from pramanyx.tools.schema import apply_schema_enrichment
     raw = ("TABLE: orders (100 rows)\n  order_id  INTEGER\n  customer_id  INTEGER\n\n"
            "TABLE: customers (10 rows)\n  customer_id  INTEGER\n  name  VARCHAR\n")
     monkeypatch.setattr(onto_store, "load_latest_ontology", lambda cid, sn=None: None)
@@ -188,8 +188,8 @@ _DEEP_SCHEMA = (
 
 
 def test_grounded_schema_appends_verified_edges_for_kept_tables_only(monkeypatch):
-    from aughor.agent.investigate import _build_grounded_schema
-    from aughor.ontology import store as onto_store
+    from pramanyx.agent.investigate import _build_grounded_schema
+    from pramanyx.ontology import store as onto_store
     g = _graph(
         _rel("R1", "orders", "customer_id", "customers", "customer_id", overlap=0.97),
         _rel("R2", "payments", "vendor_key", "vendors", "vendor_key"),
@@ -208,8 +208,8 @@ def test_grounded_schema_appends_verified_edges_for_kept_tables_only(monkeypatch
 
 
 def test_grounded_schema_without_connection_or_graph_is_unchanged(monkeypatch):
-    from aughor.agent.investigate import _build_grounded_schema
-    from aughor.ontology import store as onto_store
+    from pramanyx.agent.investigate import _build_grounded_schema
+    from pramanyx.ontology import store as onto_store
     calls: list = []
     monkeypatch.setattr(onto_store, "load_latest_ontology",
                         lambda cid, sn=None: calls.append(cid))
@@ -224,8 +224,8 @@ def test_grounded_schema_without_connection_or_graph_is_unchanged(monkeypatch):
 
 
 def test_grounded_schema_tolerates_a_failing_ontology_load(monkeypatch):
-    from aughor.agent.investigate import _build_grounded_schema
-    from aughor.ontology import store as onto_store
+    from pramanyx.agent.investigate import _build_grounded_schema
+    from pramanyx.ontology import store as onto_store
 
     def _boom(cid, sn=None):
         raise RuntimeError("ontology cache unavailable")

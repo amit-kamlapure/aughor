@@ -2,11 +2,11 @@
 
 extract_plan_meta turns a decompose result into eval metadata; run_pack_evals + check_expectation
 score it. Pure (no engine) here; the live make_ask_fn is exercised end-to-end separately.
-See aughor/packs/engine_eval.py.
+See pramanyx/packs/engine_eval.py.
 """
-from aughor.packs.engine_eval import extract_plan_meta
-from aughor.packs import run_pack_evals, load_pack
-from aughor.agent.state import SubQuestion
+from pramanyx.packs.engine_eval import extract_plan_meta
+from pramanyx.packs import run_pack_evals, load_pack
+from pramanyx.agent.state import SubQuestion
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]

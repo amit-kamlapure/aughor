@@ -12,9 +12,9 @@ import json
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import find_override
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.overrides import find_override
 from tests.unit.test_action_design import ESCALATE
 from tests.unit.test_object_bindings import GRAPH
 
@@ -25,14 +25,14 @@ CONN = "served-scope-t"
 def client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.api import app
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
     return TestClient(app)
 
 

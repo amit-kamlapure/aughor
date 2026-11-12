@@ -10,8 +10,8 @@ import threading
 
 import pytest
 
-from aughor.kernel.ledger import Ledger
-from aughor.util.json_store import KeyedJsonStore
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.util.json_store import KeyedJsonStore
 
 
 @pytest.fixture()
@@ -104,7 +104,7 @@ class TestConcurrency:
 
 class TestFacadeMigration:
     def test_legacy_json_imported_once(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "sys.db"))
+        monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "sys.db"))
         Ledger._instances.clear()
         legacy = tmp_path / "ontology_cache.json"
         legacy.write_text(json.dumps({"conn:fp": {"entities": 3}}))
@@ -116,7 +116,7 @@ class TestFacadeMigration:
         assert KeyedJsonStore(legacy).load() == {}
 
     def test_corrupt_legacy_ignored(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "sys.db"))
+        monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "sys.db"))
         Ledger._instances.clear()
         bad = tmp_path / "bad.json"
         bad.write_text("{not json")
@@ -124,7 +124,7 @@ class TestFacadeMigration:
 
     def test_facade_full_parity_suite(self, tmp_path, monkeypatch):
         """The original json_store behaviours, through the ledger backend."""
-        monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "sys.db"))
+        monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "sys.db"))
         Ledger._instances.clear()
         s = KeyedJsonStore(tmp_path / "k.json", max_entries=2)
         s.put("a", 1); s.put("b", 2); s.put("a", 11); s.put("c", 3)
@@ -197,7 +197,7 @@ class TestArtifacts:
 class TestJobContextStamping:
     def test_artifact_written_inside_job_gets_job_id(self, ledger):
         import asyncio
-        from aughor.kernel.jobs import JobKernel, current_job_id
+        from pramanyx.kernel.jobs import JobKernel, current_job_id
 
         captured = {}
 

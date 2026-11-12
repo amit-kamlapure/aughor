@@ -20,8 +20,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.knowledge.documents import (CHUNK_CHARS, MIN_CHUNK_CHARS, OVERLAP_CHARS,
+from pramanyx.api import app
+from pramanyx.knowledge.documents import (CHUNK_CHARS, MIN_CHUNK_CHARS, OVERLAP_CHARS,
                                         ChunkSettings, ChunkSettingsError,
                                         _split_into_chunks)
 
@@ -197,7 +197,7 @@ def test_preview_reads_powerpoint_now_that_the_converter_does():
     """The other half of the same law. `.pptx` was refused here because the parser
     could not read it; when the parser gained it, a hand-written list would have gone
     on refusing it silently. The list is derived, so this passes without an edit."""
-    from aughor.knowledge.convert import supported_suffixes
+    from pramanyx.knowledge.convert import supported_suffixes
 
     assert ".pptx" in supported_suffixes()
     # Real bytes, because content is what decides — a `.pptx` name over text is not one.
@@ -240,7 +240,7 @@ def test_the_token_count_is_named_as_an_estimate():
 def test_indexing_records_the_settings_it_used(monkeypatch, tmp_path):
     """Without this a re-index is a guess: the defaults may have moved, or a person may
     have chosen settings once and be unable to recall them."""
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     recorded = {}
     monkeypatch.setattr(indexer, "_ensure_collection", lambda: None)
@@ -258,7 +258,7 @@ def test_indexing_records_the_settings_it_used(monkeypatch, tmp_path):
 def test_indexing_with_no_settings_records_none(monkeypatch, tmp_path):
     """Absence stays absence — writing the defaults in would claim a choice nobody made,
     and would freeze today's defaults into every document."""
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     recorded = {}
     monkeypatch.setattr(indexer, "_ensure_collection", lambda: None)

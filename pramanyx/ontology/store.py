@@ -1,0 +1,556 @@
+"""
+Ontology cache — persists OntologyGraph objects between runs.
+
+Cache key: "{connection_id}:{schema_name}:{schema_fingerprint}"
+File:      data/ontology_cache.json
+Max:       20 entries (LRU eviction — same pattern as profile_cache.py)
+
+Ontologies are scoped per DB schema so a single connection that exposes
+multiple schemas (e.g. analytics + raw) gets independent ontology graphs.
+
+Human overrides (PUT /ontology/entities/{id}) are written directly into the cached
+entry so they survive restarts without requiring a re-build.  Override fields are
+marked in a separate "overrides" dict within each cache entry so the builder can
+tell which fields were user-provided vs auto-extracted.
+"""
+from __future__ import annotations
+
+import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
+from pathlib import Path
+from typing import Iterator, Optional
+
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.util.json_store import KeyedJsonStore
+
+
+_CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "ontology_cache.json"
+_MAX_ENTRIES = 20
+def _cache_path() -> Path:
+    from pramanyx.db.home import rehome          # IN-4: the data home, once migrated
+    return rehome(_CACHE_PATH)
+
+
+_store = KeyedJsonStore(_cache_path(), max_entries=_MAX_ENTRIES)
+
+
+# ── Internal I/O (kept as thin delegators — override-writes read+mutate+save) ──
+
+def _load() -> dict:
+    return _store.load()
+
+
+def _save(cache: dict) -> None:
+    _store.save(cache)
+
+
+def _key(connection_id: str, schema_name: str, fingerprint: str) -> str:
+    """Stable cache key scoped to a specific DB schema within a connection."""
+    return f"{connection_id}:{schema_name}:{fingerprint}"
+
+
+def _schema_prefix(connection_id: str, schema_name: str) -> str:
+    return f"{connection_id}:{schema_name}:"
+
+
+def _conn_prefix(connection_id: str) -> str:
+    return f"{connection_id}:"
+
+
+def built_schemas(connection_id: str) -> list[str]:
+    """The schemas of this connection an ontology has been built for — a read of the cache's keys, never a build."""
+    prefix = _conn_prefix(connection_id)
+    return sorted({k[len(prefix):].split(":", 1)[0] for k in _load() if k.startswith(prefix)})
+
+
+def _graph_from(entry: dict, connection_id: str) -> Optional[OntologyGraph]:
+    """A cached entry's graph, or None when it does not validate — counted and logged, never silent (PENDING item 21):
+    an unreadable saved graph used to read as "no ontology" with no trace, and every door then told a person to build
+    one that had been built."""
+    try:
+        return OntologyGraph.model_validate(entry["graph"])
+    except Exception as exc:  # noqa: BLE001 — one unreadable entry reads as none, and says so in the log
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "a saved ontology did not validate and reads as none; rebuilding it replaces the entry",
+                 counter="ontology.saved_graph_unreadable", conn_id=connection_id or None)
+        return None
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def load_ontology(
+    connection_id: str,
+    schema_name: str,
+    fingerprint: str,
+) -> Optional[OntologyGraph]:
+    cache = _load()
+    entry = cache.get(_key(connection_id, schema_name, fingerprint))
+    if not entry:
+        return None
+    return _graph_from(entry, connection_id)
+
+
+def save_ontology(
+    connection_id: str,
+    schema_name: str,
+    fingerprint: str,
+    graph: OntologyGraph,
+) -> None:
+    _store.put(_key(connection_id, schema_name, fingerprint), {"graph": graph.model_dump()})
+
+
+def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
+    """Remove cached ontologies for a connection.
+
+    If schema_name is given, only that schema's entries are removed.
+    If omitted, all schemas for the connection are evicted (e.g. on DSN change).
+    """
+    prefix = _schema_prefix(connection_id, schema_name) if schema_name else _conn_prefix(connection_id)
+    _store.invalidate_prefix(prefix)
+
+
+def list_schemas(connection_id: str) -> list[str]:
+    """Return the distinct schema names that have a cached ontology for this connection."""
+    cache = _load()
+    prefix = _conn_prefix(connection_id)
+    schemas = set()
+    for k in cache:
+        if k.startswith(prefix):
+            # key format: {conn_id}:{schema_name}:{fingerprint}
+            rest = k[len(prefix):]
+            parts = rest.split(":", 1)
+            if len(parts) == 2:
+                schemas.add(parts[0])
+    return sorted(schemas)
+
+
+def patch_entity(
+    connection_id: str,
+    schema_name: str,
+    fingerprint: str,
+    entity_id: str,
+    overrides: dict,
+) -> Optional[OntologyGraph]:
+    """
+    Apply user overrides to a single entity within a cached graph.
+    Returns the updated graph, or None if the cache entry doesn't exist.
+
+    Only the fields explicitly listed in `overrides` are changed — all
+    other fields from the auto-extracted graph are preserved.
+    """
+    cache = _load()
+    k = _key(connection_id, schema_name, fingerprint)
+    entry = cache.get(k)
+    if not entry:
+        return None
+
+    graph = _graph_from(entry, connection_id)
+    if graph is None:
+        return None
+
+    if entity_id not in graph.entities:
+        return None
+
+    # Apply overrides field-by-field (whitelist of editable fields)
+    _EDITABLE = {
+        "description", "active_filter", "default_filters",
+        "exclude_when", "lifecycle_states", "terminal_states",
+    }
+    entity_dict = graph.entities[entity_id].model_dump()
+    for field, value in overrides.items():
+        if field in _EDITABLE:
+            entity_dict[field] = value
+
+    from pramanyx.ontology.models import OntologyEntity
+    graph.entities[entity_id] = OntologyEntity.model_validate(entity_dict)
+
+    cache[k] = {"graph": graph.model_dump()}
+    _save(cache)
+    return graph
+
+
+def cached_ontology_scopes() -> list[tuple[str, str]]:
+    """Every ``(connection_id, schema_name)`` holding a cached graph — an index read
+    only (no graph is validated, nothing builds). HB-3's links store scans this to
+    find which connection declared a promise an object ref names."""
+    out: list[tuple[str, str]] = []
+    for k in _load():
+        parts = str(k).split(":")
+        if len(parts) >= 2 and (parts[0], parts[1]) not in out:
+            out.append((parts[0], parts[1]))
+    return out
+
+
+def load_latest_ontology(
+    connection_id: str,
+    schema_name: Optional[str] = None,
+) -> Optional[OntologyGraph]:
+    """Return the most recently cached ontology for a connection+schema combination.
+
+    If schema_name is None, falls back to searching all schemas for the connection
+    (useful for legacy callers that don't know the schema name yet).
+    """
+    from pramanyx.sheets.ontology import is_sheets
+    if is_sheets(connection_id):
+        # SH-6 — the Sheets ontology is made of what people placed on it, never built, and is the organisation's own:
+        # the schema a caller names is not a scope here (`sheets.ontology.scope`). None while nothing is placed.
+        from pramanyx.sheets.ontology import served_graph
+        return served_graph()
+    cache = _load()
+    prefix = _schema_prefix(connection_id, schema_name) if schema_name else _conn_prefix(connection_id)
+    matches = {k: v for k, v in cache.items() if k.startswith(prefix)}
+    if not matches:
+        return None
+    last_entry = list(matches.values())[-1]
+    graph = _graph_from(last_entry, connection_id)
+    if graph is None:
+        return None
+    # THE shared authority point: chat (investigations._stream_chat), the metrics
+    # catalog (semantic.metrics.build_metrics_block) and the eval harness all read
+    # the semantic layer through load_latest_ontology. Overlaying human overrides
+    # here makes override-wins reach every semantic-layer consumer at once.
+    return overlay_human_overrides(graph, connection_id, graph.schema_name)
+
+
+def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[str] = None) -> Optional[dict]:
+    """ON-0a: measure the cached graph against ``db`` — relationship cardinalities and
+    lifecycle terminal states — and save the corrected graph back under its own key. No
+    model call, no rebuild.
+
+    The RAW cached entry is measured and saved (human overrides are overlaid at read time by
+    `load_latest_ontology`, never baked into the cache). None when nothing is cached for the
+    scope, so the caller can say "nothing to measure" rather than measuring a neighbour.
+    Returns ``{"relationships": CardinalityReport, "lifecycles": LifecycleReport}``.
+    """
+    from pramanyx.ontology.cardinality import apply_cardinality_measurements
+    from pramanyx.ontology.lifecycle import apply_lifecycle_measurements
+    cache = _load()
+    prefix = _schema_prefix(connection_id, schema_name)
+    matches = {k: v for k, v in cache.items() if k.startswith(prefix)}
+    if not matches:
+        return None
+    key, entry = list(matches.items())[-1]
+    graph = _graph_from(entry, connection_id)
+    if graph is None:
+        return None
+    from pramanyx.packs.ontology_map import (
+        apply_bound_pack_claims, apply_core_claims, bound_end_state_names, end_state_names_for_pack,
+        resolve_ontology,
+    )
+    names = set(bound_end_state_names(connection_id, schema_name) or ())
+    if pack_id:
+        names |= set(end_state_names_for_pack(pack_id))
+    from pramanyx.ontology.backing import apply_backing_measurements, measure_override_backings
+    from pramanyx.ontology.display import apply_display_measurements, measure_override_display_properties
+    relationships = apply_cardinality_measurements(graph, db)
+    lifecycles = apply_lifecycle_measurements(graph, db, frozenset(n.lower() for n in names) if names else None)
+    backings = apply_backing_measurements(graph, db)
+    measure_override_backings(connection_id, schema_name, db, report=backings)
+    # ON-1b — every binding a person set, counted against its objects; and the bindings the data proposes where
+    # another type's table carries a type's key (after the keys above: only a key measured unique is proposed for).
+    from pramanyx.ontology.bindings import BindingReport, measure_override_bindings, propose_bindings
+    bindings = BindingReport(proposals=propose_bindings(graph, db))
+    # ON-7 — what a person DECLARED (an entity, a link) is not in the raw graph; the override measurers count
+    # against a working copy that has it, and record on the override files — the cache stays raw.
+    from pramanyx.ontology.declared import measure_override_links, with_declared_entities
+    work = with_declared_entities(graph, connection_id, schema_name)
+    measure_override_bindings(connection_id, schema_name, db, work, report=bindings)
+    links_declared = measure_override_links(connection_id, schema_name, db, work)
+    # ON-3b — whether each type's display property names its objects (the proposal here; a person's
+    # declaration on its override binding).
+    displays = apply_display_measurements(graph, db)
+    measure_override_display_properties(connection_id, schema_name, db, work, report=displays)
+    claims = apply_bound_pack_claims(graph, connection_id, schema_name, db)
+    if pack_id:
+        po = resolve_ontology(pack_id)
+        if po is not None:
+            claims = apply_core_claims(graph, po, pack_id, db)
+            # Phase 6 — a pack measured against this connection for review is booked too: what it expected
+            # of us and what the data said is the Record's to answer, whether or not the pack is bound.
+            from pramanyx.packs.ontology_map import record_claims
+            record_claims(claims, graph, connection_id, schema_name)
+    _store.put(key, {"graph": graph.model_dump()})
+    # ON-9 — declared processes and rules are counted against the SERVED graph (every declaration overlaid, with the
+    # counts this pass just recorded on the override files); what they count is written back on their own files. The
+    # rules read a second overlay, so one that reads a process's lag sees the process's fresh verdict.
+    from pramanyx.ontology.business_rules import measure_override_rules
+    from pramanyx.ontology.processes import measure_override_processes
+    processes = measure_override_processes(connection_id, schema_name, db,
+                                           overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
+    rules = measure_override_rules(connection_id, schema_name, db,
+                                   overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
+    # Arc OC-5 — impacts last, over a third overlay: each reads the promises this pass just counted.
+    from pramanyx.ontology.impacts import measure_override_impacts
+    impacts = measure_override_impacts(connection_id, schema_name, db,
+                                       overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
+    return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims,
+            "display_properties": displays, "bindings": bindings, "declared_links": links_declared,
+            "processes": processes, "rules": rules, "impacts": impacts}
+
+
+def patch_action(
+    connection_id: str,
+    schema_name: str,
+    fingerprint: str,
+    action_id: str,
+    overrides: dict,
+) -> Optional[OntologyGraph]:
+    """Apply user overrides to a single action within a cached graph."""
+    cache = _load()
+    k = _key(connection_id, schema_name, fingerprint)
+    entry = cache.get(k)
+    if not entry:
+        return None
+
+    graph = _graph_from(entry, connection_id)
+    if graph is None:
+        return None
+
+    if action_id not in graph.actions:
+        return None
+
+    _EDITABLE = {"description", "sql_template", "business_rules_enforced", "returns"}
+    action_dict = graph.actions[action_id].model_dump()
+    for field, value in overrides.items():
+        if field in _EDITABLE:
+            action_dict[field] = value
+
+    from pramanyx.ontology.models import QueryTemplate
+    graph.actions[action_id] = QueryTemplate.model_validate(action_dict)
+
+    cache[k] = {"graph": graph.model_dump()}
+    _save(cache)
+    return graph
+
+
+def compute_ontology_fingerprint(table_profiles: dict) -> str:
+    """The ontology cache's fingerprint: sorted ``"{table}:{row_count}:{grain_col}"``.
+
+    Extracted verbatim from :func:`get_or_build_ontology` so the Wave-V inventory can name
+    it (registered as ``ontology_store`` in ``pramanyx/kernel/freshness.py``); the bytes are
+    unchanged, so every cached ontology still resolves.
+
+    Note what it folds in: ``row_count`` is part of the hash, so this fingerprint moves on
+    every data reload — which is precisely why Wave C3 had to add a separate *structural*
+    fingerprint rather than reuse this one.
+    """
+    parts = sorted(
+        f"{t}:{tp.row_count}:{tp.grain_column or ''}"
+        for t, tp in table_profiles.items()
+    )
+    return hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
+
+
+# ── Forced rebuild ────────────────────────────────────────────────────────────
+
+#: Connections whose builds, in THIS context, must extract a fresh graph rather than serve the fingerprint cache.
+#: Set only by `forced_rebuild`. A context variable and not a flag on the connection object, because
+#: `open_connection_for_with_schema` hands out POOLED objects: a flag there would reach every other request holding
+#: the same connection, while this reaches only the build inside the `with` block (the heavy annotators run on the
+#: caller's thread).
+_forced_rebuilds: ContextVar[frozenset[str]] = ContextVar("ontology_forced_rebuilds", default=frozenset())
+
+
+@contextmanager
+def forced_rebuild(connection_id: str) -> Iterator[None]:
+    """Inside this block, every `get_or_build_ontology` for ``connection_id`` builds instead of reading the cache.
+
+    The cache is keyed by a fingerprint of table names, row counts and grain columns, so a deliberate rebuild of
+    unchanged data would be answered by the very graph it means to replace. That is why `POST /ontology/rebuild`
+    used to delete the cached graph first, and why a rebuild whose build then failed left the connection with no
+    ontology at all. Forcing the build instead leaves the cached graph readable until a new one is saved over it.
+    """
+    token = _forced_rebuilds.set(_forced_rebuilds.get() | {connection_id})
+    try:
+        yield
+    finally:
+        _forced_rebuilds.reset(token)
+
+
+def rebuild_forced(connection_id: str) -> bool:
+    """Whether a build for ``connection_id`` in this context must skip the fingerprint cache."""
+    return connection_id in _forced_rebuilds.get()
+
+
+def get_or_build_ontology(
+    connection_id: str,
+    schema_name: str,
+    table_profiles: dict,
+    column_profiles: dict,
+    join_map: dict,
+    glossary: dict,
+) -> Optional[OntologyGraph]:
+    """
+    Main entry point called at schema-load time.
+
+    Computes a stable fingerprint from table_profiles (table names + row counts
+    + grain columns), then either returns the cached graph or builds a fresh one —
+    always the latter inside `forced_rebuild` for this connection.
+    The graph is scoped to the given schema_name so multiple schemas on the same
+    connection each get an independent ontology.
+
+    Returns None (not raises) on any failure so schema loading is never blocked.
+    """
+    from pramanyx.ontology.builder import extract_structural_ontology
+
+    try:
+        fingerprint = compute_ontology_fingerprint(table_profiles)
+
+        # A deliberate rebuild skips the cache it is replacing. The save below writes over the same key, so the
+        # previous graph stays readable until the new one lands, and a failed extraction leaves it alone.
+        cached = None if rebuild_forced(connection_id) else load_ontology(connection_id, schema_name, fingerprint)
+        if cached is not None:
+            return _overlay_learned_actions(cached, connection_id, schema_name)
+
+        graph = extract_structural_ontology(
+            connection_id=connection_id,
+            schema_name=schema_name,
+            schema_fingerprint=fingerprint,
+            table_profiles=table_profiles,
+            column_profiles=column_profiles,
+            join_map=join_map,
+            glossary=glossary,
+        )
+        # Stamp measure-grain (additivity: per_unit vs per_line) onto properties FROM THE
+        # DATA, so consumers read a persisted grain instead of re-probing each run (#3).
+        try:
+            from pramanyx.semantic.measure_grain import probe_measure_grains
+            from pramanyx.db.connection import open_connection_for
+            _tc = {ent.source_tables[0]: [p.name for p in ent.properties.values()]
+                   for ent in graph.entities.values() if getattr(ent, "source_tables", None)}
+            if _tc:
+                _db = open_connection_for(connection_id)
+                try:
+                    _grains, _ = probe_measure_grains(_db, _tc)
+                finally:
+                    _db.close()
+                for ent in graph.entities.values():
+                    for p in ent.properties.values():
+                        g = _grains.get(p.name.lower())
+                        if g:
+                            p.measure_grain = g
+        except Exception as exc:
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "measure-grain stamping is best-effort; the runtime probe still covers it",
+                     counter="ontology.grain_stamp_failed")
+        # joinable_with — value-verify each relationship's join edge and persist the verdict as a
+        # first-class ontology fact (cross-process, reviewable, override-able), not just the
+        # in-process catalog cache: stamp the real FKs' overlap and DROP value-disjoint name
+        # coincidences so the saved graph never carries a fabricating edge. Build-time + cached.
+        try:
+            from pramanyx.sql.join_guard import verify_join_edges
+            from pramanyx.ontology.builder import apply_join_verifications
+            from pramanyx.db.connection import open_connection_for
+            edges = [{"t1": r.from_table, "c1": r.from_col, "t2": r.to_table, "c2": r.to_col,
+                      "match": r.join_confidence} for r in graph.relationships.values()]
+            if edges:
+                _vdb = open_connection_for(connection_id)
+                try:
+                    _verified, _rejected = verify_join_edges(_vdb, edges)
+                    apply_join_verifications(graph, _verified, _rejected)
+                    # ON-0a: the overlap proves the KEYS match; the cardinality label was an
+                    # inference that fell to N:N whenever a profile was missing. Measure it on
+                    # the surviving edges, in the same connection, before the graph is saved.
+                    from pramanyx.ontology.cardinality import apply_cardinality_measurements
+                    from pramanyx.ontology.lifecycle import apply_lifecycle_measurements
+                    from pramanyx.packs.ontology_map import apply_bound_pack_claims, bound_end_state_names
+                    from pramanyx.ontology.backing import apply_backing_measurements, measure_override_backings
+                    apply_cardinality_measurements(graph, _vdb)
+                    # Arc NV-2 — an entity whose every non-key column is a measured foreign key, and which carries
+                    # no measure, is a junction: marked, and one N:N link declared through it. Pure, on the edges
+                    # the two passes above just measured.
+                    from pramanyx.ontology.junction import mark_junctions
+                    mark_junctions(graph)
+                    apply_lifecycle_measurements(graph, _vdb, bound_end_state_names(connection_id, graph.schema_name))
+                    apply_backing_measurements(graph, _vdb)
+                    measure_override_backings(connection_id, graph.schema_name, _vdb)
+                    # ON-1b — bindings counted, and proposed where another table carries a type's key.
+                    from pramanyx.ontology.bindings import measure_override_bindings, propose_bindings
+                    propose_bindings(graph, _vdb)
+                    measure_override_bindings(connection_id, graph.schema_name, _vdb, graph)
+                    # ON-9 — declared processes and rules, counted against a working copy of this build's graph with
+                    # every declaration overlaid (the structural graph saved below stays raw).
+                    from pramanyx.ontology.business_rules import measure_override_rules
+                    from pramanyx.ontology.processes import measure_override_processes
+                    measure_override_processes(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
+                        graph.model_copy(deep=True), connection_id, graph.schema_name))
+                    measure_override_rules(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
+                        graph.model_copy(deep=True), connection_id, graph.schema_name))
+                    from pramanyx.ontology.impacts import measure_override_impacts
+                    measure_override_impacts(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
+                        graph.model_copy(deep=True), connection_id, graph.schema_name))
+                    # ON-0a: the packs DEPLOYED on this connection are the core it extends —
+                    # every claim in their maps is evaluated here, never rendered.
+                    apply_bound_pack_claims(graph, connection_id, graph.schema_name, _vdb)
+                finally:
+                    _vdb.close()
+        except Exception as exc:
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "ontology join value-verification is best-effort; catalog probe still covers it",
+                     counter="ontology.join_verify_failed")
+        # Persist ONLY the structural graph to the fingerprint cache — learned
+        # skills must never be baked in (they'd be wiped on rebuild and would
+        # pollute the structural fingerprint).  Overlay happens after save.
+        save_ontology(connection_id, schema_name, fingerprint, graph)
+        return _overlay_learned_actions(graph, connection_id, schema_name)
+
+    except Exception as exc:  # noqa: BLE001 — a failed build is no ontology, and says why in the log
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "the ontology build failed; the scope reads as unbuilt until a build succeeds",
+                 counter="ontology.build_failed", conn_id=connection_id or None)
+        return None
+
+
+def _overlay_learned_actions(graph, connection_id: str, schema_name: str):
+    """Merge learned skills (procedural memory) into the returned graph.
+
+    This is the SINGLE seam where crystallized skills re-enter the live ontology
+    for BOTH consumers: the agent's planner (conn.get_ontology() →
+    build_actions_prompt_section) and the HTTP ontology views.  Learned actions
+    live in their own {conn}:{schema}-keyed store so they survive rebuilds;
+    structural actions win on id collision (never silently shadowed).
+    """
+    if graph is None:
+        return graph
+    try:
+        from pramanyx.memory.skills import load_learned_actions
+        for aid, action in load_learned_actions(connection_id, schema_name).items():
+            graph.actions.setdefault(aid, action)
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "learned-action overlay is additive procedural memory; the structural graph is usable without it",
+                 counter="ontology.store.overlay_learned", conn_id=connection_id or None)
+    return graph
+
+
+def overlay_human_overrides(graph, connection_id: str, schema_name: str):
+    """Apply human ontology overrides onto ``graph`` and persist nothing.
+
+    Distinct from ``_overlay_learned_actions`` (the get_or_build seam) on purpose:
+    human edits must be applied LAST — after M12b enrichment and M24c validation —
+    so a human-asserted ``verified`` flag wins over the validator's verdict. So
+    the call site is the end of ``build_intelligence`` (post-validate), not inside
+    get_or_build. Idempotent, so a second apply on a read path is harmless.
+
+    Emits a fired/skipped counter and an info log: a human override that silently
+    didn't apply must be visible, never a bare ``except: pass``.
+    """
+    if graph is None:
+        return graph
+    try:
+        from pramanyx.ontology.overrides import apply_overrides
+        _, report = apply_overrides(graph, connection_id, schema_name)
+        if report.applied or report.skipped:
+            from pramanyx.stats import stats as _st
+            _st.inc("ontology.human_overrides_applied", len(report.applied))
+            _st.inc("ontology.human_overrides_skipped", len(report.skipped))
+            import logging
+            logging.getLogger(__name__).info(
+                "human ontology overrides [%s:%s] applied=%s skipped=%s",
+                connection_id, schema_name, report.applied, report.skipped)
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "human overrides are additive; ontology is usable without them",
+                 counter="ontology.human_overrides", conn_id=connection_id or None)
+    return graph

@@ -12,18 +12,18 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor import telemetry
-from aughor.api import app
-from aughor.govern.departure_store import record_departure
-from aughor.obs import session_log
-from aughor.obs.ask_door_uptake import ask_door_uptake
+from pramanyx import telemetry
+from pramanyx.api import app
+from pramanyx.govern.departure_store import record_departure
+from pramanyx.obs import session_log
+from pramanyx.obs.ask_door_uptake import ask_door_uptake
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
 
 
 def _row(id_, state):
@@ -61,8 +61,8 @@ def test_nothing_held_is_not_a_rate():
 
 
 def test_an_unreadable_store_reports_unmeasured_never_zero(monkeypatch):
-    from aughor.obs import ask_door_uptake as m
-    monkeypatch.setattr("aughor.govern.departure_store.list_departures",
+    from pramanyx.obs import ask_door_uptake as m
+    monkeypatch.setattr("pramanyx.govern.departure_store.list_departures",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked")))
     out = m.ask_door_uptake()
     assert out == {"held": None, "asked": None, "rate": None, "by_day": [], "measured": False}
@@ -80,7 +80,7 @@ def test_the_ask_door_records_the_focus_on_its_request_event():
     """The writer half: `stream_with_session_log(focus=…)` puts it on the request event."""
     import asyncio
 
-    from aughor.routers.investigations import stream_with_session_log
+    from pramanyx.routers.investigations import stream_with_session_log
 
     async def _body():
         yield "data: " + json.dumps({"type": "headline", "headline": "x"}) + "\n\n"
@@ -91,7 +91,7 @@ def test_the_ask_door_records_the_focus_on_its_request_event():
             focus={"kind": "departure", "id": "held-q"})]
 
     asyncio.run(_drain())
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     reqs = Ledger.default().session_events(kind=session_log.USER_REQUEST, limit=50)
     mine = [r for r in reqs if (r.get("payload") or {}).get("question") == "why held?"]
     assert mine and mine[0]["payload"]["focus"] == {"kind": "departure", "id": "held-q"}

@@ -89,7 +89,7 @@ function component(name: WrittenName, grid: boolean, structure: boolean): string
 }
 
 /** The grammar. `grid` tells the writer of a dashboard about a section's grid (Arc AP-1), and `structure` about sections
- *  split into sections (Arc AP-4); the server asks for both (`aughor/dashboards/validate.py`). Without them the text is as
+ *  split into sections (Arc AP-4); the server asks for both (`pramanyx/dashboards/validate.py`). Without them the text is as
  *  it was before Arc AP. */
 export function grammar({ grid = false, structure = false }: { grid?: boolean; structure?: boolean } = {}): string {
   return [

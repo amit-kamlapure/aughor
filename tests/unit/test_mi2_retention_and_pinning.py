@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from aughor.kernel.ledger import Ledger
-from aughor.obs import session_log
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.obs import session_log
 
 
 def _tel():
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     return tel
 
 
@@ -159,7 +159,7 @@ def test_pinned_rows_do_not_consume_the_row_cap():
 
 def test_the_verdict_door_pins_its_run():
     """The wiring, not just the primitive: recording a verdict must be what pins."""
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.feedback.verdicts import record_verdict
 
     led = Ledger.default()
     led.session_events_clear()
@@ -177,7 +177,7 @@ def test_the_verdict_door_pins_its_run():
 def test_a_proposal_records_the_trace_it_was_raised_under():
     """`run_id` cannot serve as this key — it is a fresh uuid4 per tool call, minted for
     idempotency, joining to nothing in `session_events`."""
-    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from pramanyx.actions.inbox import StagedProposal, stage_proposal
 
     with _tel().bind_trace("t-prop-raise"):
         p = stage_proposal(StagedProposal(connection_id="c1", action_id="a1"))
@@ -186,7 +186,7 @@ def test_a_proposal_records_the_trace_it_was_raised_under():
 
 
 def test_resolving_a_proposal_pins_the_run_that_raised_it():
-    from aughor.actions.inbox import StagedProposal, reject_proposal, stage_proposal
+    from pramanyx.actions.inbox import StagedProposal, reject_proposal, stage_proposal
 
     led = Ledger.default()
     led.session_events_clear()
@@ -204,7 +204,7 @@ def test_it_pins_the_PROPOSAL_trace_not_the_resolver_trace():
     """The property the whole change turns on. The agent that proposed and the human who
     answered are DIFFERENT runs; pinning the resolver's would confidently preserve the
     wrong rows while the evidence it was meant to keep expired on schedule."""
-    from aughor.actions.inbox import StagedProposal, reject_proposal, stage_proposal
+    from pramanyx.actions.inbox import StagedProposal, reject_proposal, stage_proposal
 
     led = Ledger.default()
     led.session_events_clear()
@@ -225,7 +225,7 @@ def test_it_pins_the_PROPOSAL_trace_not_the_resolver_trace():
 def test_an_explicit_trace_survives_a_replay():
     """A reconstructed proposal keeps the trace it was originally raised under rather than
     acquiring the replay's."""
-    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from pramanyx.actions.inbox import StagedProposal, stage_proposal
 
     with _tel().bind_trace("t-replay-now"):
         p = stage_proposal(StagedProposal(connection_id="c1", action_id="a1",

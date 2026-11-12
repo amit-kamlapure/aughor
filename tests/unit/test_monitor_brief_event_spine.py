@@ -18,15 +18,15 @@ class _StubLedger:
 
 @pytest.fixture
 def stub_ledger(monkeypatch):
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
     stub = _StubLedger()
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: stub))
     return stub
 
 
 def test_append_alert_emits_monitor_alert(monkeypatch, tmp_path, stub_ledger):
-    import aughor.monitors.store as store
-    from aughor.monitors.models import MonitorAlert
+    import pramanyx.monitors.store as store
+    from pramanyx.monitors.models import MonitorAlert
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "monitors.db")
     store._init_schema()
 
@@ -46,8 +46,8 @@ def test_append_alert_emits_monitor_alert(monkeypatch, tmp_path, stub_ledger):
 
 
 def test_deliver_subscription_emits_brief_delivered(monkeypatch, stub_ledger):
-    import aughor.briefing.delivery as delivery
-    from aughor.briefing.models import BriefSubscription
+    import pramanyx.briefing.delivery as delivery
+    from pramanyx.briefing.models import BriefSubscription
 
     sub = BriefSubscription(id="s1", name="Weekly digest", conn_id="connY",
                             period="week", trigger_id="t1")

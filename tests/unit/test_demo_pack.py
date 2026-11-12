@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.demo.pack import (
+from pramanyx.demo.pack import (
     PACK_VERSION,
     Pack,
     PackError,
@@ -43,13 +43,13 @@ def stub_history(monkeypatch):
         "a3": _inv("a3", "demo", status="running", started="2026-01-01"),
         "p1": _inv("p1", "private", started="2026-01-04"),
     }
-    import aughor.db.history as H
+    import pramanyx.db.history as H
     monkeypatch.setattr(H, "get_investigation", lambda i: rows.get(i))
     monkeypatch.setattr(H, "list_investigation_ids",
                         lambda conn, *a, **k: [i for i, r in rows.items() if r["connection_id"] == conn])
     # Curation/graph are separately-owned surfaces; pin them so these tests are about
     # the pack, not about whichever stores happen to exist on the box.
-    import aughor.demo.pack as P
+    import pramanyx.demo.pack as P
     monkeypatch.setattr(P, "_collect_curation", lambda c: {"synonyms": [{"term": "rev"}]})
     monkeypatch.setattr(P, "_collect_graph", lambda c, invs: {"nodes": [], "edges": []})
     return rows
@@ -249,7 +249,7 @@ def _graph_with_foreign_terms():
 
 
 def test_a_term_whose_column_this_connection_lacks_is_dropped(monkeypatch):
-    from aughor.demo import pack as P
+    from pramanyx.demo import pack as P
     monkeypatch.setattr(P, "_connection_columns",
                         lambda _c: {"orders": {"sales", "discount", "profit"}})
     g = P._scope_graph_to_pack(_graph_with_foreign_terms(), "8d36d4c2", [])
@@ -257,7 +257,7 @@ def test_a_term_whose_column_this_connection_lacks_is_dropped(monkeypatch):
 
 
 def test_an_edge_to_a_dropped_term_does_not_dangle(monkeypatch):
-    from aughor.demo import pack as P
+    from pramanyx.demo import pack as P
     monkeypatch.setattr(P, "_connection_columns", lambda _c: {"orders": {"sales"}})
     g = P._scope_graph_to_pack(_graph_with_foreign_terms(), "8d36d4c2", [])
     assert set(g.edges) == {"e_ok"}
@@ -266,7 +266,7 @@ def test_an_edge_to_a_dropped_term_does_not_dangle(monkeypatch):
 def test_an_unreadable_schema_drops_the_whole_glossary_slice(monkeypatch):
     """Default-deny. 'Unknown' must not be treated as 'fine' — the same posture the
     connection filter takes, for the same reason."""
-    from aughor.demo import pack as P
+    from pramanyx.demo import pack as P
     monkeypatch.setattr(P, "_connection_columns", lambda _c: None)
     g = P._scope_graph_to_pack(_graph_with_foreign_terms(), "8d36d4c2", [])
     assert not [n for n in g.nodes.values() if n.kind == "glossary_term"]
@@ -274,7 +274,7 @@ def test_an_unreadable_schema_drops_the_whole_glossary_slice(monkeypatch):
 
 
 def test_a_finding_from_an_investigation_the_pack_dropped_does_not_travel(monkeypatch):
-    from aughor.demo import pack as P
+    from pramanyx.demo import pack as P
     monkeypatch.setattr(P, "_connection_columns", lambda _c: {})
     g = _G({
         "keep": _N("finding", summary="Tables losses are concentrated in East.",
@@ -290,7 +290,7 @@ def test_a_finding_from_an_investigation_the_pack_dropped_does_not_travel(monkey
 
 
 def test_schema_columns_parses_the_rendered_schema():
-    from aughor.demo.pack import _schema_columns
+    from pramanyx.demo.pack import _schema_columns
     cols = _schema_columns("TABLE: orders\n  sales DOUBLE\n  discount DOUBLE\nTABLE: returns\n  order_id VARCHAR\n")
     assert cols == {"orders": {"sales", "discount"}, "returns": {"order_id"}}
 
@@ -326,7 +326,7 @@ def test_schema_qualified_routes_match_the_serve_side_key_format():
     web/app/demo-api/[...path]/route.ts) rebuilds `METHOD /path?a=..&b=..` with params
     sorted ALPHABETICALLY and no URL-encoding, so the recorder must emit its keys in
     exactly that shape or they can never be hit."""
-    from aughor.demo.record_api import _routes
+    from pramanyx.demo.record_api import _routes
 
     keys = {f"{m} {p}" for m, p, _ in _routes("c1", "w1", schemas=("main",))}
     assert "GET /business-profile?connection_id=c1&schema_name=main" in keys
@@ -347,7 +347,7 @@ def test_org_intelligence_is_narrowed_to_the_demo_connection():
     """The bare /org-intelligence route answers with every promotion the instance has —
     the shipped recording was carrying a test-fixture row and another connection's
     findings, invisible to the term scan because none of it uses a banned term."""
-    from aughor.demo.record_api import _scrub
+    from pramanyx.demo.record_api import _scrub
 
     rows = [
         {"connection_id": "demo", "angle": "kept"},
@@ -362,7 +362,7 @@ def test_org_intelligence_is_narrowed_to_the_demo_connection():
 
 
 def _rec(conn: str, extra: dict | None = None) -> dict:
-    from aughor.demo.record_api import RECORDING_VERSION
+    from pramanyx.demo.record_api import RECORDING_VERSION
     routes = {
         "GET /connections": [{"id": conn, "name": conn}],
         "GET /workspaces": [{"id": f"ws_{conn}", "connection_ids": [conn]}],
@@ -378,7 +378,7 @@ def _rec(conn: str, extra: dict | None = None) -> dict:
 def test_merged_recording_offers_both_connections_and_workspaces():
     """The switcher must show both datasets — a merge that kept one would make the
     second demo unreachable, which is the whole point of merging."""
-    from aughor.demo.record_api import merge_recordings
+    from pramanyx.demo.record_api import merge_recordings
 
     merged = merge_recordings(_rec("aaa"), _rec("bbb"))
     assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa", "bbb"]
@@ -391,14 +391,14 @@ def test_merged_recording_offers_both_connections_and_workspaces():
 
 def test_merge_keeps_the_primary_answer_for_instance_singletons():
     """/capabilities has exactly one answer and no way to express two."""
-    from aughor.demo.record_api import merge_recordings
+    from pramanyx.demo.record_api import merge_recordings
 
     merged = merge_recordings(_rec("aaa"), _rec("bbb"))
     assert merged["routes"]["GET /capabilities"] == {"owner": "aaa"}
 
 
 def test_merge_unions_the_catalog_tree_entries():
-    from aughor.demo.record_api import merge_recordings
+    from pramanyx.demo.record_api import merge_recordings
 
     merged = merge_recordings(_rec("aaa"), _rec("bbb"))
     entries = merged["routes"]["GET /catalog/tree"]["sections"][0]["entries"]
@@ -408,7 +408,7 @@ def test_merge_unions_the_catalog_tree_entries():
 def test_merge_refuses_a_version_mismatch():
     """Two builds can disagree on shape; a silently mixed recording is the failure
     this module exists to prevent."""
-    from aughor.demo.record_api import RecordingError, merge_recordings
+    from pramanyx.demo.record_api import RecordingError, merge_recordings
 
     future = _rec("bbb")
     future["version"] = 99
@@ -418,7 +418,7 @@ def test_merge_refuses_a_version_mismatch():
 
 def test_merge_is_idempotent_for_a_repeated_connection():
     """Re-merging the same recording must not duplicate its connection row."""
-    from aughor.demo.record_api import merge_recordings
+    from pramanyx.demo.record_api import merge_recordings
 
     merged = merge_recordings(_rec("aaa"), _rec("aaa"))
     assert [c["id"] for c in merged["routes"]["GET /connections"]] == ["aaa"]
@@ -428,7 +428,7 @@ def test_merge_carries_every_connections_schema_qualified_routes():
     """The regression that started this work, at merge grain: a schema-qualified route
     recorded for the SECOND connection must survive the merge, or LuxExperience's
     briefing 501s on a demo that reports itself as working."""
-    from aughor.demo.record_api import merge_recordings
+    from pramanyx.demo.record_api import merge_recordings
 
     a = _rec("aaa", {"POST /exploration/aaa/briefing?schema=main&workspace_id=w1": {"ok": 1}})
     b = _rec("bbb", {"POST /exploration/bbb/briefing?schema=lux&workspace_id=w2": {"ok": 2}})
@@ -440,7 +440,7 @@ def test_merge_carries_every_connections_schema_qualified_routes():
 def test_allow_terms_narrows_the_contamination_gate_per_recording():
     """'Foreign' is relative to the dataset being recorded: LuxExperience legitimately
     carries the very terms that must never reach the Superstore recording."""
-    from aughor.demo.record_api import _contamination
+    from pramanyx.demo.record_api import _contamination
 
     rec = {"routes": {"GET /x": {"schema": "luxexperience", "col": "gmv_eur"}}}
     assert set(_contamination(rec)) == {"luxexperience", "gmv_eur"}
@@ -455,7 +455,7 @@ def test_quick_answers_record_their_chat_session_so_they_can_be_opened():
     so the investigation-detail loop skips every one. The shipped Superstore demo listed
     five quick answers and could open none. The UI restores a turn through
     `/chat-sessions/{session_id}/turns`, so that is what must be recorded."""
-    from aughor.demo.record_api import record_chat_sessions
+    from pramanyx.demo.record_api import record_chat_sessions
 
     entries = {
         "GET /investigations?workspace_id=w1": [
@@ -476,7 +476,7 @@ def test_quick_answers_record_their_chat_session_so_they_can_be_opened():
 
 
 def test_an_unreachable_chat_session_is_reported_not_swallowed():
-    from aughor.demo.record_api import record_chat_sessions
+    from pramanyx.demo.record_api import record_chat_sessions
 
     entries = {"GET /investigations?workspace_id=w1":
                [{"id": "c1", "kind": "chat", "session_id": "sess1"}]}
@@ -489,7 +489,7 @@ def test_an_unreachable_chat_session_is_reported_not_swallowed():
 def test_a_chat_session_id_that_is_not_a_safe_segment_is_skipped():
     """Session ids reach a URL path; anything path-unsafe is dropped rather than
     interpolated."""
-    from aughor.demo.record_api import _SAFE_SEGMENT
+    from pramanyx.demo.record_api import _SAFE_SEGMENT
 
     assert _SAFE_SEGMENT.match("sess1")
     assert not _SAFE_SEGMENT.match("../etc/passwd")

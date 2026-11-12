@@ -1,4 +1,4 @@
-# Open-Source Readiness Audit — Aughor
+# Open-Source Readiness Audit — Pramanyx
 
 **Audited:** 2026-07-10 · **Branch:** `chore/oss-readiness` (8 commits, off `main@409b706`)
 **Repo state at audit:** private, 931 commits on `main`, 1,055 tracked files, no LICENSE, no tags.
@@ -11,17 +11,17 @@ pushed; no history was rewritten; no branch was deleted.
 
 ## 1. What this repo is
 
-- **Aughor is an "autonomous data analyst"** — a LangGraph agent that connects to a SQL
+- **Pramanyx is an "autonomous data analyst"** — a LangGraph agent that connects to a SQL
   warehouse, explores it continuously in the background, builds a business ontology
   (entities, relationships, governed metrics, lifecycles), and answers analytical questions
   ("why did revenue drop 8%?") in natural language with evidence, citations, and a
   *computed* confidence score. Its differentiator is not NL→SQL translation; it is the
   deterministic guard layer that tries to make a wrong number impossible rather than merely
   unlikely.
-- **Three front doors, one engine.** A FastAPI service (`aughor/api.py`, 309 routes) that
-  streams investigations over Server-Sent Events; a Click CLI (`aughor investigate`); and an
+- **Three front doors, one engine.** A FastAPI service (`pramanyx/api.py`, 309 routes) that
+  streams investigations over Server-Sent Events; a Click CLI (`pramanyx investigate`); and an
   MCP server for Claude Desktop / Cursor. All three run the same LangGraph `StateGraph`
-  (`aughor/agent/graph.py`), which routes a question to one of three branches: deep
+  (`pramanyx/agent/graph.py`), which routes a question to one of three branches: deep
   investigation (an 8-phase lifecycle in `agent/investigate.py`), a direct query loop, or
   background exploration.
 - **Python 3.11+ backend, Next.js 16 / React 19 frontend.** `uv` + `hatchling` +
@@ -30,7 +30,7 @@ pushed; no history was rewritten; no branch was deleted.
   **generated** from the live FastAPI route surface and CI fails on drift.
 - **The engineering discipline is unusually high.** 2,947 hermetic offline tests passing in
   ~93 s. `ruff` at a zero baseline. **Zero** `TODO`/`FIXME`/`HACK` comments anywhere in
-  1,055 tracked files. Zero stray `print()` in `aughor/`, zero `console.log` in `web/`.
+  1,055 tracked files. Zero stray `print()` in `pramanyx/`, zero `console.log` in `web/`.
   373 of 392 Python files carry module docstrings. Three one-way UI "ratchets" enforce
   design tokens, number formatting, and a shrinking raw-`<button>` count.
 - **Security posture is genuinely good, not accidentally good.** CORS defaults to
@@ -41,7 +41,7 @@ pushed; no history was rewritten; no branch was deleted.
   `agent/investigate.py` (326 KB), `explorer/agent.py` (233 KB),
   `routers/investigations.py` (184 KB). `data/` mixes checked-in seed knowledge
   (`data/kb/`, 69 JSON files) with gitignored runtime state (`*.duckdb`, `*.db`, an
-  encryption key). `web/aughor-v2/` is a second, parallel design-token layer that
+  encryption key). `web/pramanyx-v2/` is a second, parallel design-token layer that
   `app/layout.tsx` genuinely imports. There are **no git submodules, no vendored
   third-party source, and no notebooks.**
 - **The dominant liability is documentation volume, not code.** ~350 KB of internal
@@ -71,33 +71,33 @@ fix was verified.
 |---|---|---|---|
 | H1 | **26 known vulnerabilities across 9 Python packages**, including `starlette` (unvalidated Host header used to rebuild `request.url`), `python-multipart` (3 CVEs in form parsing — reachable on every file upload), `aiohttp` (11 CVEs), `langgraph-checkpoint` (object reconstruction from JSON checkpoints), and `cryptography` (statically linked OpenSSL). | `uv run --with pip-audit pip-audit` → *"Found 26 known vulnerabilities in 9 packages"*. | **FIXED** — lock-only upgrades + `PyPDF2`→`pypdf` (PyPDF2 is EOL; the advisory's "fix 3.9.0" is the renamed successor). `pip-audit` → **0**. Full suite unchanged at 2,947 passed; app imports 309 routes on the new starlette; `_extract_pdf` round-tripped a real generated PDF under pypdf. |
 | H2 | **2 moderate npm advisories** — `next@16.2.6` pins a vulnerable `postcss@8.4.31` in its own `node_modules` (GHSA-qx2v-qp2m-jg93, XSS via unescaped `</style>`). No stable Next release fixes it; npm's suggested fix was a downgrade to `next@9.3.3`. | `npm audit --json` → `{moderate: 2}`; `npm ls postcss` → `next@16.2.6 └── postcss@8.4.31`. | **FIXED** — `overrides: {"postcss": "^8.5.10"}`, consistent with the existing react pin. `npm audit` → **0**. Verified `npm ci`, `tsc`, all three gates, and `next build` still exit 0, and that Tailwind still emits a 128 KB CSS chunk (i.e. the override is not a silent no-op). |
-| H3 | **The README's install guide documented environment variables that do not exist.** The "Minimal local `.env` (Ollama)" block told users to set `EMBEDDER_BASE_URL` and `EMBEDDER_MODEL`. | `git grep -nI "EMBEDDER_"` → matches **only** in `README.md`. `aughor/semantic/embedder.py:6-7` actually reads `AUGHOR_EMBED_MODEL` and `OLLAMA_BASE_URL`. | **FIXED** — corrected to the real names. It had only ever "worked" because the defaults coincide with what the doc told people to type. |
+| H3 | **The README's install guide documented environment variables that do not exist.** The "Minimal local `.env` (Ollama)" block told users to set `EMBEDDER_BASE_URL` and `EMBEDDER_MODEL`. | `git grep -nI "EMBEDDER_"` → matches **only** in `README.md`. `pramanyx/semantic/embedder.py:6-7` actually reads `PRAMANYX_EMBED_MODEL` and `OLLAMA_BASE_URL`. | **FIXED** — corrected to the real names. It had only ever "worked" because the defaults coincide with what the doc told people to type. |
 
 ### Warnings — open, no fix applied
 
 | # | Finding | Evidence | Action required |
 |---|---|---|---|
 | W1 | **Local `.git` is 15 GB** because 5 stashes contain 2.6 GB of committed-then-stashed DuckDB temp spill files (`.tmp/duckdb_temp_storage_S64K-3.tmp` alone is 2,155 MB). | `git count-objects -vH` → `size-pack: 15.36 GiB`. The blobs are reachable **only** from `refs/stash`. `git log --all -- .tmp/` → 0 commits. | **Not a public leak** — verified: a fresh clone's `.git` is **8.5 MB** and contains zero `duckdb_temp_storage` objects. But `git push --mirror` *would* push `refs/stash`. Cleanup is destructive → needs your approval (§4, D3). |
-| W2 | **The test suite is not fully hermetic.** `tests/conftest.py` redirects 27 `AUGHOR_*_DB` stores into temp dirs, but `aughor/demo/setup.py:29` hardcodes `SAMPLES_PATH = Path("data")/"samples.duckdb"` with **zero** `environ` references, and `conftest.py:77` calls `ensure_samples_db()`, which opens it read-write in the developer's live `data/`. | `git grep -c environ aughor/demo/setup.py` → `0`. Reproduced: two concurrent suite runs died with `_duckdb.IOException: Could not set lock on file ".../data/samples.duckdb"` × 2,948 tests. | Add an `AUGHOR_SAMPLES_DB` override and wire it into `conftest.py`. Product code, so I did not patch it. This is the same class of bug as the registry incident already recorded in your notes. Gitignored, so it cannot pollute the repo. |
+| W2 | **The test suite is not fully hermetic.** `tests/conftest.py` redirects 27 `PRAMANYX_*_DB` stores into temp dirs, but `pramanyx/demo/setup.py:29` hardcodes `SAMPLES_PATH = Path("data")/"samples.duckdb"` with **zero** `environ` references, and `conftest.py:77` calls `ensure_samples_db()`, which opens it read-write in the developer's live `data/`. | `git grep -c environ pramanyx/demo/setup.py` → `0`. Reproduced: two concurrent suite runs died with `_duckdb.IOException: Could not set lock on file ".../data/samples.duckdb"` × 2,948 tests. | Add an `PRAMANYX_SAMPLES_DB` override and wire it into `conftest.py`. Product code, so I did not patch it. This is the same class of bug as the registry incident already recorded in your notes. Gitignored, so it cannot pollute the repo. |
 | W3 | **ESLint is red and is not a CI gate.** | `cd web && npm run lint` → `204 problems (40 errors, 164 warnings)`, e.g. `lib/useWheelZoom.ts:23 Cannot update ref during render`. | Fix the 40 errors, then add `npm run lint` to CI. I deliberately did **not** add it to the workflow — that would have shipped a red gate on day one. |
 | W4 | **Zero frontend tests.** No vitest/jest/playwright anywhere. The entire frontend safety net is `tsc --noEmit` + three bespoke lint gates. | `git ls-files web/ \| grep -E '\.(test\|spec)\.'` → *no output*; no test runner in `package.json`. | Honest disclosure now added to the README "Project status". Consider a smoke test for the SSE stream. |
-| W5 | **`web/aughor-v2/README.md` documents two files that do not exist** (`Charts-v2.tsx`, `vega-theme-v2.ts`). The directory is real and actively imported by `app/layout.tsx:7` and `app/globals.css:5-6`. | Grepped every `` `*.tsx` ``/`` `*.ts` `` reference in that README against `git ls-files`. | Update or delete the stale references. |
+| W5 | **`web/pramanyx-v2/README.md` documents two files that do not exist** (`Charts-v2.tsx`, `vega-theme-v2.ts`). The directory is real and actively imported by `app/layout.tsx:7` and `app/globals.css:5-6`. | Grepped every `` `*.tsx` ``/`` `*.ts` `` reference in that README against `git ls-files`. | Update or delete the stale references. |
 | W6 | **Dead asset.** `web/public/ontology-icon.png` is referenced by nothing. | `git grep -lI "ontology-icon"` → 0 files. | Left in place — it is your own asset and deleting it is a judgment call, not junk removal. Delete if unwanted. |
 | W7 | **`ruff format` would reformat 696 of 728 files.** | `uvx ruff@0.15.20 format --check .` | **Deliberately not applied.** This project ships ruff as a *linter* with no formatter config, and its style uses hand-aligned inline comments. Reformatting 696 files would destroy `git blame` for a purely cosmetic change. Adopt it as a separate, deliberate decision or not at all. |
-| W8 | **`start.sh` kills processes it does not own**: `pkill -9 -f "uvicorn aughor.api"` and `lsof -ti:8000 \| xargs kill -9`. A stranger running `./start.sh` loses whatever they had on port 8000. | `start.sh:21,26`. | Documented with a warning in README + CONTRIBUTING. A real fix would only kill the PID in `/tmp/aughor-api.pid`. *(I checked `xargs -r` for a BSD portability bug and could **not** reproduce one — it exits 0 on this macOS. Not reported as a finding.)* |
+| W8 | **`start.sh` kills processes it does not own**: `pkill -9 -f "uvicorn pramanyx.api"` and `lsof -ti:8000 \| xargs kill -9`. A stranger running `./start.sh` loses whatever they had on port 8000. | `start.sh:21,26`. | Documented with a warning in README + CONTRIBUTING. A real fix would only kill the PID in `/tmp/pramanyx-api.pid`. *(I checked `xargs -r` for a BSD portability bug and could **not** reproduce one — it exits 0 on this macOS. Not reported as a finding.)* |
 | W9 | **`start.sh --api-only` reports "API may still be starting"** while `/health` already answers — its readiness wait is too short on a cold start. | Clean-room transcript: the warning printed, then `curl /health` immediately returned `{"status":"ok"}`. | Cosmetic. Lengthen the wait loop. |
 | W10 | **Opaque internal dataset names** — `missimi` (54 tracked files), `beautycommerce` (27), `luxexperience` (8), `swiss-air` (9). `docs/missimi_eval_2026-06-21_results.jsonl` contains 30 lines of **real query result rows** (ROAS, CAC, AOV in €/$), and `tests/unit/test_relabel_keep.py:19` carries the comment `# real AOV cell values`. | `git grep -lI -i missimi \| wc -l`; file read. | You confirmed this is **your own / synthetic data**, so it is not a confidentiality blocker. Still: an outsider cannot tell what `missimi` is. Renaming to a neutral fixture name would help. No PII, no credentials, and **no binary databases are tracked** (verified). |
 | W11 | **Two gitleaks findings are false positives** and will stay noisy. | `docs/PLATFORM_ARCHITECTURE.md:37` matches on the prose *"grant/policy enforcement"*. `tests/unit/test_secretvault.py:108` contains the obviously-fake literal `sk_live_supersecret`, in a test that asserts the value gets encrypted. | Harmless. If you ever add gitleaks to CI, add a `.gitleaks.toml` allowlist for these two paths. |
 | W12 | **Odd root filename with spaces:** `Data Context Creator Skill.md`. | `git ls-files \| grep ' '` | Cosmetic; reads as an internal artifact to an outsider. |
 | W13 | **No container image.** `docker-compose.yml` starts only Qdrant. Deployment beyond a local machine is untested. | Read `docker-compose.yml`; no Dockerfile in the tree. | Now disclosed honestly in README "Project status". |
-| **W14** ✅ **FIXED (2026-07-10)** — the scenario in `aughor/demo/scenario.py` (APAC gateway outage, −38.8% APAC/SMB drop, NA-promo red herring) is now what `ensure_fixture_db()` auto-seeds; verified by test `test_fixture_db_has_a_real_discoverable_signal`. | **The built-in demo dataset has no signal in it — and it is the first thing every new user explores.** `aughor/demo/setup.py::ensure_fixture_db()` auto-creates `data/aughor.duckdb` on first boot. Its data is uniform noise: payment-failure rates of 20.9% / 19.7% / 19.4% across EMEA/NA/APAC (no real difference), daily revenue with mean 1,997 and sd 140 (flat). Worse, `plan` is a **perfect alias of `region`** (every `pro` customer is EMEA, every `free` is NA, every `enterprise` is APAC), and `free`-plan customers carry $19,630 of MRR. | Queried the auto-seeded fixture directly. Cross-tab: `('pro','EMEA',67) ('free','NA',66) ('enterprise','APAC',67)` — three cells, perfectly collinear. Then ran a real exploration against it: the Briefing produced the verdict *"Plan Mix Masks Revenue Risk"* and narrated a 20.9% vs 19.7% failure-rate gap as *"a systemic issue affecting high-value segments."* Aughor was **not** mislabelling — the numbers were correct; the dataset is degenerate. | **This makes the product look bad on first run, through no fault of the engine.** `data/seed.py` already builds a genuinely good scenario (800 customers, a dated APAC payment-gateway outage, a −38.8% APAC/SMB drop, and an NA promo as a deliberate red herring — all verified). Make `ensure_fixture_db()` seed *that* instead of the noise table. This is the single highest-leverage change for a new visitor's impression. |
-| **W15** ✅ **FIXED (2026-07-10)** — `aughor seed` (now with `--db`, default `data/aughor.duckdb`) and `aughor investigate` operate on the same file; `data/seed.py` delegates to the same scenario module. | **The two packaged CLI commands do not compose.** `aughor seed` writes `data/hermes.duckdb`; `aughor investigate` reads `data/aughor.duckdb`. So the documented "seed then investigate" flow silently investigates a different database. The `seed` help text — *"Seed the fixture DuckDB database"* — is simply false, and `hermes` is the project's old name. | `data/seed.py:31` → `DB_PATH = Path(__file__).parent / "hermes.duckdb"`. `aughor/cli.py:30` → `DEFAULT_DB = .../data/aughor.duckdb`. `.gitignore:16` still lists `data/hermes.duckdb`. | Point `data/seed.py` at `data/aughor.duckdb` (what its own help text claims), or give `seed` a `--db` flag. Product code, so not patched here. Fixing this plus W14 is the same one-line change. |
+| **W14** ✅ **FIXED (2026-07-10)** — the scenario in `pramanyx/demo/scenario.py` (APAC gateway outage, −38.8% APAC/SMB drop, NA-promo red herring) is now what `ensure_fixture_db()` auto-seeds; verified by test `test_fixture_db_has_a_real_discoverable_signal`. | **The built-in demo dataset has no signal in it — and it is the first thing every new user explores.** `pramanyx/demo/setup.py::ensure_fixture_db()` auto-creates `data/pramanyx.duckdb` on first boot. Its data is uniform noise: payment-failure rates of 20.9% / 19.7% / 19.4% across EMEA/NA/APAC (no real difference), daily revenue with mean 1,997 and sd 140 (flat). Worse, `plan` is a **perfect alias of `region`** (every `pro` customer is EMEA, every `free` is NA, every `enterprise` is APAC), and `free`-plan customers carry $19,630 of MRR. | Queried the auto-seeded fixture directly. Cross-tab: `('pro','EMEA',67) ('free','NA',66) ('enterprise','APAC',67)` — three cells, perfectly collinear. Then ran a real exploration against it: the Briefing produced the verdict *"Plan Mix Masks Revenue Risk"* and narrated a 20.9% vs 19.7% failure-rate gap as *"a systemic issue affecting high-value segments."* Pramanyx was **not** mislabelling — the numbers were correct; the dataset is degenerate. | **This makes the product look bad on first run, through no fault of the engine.** `data/seed.py` already builds a genuinely good scenario (800 customers, a dated APAC payment-gateway outage, a −38.8% APAC/SMB drop, and an NA promo as a deliberate red herring — all verified). Make `ensure_fixture_db()` seed *that* instead of the noise table. This is the single highest-leverage change for a new visitor's impression. |
+| **W15** ✅ **FIXED (2026-07-10)** — `pramanyx seed` (now with `--db`, default `data/pramanyx.duckdb`) and `pramanyx investigate` operate on the same file; `data/seed.py` delegates to the same scenario module. | **The two packaged CLI commands do not compose.** `pramanyx seed` writes `data/hermes.duckdb`; `pramanyx investigate` reads `data/pramanyx.duckdb`. So the documented "seed then investigate" flow silently investigates a different database. The `seed` help text — *"Seed the fixture DuckDB database"* — is simply false, and `hermes` is the project's old name. | `data/seed.py:31` → `DB_PATH = Path(__file__).parent / "hermes.duckdb"`. `pramanyx/cli.py:30` → `DEFAULT_DB = .../data/pramanyx.duckdb`. `.gitignore:16` still lists `data/hermes.duckdb`. | Point `data/seed.py` at `data/pramanyx.duckdb` (what its own help text claims), or give `seed` a `--db` flag. Product code, so not patched here. Fixing this plus W14 is the same one-line change. |
 
 ### Passes — verified, not assumed
 
 | Check | Evidence |
 |---|---|
-| **No secrets anywhere in git history** | `gitleaks git . --log-opts="--all --reflog --full-history"` → **1,105 commits scanned, 2 findings, both false positives (W11)**. Separately, I extracted the 10 real values from your local `.env` and searched **every commit reachable from every ref** (1,059 at audit time) for each: `AUGHOR_SECRET_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `AUGHOR_DEFAULT_POSTGRES_DSN`, `AUGHOR_KB_PATH` — **none present in any commit**. The only matches were `localhost` URLs and model names. |
+| **No secrets anywhere in git history** | `gitleaks git . --log-opts="--all --reflog --full-history"` → **1,105 commits scanned, 2 findings, both false positives (W11)**. Separately, I extracted the 10 real values from your local `.env` and searched **every commit reachable from every ref** (1,059 at audit time) for each: `PRAMANYX_SECRET_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `PRAMANYX_DEFAULT_POSTGRES_DSN`, `PRAMANYX_KB_PATH` — **none present in any commit**. The only matches were `localhost` URLs and model names. |
 | `.env` never tracked | `git log --all -- .env` → 0 commits. `git check-ignore -v .env` → `.gitignore:7`. |
 | **Deleted files audited** | `git log --all --diff-filter=D --summary` → 84 deleted paths. Two SQLite DBs were once committed: `data/artifacts.db` (extracted: `artifacts` table, **0 rows**) and `data/workspaces.db` (extracted: 2 rows — `Default`, `Test`, opaque connection IDs). Both benign. No credentials, no PII. |
 | No `.DS_Store`, `__pycache__`, `node_modules`, or build artifacts tracked | `git ls-files \| grep -iE '(node_modules\|__pycache__\|dist\|\.next\|DS_Store\|\.pyc)'` → *no output*. 10 `.DS_Store` files exist on disk and are all gitignored. |
@@ -107,11 +107,11 @@ fix was verified.
 | Dangerous defaults | CORS defaults to `localhost:3000,3001` (`api.py:171`), **not** `*`. Zero `debug=True`, zero `verify=False`/`CERT_NONE`, zero `shell=True`. Auth gate opt-in and documented (`api.py:91-125`). |
 | All deps from public registries; lockfiles committed | `uv.lock` (936 KB) + `web/package-lock.json`. Every npm `resolved` host is `registry.npmjs.org`. No `git+` or private-index URLs in `pyproject.toml`. |
 | **Dependency licence compatibility with Apache-2.0** | 187 Python dists: MIT/Apache/BSD dominate. Copyleft: `psycopg2-binary`/`psycopg` (LGPL-3.0, *direct*) — imported as a library, not modified or statically linked, so Apache-2.0 is unaffected; noted in `NOTICE` for redistributors. `text-unidecode` (Artistic/GPL) is reachable **only** through the optional `evals` extra (`uv export --no-dev` → absent); noted in `NOTICE`. `certifi`/`orjson`/`tqdm` are MPL-2.0 (file-level, fine). 570 npm prod packages: 454 MIT, 64 ISC, 22 Apache-2.0; the only LGPL is `@img/sharp-libvips` (a native binary). **No GPL/AGPL conflict.** |
-| No vendored third-party source, no submodules | `evals/spider2.py` is Aughor's own harness ("Rebuilt for the top-3 campaign"), not a copy of the benchmark. `.gitmodules` absent. |
+| No vendored third-party source, no submodules | `evals/spider2.py` is Pramanyx's own harness ("Rebuilt for the top-3 campaign"), not a copy of the benchmark. `.gitmodules` absent. |
 | **Full test suite green** | `uv run pytest -q -m "not e2e and not eval"` → **2,947 passed, 1 skipped, 6 deselected** in 92.5 s on `main`, and identical on the audit branch. Zero failures. |
 | **Python 3.11 / 3.12 / 3.13 all green** | Full suite run in a clean checkout with isolated venvs per version: **2,947 passed, 1 skipped** on each. (An earlier 2,948-error run on 3.12 was a stale DuckDB lock from my own killed process — W2 — not an incompatibility.) |
 | Zero `TODO`/`FIXME`/`HACK`/`XXX` | `git grep -nIiE '\b(todo\|fixme\|hack)\b'` over all tracked files except lockfiles → **0**. (Pathspecs sanity-checked against 335 `.py` / 94 `.tsx` files first, so the zero is real, not a broken glob.) |
-| No debug leftovers | 0 `console.log`, 0 `debugger`, 0 `breakpoint()`/`pdb`, 0 bare `print()` in `aughor/`. |
+| No debug leftovers | 0 `console.log`, 0 `debugger`, 0 `breakpoint()`/`pdb`, 0 bare `print()` in `pramanyx/`. |
 | No skipped/xfail tests | 0 `@pytest.mark.skip`/`xfail`. 7 runtime `pytest.skip()` guards that fire only when an optional resource is absent; 1 actually skipped in the CI-equivalent run. |
 | **CI leaks nothing** | `.github/workflows/ci.yml`: no `secrets.*`, no tokens, no self-hosted runners, no private registries. All `runs-on: ubuntu-latest`. |
 | Generated client is current | Regenerated `web/lib/api.gen.ts` from the live FastAPI surface → **no drift**. |
@@ -134,7 +134,7 @@ Eight commits on `chore/oss-readiness`, **not pushed**. `34 files changed, 1300 
 | `8ec22fd` | Pin `postcss ≥ 8.5.10`; **2 → 0** npm advisories. |
 | `f7ba363` | Delete the unsent draft email to a benchmark maintainer's personal Gmail; scrub that address from `ROADMAP.md` and `docs/10X_…`; repair 4 dangling references. |
 | `2310606` | CI: `permissions: contents: read`; Python 3.11/3.12/3.13 matrix; add `next build`. Validated with `actionlint`. |
-| `a4c455a` | README: fix the fictional `EMBEDDER_*` vars; add prerequisites, Configuration, honest Project status, Security + Acknowledgements. Document `AUGHOR_API_KEY`/`CORS_ORIGINS`/`SECRET_KEY` in `.env.example`. |
+| `a4c455a` | README: fix the fictional `EMBEDDER_*` vars; add prerequisites, Configuration, honest Project status, Security + Acknowledgements. Document `PRAMANYX_API_KEY`/`CORS_ORIGINS`/`SECRET_KEY` in `.env.example`. |
 
 **Post-fix verification on the branch:** `pytest` 2,947 passed · `ruff check` clean · `tsc` clean ·
 3 UI gates clean · `next build` clean · no codegen drift · `pip-audit` **0** · `npm audit` **0**.
@@ -179,8 +179,8 @@ This **permanently discards all 5 stashes.** I have not run it. Also: never
 
 **D4 — The README hero image is a mockup, not the product. (Decided: retake. Blocked on W14.)**
 `README.md:21` shows `design-mockups/01-intelligence-overview.svg` — a design mockup presented
-as "Aughor intelligence overview". Meanwhile a
-screenshot in the mockups folder is a **real screenshot of Aughor's own UI** (I opened it — no
+as "Pramanyx intelligence overview". Meanwhile a
+screenshot in the mockups folder is a **real screenshot of Pramanyx's own UI** (I opened it — no
 third-party product imagery), but it displays real business figures. *(Removed 2026-11-11.)*
 
 You chose to retake it against the synthetic fixture. I built an isolated instance (fresh
@@ -209,14 +209,14 @@ as its own clearly-labelled commit that you own. Not an auto-fix.
 ## 5. Clean-room install verification
 
 Not a doc review — the README's four steps were **executed literally** from a fresh clone
-into a fresh venv, with every inherited `AUGHOR_*`/`GROQ_*`/`OLLAMA_*` variable stripped
+into a fresh venv, with every inherited `PRAMANYX_*`/`GROQ_*`/`OLLAMA_*` variable stripped
 from the shell. Full transcript, final run against `chore/oss-readiness@a4c455a`:
 
 ```
 $ uv --version && python3 --version && node --version
 uv 0.11.14 · Python 3.14.3 · v24.14.1
 
-$ git clone https://github.com/amit-kamlapure/pramanyx.git && cd aughor
+$ git clone https://github.com/amit-kamlapure/pramanyx.git && cd pramanyx
   HEAD: a4c455a  ·  LICENSE present: yes
 
 $ uv sync                                # README step 1
@@ -230,7 +230,7 @@ $ cp .env.example .env                   # README step 3 (left UNEDITED)
   copied
 
 $ ./start.sh --api-only                  # README step 4
-  API started (pid 55826, logs: /tmp/aughor-api.log)
+  API started (pid 55826, logs: /tmp/pramanyx-api.log)
 
 $ curl -s localhost:8000/health
   {"status":"ok","fixture_db":true}
@@ -238,8 +238,8 @@ $ curl -s localhost:8000/health
 $ curl -s localhost:8000/connections
   [{"id":"workspace",...},{"id":"fixture","name":"Fixture DB (demo)",...}]
 
-$ uv run aughor --help                   # the packaged CLI entry point
-  Usage: aughor [OPTIONS] COMMAND [ARGS]...
+$ uv run pramanyx --help                   # the packaged CLI entry point
+  Usage: pramanyx [OPTIONS] COMMAND [ARGS]...
   Commands: investigate, seed
 
 $ ./start.sh --stop

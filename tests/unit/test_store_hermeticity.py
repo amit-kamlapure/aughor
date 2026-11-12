@@ -3,7 +3,7 @@
 These were hardcoded to data/glossary.yaml and data/metrics.json with no env override, so the
 autoseed / knowledge-sync WRITE path (no `path=` arg) mutated the LIVE files during the suite — a
 glossary edit leaked into two commits before this was fixed. The stores now resolve
-AUGHOR_GLOSSARY_PATH / AUGHOR_METRICS_PATH (conftest points them at a throwaway temp COPY of the real
+PRAMANYX_GLOSSARY_PATH / PRAMANYX_METRICS_PATH (conftest points them at a throwaway temp COPY of the real
 file), mirroring the SQLite-store isolation. These tests pin the isolation and the read-content parity.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import sys
 
 import pytest
 
-from aughor.semantic import glossary, metrics
+from pramanyx.semantic import glossary, metrics
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -27,7 +27,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 def test_glossary_and_metrics_paths_are_isolated():
     for p in (str(glossary._default_path()), str(glossary._seed_path()), str(glossary.generated_path()),
               str(metrics._default_path()), str(metrics._seed_path())):
-        assert "aughor-test-stores" in p          # the conftest temp dir, not the repo data/ dir
+        assert "pramanyx-test-stores" in p          # the conftest temp dir, not the repo data/ dir
     assert str(glossary._default_path()).endswith("glossary.instance.yaml")  # the overlays' instance layers
     assert str(metrics._default_path()).endswith("metrics.instance.json")
 
@@ -54,100 +54,100 @@ def test_no_path_glossary_write_never_touches_the_repo_file():
 
 # ── WP-4: the four stores that had no env override (matcache / episodes / memory /
 # actions). Each was hardcoded to the live data/ dir, so the suite wrote (or, for a
-# canvas clear, DELETED) a developer's real files. Every one now resolves an AUGHOR_*
+# canvas clear, DELETED) a developer's real files. Every one now resolves an PRAMANYX_*
 # env the conftest points at the throwaway temp dir. ─────────────────────────────────
 
 def test_matcache_path_is_isolated():
-    from aughor.db import matcache
-    assert "aughor-test-stores" in str(matcache._CACHE_PATH)
+    from pramanyx.db import matcache
+    assert "pramanyx-test-stores" in str(matcache._CACHE_PATH)
     assert str(matcache._CACHE_PATH).endswith("mat_cache.duckdb")
 
 
 def test_episodes_dir_is_isolated():
-    from aughor.explorer.episodes import episodes_dir
-    assert "aughor-test-stores" in str(episodes_dir())
+    from pramanyx.explorer.episodes import episodes_dir
+    assert "pramanyx-test-stores" in str(episodes_dir())
 
 
 def test_memory_paths_are_isolated():
-    from aughor.memory.paths import agent_runs_path, learned_actions_path
-    assert "aughor-test-stores" in agent_runs_path()
-    assert "aughor-test-stores" in learned_actions_path()
+    from pramanyx.memory.paths import agent_runs_path, learned_actions_path
+    assert "pramanyx-test-stores" in agent_runs_path()
+    assert "pramanyx-test-stores" in learned_actions_path()
 
 
 def test_org_settings_path_is_isolated():
     """The suite read the live organisation settings, and a Briefing test failed on what this install's
     organisation had declared (2026-10-03)."""
-    from aughor.orgsettings import store
-    assert "aughor-test-stores" in str(store._PATH)
+    from pramanyx.orgsettings import store
+    assert "pramanyx-test-stores" in str(store._PATH)
 
 
 def test_actions_paths_are_isolated():
-    from aughor.notifications import store as astore
-    assert "aughor-test-stores" in str(astore._TRIGGERS_PATH)
-    assert "aughor-test-stores" in str(astore._LOGS_PATH)
+    from pramanyx.notifications import store as astore
+    assert "pramanyx-test-stores" in str(astore._TRIGGERS_PATH)
+    assert "pramanyx-test-stores" in str(astore._LOGS_PATH)
 
 
 def test_agents_db_default_is_under_data_not_repo_root():
-    # The default path (used when AUGHOR_AGENTS_DB is unset) must live under data/ so it
+    # The default path (used when PRAMANYX_AGENTS_DB is unset) must live under data/ so it
     # is covered by data/'s gitignore — the bare "agents.db" default escaped it and got
     # a live runtime DB tracked in git.
-    from aughor.custom_agents import store
+    from pramanyx.custom_agents import store
     assert store._DEFAULT_DB_PATH == pathlib.Path("data") / "agents.db"
 
 # ── 2026-07-21: the family WP-4 MISSED — per-connection GENERATED state. Each of these
 # hardcoded Path("data") with no override, so the suite wrote and DELETED a developer's real
 # files. A full-suite run destroyed a live exploration_workspace.json holding 89 findings;
 # data/*.json is gitignored, so there was nothing to recover from. All now resolve
-# AUGHOR_STATE_DIR (aughor/db/paths.py), which the conftest points at the temp dir. ────────
+# PRAMANYX_STATE_DIR (pramanyx/db/paths.py), which the conftest points at the temp dir. ────────
 
 def test_exploration_store_dir_is_isolated():
-    from aughor.explorer import store
-    assert "aughor-test-stores" in str(store._DATA_DIR)
+    from pramanyx.explorer import store
+    assert "pramanyx-test-stores" in str(store._DATA_DIR)
 
 
 def test_profile_store_dir_is_isolated():
-    from aughor.business_profile import store as profile_store
-    assert "aughor-test-stores" in str(profile_store._DATA_DIR)
+    from pramanyx.business_profile import store as profile_store
+    assert "pramanyx-test-stores" in str(profile_store._DATA_DIR)
 
 
 def test_briefing_and_patterns_caches_are_isolated():
-    from aughor.knowledge import briefing, patterns
-    assert "aughor-test-stores" in str(briefing._CACHE_PATH)
-    assert "aughor-test-stores" in str(patterns._CACHE_PATH)
+    from pramanyx.knowledge import briefing, patterns
+    assert "pramanyx-test-stores" in str(briefing._CACHE_PATH)
+    assert "pramanyx-test-stores" in str(patterns._CACHE_PATH)
 
 
 def test_explore_watermark_is_isolated():
-    from aughor.explorer import watermark
-    assert "aughor-test-stores" in str(watermark._PATH)
+    from pramanyx.explorer import watermark
+    assert "pramanyx-test-stores" in str(watermark._PATH)
 
 
 def test_schema_fingerprint_cache_is_isolated():
     """Found by the whole-directory canary, not by reasoning about which stores exist —
     it was a repo-absolute Path(__file__)…/data/ with no override, so it never appeared in
-    any AUGHOR_* audit."""
-    from aughor.db import schema_cache
-    assert "aughor-test-stores" in str(schema_cache._CACHE_PATH)
+    any PRAMANYX_* audit."""
+    from pramanyx.db import schema_cache
+    assert "pramanyx-test-stores" in str(schema_cache._CACHE_PATH)
 
 
 def test_ontology_overrides_and_export_trees_are_isolated():
     """ON-1b — the overrides tree had no override, so a measure-door test that cached a graph under a real
     connection id wrote that connection's live override file: LuxExperience's Order bindings came back counted
-    over a three-row fixture. The tree and its export sibling now resolve AUGHOR_* dirs the conftest points at
+    over a three-row fixture. The tree and its export sibling now resolve PRAMANYX_* dirs the conftest points at
     the temp dir, and `resolve_db_path` puts both in front of the generic guard below."""
-    from aughor.ontology import filetree, overrides, recommendations
-    assert "aughor-test-stores" in str(overrides.overrides_root())
+    from pramanyx.ontology import filetree, overrides, recommendations
+    assert "pramanyx-test-stores" in str(overrides.overrides_root())
     assert str(overrides.overrides_root()).endswith("ontology_overrides")
-    assert "aughor-test-stores" in str(overrides._SEED_ROOT)        # the overlay's shipped layer, read-only
-    assert "aughor-test-stores" in str(filetree._EXPORT_ROOT)
-    assert "aughor-test-stores" in str(recommendations._ROOT)      # the family's third writer, same fix
+    assert "pramanyx-test-stores" in str(overrides._SEED_ROOT)        # the overlay's shipped layer, read-only
+    assert "pramanyx-test-stores" in str(filetree._EXPORT_ROOT)
+    assert "pramanyx-test-stores" in str(recommendations._ROOT)      # the family's third writer, same fix
 
 
 def test_the_overrides_move_record_is_isolated():
     """The record that the overrides moved into the data home (`db.migrate.top_up`) is the switch every resolution
     reads: it lives in the HOME, which the conftest assigns, so no test reads or writes the live install's record —
     and the tree's own env var keeps every test's overrides off the checkout and the home alike."""
-    from aughor.db import home, migrate
-    assert "aughor-test-stores" in str(home.moved_record("ontology_overrides"))
+    from pramanyx.db import home, migrate
+    assert "pramanyx-test-stores" in str(home.moved_record("ontology_overrides"))
     assert migrate.owed() == []                                     # a test process never owes the live move
 
 
@@ -156,8 +156,8 @@ def test_embedded_qdrant_path_is_isolated():
     is worse than dirty data: local mode's exclusive lock would also contend with a
     running API. Resolved per call (never captured at import), so the conftest
     assignment is what every open sees."""
-    from aughor.semantic import vector_store
-    assert "aughor-test-stores" in vector_store._embedded_path()
+    from pramanyx.semantic import vector_store
+    assert "pramanyx-test-stores" in vector_store._embedded_path()
 
 
 def test_purge_resolves_the_SAME_dir_as_the_stores_it_deletes_from():
@@ -165,16 +165,16 @@ def test_purge_resolves_the_SAME_dir_as_the_stores_it_deletes_from():
     from the live dir even when the store it was purging had been redirected. A redirect that
     the deleter doesn't share isn't isolation — it just moves the writes and keeps the
     deletes on the real files."""
-    from aughor.db import purge
-    from aughor.explorer import store
-    from aughor.business_profile import store as profile_store
-    assert "aughor-test-stores" in str(purge._DATA_DIR)
+    from pramanyx.db import purge
+    from pramanyx.explorer import store
+    from pramanyx.business_profile import store as profile_store
+    assert "pramanyx-test-stores" in str(purge._DATA_DIR)
     assert purge._DATA_DIR == store._DATA_DIR == profile_store._DATA_DIR
 
 
 def test_state_dir_defaults_to_data_when_env_unset(monkeypatch):
     """Unset → data/, i.e. production behaviour is byte-identical to before the fix."""
-    from aughor.db.paths import STATE_DIR_ENV, state_dir
+    from pramanyx.db.paths import STATE_DIR_ENV, state_dir
     monkeypatch.delenv(STATE_DIR_ENV, raising=False)
     assert state_dir() == pathlib.Path("data")
 
@@ -183,7 +183,7 @@ def test_no_generated_state_store_still_hardcodes_the_data_dir():
     """Ratchet: a NEW per-connection store must resolve the shared dir, not re-hardcode it.
     Scoped to the modules in this family — authored-file readers legitimately use data/."""
     import re
-    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+    root = pathlib.Path(__file__).resolve().parents[2] / "pramanyx"
     offenders = [
         str(p.relative_to(root))
         for p in [root / "explorer" / "store.py", root / "explorer" / "watermark.py",
@@ -212,7 +212,7 @@ def test_no_store_path_is_left_to_the_inherited_environment():
     environment where they differ, the guard would already be running against the wrong
     store.
 
-    Behaviour flags (`AUGHOR_API_KEY`, `AUGHOR_AUTOSEED`, `AUGHOR_SKIP_DOTENV`) are
+    Behaviour flags (`PRAMANYX_API_KEY`, `PRAMANYX_AUTOSEED`, `PRAMANYX_SKIP_DOTENV`) are
     deliberately NOT covered — inheriting those is sometimes exactly what a developer wants,
     and none of them decides where a byte gets written.
     """
@@ -275,9 +275,9 @@ def test_every_store_env_override_is_pointed_at_the_test_dir():
 
     assert found, "found no resolve_db_path call sites — this guard has gone blind"
     repo_data = (_REPO / "data").resolve()
-    # …nor the live data home: since the data-home move the install's own stores sit in `~/.aughor` (the default home,
-    # whatever AUGHOR_HOME the suite sets), so an override pointed there would write the live state (2026-10-12).
-    from aughor.db.home import default_home
+    # …nor the live data home: since the data-home move the install's own stores sit in `~/.pramanyx` (the default home,
+    # whatever PRAMANYX_HOME the suite sets), so an override pointed there would write the live state (2026-10-12).
+    from pramanyx.db.home import default_home
     live_home = default_home().resolve()
 
     def _leaks(env: str) -> bool:
@@ -311,11 +311,11 @@ def test_upload_root_is_isolated():
     which no test ordering can satisfy by accident."""
     import os
 
-    from aughor.control_plane import vending
+    from pramanyx.control_plane import vending
 
     repo_data = (pathlib.Path(__file__).resolve().parents[2] / "data").resolve()
-    configured = pathlib.Path(os.environ["AUGHOR_UPLOAD_DIR"]).resolve()
-    assert "aughor-test-stores" in str(configured), "the suite did not point upload storage anywhere"
+    configured = pathlib.Path(os.environ["PRAMANYX_UPLOAD_DIR"]).resolve()
+    assert "pramanyx-test-stores" in str(configured), "the suite did not point upload storage anywhere"
     assert repo_data != configured and repo_data not in configured.parents
 
     live = pathlib.Path(vending.vend_storage("probe").root).resolve()
@@ -325,9 +325,9 @@ def test_upload_root_is_isolated():
 def test_playbook_and_its_version_log_are_isolated():
     """The version log is a SIBLING of the playbook file, so pointing the playbook alone
     would still have left the append-only history landing in the repo."""
-    from aughor.playbook import store
-    assert "aughor-test-stores" in str(store._default_path())
-    assert "aughor-test-stores" in str(store._versions_path())
+    from pramanyx.playbook import store
+    assert "pramanyx-test-stores" in str(store._default_path())
+    assert "pramanyx-test-stores" in str(store._versions_path())
 
 
 def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
@@ -335,7 +335,7 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
 
     That one's population is `resolve_db_path` call sites, so a store reading `os.environ`
     itself never appears in it. This takes a population from the code by two other routes:
-    every `os.environ.get("AUGHOR_…")` whose own expression falls back to a path under the
+    every `os.environ.get("PRAMANYX_…")` whose own expression falls back to a path under the
     repo's `data/`, plus every entry in the serverless `WRITABLE_STORES` registry — the
     playbook needs the registry, because its fallback is a module constant rather than a
     literal in the call.
@@ -347,9 +347,9 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
     import ast
     import os
 
-    from aughor.control_plane.writable_paths import WRITABLE_STORES
+    from pramanyx.control_plane.writable_paths import WRITABLE_STORES
 
-    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+    root = pathlib.Path(__file__).resolve().parents[2] / "pramanyx"
     found: dict[str, str] = {var: "control_plane/writable_paths.py" for var in WRITABLE_STORES}
 
     def _falls_back_to_repo_data(segment: str) -> bool:
@@ -382,7 +382,7 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
                 and node.func.value.attr == "environ")
             first = node.args[0]
             if not (reads_env and isinstance(first, ast.Constant)
-                    and isinstance(first.value, str) and first.value.startswith("AUGHOR_")):
+                    and isinstance(first.value, str) and first.value.startswith("PRAMANYX_")):
                 continue
             # Sliced here, for the calls that got this far, and never per BoolOp: on 3.11
             # `get_source_segment` re-splits the whole file in pure Python on every call, so
@@ -414,19 +414,19 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
 # worktree — from the main checkout, that file is the live deployment's org model config. Measured
 # the same day, with both bodies run from an empty environment: the conftest pinned 75 stores and
 # the helper 54, 22 of the suite's stores were missing from the helper, and one of the helper's
-# names (AUGHOR_ORGSETTINGS_DB) is read by no code at all. A comment that says "by measurement" is
+# names (PRAMANYX_ORGSETTINGS_DB) is read by no code at all. A comment that says "by measurement" is
 # not a measurement, so these tests are. ─────────────────────────────────────────────────────────
 
 #: Stores the suite isolates that a live drive deliberately READS from the checkout. Each entry is
 #: re-checked below (still read by the code, still isolated by the suite, still left alone by the
 #: helper), so an exclusion cannot quietly outlive its reason.
 LIVE_DRIVE_READS_FROM_THE_CHECKOUT = {
-    "AUGHOR_PACKS_DIR": (
+    "PRAMANYX_PACKS_DIR": (
         "the authored package tree (the tracked packs/): a drive must see the real packages. Not "
         "free of writes: promotion rewrites pack.yaml, which is why the suite isolates a COPY — a "
         "drive from the main checkout that promotes a pack changes the tree the running API reads, "
         "visibly, in git status."),
-    "AUGHOR_SAMPLES_DB": (
+    "PRAMANYX_SAMPLES_DB": (
         "the bundled samples warehouse, opened and ATTACHed read-only. Nothing outside the suite "
         "seeds it (re-measured below), so a drive can only read it; isolated, a drive would lose "
         "the samples connection with no way to get it back."),
@@ -434,11 +434,11 @@ LIVE_DRIVE_READS_FROM_THE_CHECKOUT = {
 
 
 @functools.lru_cache(maxsize=1)
-def _parsed_aughor() -> tuple[tuple[str, ast.Module], ...]:
+def _parsed_pramanyx() -> tuple[tuple[str, ast.Module], ...]:
     parsed = []
-    for path in sorted((_REPO / "aughor").rglob("*.py")):
+    for path in sorted((_REPO / "pramanyx").rglob("*.py")):
         try:
-            parsed.append((str(path.relative_to(_REPO / "aughor")), ast.parse(path.read_text())))
+            parsed.append((str(path.relative_to(_REPO / "pramanyx")), ast.parse(path.read_text())))
         except SyntaxError:                      # not ours to police here
             continue
     return tuple(parsed)
@@ -446,7 +446,7 @@ def _parsed_aughor() -> tuple[tuple[str, ast.Module], ...]:
 
 @functools.lru_cache(maxsize=1)
 def _environment_reads() -> tuple[dict[str, dict[str, str]], tuple[str, ...]]:
-    """Every AUGHOR_* name the code in aughor/ reads → {route: first place it is read}, and the
+    """Every PRAMANYX_* name the code in pramanyx/ reads → {route: first place it is read}, and the
     `resolve_db_path` call sites whose name could not be resolved.
 
     Two routes: "resolve_db_path", the seam most stores pass through, and "environ" —
@@ -457,11 +457,11 @@ def _environment_reads() -> tuple[dict[str, dict[str, str]], tuple[str, ...]]:
     would otherwise leave every population below without a word.
     """
     def _is_env_name(value) -> bool:
-        return isinstance(value, str) and re.fullmatch(r"AUGHOR_[A-Z0-9_]+", value) is not None
+        return isinstance(value, str) and re.fullmatch(r"PRAMANYX_[A-Z0-9_]+", value) is not None
 
     own: dict[str, dict[str, str]] = {}
     anywhere: dict[str, set[str]] = {}
-    for where, tree in _parsed_aughor():
+    for where, tree in _parsed_pramanyx():
         for node in tree.body:
             if isinstance(node, ast.Assign):
                 targets, value = node.targets, node.value
@@ -489,7 +489,7 @@ def _environment_reads() -> tuple[dict[str, dict[str, str]], tuple[str, ...]]:
 
     reads: dict[str, dict[str, str]] = {}
     unresolved: list[str] = []
-    for where, tree in _parsed_aughor():
+    for where, tree in _parsed_pramanyx():
         for node in ast.walk(tree):
             route, named = None, None
             if isinstance(node, ast.Call) and node.args:
@@ -514,19 +514,19 @@ def _environment_reads() -> tuple[dict[str, dict[str, str]], tuple[str, ...]]:
 
 
 def _pinned_by(body: str, temp_root: pathlib.Path) -> dict[str, str]:
-    """Run an isolation body in a FRESH interpreter that inherits no AUGHOR_* variable, and return
-    the AUGHOR_* variables it leaves pointing inside its own temp root.
+    """Run an isolation body in a FRESH interpreter that inherits no PRAMANYX_* variable, and return
+    the PRAMANYX_* variables it leaves pointing inside its own temp root.
 
     Fresh, because this process ran the conftest long ago, and because both bodies decide what to
     set from what is already set — an inherited value would pass for a pin the body never makes.
     "Inside the temp root" is what isolation means for a path, and it is also what tells a store
-    from a behaviour switch (`AUGHOR_API_KEY=""`) without a list of either.
+    from a behaviour switch (`PRAMANYX_API_KEY=""`) without a list of either.
     """
     temp_root.mkdir(parents=True)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("AUGHOR_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PRAMANYX_")}
     env["TMPDIR"] = str(temp_root)
     code = (body + "\nimport json, os\n"
-            "print(json.dumps({k: v for k, v in os.environ.items() if k.startswith('AUGHOR_')}))")
+            "print(json.dumps({k: v for k, v in os.environ.items() if k.startswith('PRAMANYX_')}))")
     done = subprocess.run([sys.executable, "-c", code], cwd=_REPO, env=env,
                           capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, f"the isolation body failed to run:\n{done.stderr}"
@@ -557,15 +557,15 @@ def test_the_environment_scan_finds_what_it_exists_to_find():
     assert unresolved == (), (
         f"resolve_db_path is called with names the scan cannot resolve: {list(unresolved)}. "
         "Teach `_environment_reads` the new shape — every store population here is built from it")
-    assert len(reads) > 100, f"found only {len(reads)} AUGHOR_* reads in aughor/ — the scan has gone blind"
-    assert "resolve_db_path" in reads["AUGHOR_ORG_LLM_DB"]         # a literal
-    assert "resolve_db_path" in reads["AUGHOR_STATE_DIR"]          # through STATE_DIR_ENV
-    assert "environ" in reads["AUGHOR_UPLOAD_DIR"]                 # os.environ.get("…")
-    assert "environ" in reads["AUGHOR_QDRANT_PATH"]                # os.getenv(QDRANT_PATH_ENV)
+    assert len(reads) > 100, f"found only {len(reads)} PRAMANYX_* reads in pramanyx/ — the scan has gone blind"
+    assert "resolve_db_path" in reads["PRAMANYX_ORG_LLM_DB"]         # a literal
+    assert "resolve_db_path" in reads["PRAMANYX_STATE_DIR"]          # through STATE_DIR_ENV
+    assert "environ" in reads["PRAMANYX_UPLOAD_DIR"]                 # os.environ.get("…")
+    assert "environ" in reads["PRAMANYX_QDRANT_PATH"]                # os.getenv(QDRANT_PATH_ENV)
 
 
 def test_live_drive_isolation_covers_every_store_the_suite_isolates(isolation_bodies):
-    """The population is not listed anywhere. The stores are the AUGHOR_* names the code reads (the
+    """The population is not listed anywhere. The stores are the PRAMANYX_* names the code reads (the
     scan above), and "isolated" is where each body — the conftest and `_isolate_stores()`, each run
     from an empty environment — actually points the variable. So a store registered in the conftest
     and not in the helper fails here, whatever route it reads its variable by, instead of being
@@ -589,8 +589,8 @@ def test_live_drive_isolation_covers_every_store_the_suite_isolates(isolation_bo
 
 
 def test_both_isolation_lists_pin_only_stores_the_code_reads(isolation_bodies):
-    """The failure the old comment hid in plain sight: `AUGHOR_ORGSETTINGS_DB` sat in the helper
-    from the day it was written, while the org store's real name, AUGHOR_ORGS_DB, went unpinned —
+    """The failure the old comment hid in plain sight: `PRAMANYX_ORGSETTINGS_DB` sat in the helper
+    from the day it was written, while the org store's real name, PRAMANYX_ORGS_DB, went unpinned —
     and a stale name reads exactly like coverage. The same check keeps the test above honest: its
     population is the scan, so a store the scan could not see would silently drop out of it; here
     that store fails instead."""
@@ -598,7 +598,7 @@ def test_both_isolation_lists_pin_only_stores_the_code_reads(isolation_bodies):
     for body, pinned in isolation_bodies.items():
         unread = sorted(set(pinned) - set(reads))
         assert unread == [], (
-            f"{body} pins {unread}, which no code in aughor/ reads: a renamed store's old name, or a "
+            f"{body} pins {unread}, which no code in pramanyx/ reads: a renamed store's old name, or a "
             "read the scan cannot see. Either way the store it was meant for is not what is pinned.")
 
 
@@ -609,23 +609,23 @@ def test_every_store_a_live_drive_reads_from_the_checkout_still_earns_it(isolati
         assert env in reads, f"no code reads {env} any more — drop it from LIVE_DRIVE_READS_FROM_THE_CHECKOUT"
         assert env in suite, f"the suite no longer isolates {env}, so this exclusion excuses nothing"
         assert env not in drive, f"_isolate_stores() pins {env} now — drop it from LIVE_DRIVE_READS_FROM_THE_CHECKOUT"
-    # AUGHOR_SAMPLES_DB's reason is a claim about writers; re-measure it rather than trust it.
-    seeders = [f"{where}:{node.lineno}" for where, tree in _parsed_aughor() for node in ast.walk(tree)
+    # PRAMANYX_SAMPLES_DB's reason is a claim about writers; re-measure it rather than trust it.
+    seeders = [f"{where}:{node.lineno}" for where, tree in _parsed_pramanyx() for node in ast.walk(tree)
                if isinstance(node, ast.Call)
                and (getattr(node.func, "id", None) or getattr(node.func, "attr", None)) == "ensure_samples_db"]
     assert seeders == [], (
-        f"aughor/ now seeds the samples warehouse ({seeders}), so a live drive can write it: isolate "
-        "AUGHOR_SAMPLES_DB in _isolate_stores() and drop its exclusion.")
+        f"pramanyx/ now seeds the samples warehouse ({seeders}), so a live drive can write it: isolate "
+        "PRAMANYX_SAMPLES_DB in _isolate_stores() and drop its exclusion.")
 
 
 def test_api_sync_state_resolves_through_the_state_dir():
     """`connectors/api/base_sync.py` hardcoded `Path("data/api_sync")` and `Path("data")`, so it
     was invisible to both isolation lists (this suite's conftest and `scripts/dump_openapi.py`)
-    and would have been left behind by `aughor migrate-state`. It now resolves through
+    and would have been left behind by `pramanyx migrate-state`. It now resolves through
     `state_dir()`, whose env both lists already carry — isolated by construction."""
-    from aughor.connectors.api import base_sync
-    from aughor.db.paths import state_dir
+    from pramanyx.connectors.api import base_sync
+    from pramanyx.db.paths import state_dir
 
     assert base_sync._STATE_ROOT == state_dir()
     assert base_sync._SYNC_ROOT == state_dir() / "api_sync"
-    assert "aughor-test-stores" in str(base_sync._SYNC_ROOT), "the API sync store is not isolated"
+    assert "pramanyx-test-stores" in str(base_sync._SYNC_ROOT), "the API sync store is not isolated"

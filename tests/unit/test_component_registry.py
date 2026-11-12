@@ -31,8 +31,8 @@ import importlib
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.components import BADGES, FAMILIES, GOVERNORS, components
+from pramanyx.api import app
+from pramanyx.components import BADGES, FAMILIES, GOVERNORS, components
 
 client = TestClient(app)
 
@@ -63,14 +63,14 @@ def test_a_declared_write_is_governed_by_the_approval_gate_not_the_engine():
     engine; only a declared write passes the graduated-approval gate, and a roster that
     said otherwise would describe every step as equally governed."""
     rows = {c.id: c for c in components(conn_id="fixture")}
-    assert rows["effect:kinetic_action"].governed_by == "aughor.actions.executor"
-    assert rows["effect:slack_post"].governed_by == "aughor.automations.engine"
+    assert rows["effect:kinetic_action"].governed_by == "pramanyx.actions.executor"
+    assert rows["effect:slack_post"].governed_by == "pramanyx.automations.engine"
 
 
 # ── adapted, never copied ─────────────────────────────────────────────────────
 
 def test_the_automation_families_match_the_palette_exactly():
-    from aughor.automations.palette import ACTIONS, TRIGGERS
+    from pramanyx.automations.palette import ACTIONS, TRIGGERS
 
     rows = components()
     assert {c.kind for c in rows if c.family == "trigger"} == {e.kind for e in TRIGGERS}
@@ -81,7 +81,7 @@ def test_the_connector_family_matches_the_full_type_set():
     """Not `REGISTRY.supported_types()` — that is the set with an `open_connection()`, and
     it excludes the knowledge connectors, which are real, authenticated and synced by
     `POST /connections/{id}/knowledge-sync`."""
-    from aughor.connectors.registry import CATEGORIES, REGISTRY
+    from pramanyx.connectors.registry import CATEGORIES, REGISTRY
 
     kinds = {c.kind for c in components(family="connector")}
     assert kinds == set(CATEGORIES) | {"duckdb", "postgres"}
@@ -92,8 +92,8 @@ def test_the_connector_family_matches_the_full_type_set():
 
 
 def test_the_tool_families_match_their_own_rosters():
-    from aughor.agent.platform_tools import platform_tools
-    from aughor.mcp.server import mcp
+    from pramanyx.agent.platform_tools import platform_tools
+    from pramanyx.mcp.server import mcp
 
     rows = components(conn_id="fixture")
     assert ({c.kind for c in rows if c.family == "platform_tool"}
@@ -110,7 +110,7 @@ def test_the_mcp_family_is_counted_independently_of_how_it_is_read():
     import re
     from pathlib import Path
 
-    declared = len(re.findall(r"^@mcp\.tool\(", Path("aughor/mcp/server.py").read_text(),
+    declared = len(re.findall(r"^@mcp\.tool\(", Path("pramanyx/mcp/server.py").read_text(),
                               re.M))
     assert declared > 0, "the decorator scan found nothing — re-check this premise"
     assert len([c for c in components() if c.family == "mcp_tool"]) == declared
@@ -119,7 +119,7 @@ def test_the_mcp_family_is_counted_independently_of_how_it_is_read():
 def test_a_new_effect_kind_cannot_be_added_without_appearing_here():
     """The whole point of adapting rather than copying, stated as a test. If this ever
     fails, someone has given the registry a table of its own."""
-    from aughor.automations.palette import ACTIONS
+    from pramanyx.automations.palette import ACTIONS
 
     before = {c.kind for c in components(family="effect")}
     assert before == {e.kind for e in ACTIONS}
@@ -152,11 +152,11 @@ def test_a_missing_driver_is_unavailable_not_needs_setup(monkeypatch):
     one driver today, so a test that scanned for one would pass on the strength of a fact
     about this laptop — and would go quietly vacuous the day someone `pip install`s it,
     which is the shape of a guard that stops guarding without failing once."""
-    from aughor.components import registry
+    from pramanyx.components import registry
 
     monkeypatch.setattr(registry, "missing_drivers", lambda t: ["nonesuch-driver"],
                         raising=False)
-    import aughor.connectors.registry as connreg
+    import pramanyx.connectors.registry as connreg
     monkeypatch.setattr(connreg, "missing_drivers", lambda t: ["nonesuch-driver"])
 
     rows = components(family="connector")
@@ -170,7 +170,7 @@ def test_a_missing_driver_is_unavailable_not_needs_setup(monkeypatch):
 def test_a_family_that_cannot_be_read_does_not_take_the_roster_down(monkeypatch):
     """One unimportable subsystem must not make the surface answer "this install can do
     nothing" — which is both false and the most alarming possible way to be wrong."""
-    from aughor.components import registry
+    from pramanyx.components import registry
 
     monkeypatch.setattr(registry, "_mcp_tool_components",
                         lambda: (_ for _ in ()).throw(RuntimeError("mcp is down")))
@@ -287,7 +287,7 @@ def test_the_palette_keeps_its_bindable_ports_through_the_registry():
     """`bindable` and `required` are independent — a declared action's `params` is both —
     so a palette rebuilt by deriving one from the other would start drawing edges onto
     ports the engine does not read."""
-    from aughor.automations.dataflow import BINDABLE_FIELDS
+    from pramanyx.automations.dataflow import BINDABLE_FIELDS
 
     palette = client.get("/automations/palette").json()["entries"]
     for e in palette:
@@ -302,8 +302,8 @@ def test_the_palette_keeps_its_bindable_ports_through_the_registry():
 
 @pytest.fixture
 def one_grant():
-    from aughor.integrations import store as istore
-    from aughor.integrations.models import Connection
+    from pramanyx.integrations import store as istore
+    from pramanyx.integrations.models import Connection
 
     for d in list(istore._CONNS.all()):
         istore._CONNS.delete(d["id"])
@@ -316,7 +316,7 @@ def one_grant():
 
 
 def test_a_grant_becomes_rows_that_say_whose_consent_they_spend(one_grant):
-    from aughor.integrations.operations import operations_for
+    from pramanyx.integrations.operations import operations_for
 
     rows = {c.id: c for c in components(family="integration")}
     assert set(rows) == {f"integration:ic_reg:{op.id}" for op in operations_for("google")}, \
@@ -328,23 +328,23 @@ def test_a_grant_becomes_rows_that_say_whose_consent_they_spend(one_grant):
     assert "connect Google Sheets under Integrations" in sheets.reason
     listing = rows["integration:ic_reg:gmail.messages.list"]
     assert "as Google · sales@example.com" in listing.description
-    assert listing.availability == "ready" and listing.governed_by == "aughor.govern.outbound"
+    assert listing.availability == "ready" and listing.governed_by == "pramanyx.govern.outbound"
     assert listing.outputs == ["items", "count", "next_page_token"], \
         "the first family that can state a CLOSED set for a remote call"
 
 
 def test_a_write_row_names_the_gate_that_can_actually_stop_it():
-    from aughor.integrations import store as istore
-    from aughor.integrations.models import Connection
+    from pramanyx.integrations import store as istore
+    from pramanyx.integrations.models import Connection
 
     istore.save_connection(Connection(id="ic_w", provider="slack", account="Acme",
                                       scopes="chat:write channels:read", status="active"))
     try:
         rows = {c.id: c for c in components(family="integration")}
         assert rows["integration:ic_w:slack.chat.postMessage"].governed_by == \
-            "aughor.govern.actions"
+            "pramanyx.govern.actions"
         assert rows["integration:ic_w:slack.conversations.list"].governed_by == \
-            "aughor.govern.outbound"
+            "pramanyx.govern.outbound"
     finally:
         istore._CONNS.delete("ic_w")
 
@@ -352,8 +352,8 @@ def test_a_write_row_names_the_gate_that_can_actually_stop_it():
 def test_a_scope_the_grant_lacks_dims_the_row_not_the_account():
     """The same account may be able to read mail and not to post. One sentence per row is
     what tells a reader which of the two they are looking at."""
-    from aughor.integrations import store as istore
-    from aughor.integrations.models import Connection
+    from pramanyx.integrations import store as istore
+    from pramanyx.integrations.models import Connection
 
     istore.save_connection(Connection(id="ic_thin", provider="slack", account="Acme",
                                       scopes="channels:read", status="active"))
@@ -368,8 +368,8 @@ def test_a_scope_the_grant_lacks_dims_the_row_not_the_account():
 
 
 def test_a_grant_the_provider_will_not_refresh_dims_every_one_of_its_rows():
-    from aughor.integrations import store as istore
-    from aughor.integrations.models import Connection
+    from pramanyx.integrations import store as istore
+    from pramanyx.integrations.models import Connection
 
     istore.save_connection(Connection(id="ic_stale", provider="google",
                                       scopes="https://www.googleapis.com/auth/gmail.readonly",

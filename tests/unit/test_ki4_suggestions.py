@@ -16,8 +16,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.intake import suggestions
+from pramanyx.api import app
+from pramanyx.intake import suggestions
 
 client = TestClient(app)
 
@@ -26,12 +26,12 @@ CONN = "ki4conn"
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_INTAKE_DB", str(tmp_path / "intake.db"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
-    import aughor.semantic.connection_kb as kb
+    monkeypatch.setenv("PRAMANYX_INTAKE_DB", str(tmp_path / "intake.db"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    import pramanyx.semantic.connection_kb as kb
     monkeypatch.setattr(kb, "_DATA_DIR", tmp_path / "kb")
     monkeypatch.setattr(kb, "_index_entry", lambda e: None)
     monkeypatch.setattr(kb, "_delete_from_index", lambda c, i: None)
@@ -46,7 +46,7 @@ def demo_conn(tmp_path, monkeypatch):
     c.execute("CREATE TABLE orders AS SELECT * FROM (VALUES "
               "('north', 10), ('south', 20)) AS t(region, amount)")
     c.close()
-    from aughor.db import connection as conn_mod
+    from pramanyx.db import connection as conn_mod
 
     def _open(conn_id, *args, **kwargs):
         if conn_id != CONN:
@@ -61,9 +61,9 @@ GOOD_SQL = "SELECT region, SUM(amount) AS revenue FROM orders GROUP BY region"
 
 
 def _wire_sources(monkeypatch, *, examples=None, guard_rows=None, invs=None):
-    from aughor.db import history
-    from aughor.security.audit import GuardVerdicts
-    from aughor.semantic import vector_store
+    from pramanyx.db import history
+    from pramanyx.security.audit import GuardVerdicts
+    from pramanyx.semantic import vector_store
 
     monkeypatch.setattr(vector_store, "scroll_payloads",
                         lambda collection, limit=10_000: list(examples or []))
@@ -159,7 +159,7 @@ def test_suggest_stages_accepts_approves_and_moves_the_corpus(
     tq_ref = next(x["target_ref"] for x in res.json()["results"]
                   if x["target_ref"].startswith("trusted_query:"))
     tq_id = tq_ref.split(":", 1)[1]
-    from aughor.semantic.trusted_queries import get_trusted
+    from pramanyx.semantic.trusted_queries import get_trusted
     row = get_trusted(tq_id)
     assert row.status == "proposed" and "inv_777" in row.note
 
@@ -170,7 +170,7 @@ def test_suggest_stages_accepts_approves_and_moves_the_corpus(
 
     import uuid
 
-    from aughor.learning import exporters, store
+    from pramanyx.learning import exporters, store
     name = f"ki4-receipt-{uuid.uuid4().hex[:8]}"
     sft = exporters.export_sft(name=f"{name}-sft")
     golden = exporters.export_golden(name=f"{name}-golden")
@@ -194,8 +194,8 @@ def test_suggest_stages_accepts_approves_and_moves_the_corpus(
 
 
 def test_eval_promoted_and_unverified_rows_never_enter_the_corpus(stores):
-    from aughor.learning.exporters import _trusted_export_rows
-    from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
+    from pramanyx.learning.exporters import _trusted_export_rows
+    from pramanyx.semantic.trusted_queries import TrustedQuery, save_trusted
 
     save_trusted(TrustedQuery(id="tq_eval", connection_id=CONN, question="q1",
                               sql="SELECT 1 FROM t", status="approved",

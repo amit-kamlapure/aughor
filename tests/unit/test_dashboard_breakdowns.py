@@ -5,7 +5,7 @@ ontology does not hold is refused at the keep, not discovered by a reader.
 """
 from __future__ import annotations
 
-from aughor.dashboards import pieces
+from pramanyx.dashboards import pieces
 
 BREAKDOWN = {"type": "ObjectBreakdown", "children": [], "props": {
     "entity": "order", "label": "Orders by country", "by": "placed_by.country",

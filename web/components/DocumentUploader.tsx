@@ -2,7 +2,7 @@
 
 /**
  * Add a document — the five steps a file takes into the corpus, opened from the Documents screen's "Add a document"
- * (`components/documents/DocumentsPage.tsx`). Redone to `aughor-v2/CLARITY.md` (2026-10-13): the steps, the chunk
+ * (`components/documents/DocumentsPage.tsx`). Redone to `pramanyx-v2/CLARITY.md` (2026-10-13): the steps, the chunk
  * settings and the pre-processing rules behave exactly as before; their explanations are one line each, the rest on
  * hover, and the embedding model became a fact on the screen's figures rather than a card here.
  *

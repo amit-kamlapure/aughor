@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.packs import knowledge
-from aughor.semantic import metric_coverage as C
-from aughor.semantic import metric_map as M
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.packs import knowledge
+from pramanyx.semantic import metric_coverage as C
+from pramanyx.semantic import metric_map as M
+from pramanyx.semantic.metrics import MetricDefinition
 
 LUX_TABLES = {  # name: (rows, main date) — as the profiler read them
     "brand_collaborations": (62, "launch_date"), "brands": (70, ""), "clienteling_interactions": (7399, "interaction_date"),
@@ -63,7 +63,7 @@ def lux(monkeypatch):
     monkeypatch.setattr(C, "defined_metrics", lambda *a, **k: list(LUX_METRICS))
     moves = {m.name: {"ok": True, "why": ""} for m in LUX_METRICS}
     monkeypatch.setattr(C, "_moves", lambda *a, **k: moves)
-    from aughor.semantic import coverage_proposals
+    from pramanyx.semantic import coverage_proposals
     monkeypatch.setattr(coverage_proposals, "proposals_by_area", lambda *a, **k: {})
     return mmap, moves
 
@@ -142,8 +142,8 @@ def test_an_approved_metric_whose_figures_are_unread_is_said_not_checked_and_cov
 def test_a_dataset_of_a_connection_that_holds_several_reads_only_its_own_tables(monkeypatch):
     """Found live 2026-10-26: the workspace's airlines, zomato_data, bakehouse and amazon datasets were all placed on
     Olist's tables — the profiler keys an entry's tables by bare name, and the merged entry was every dataset's."""
-    from aughor.db import registry
-    from aughor.tools import profile_cache
+    from pramanyx.db import registry
+    from pramanyx.tools import profile_cache
     entry = {"tables": {"flights": {"table": "flights", "row_count": 900}, "olist_orders": {"table": "olist_orders",
                                                                                             "row_count": 99}},
              "columns": {"flights.dep_delay": {"table": "flights", "column": "dep_delay", "dtype": "integer"},

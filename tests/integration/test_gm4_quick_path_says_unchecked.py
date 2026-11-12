@@ -7,15 +7,15 @@ the reason among the answer's caveats.
 """
 from __future__ import annotations
 
-from aughor.routers import investigations as inv
-from aughor.sql.guard_run import GuardRun
+from pramanyx.routers import investigations as inv
+from pramanyx.sql.guard_run import GuardRun
 
 _SQL = "SELECT COUNT(*) AS n FROM customers WHERE region = 'EMEA'"
 
 
 def _stub_model(monkeypatch) -> None:
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer, _PostAnswer
 
     class _Model:
         def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):
@@ -30,7 +30,7 @@ def _stub_model(monkeypatch) -> None:
 
     monkeypatch.setattr(prov, "get_provider", lambda role="coder", **kw: _Model())
     # The SQL writer bound `get_provider` by name at import; its repair would reach the real provider.
-    monkeypatch.setattr("aughor.sql.writer.get_provider", lambda role="coder", **kw: _Model())
+    monkeypatch.setattr("pramanyx.sql.writer.get_provider", lambda role="coder", **kw: _Model())
 
 
 def _ask(connection_id: str):
@@ -49,7 +49,7 @@ def test_the_quick_path_credits_a_filter_guard_that_ran(client, builtin_conn_id,
 def test_the_quick_path_says_what_its_filter_guard_could_not_check(client, builtin_conn_id, monkeypatch):
     _stub_model(monkeypatch)
     reason = "the values of customers.region could not be read: 400 refused"
-    monkeypatch.setattr("aughor.sql.join_guard.filter_domain_check",
+    monkeypatch.setattr("pramanyx.sql.join_guard.filter_domain_check",
                         lambda db, sql: GuardRun("filter-domain", unchecked=[reason]))
     res = _ask(builtin_conn_id)
     assert not res.error, res.error
@@ -64,8 +64,8 @@ _MISSPELLED = "SELECT COUNT(*) AS n FROM customers WHERE segment = 'Enterprize'"
 
 def _stub_scripted(monkeypatch, first: str, repair: str) -> dict:
     """The model writes ``first``; asked to repair, it writes ``repair``. Counts its calls."""
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer, _PostAnswer
     calls = {"answer": 0, "repair": 0}
 
     class _Model:
@@ -84,7 +84,7 @@ def _stub_scripted(monkeypatch, first: str, repair: str) -> dict:
             return self.complete(system=system, user=user, response_model=response_model)
 
     monkeypatch.setattr(prov, "get_provider", lambda role="coder", **kw: _Model())
-    monkeypatch.setattr("aughor.sql.writer.get_provider", lambda role="coder", **kw: _Model())
+    monkeypatch.setattr("pramanyx.sql.writer.get_provider", lambda role="coder", **kw: _Model())
     return calls
 
 
@@ -137,7 +137,7 @@ def test_a_value_in_no_column_is_said_and_never_repaired(client, builtin_conn_id
 def test_a_repair_that_fixes_the_literal_answers_without_a_stale_caveat(client, builtin_conn_id, monkeypatch):
     """When the pre-flight cannot bind a literal, the model is asked; a repair the filter guard confirms is
     adopted, and the caveats describe the statement that answers, not the one it replaced."""
-    monkeypatch.setattr("aughor.sql.join_guard.bind_filter_literals", lambda conn, sql, dialect="duckdb": (sql, []))
+    monkeypatch.setattr("pramanyx.sql.join_guard.bind_filter_literals", lambda conn, sql, dialect="duckdb": (sql, []))
     fixed = "SELECT COUNT(*) AS n FROM customers WHERE segment = 'Enterprise'"
     calls = _stub_scripted(monkeypatch, first=_MISSPELLED, repair=fixed)
     res = _ask_region(builtin_conn_id)

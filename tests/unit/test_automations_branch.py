@@ -27,10 +27,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.dataflow import (
+from pramanyx.automations.dataflow import (
     BRANCH_SKIP, GUARD_SKIP, effect_refs, resolve, UnresolvedBinding,
 )
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
 def _post(alias="", when=None, else_of="", **config) -> Effect:
@@ -54,7 +54,7 @@ def _automation(*effects, fallback=None) -> Automation:
 
 
 def _run(automation, dispatch, **kwargs):
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     return run_automation(automation, dispatch=dispatch, persist=False,
                           probe=lambda *a, **k: True,
                           sleeper=lambda _s: None, rng=lambda: 0.0, **kwargs)
@@ -259,7 +259,7 @@ def test_every_alternative_is_in_effect_refs():
 def test_an_investigate_arm_consumed_by_a_join_is_awaited():
     """W1's subtlest bug, one construct over: an arm nobody waited for would hand the
     join a job id. The await derives from the same refs the join reads."""
-    from aughor.automations.engine import AWAIT_KEY
+    from pramanyx.automations.engine import AWAIT_KEY
     seen: list[dict] = []
 
     def _dispatch(effect, automation):
@@ -348,7 +348,7 @@ def test_a_malformed_join_in_a_guard_side_is_refused_at_save():
 # ── the graph ────────────────────────────────────────────────────────────────────
 
 def test_the_route_draws_as_its_own_edge_kind():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     graph = build_graph(_automation(*_branch(op_holds=True)))
     route = [e for e in graph["edges"] if e["type"] == "route"]
     assert route == [{"from": "alerts", "to": "daily", "type": "route",
@@ -360,7 +360,7 @@ def test_the_route_draws_as_its_own_edge_kind():
 def test_an_untaken_arm_decorates_as_not_taken_never_guarded():
     """Two different facts a reader needs told apart: "held · condition not met" is a
     step whose own guard said no; "not taken" is the other path of a decision."""
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     seen, dispatch = _publishes(ts="1.1")
     run = _run(_automation(*_branch(op_holds=True)), dispatch)
     graph = build_graph(_automation(*_branch(op_holds=True)), run)
@@ -369,7 +369,7 @@ def test_an_untaken_arm_decorates_as_not_taken_never_guarded():
 
 
 def test_a_join_draws_one_data_edge_per_alternative():
-    from aughor.automations.graph import build_graph, data_edges_only
+    from pramanyx.automations.graph import build_graph, data_edges_only
     graph = build_graph(_joined(op_holds=True))
     into_summary = [e for e in data_edges_only(graph) if e["to"] == "summary"]
     assert {(e["from"], e["label"]) for e in into_summary} == {

@@ -103,7 +103,7 @@ We adopt this object model as Pramanyx-native objects. Mapping current → targe
 | **Workspace** (grants, no storage) | `workspaces` table = list of connection IDs, **no storage** | **Workspace** — grant-scoped views into org catalogs + a compute lane |
 
 Pramanyx is **closer to this model than it looks**: a workspace is already "a named list of
-connection IDs that owns no storage" (`aughor/workspace/store.py`). The work is to insert an
+connection IDs that owns no storage" (`pramanyx/workspace/store.py`). The work is to insert an
 **Org/metastore above** the workspace and turn *connections* into *catalogs reachable via
 grants* — not to invent a new structure.
 
@@ -131,13 +131,13 @@ session's context; the user sees the standard three levels `catalog.schema.table
 **What already exists in code** (the seeds — they just need an Org above workspace and
 `org_id` threaded through):
 
-- **Compute lanes** — `aughor/db/lanes.py` (R6): per-workspace DuckDB resource envelope
+- **Compute lanes** — `pramanyx/db/lanes.py` (R6): per-workspace DuckDB resource envelope
   (`memory_limit` + `threads`) + a per-workspace concurrency gate inside a global ceiling.
-- **Metering** — `aughor/kernel/metering.py` (R1): per-job tokens / queries / rows / time,
+- **Metering** — `pramanyx/kernel/metering.py` (R1): per-job tokens / queries / rows / time,
   registered by `job_id`, with a heartbeat that enforces budgets and cancels on breach.
-- **The security/audit gate** — `aughor/db/connection.py` `security_pre` / `security_post`:
+- **The security/audit gate** — `pramanyx/db/connection.py` `security_pre` / `security_post`:
   every query is safety-checked, PII-redacted, row-budgeted, and audit-logged.
-- **Workspace data-path isolation** — `aughor/workspace/store.py`
+- **Workspace data-path isolation** — `pramanyx/workspace/store.py`
   `workspace_connection_ids` / `workspace_for_connection`: a fail-closed visibility gate.
 
 These are control-plane functions in spirit; the refactor makes that explicit and adds the
@@ -182,10 +182,10 @@ There are two coherent lanes, and Pramanyx's snapshot seam already abstracts bot
 
 | Lane | Format | Catalog | When |
 |---|---|---|---|
-| **Embedded / single-tenant** | **DuckLake** (`aughor/db/ducklake.py`) | DuckLake's own catalog | now — batteries-included, no external server |
+| **Embedded / single-tenant** | **DuckLake** (`pramanyx/db/ducklake.py`) | DuckLake's own catalog | now — batteries-included, no external server |
 | **Governed / multi-tenant** | **Delta** (DuckDB-writable, time-travel) or Iceberg | an external catalog server | at scale — interop + credential vending |
 
-The decoupling is real and already shipped: `aughor/db/snapshot.py`
+The decoupling is real and already shipped: `pramanyx/db/snapshot.py`
 (`_native_snapshot` / `as_of_supported` / `execute_as_of`) dispatches on *capability* —
 DuckLake `AT (VERSION => n)` today, **Delta `VERSION AS OF`** under UC tomorrow. **The format
 bet is therefore reversible** — do not over-invest in it now.
@@ -196,7 +196,7 @@ Structured data → tables (Parquet/Delta/DuckLake). Unstructured objects (video
 raw files) → **Volumes**: bytes in the object store under the tenant path, with a catalog row
 of metadata (path, type, size, extracted text, embedding). SQL runs over the *catalog* ("all
 videos > 1 GB uploaded last week"); the **R8 semantic operators** (`prompt()` / `embedding()`,
-already built in `aughor/semops/ai_sql.py`) reason over the *extracted content*. This is the
+already built in `pramanyx/semops/ai_sql.py`) reason over the *extracted content*. This is the
 honest version of "SQL over any object" — not "video as a table," but a governed catalog of
 objects with AI operators bridging to their content.
 
@@ -207,7 +207,7 @@ objects with AI operators bridging to their content.
 Storage and compute are vended resources (§4, §5.2). **Inference is the third — and today it
 is the one that is still ambient.** Every intelligence surface (ADA, NL2SQL, briefing
 synthesis, R8 semantic operators) calls one chokepoint — `LLMProvider.complete()`
-(`aughor/llm/provider.py`) — but the backend, endpoint, and API key behind it are resolved
+(`pramanyx/llm/provider.py`) — but the backend, endpoint, and API key behind it are resolved
 from a single **global** `data/llm_config.json` → env → default (`_active_backend` /
 `_active_base_url` / `_active_key`). The only per-agent dimension is a model-*name* string
 pinned via the `_run_model` contextvar. There is no `org_id`, no workspace scope, and the
@@ -279,7 +279,7 @@ seam splits the work:
   capable of without the caller knowing.
 
 > **Status (measured, not assumed).** We refuse to *assume* a backend caches. The
-> prefix-cache **probe** (`aughor/llm/cache_probe.py`, `POST /llm/config/cache-probe`) measures
+> prefix-cache **probe** (`pramanyx/llm/cache_probe.py`, `POST /llm/config/cache-probe`) measures
 > reuse over the real provider — a shared-prefix series vs a distinct control — and persists
 > the verdict, which the capability seam adopts (`cache_mode_override`), so the chip stops
 > saying "unverified". **Live result: `qwen3-coder-next:cloud` → `no_reuse`** (warm 891ms vs
@@ -287,7 +287,7 @@ seam splits the work:
 > prefix KV across calls — so **Layer B is worthless for the shipped cloud binding**, and the
 > measurement (not a guess) redirects effort to Layer A.
 >
-> **Layer A is also tempered by reality:** aughor's context is *already curated* (schema-linking
+> **Layer A is also tempered by reality:** pramanyx's context is *already curated* (schema-linking
 > picks ~4 tables, results cap at 12 rows, schema/scan have char caps), so the relevance
 > selection *is* the compression and headroom-style "massive compression" has a low ceiling.
 > The Layer-A win across heterogeneous BYO-model backends is therefore **adaptation, not
@@ -371,7 +371,7 @@ open governed lakehouse"** — a sharper, more defensible position than owning t
 
 ### 7.1 Trust & reproducibility become native
 
-On this base, the snapshot-pinned-receipt work (`aughor/db/snapshot.py`, `revalidate.py`)
+On this base, the snapshot-pinned-receipt work (`pramanyx/db/snapshot.py`, `revalidate.py`)
 stops being opt-in and becomes the substrate: **every workspace is versioned, every finding
 pins a data-version, every answer is reproducible-as-of, the whole org is a time-machine.**
 Re-validate *proves* "correct-as-computed vs mis-derived" by reproducing a finding at its
@@ -415,13 +415,13 @@ Each phase ships value and is independently stoppable.
 
 - **Phase 0 — done.** `DuckLakeConnection` + the format-agnostic snapshot/reproduction seam.
 - **Phase 1 — the Org/tenant spine — ✅ done** *(2026-06-22/23, branch `2026-06-22-org-tenant-spine`).*
-  `aughor/org/` (`Org` above `Workspace`, `current_org_id()` contextvar, registry + bootstrap);
+  `pramanyx/org/` (`Org` above `Workspace`, `current_org_id()` contextvar, registry + bootstrap);
   `org_id` on every persisted store (workspaces, connections, jobs, artifacts, lineage,
   audit_log) + metering; storage re-pathed to `{root}/{org_id}/{conn_id}/…` via the
-  `aughor/control_plane/` control plane (`vend_storage()` — access is vended, never ambient,
+  `pramanyx/control_plane/` control plane (`vend_storage()` — access is vended, never ambient,
   Invariant #2) with a crash-safe idempotent on-disk migration; the control-plane / data-plane
   split is explicit in code. Single org in practice; multi-tenant-shaped in structure.
-- **Phase 2 — the metastore service — ✅ done** *(2026-06-23).* `aughor/metastore/` ships
+- **Phase 2 — the metastore service — ✅ done** *(2026-06-23).* `pramanyx/metastore/` ships
   **Catalog + Grant** (a connection *is* a catalog within an org; a workspace holds USAGE
   grants) and now **Schema** (the middle of the `catalog.schema.table` namespace, synced from
   live introspection), all org-scoped. The **live data-path gate is flipped onto grants**: the
@@ -435,7 +435,7 @@ Each phase ships value and is independently stoppable.
   schema/table-level grants; the four control-path reverse lookups (governance/compute)
   deliberately stay on the workspace store.
 - **Phase 3 — storage maturity — ◑ in progress.** **Volumes** for the unstructured tier
-  shipped (`aughor/files/`): catalog-scoped governed containers for files/images/PDFs/video,
+  shipped (`pramanyx/files/`): catalog-scoped governed containers for files/images/PDFs/video,
   bytes vended to the tenant path (`{root}/{org}/{catalog}/_volumes/…`), a queryable object
   metadata catalog, and a `/metastore` API (create/list volume · put/list/download/delete
   object). *Remaining:* wire `extracted_text` to the R8 `prompt()`/`embedding()` operators;
@@ -499,6 +499,6 @@ Each phase ships value and is independently stoppable.
    capability resolved Org → Workspace → Agent (§5b), not global process env.
 8. **Platform ≠ Agent** — the Agent may import the Platform; the **Platform never imports the
    Agent**. Enforced by `tests/unit/test_platform_agent_boundary.py` (empty allowlist). The agent
-   plugs into the platform's registries (`aughor/kernel/registries`, via `agent/bootstrap`); with
+   plugs into the platform's registries (`pramanyx/kernel/registries`, via `agent/bootstrap`); with
    nothing registered the platform runs raw. See
    [`PLATFORM_AGENT_SEPARATION.md`](PLATFORM_AGENT_SEPARATION.md).

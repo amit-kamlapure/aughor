@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.converse_tools import ground_answer_numbers
+from pramanyx.agent.converse_tools import ground_answer_numbers
 
 # The rows the query really returned (route, flights) — the shape of the live case.
 _ROWS = [["ZRH-LHR", 28], ["GVA-LHR", 42], ["ZRH-LCY", 21], ["GVA-LCY", 28],

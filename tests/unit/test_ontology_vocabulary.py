@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.vocabulary import (
+from pramanyx.ontology.vocabulary import (
     FORMATS,
     SOURCE_RANKS,
     SUBJECT_KINDS,
@@ -30,7 +30,7 @@ from aughor.ontology.vocabulary import (
 def vocab_root(tmp_path, monkeypatch):
     """Point the store at a tmp dir — never the tracked data/ tree."""
 
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
     return tmp_path
 
 
@@ -116,7 +116,7 @@ def test_junk_is_refused_rather_than_stored(kwargs, match):
 
 
 def test_an_unreadable_file_degrades_to_empty(vocab_root, monkeypatch):
-    import aughor.ontology.vocabulary as V
+    import pramanyx.ontology.vocabulary as V
 
     p = V._path("c1")
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -136,7 +136,7 @@ def test_the_vocabularies_are_small_and_closed():
 def test_the_linker_reads_the_declared_store():
     """Before O1 the linker WAS the synonym story. A store beside it rather than under it
     gives the platform two dialects — Wave V's lesson at smaller scale."""
-    from aughor.tools import schema_linker
+    from pramanyx.tools import schema_linker
 
     add_synonym("link-c1", "table", "orders", "takings")
     schema_linker.invalidate_hints("link-c1")
@@ -147,7 +147,7 @@ def test_the_linker_reads_the_declared_store():
 
 
 def test_the_linker_still_works_with_no_declared_synonyms():
-    from aughor.tools import schema_linker
+    from pramanyx.tools import schema_linker
 
     schema_linker.invalidate_hints("empty-c")
     assert schema_linker.build_connection_hints("empty-c") is not None
@@ -175,7 +175,7 @@ def test_an_undeclared_subject_has_no_spec():
 def test_this_module_does_not_render_anything():
     """#189's fix is split across two waves (J11): the spec is O1, the rendering is S2.
     A formatter here would be the chart-level hack the split exists to prevent."""
-    import aughor.ontology.vocabulary as V
+    import pramanyx.ontology.vocabulary as V
 
     assert not [n for n in dir(V) if n.startswith(("render", "format_value", "to_display"))]
 
@@ -189,7 +189,7 @@ def test_a_value_dictionary_round_trips():
 
 
 def test_truncation_is_declared_not_silent():
-    from aughor.ontology.vocabulary import MAX_VALUES
+    from pramanyx.ontology.vocabulary import MAX_VALUES
 
     vd = set_value_dictionary("c1", "t", "c", [f"v{i}" for i in range(MAX_VALUES + 10)])
     assert vd.truncated and len(vd.values) == MAX_VALUES
@@ -208,9 +208,9 @@ class TestValueDictionaryTrim:
     def test_a_restricted_table_dictionary_is_withheld(self, monkeypatch):
         """Surfacing it would leak the table's CONTENTS through the linker — exactly what
         G5 closed one layer up."""
-        from aughor.govern import tags as T
-        from aughor.govern.tags import ClearanceDecision, Requirement
-        from aughor.ontology.vocabulary import visible_value_dictionaries
+        from pramanyx.govern import tags as T
+        from pramanyx.govern.tags import ClearanceDecision, Requirement
+        from pramanyx.ontology.vocabulary import visible_value_dictionaries
 
         req = Requirement(key="tier", value="restricted", clearance="clearance.restricted")
         monkeypatch.setattr(

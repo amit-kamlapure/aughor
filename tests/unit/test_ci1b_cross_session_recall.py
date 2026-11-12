@@ -13,8 +13,8 @@ Two invariants the design turns on:
 """
 from __future__ import annotations
 
-from aughor.db import history as H
-from aughor.routers.investigations import (
+from pramanyx.db import history as H
+from pramanyx.routers.investigations import (
     build_prior_answers_section,
     resolve_prior_answers,
 )
@@ -177,7 +177,7 @@ def test_resolve_is_fail_open(monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("nope")
 
-    monkeypatch.setattr("aughor.db.history.find_prior_answers", _boom)
+    monkeypatch.setattr("pramanyx.db.history.find_prior_answers", _boom)
     assert resolve_prior_answers("q", "c1", "s1") == []
 
 
@@ -189,7 +189,7 @@ def test_resolve_is_fail_open(monkeypatch):
 # EXAMPLES; this block offered it as a baseline and asked for a comparison, so it got one.
 
 def test_a_run_that_reported_no_data_is_not_offered_as_a_baseline():
-    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+    from pramanyx.agent.investigate import NO_DATA_HEADLINE_PREFIX
 
     section = build_prior_answers_section([
         {"asked_at": "2026-08-20", "headline": f"{NO_DATA_HEADLINE_PREFIX}flight count could not be analyzed"},
@@ -207,7 +207,7 @@ def test_a_real_prior_answer_is_still_offered():
 
 
 def test_the_failed_run_is_dropped_without_taking_the_good_ones_with_it():
-    from aughor.agent.investigate import NO_DATA_HEADLINE_PREFIX
+    from pramanyx.agent.investigate import NO_DATA_HEADLINE_PREFIX
 
     section = build_prior_answers_section([
         {"asked_at": "2026-08-19", "headline": f"{NO_DATA_HEADLINE_PREFIX}traffic could not be analyzed"},

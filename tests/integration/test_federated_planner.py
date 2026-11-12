@@ -8,9 +8,9 @@ from __future__ import annotations
 import duckdb
 from fastapi.testclient import TestClient
 
-import aughor.llm.provider as provider_mod
-from aughor.agent.federated_planner import FederatedPlan, FederatedStep, validate_plan
-from aughor.db import registry
+import pramanyx.llm.provider as provider_mod
+from pramanyx.agent.federated_planner import FederatedPlan, FederatedStep, validate_plan
+from pramanyx.db import registry
 
 
 def _duck_file(path, *stmts):
@@ -87,7 +87,7 @@ def test_federated_answer_two_sources(client: TestClient, monkeypatch, tmp_path)
 def test_federated_answer_passes_the_post_execution_gate_on_every_source(client: TestClient, monkeypatch, tmp_path):
     """Every read of the fold runs under a plumbing label, so the answer itself passes PII redaction and the audit,
     on each connection it read (Arc ON leftovers, F7)."""
-    from aughor.security.audit import AuditLogger
+    from pramanyx.security.audit import AuditLogger
     lp = _duck_file(tmp_path / "orders_pii.duckdb",
                     "CREATE TABLE orders (order_id INT, cust VARCHAR)",
                     "INSERT INTO orders VALUES (1,'C1'),(2,'C2')")

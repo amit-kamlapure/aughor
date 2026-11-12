@@ -16,7 +16,7 @@ fail OPEN (`return None` on any error). `_populated_month_count` feeds the densi
 silently did not run, and the intake proceeded as though the window were dense and its final
 month complete — the same shape as everything else found this day: a guard that does not fire.
 
-THE FIX IS THE SEAM THAT ALREADY EXISTED. `aughor.db.dialects.native_sql` transpiles
+THE FIX IS THE SEAM THAT ALREADY EXISTED. `pramanyx.db.dialects.native_sql` transpiles
 DuckDB-written platform SQL into the dialect a `writes_native_sql` connection runs, and hands
 DuckDB's own back untouched. Writing a second type-name map here would have covered the cast
 and missed the `::` operator, `date_trunc` and the function names it also rewrites.
@@ -31,8 +31,8 @@ import inspect
 import pytest
 import sqlglot
 
-from aughor.agent import investigate as I
-from aughor.db.dialects import native_sql
+from pramanyx.agent import investigate as I
+from pramanyx.db.dialects import native_sql
 
 
 class _FakeDB:

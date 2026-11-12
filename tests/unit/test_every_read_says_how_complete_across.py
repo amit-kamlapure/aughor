@@ -30,14 +30,14 @@ def test_the_organisations_doors_say_it_too(client, wide):  # noqa: F811
 
 def test_a_query_cut_at_the_cap_says_truncated_and_one_over_the_cross_source_cap_refused(client, wide,  # noqa: F811
                                                                                            monkeypatch):
-    monkeypatch.setattr("aughor.db.connection.MAX_ROWS", 1)
+    monkeypatch.setattr("pramanyx.db.connection.MAX_ROWS", 1)
     cut = client.post("/objects/query", params=DOMAIN,
                       json={"object_type": "Order", "by": ["status"], "measures": [{"name": "n", "agg": "count"}]})
     assert _said(cut)["state"] == "truncated" and cut.json()["truncated"] is True
     by_country = {"object_type": "Order", "by": ["placed_by.country"], "measures": [{"name": "n", "agg": "count"}]}
     whole = client.post("/objects/query", params=DOMAIN, json=by_country)
     assert _said(whole)["state"] == "complete"            # read across two connections: its own budget, not that cap
-    monkeypatch.setattr("aughor.semantic.cross_source.MAX_HOME_ROWS", 2)
+    monkeypatch.setattr("pramanyx.semantic.cross_source.MAX_HOME_ROWS", 2)
     far = client.post("/objects/query", params=DOMAIN, json=by_country)
     said = _said(far)
     assert said["state"] == "refused" and said["shown"] == 0

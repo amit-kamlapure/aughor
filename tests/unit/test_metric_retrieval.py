@@ -2,7 +2,7 @@
 metric is promoted (and the tail trimmed at scale). Hermetic: embeddings are stubbed."""
 from __future__ import annotations
 
-import aughor.semantic.metric_retrieval as mr
+import pramanyx.semantic.metric_retrieval as mr
 
 
 class _M:

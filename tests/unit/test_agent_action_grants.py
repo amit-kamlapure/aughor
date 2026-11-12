@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.action_tools import action_tools, granted_actions, propose_one
-from aughor.custom_agents.models import UserAgent
+from pramanyx.agent.action_tools import action_tools, granted_actions, propose_one
+from pramanyx.custom_agents.models import UserAgent
 
 
 def _agent(**kw) -> UserAgent:
@@ -74,7 +74,7 @@ def test_an_ungranted_action_never_reaches_the_inbox(monkeypatch, graph_of, acti
     disabling the gate left this test green."""
     graph_of(action(id="refund_orders"))
     staged = []
-    monkeypatch.setattr("aughor.actions.inbox.stage_proposal",
+    monkeypatch.setattr("pramanyx.actions.inbox.stage_proposal",
                         lambda p: staged.append(p) or p)
     # VALID params, deliberately: with a missing required param the proposal fails
     # validation and stages nothing anyway, so the assertion would again hold for a
@@ -101,7 +101,7 @@ def test_a_granted_action_is_STAGED_and_awaits_approval(monkeypatch, graph_of, a
 def test_the_staged_proposal_is_the_real_inbox_row(monkeypatch, graph_of, action):
     """Drives the REAL inbox, so this fails if the seam is unplugged rather than only if
     the return shape is wrong."""
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
     graph_of(action(id="post_note"))
     out = propose_one("conn-a", grants=["post_note"], action_id="post_note",
                       params={"order_id": "1"}, proposer="agent:ag-1")
@@ -116,7 +116,7 @@ def test_the_staged_proposal_is_the_real_inbox_row(monkeypatch, graph_of, action
 def test_a_criterion_failure_returns_the_AUTHORED_message(graph_of, action):
     """The action author wrote that sentence for exactly this moment; paraphrasing it
     would replace a domain rule with a generic refusal."""
-    from aughor.ontology.models import SubmissionCriterion
+    from pramanyx.ontology.models import SubmissionCriterion
     graph_of(action(id="post_note", submission_criteria=[
         SubmissionCriterion(expr="order_id == '8821'", message="Only order 8821 may post.")]))
     out = propose_one("conn-a", grants=["post_note"], action_id="post_note",
@@ -126,7 +126,7 @@ def test_a_criterion_failure_returns_the_AUTHORED_message(graph_of, action):
 
 
 def test_a_connection_with_no_declared_actions_says_so(monkeypatch):
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda cid, schema=None: None)
     out = propose_one("conn-a", grants=["post_note"], action_id="post_note")
     assert out["ok"] is False and out["status"] == "no_actions"
@@ -148,7 +148,7 @@ def test_reordering_grants_does_NOT_change_the_config_rev():
 
 
 def test_tool_grants_is_a_governing_field():
-    from aughor.custom_agents.models import GOVERNING_FIELDS
+    from pramanyx.custom_agents.models import GOVERNING_FIELDS
     assert "tool_grants" in GOVERNING_FIELDS
 
 
@@ -156,7 +156,7 @@ def test_tool_grants_is_a_governing_field():
 
 @pytest.fixture
 def action():
-    from aughor.ontology.models import ActionParameter, KineticAction
+    from pramanyx.ontology.models import ActionParameter, KineticAction
 
     def _make(**kw):
         base = dict(id="post_note", kind="side_effect",
@@ -173,6 +173,6 @@ def graph_of(monkeypatch):
     def _install(act):
         class _G:
             kinetic_actions = {act.id: act}
-        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+        monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                             lambda cid, schema=None: _G())
     return _install

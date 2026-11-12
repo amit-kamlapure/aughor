@@ -46,15 +46,15 @@ adaptations are Pramanyx's; the originals remain under their own copyright.
 1. Apache Superset (https://github.com/apache/superset)
    Copyright Apache Software Foundation, licensed under Apache-2.0.
 
-   aughor/sql/readonly.py — mutating-statement detection (is_mutating /
+   pramanyx/sql/readonly.py — mutating-statement detection (is_mutating /
                             is_destructive and the mutating node, function and
                             command name lists), adapted from
                             superset/sql/parse.py
-   aughor/sql/tables.py   — CTE-safe table extraction
+   pramanyx/sql/tables.py   — CTE-safe table extraction
                             (extract_tables_from_statement / is_cte), adapted
                             from superset/sql/parse.py
 
-   `aughor/tools/postproc.py` is deliberately NOT listed: it was inspired by
+   `pramanyx/tools/postproc.py` is deliberately NOT listed: it was inspired by
    Superset's pandas_postprocessing but independently written against Pramanyx's
    own `(columns, rows)` shape with no pandas and no copied code.
 

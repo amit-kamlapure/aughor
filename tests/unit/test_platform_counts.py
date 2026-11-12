@@ -9,10 +9,10 @@ real resolver on the seeded samples.
 """
 from __future__ import annotations
 
-from aughor.actions import overlay as OVL
-from aughor.dashboards import pieces
-from aughor.ontology.platform_objects import listing, query
-from aughor.semantic.object_query import ObjectQuery
+from pramanyx.actions import overlay as OVL
+from pramanyx.dashboards import pieces
+from pramanyx.ontology.platform_objects import listing, query
+from pramanyx.semantic.object_query import ObjectQuery
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_platform_owned_case import _run, cases  # noqa: F401 — the fixture, by name
 
@@ -74,7 +74,7 @@ def test_a_listing_reads_search_words_and_refuses_a_sort_it_does_not_list_or_a_c
 
 
 def test_the_query_door_counts_a_case_queue_from_the_edit_layer(queue, monkeypatch):
-    from aughor.routers import objects as R
+    from pramanyx.routers import objects as R
     monkeypatch.setattr(R, "_served_graph", lambda conn, schema: queue)
     monkeypatch.setattr(R, "_accepted_edits", lambda conn: OVL.accepted_object_edits(CONN))
     out = R.post_object_query(ObjectQuery(object_type="case", measures=[{"name": "n", "agg": "count"}], by=["status"]),
@@ -97,7 +97,7 @@ def _case_desk(**list_props) -> dict:
 
 
 def test_a_case_queue_is_checked_where_its_cases_live_and_kept_like_any_cockpit(queue, monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
     assert pieces.not_resolved(CONN, _case_desk(), graph=queue) == []
     said = pieces.not_resolved(CONN, _case_desk(title="priority"), graph=queue)

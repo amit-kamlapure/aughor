@@ -17,12 +17,12 @@ from datetime import date
 
 import pytest
 
-from aughor.ontology import compatibility as COMPAT
-from aughor.ontology import overrides as OV
-from aughor.ontology import retiring as RT
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, apply_overrides, find_override, viewing
-from aughor.ontology.semantic_block import render_semantic_layer
+from pramanyx.ontology import compatibility as COMPAT
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import retiring as RT
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.overrides import OntologyOverride, apply_overrides, find_override, viewing
+from pramanyx.ontology.semantic_block import render_semantic_layer
 from tests.unit.test_object_bindings import GRAPH
 from tests.unit.test_object_processes import FULFILMENT, PARAMS, door  # noqa: F401 — `door` is a fixture
 
@@ -31,14 +31,14 @@ MARK = {"successor": "Customer", "on": "2999-12-01", "note": "merged into custom
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_SEED_ROOT", tmp_path / "seed")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: [])
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ def test_a_built_segment_marked_retiring_is_served_exactly_as_built(graph, monke
 
 
 def test_a_refused_withdrawal_suggests_retiring(monkeypatch):
-    from aughor.ontology.dependents import refusal
+    from pramanyx.ontology.dependents import refusal
     rows = [{"consumer": "automation", "id": "a", "name": "Watch", "how": "reads its promise"}]
     said = refusal("process", "order_fulfilment", rows)
     assert said.startswith("process 'order_fulfilment' is not withdrawn — 1 thing depends on it")
@@ -139,7 +139,7 @@ def test_the_successor_must_exist_and_be_of_the_same_kind(graph):
 # ── through the doors ──────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_through_the_door_a_mark_waits_in_the_draft_as_a_meaning_change_and_pages_say_it(door, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     body = {"kind": "entity", "target_id": "Review", **MARK}
     put = client.put("/ontology/retiring", params=PARAMS, json=body)
     assert put.status_code == 200, put.text
@@ -167,7 +167,7 @@ def test_through_the_door_a_mark_waits_in_the_draft_as_a_meaning_change_and_page
 
 
 def test_a_mark_merges_into_a_declaration_and_keeps_its_counts(door, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
     other = {**copy.deepcopy(FULFILMENT), "id": "order_fulfilment_v2"}
     for stage in other["stages"]:

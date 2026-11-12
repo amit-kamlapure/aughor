@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import OntologyOverride
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.overrides import OntologyOverride
 
 REPO = Path(__file__).resolve().parents[2]
 SHIPPED = REPO / "data" / "shipped" / "ontology_overrides"
@@ -56,7 +56,7 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_SEED_ROOT", seed)
     monkeypatch.setattr(OV, "_DRAFT_ROOT", draft)
     # the registry's own reads over a stand-in settings file and row table, so its scope-key logic runs as it does live
-    from aughor.db import registry
+    from pramanyx.db import registry
     settings = {conn: {"scope_key": key} for conn, key in KEYS.items()}
     registered = set(KEYS)
     monkeypatch.setattr(registry, "_load_settings", lambda: settings)
@@ -67,10 +67,10 @@ def store(tmp_path, monkeypatch):
 @pytest.fixture
 def removal(store, tmp_path, monkeypatch):
     """Only the declarations' two trees, so a purge here touches nothing else."""
-    from aughor.ontology import removal as R
+    from pramanyx.ontology import removal as R
     monkeypatch.setattr(R, "_trees", lambda: [OV._ROOT, OV._DRAFT_ROOT])
     monkeypatch.setattr(R, "_context_graph_root", lambda: tmp_path / "no-graphs")
-    monkeypatch.setattr("aughor.knowledge.indexer.delete_document", lambda doc_id: False)
+    monkeypatch.setattr("pramanyx.knowledge.indexer.delete_document", lambda doc_id: False)
     return R
 
 
@@ -115,7 +115,7 @@ def test_a_removed_datasets_shipped_declarations_stay_hidden_through_every_reade
     graph = _served(LUX)
     assert graph.rules == {} and graph.processes == {} and graph.declared_actions() == []
     assert "luxexperience" not in OV.override_scopes(LUX)
-    from aughor.ontology.prompt_reach import action_census
+    from pramanyx.ontology.prompt_reach import action_census
     census = action_census()
     assert not any(scope.endswith("/luxexperience") and scope.startswith((LUX, "key=")) for scope in census), census
     assert OV.publish_withdrawal(LUX, "luxexperience", "rule", "vip_customers") is False     # nothing was visible
@@ -215,7 +215,7 @@ def test_the_census_counts_a_keyed_declaration_once_per_connection_that_reads_it
     carry the key — counted under each, minus what each hid — never under the key's own folder, which no reader is
     ever asked about. Kills: the census reading the seed's folders as they lie (a withdrawn shipped action counted
     still, and a connection's own copy of a shipped one counted twice)."""
-    from aughor.ontology.prompt_reach import action_census
+    from pramanyx.ontology.prompt_reach import action_census
     assert action_census() == {f"{LUX}/luxexperience": ["flag_order_for_review"],
                                f"{TWIN}/luxexperience": ["flag_order_for_review"]}
     _declare(TWIN, "luxexperience", "action", "flag_order_for_review", display_name="Ours")   # shadows the seed's
@@ -226,7 +226,7 @@ def test_the_census_counts_a_keyed_declaration_once_per_connection_that_reads_it
 def test_the_census_reads_no_connection_that_is_gone(store):
     """A removed connection's scope key can outlive it in the settings until the residue sweep: the census reads only
     the connections the registry holds."""
-    from aughor.ontology.prompt_reach import action_census
+    from pramanyx.ontology.prompt_reach import action_census
     store[4].discard(LUX)
     assert sorted(action_census()) == [f"{TWIN}/luxexperience"]
 
@@ -235,7 +235,7 @@ def test_every_connection_the_seed_files_by_id_is_one_no_removal_meets():
     """A whole-connection removal hides no shipped declaration: the ones filed by a scope key reach a connection only
     through its settings, which go with it, and one filed by a connection's own id would need that connection to be
     one the registry cannot remove (`column_config.purge_connection`'s rule). Measured from the real seed."""
-    from aughor.db import registry
+    from pramanyx.db import registry
     tops = sorted(p.name for p in SHIPPED.iterdir() if p.is_dir())
     assert tops, "probe failed: no shipped declarations"
     for name in tops:

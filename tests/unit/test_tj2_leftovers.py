@@ -10,9 +10,9 @@ import sqlite3
 
 import pytest
 
-from aughor import telemetry
-from aughor.kernel.ledger import Ledger
-from aughor.obs import prompt_window, session_log
+from pramanyx import telemetry
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.obs import prompt_window, session_log
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +52,7 @@ def test_migration_4_moves_the_action_out_of_the_phase_column(tmp_path):
     makes — rather than re-pointing the store's path, which it resolves once at import."""
     path = tmp_path / "audit.db"
     _old_store(path)
-    from aughor.security.audit import _MIGRATIONS, _ensure_schema
+    from pramanyx.security.audit import _MIGRATIONS, _ensure_schema
     latest = max(m.version for m in _MIGRATIONS)                     # 4, and every migration numbered after it
     c = sqlite3.connect(path)
     c.row_factory = sqlite3.Row
@@ -71,8 +71,8 @@ def test_migration_4_moves_the_action_out_of_the_phase_column(tmp_path):
 
 
 def test_the_rewrite_hook_writes_action_and_phase_apart():
-    from aughor.kernel.registries.execution_hooks import _record_guard_verdict
-    from aughor.security.audit import GuardVerdicts
+    from pramanyx.kernel.registries.execution_hooks import _record_guard_verdict
+    from pramanyx.security.audit import GuardVerdicts
     with telemetry.bind_trace("tj2-hook"):
         _record_guard_verdict("fanout_defan", "rewrote_sql", "de-fanned", "SELECT a FROM b")
         GuardVerdicts.record(pattern="E1-quoted-identifier", subject="orders", phase="quick", sql="SELECT 1")
@@ -84,7 +84,7 @@ def test_the_rewrite_hook_writes_action_and_phase_apart():
 def test_the_quick_body_labels_its_fires_quick_not_deep():
     import inspect
 
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     src = inspect.getsource(inv._answer_core)
     assert 'phase="quick"' in src and 'phase="deep"' not in src
 
@@ -92,10 +92,10 @@ def test_the_quick_body_labels_its_fires_quick_not_deep():
 # ── the explorer's step log writes the step record ────────────────────────────────────
 
 def test_an_explorer_step_lands_as_a_step_event_under_its_job_trace(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_EPISODES_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_EPISODES_DIR", str(tmp_path))
     import importlib
 
-    from aughor.explorer import episodes
+    from pramanyx.explorer import episodes
     importlib.reload(episodes)                       # the module resolves its dir at import
     with telemetry.bind_trace("tj2-explore"):
         col = episodes.EpisodeCollector("c1", phase="exploration")
@@ -118,10 +118,10 @@ def test_an_explorer_step_lands_as_a_step_event_under_its_job_trace(tmp_path, mo
 
 
 def test_an_explorer_step_carries_its_reasoning_only_under_a_capture_window(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_EPISODES_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_EPISODES_DIR", str(tmp_path))
     import importlib
 
-    from aughor.explorer import episodes
+    from pramanyx.explorer import episodes
     importlib.reload(episodes)
     prompt_window.open_window(calls=3, minutes=5, opened_by="test", reason="tj2")
     with telemetry.bind_trace("tj2-explore-cap"):
@@ -134,14 +134,14 @@ def test_an_explorer_step_carries_its_reasoning_only_under_a_capture_window(tmp_
 
 def _turn_without_envelope(question: str, sql: str, *, trace: str) -> str:
     """A chat answer filed BEFORE envelopes were: rows, no envelope, its trace on the row."""
-    from aughor.db.history import save_chat_turn
+    from pramanyx.db.history import save_chat_turn
     with telemetry.bind_trace(trace):
         return save_chat_turn(question=question, connection_id="conn-1", headline="h", sql=sql,
                               columns=["n"], rows=[[1]])
 
 
 def _ran(trace: str, sql: str, *, error: str | None = None, guard: str = "") -> None:
-    from aughor.security.audit import AuditLogger, GuardVerdicts
+    from pramanyx.security.audit import AuditLogger, GuardVerdicts
     with telemetry.bind_trace(trace):
         AuditLogger.log(connection_id="conn-1", sql=sql, verdict="safe", row_count=1, error=error)
         if guard:
@@ -149,10 +149,10 @@ def _ran(trace: str, sql: str, *, error: str | None = None, guard: str = "") -> 
 
 
 def test_bronze_vouches_for_an_envelope_less_turn_by_its_own_trajectory(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LEARNING_DB", str(tmp_path / "learning.db"))
-    monkeypatch.setenv("AUGHOR_DATASETS_DIR", str(tmp_path / "datasets"))
-    from aughor.db.history import recent_chat_answers
-    from aughor.learning import exporters, store
+    monkeypatch.setenv("PRAMANYX_LEARNING_DB", str(tmp_path / "learning.db"))
+    monkeypatch.setenv("PRAMANYX_DATASETS_DIR", str(tmp_path / "datasets"))
+    from pramanyx.db.history import recent_chat_answers
+    from pramanyx.learning import exporters, store
 
     clean = _turn_without_envelope("how many clean?", "SELECT 1 AS clean", trace="tj2-b-clean")
     _ran("tj2-b-clean", "SELECT 1 AS clean")
@@ -177,10 +177,10 @@ def test_bronze_vouches_for_an_envelope_less_turn_by_its_own_trajectory(tmp_path
 
 
 def test_bronze_still_prefers_the_envelope_when_there_is_one(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LEARNING_DB", str(tmp_path / "learning.db"))
-    monkeypatch.setenv("AUGHOR_DATASETS_DIR", str(tmp_path / "datasets"))
-    from aughor.db.history import attach_envelope
-    from aughor.learning import exporters, store
+    monkeypatch.setenv("PRAMANYX_LEARNING_DB", str(tmp_path / "learning.db"))
+    monkeypatch.setenv("PRAMANYX_DATASETS_DIR", str(tmp_path / "datasets"))
+    from pramanyx.db.history import attach_envelope
+    from pramanyx.learning import exporters, store
     turn = _turn_without_envelope("how many enveloped?", "SELECT 5 AS e", trace="tj2-b-env")
     attach_envelope(turn, {"question": "how many enveloped?", "headline": "h", "caveats": [],
                            "provenance": {"guard_receipts": []}})

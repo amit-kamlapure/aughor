@@ -16,10 +16,10 @@ def _boom(sql, dialect=None):  # matches SafetyChecker.check(sql, dialect=) call
 
 
 def test_security_pre_returns_blocked_when_checker_errors(monkeypatch):
-    from aughor.security import safety
+    from pramanyx.security import safety
     monkeypatch.setattr(safety.SafetyChecker, "check", staticmethod(_boom))
 
-    from aughor.db.connection import security_pre
+    from pramanyx.db.connection import security_pre
     result = security_pre("conn1", "h1", "SELECT 1")
 
     assert result is not None, "gate must fail closed (return a BLOCKED result), not None"
@@ -28,7 +28,7 @@ def test_security_pre_returns_blocked_when_checker_errors(monkeypatch):
 
 
 def test_execute_fails_closed_end_to_end(tmp_path, monkeypatch):
-    from aughor.security import safety
+    from pramanyx.security import safety
     monkeypatch.setattr(safety.SafetyChecker, "check", staticmethod(_boom))
 
     # A real (writable) DuckDB file, then reopened read-only by DuckDBConnection.
@@ -38,7 +38,7 @@ def test_execute_fails_closed_end_to_end(tmp_path, monkeypatch):
     w.execute("INSERT INTO t VALUES (1)")
     w.close()
 
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(p)
     r = conn.execute("h1", "SELECT * FROM t")
 
@@ -51,11 +51,11 @@ def test_execute_fails_closed_end_to_end(tmp_path, monkeypatch):
 def test_internal_queries_still_bypass_the_gate(monkeypatch):
     """Platform plumbing must NOT be affected by fail-closed — it never reaches the checker. What makes it plumbing
     is its caller's declaration (GM-5), not a dunder label: an undeclared statement fails closed."""
-    from aughor.security import safety
+    from pramanyx.security import safety
     monkeypatch.setattr(safety.SafetyChecker, "check", staticmethod(_boom))
 
-    from aughor.db.connection import security_pre
-    from aughor.db.doors import through_door
+    from pramanyx.db.connection import security_pre
+    from pramanyx.db.doors import through_door
     assert through_door(object(), "SELECT 1", None, lambda s: security_pre("conn1", "__catalog__", s),
                         internal=True) is None
     assert security_pre("conn1", "__catalog__", "SELECT 1") is not None, "a label bypassed the gate"

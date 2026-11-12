@@ -5,8 +5,8 @@ the illegal-transition guards, and the audit record each transition produces.
 """
 import pytest
 
-from aughor.semantic.governance import apply_transition, can_transition
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.semantic.governance import apply_transition, can_transition
+from pramanyx.semantic.metrics import MetricDefinition
 
 NOW = "2026-06-13T12:00:00+00:00"
 
@@ -107,7 +107,7 @@ class TestValidateMetricRunsForReal:
 
     def test_governed_two_arg_connection_is_called_correctly(self):
         from types import SimpleNamespace
-        from aughor.semantic.metrics import validate_metric
+        from pramanyx.semantic.metrics import validate_metric
         calls = []
 
         class _Conn:
@@ -120,7 +120,7 @@ class TestValidateMetricRunsForReal:
 
     def test_stringified_false_fails_the_test(self):
         from types import SimpleNamespace
-        from aughor.semantic.metrics import validate_metric
+        from pramanyx.semantic.metrics import validate_metric
 
         class _Conn:
             def execute_bounded(self, label, sql, max_rows):
@@ -130,7 +130,7 @@ class TestValidateMetricRunsForReal:
 
     def test_raw_single_arg_connection_still_works(self):
         from types import SimpleNamespace
-        from aughor.semantic.metrics import validate_metric
+        from pramanyx.semantic.metrics import validate_metric
 
         class _Raw:
             def execute(self, sql):

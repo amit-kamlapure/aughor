@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.connectors.api import base_sync
-from aughor.connectors.api.base_sync import RestApiSync
+from pramanyx.connectors.api import base_sync
+from pramanyx.connectors.api.base_sync import RestApiSync
 
 T0 = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
 

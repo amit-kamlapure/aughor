@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import evidence_budget as EB
-from aughor.agent.nodes import _format_full_evidence
-from aughor.agent.state import Hypothesis
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.tools.executor import format_result_for_llm
+from pramanyx.agent import evidence_budget as EB
+from pramanyx.agent.nodes import _format_full_evidence
+from pramanyx.agent.state import Hypothesis
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.tools.executor import format_result_for_llm
 
 
 def _result(step, sql, n_rows=40, error=None):

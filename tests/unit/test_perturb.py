@@ -1,4 +1,4 @@
-"""E4c — the perturbation-brittleness axis (`aughor/evals/perturb.py`).
+"""E4c — the perturbation-brittleness axis (`pramanyx/evals/perturb.py`).
 
 The comparison is the easy half (a deterministic result-set comparator this repo already
 trusts). The dangerous half is the perturbation SET: a rewording that changes meaning turns a
@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from aughor.evals.perturb import (
+from pramanyx.evals.perturb import (
     DEFAULT_PERTURBATIONS,
     Perturbation,
     brittleness,

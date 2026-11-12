@@ -18,10 +18,10 @@ import uuid
 
 import pytest
 
-from aughor import telemetry
-from aughor.actions import attribution as A
-from aughor.actions import overlay as OVL
-from aughor.actions.executor import default_object_resolver, execute_kinetic_action
+from pramanyx import telemetry
+from pramanyx.actions import attribution as A
+from pramanyx.actions import overlay as OVL
+from pramanyx.actions.executor import default_object_resolver, execute_kinetic_action
 from tests.unit.test_object_actions import CONN, ORDER, _action, _Borrowed, _declare, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_one_row_policy_at_every_door import as_reader, sql_door  # noqa: F401 — fixtures by name
 from tests.unit.test_ontology_security import secured  # noqa: F401 — fixtures by name
@@ -35,9 +35,9 @@ MARK = {"display_name": "Flag", "kind": "annotate", "risk": "low", "object_type"
 def ledger(tmp_path, monkeypatch):
     """A ledger of this test's own: the action audit, the action entries and the session log an object's changes read are all
     kept there, so one test's actions never appear on the next one's object."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     led = Ledger(tmp_path / "system.db")
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", staticmethod(lambda: led))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", staticmethod(lambda: led))
     return led
 
 
@@ -48,18 +48,18 @@ def _press(graph, *, actor: str = "ana", key: str = ORDER):  # noqa: F811
 
 
 def _audit(decision: str = "") -> list[dict]:
-    from aughor.govern.actions import recent_audit
+    from pramanyx.govern.actions import recent_audit
     return [r for r in recent_audit(limit=200) if r.get("action") == "kinetic.mark" and r.get("scope") == CONN
             and (not decision or r.get("decision") == decision)]
 
 
 def _entries() -> list[dict]:
-    from aughor.actions.authority import executions
+    from pramanyx.actions.authority import executions
     return executions("mark", CONN)
 
 
 def _automation():
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.models import Automation, Condition, Effect
     return Automation(name="flag the order", conn_id=CONN,
                       conditions=[Condition(kind="schedule", config={"cron": "0 9 * * 1"})],
                       effects=[Effect(kind="kinetic_action", alias="flag",
@@ -69,7 +69,7 @@ def _automation():
 
 
 def _run_automation(automation):
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     return run_automation(automation, persist=False, manual=True, probe=lambda *a, **k: True,
                           sleeper=lambda _s: None, rng=lambda: 0.0)
 
@@ -100,7 +100,7 @@ def test_an_edit_an_automation_makes_carries_that_runs_id(graph, db):  # noqa: F
 def test_an_adopted_monitor_runs_as_a_monitor_and_the_innermost_run_wins(graph, db):  # noqa: F811
     """The run kind follows the automation (a monitor adopted as one reads `monitor`), and a run started inside another
     run — here the scheduler's job — names itself, not the run around it, which is restored on the way out."""
-    from aughor.automations.adopt import MONITOR_PREFIX
+    from pramanyx.automations.adopt import MONITOR_PREFIX
     _declare(graph, "mark", MARK)
     monitor = _automation().model_copy(update={"id": f"{MONITOR_PREFIX}m1"})
     with telemetry.bind_run("the-tick-job", "agent"):
@@ -144,7 +144,7 @@ def test_a_row_from_before_the_stamp_never_reads_as_outside_any_run(graph, db): 
 # ── where runs start ─────────────────────────────────────────────────────────────────
 
 def test_the_ask_door_binds_its_turn_as_a_run_named_by_its_trace():
-    from aughor.routers.investigations import stream_with_session_log
+    from pramanyx.routers.investigations import stream_with_session_log
     seen: list[tuple] = []
 
     async def inner():
@@ -165,10 +165,10 @@ def test_the_ask_door_binds_its_turn_as_a_run_named_by_its_trace():
 def test_a_kernel_job_is_its_own_run(tmp_path, monkeypatch, job_kind, run_kind):
     from datetime import datetime, timezone
 
-    from aughor.kernel.jobs import JobKernel, JobState
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.jobs import JobKernel, JobState
+    from pramanyx.kernel.ledger import Ledger
     led = Ledger(tmp_path / "system.db")
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", staticmethod(lambda: led))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", staticmethod(lambda: led))
     job_id = f"job-{uuid.uuid4().hex[:6]}"
     led.job_insert({"id": job_id, "kind": job_kind, "state": JobState.PENDING, "attempt": 1,
                     "created_at": datetime.now(timezone.utc).isoformat()})
@@ -185,13 +185,13 @@ def test_a_kernel_job_is_its_own_run(tmp_path, monkeypatch, job_kind, run_kind):
 # ── one object's changes ────────────────────────────────────────────────────────────
 
 def _price(monkeypatch):
-    from aughor.obs import usage
+    from pramanyx.obs import usage
     monkeypatch.setitem(usage.PRICES, ("tc2-test", "tc2-model"), usage.Price(1.0, 2.0, "2026-10-26"))
     usage.price_for.cache_clear()
 
 
 def test_an_objects_changes_read_every_change_oldest_first_with_its_run_and_cost(graph, db, client, monkeypatch):  # noqa: F811
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     _declare(graph, "mark", MARK)
     _price(monkeypatch)
     _press(graph, actor="ana")                                            # a person, outside any run
@@ -231,12 +231,12 @@ def test_an_objects_changes_read_every_change_oldest_first_with_its_run_and_cost
 def test_an_objects_changes_are_read_as_the_edit_history_is(sql_door, graph, db, as_reader, monkeypatch):  # noqa: F811
     """Arc ED, ED-1 holds here too: an object outside the reader's rows has its edits AND its actions withheld, and the
     count said — an object's changes are not a way round the row policy the edit history keeps."""
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn: _Borrowed(db))
     _declare(graph, "mark", MARK)
     refunded = str(db.execute("k", "SELECT order_id FROM orders WHERE status = 'refunded' LIMIT 1").rows[0][0])
     as_reader("ben")                                                        # support sees refunded orders
     assert _press(graph, actor="ben", key=refunded).status == "executed"
-    from aughor.routers.actions import get_object_changes
+    from pramanyx.routers.actions import get_object_changes
     seen = get_object_changes(object_type="order", row_key=refunded, connection_id=CONN)
     assert [e["what"] for e in seen["changes"]] == ["edit", "action"] and "withheld" not in seen
     as_reader("ana")                                                        # fulfilment does not
@@ -252,7 +252,7 @@ def test_not_metered_is_said_never_zero():
 
 
 def test_an_unpriced_call_is_counted_beside_the_dollars(monkeypatch):
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     _price(monkeypatch)
     trace = f"t-{uuid.uuid4().hex[:8]}"
     with telemetry.bind_trace(trace):

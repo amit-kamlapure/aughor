@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aughor.agent.report_checks import PITFALLS
+from pramanyx.agent.report_checks import PITFALLS
 
 _DOC = Path(__file__).resolve().parents[2] / "docs" / "PITFALLS.md"
 _ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|")

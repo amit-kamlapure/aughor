@@ -8,7 +8,7 @@ Ideas to think about. Nothing here is decided yet. [ROADMAP.md](ROADMAP.md) stay
 
 When a user removes a connection, the platform should really wipe it clean. Afterwards nothing should be left of that connection, neither its data nor any metadata about it.
 
-- Starting point: removal already goes through `purge_connection_artifacts` in [aughor/db/purge.py:54](aughor/db/purge.py:54), which calls each store's own `purge_connection`.
+- Starting point: removal already goes through `purge_connection_artifacts` in [pramanyx/db/purge.py:54](pramanyx/db/purge.py:54), which calls each store's own `purge_connection`.
 
 ## 2. A default agent recommends outlier alerts on industry metrics
 
@@ -24,10 +24,10 @@ The agent could be created by default, alongside the Explorer, the Curator and t
 
 Starting points in the code today:
 
-- The default agents are listed in [aughor/kernel/agents.py:67](aughor/kernel/agents.py:67). One of them, the Watcher ("KPI sentinel", [line 98](aughor/kernel/agents.py:98)), already runs threshold and anomaly checks. Its goal is to start a deep analysis when a metric moves, not to alert people.
-- The anomaly check is `run_anomaly_monitor` in [aughor/monitors/runner.py:285](aughor/monitors/runner.py:285). It computes a z-score for a metric's daily values over a rolling window.
-- An automation can already fire on a monitor through a `metric` condition ([aughor/automations/engine.py:241](aughor/automations/engine.py:241)), and it has a `notify` effect ([aughor/automations/models.py:263](aughor/automations/models.py:263)).
-- The playbook code is in [aughor/playbook/](aughor/playbook/).
+- The default agents are listed in [pramanyx/kernel/agents.py:67](pramanyx/kernel/agents.py:67). One of them, the Watcher ("KPI sentinel", [line 98](pramanyx/kernel/agents.py:98)), already runs threshold and anomaly checks. Its goal is to start a deep analysis when a metric moves, not to alert people.
+- The anomaly check is `run_anomaly_monitor` in [pramanyx/monitors/runner.py:285](pramanyx/monitors/runner.py:285). It computes a z-score for a metric's daily values over a rolling window.
+- An automation can already fire on a monitor through a `metric` condition ([pramanyx/automations/engine.py:241](pramanyx/automations/engine.py:241)), and it has a `notify` effect ([pramanyx/automations/models.py:263](pramanyx/automations/models.py:263)).
+- The playbook code is in [pramanyx/playbook/](pramanyx/playbook/).
 
 ## 3. Daily, weekly, monthly, yearly and historical briefings
 
@@ -39,9 +39,9 @@ The daily, weekly and monthly versions should build a time period into the appro
 
 Starting points in the code today:
 
-- The Briefer agent is defined in [aughor/kernel/agents.py:112](aughor/kernel/agents.py:112). The briefing text is written by `generate_narrative` in [aughor/knowledge/briefing.py:387](aughor/knowledge/briefing.py:387).
-- Brief subscriptions already have a `period`, but it can only be `day` or `week` ([aughor/briefing/models.py:28](aughor/briefing/models.py:28)). The period sets the send time ([aughor/briefing/models.py:13](aughor/briefing/models.py:13)). What the subscription sends is an alert digest built for that period, not the briefing ([aughor/briefing/delivery.py:29](aughor/briefing/delivery.py:29)).
-- Exploration already works inside a time window. `_compute_time_window` in [aughor/explorer/agent.py:783](aughor/explorer/agent.py:783) takes up to the last 12 months of real activity, and starts later when the data shows a clear recent break. Before deciding, check whether today's briefing really covers the whole data set or only that window.
+- The Briefer agent is defined in [pramanyx/kernel/agents.py:112](pramanyx/kernel/agents.py:112). The briefing text is written by `generate_narrative` in [pramanyx/knowledge/briefing.py:387](pramanyx/knowledge/briefing.py:387).
+- Brief subscriptions already have a `period`, but it can only be `day` or `week` ([pramanyx/briefing/models.py:28](pramanyx/briefing/models.py:28)). The period sets the send time ([pramanyx/briefing/models.py:13](pramanyx/briefing/models.py:13)). What the subscription sends is an alert digest built for that period, not the briefing ([pramanyx/briefing/delivery.py:29](pramanyx/briefing/delivery.py:29)).
+- Exploration already works inside a time window. `_compute_time_window` in [pramanyx/explorer/agent.py:783](pramanyx/explorer/agent.py:783) takes up to the last 12 months of real activity, and starts later when the data shows a clear recent break. Before deciding, check whether today's briefing really covers the whole data set or only that window.
 - [docs/ADAPTIVE_TEMPORAL_SCOPE.md](docs/ADAPTIVE_TEMPORAL_SCOPE.md) is an earlier design note on choosing the time scope for exploration and briefings. It is marked "Planned", and ROADMAP.md doesn't mention it.
 
 ## 4. Learn when each table's numbers stop changing
@@ -54,7 +54,7 @@ The platform could learn this itself. It already runs the same queries day after
 
 Starting points in the code today:
 
-- The lag is a hand-set number today: `observation_lag_days` on an automation's investigate step, default 1 ([aughor/automations/temporal.py:174](aughor/automations/temporal.py:174)).
+- The lag is a hand-set number today: `observation_lag_days` on an automation's investigate step, default 1 ([pramanyx/automations/temporal.py:174](pramanyx/automations/temporal.py:174)).
 
 ## 5. Tell people when an answer they were given is no longer true
 
@@ -64,8 +64,8 @@ When the data behind a past answer changes enough to change the answer (late row
 
 Starting points in the code today:
 
-- Answers already come with a signed Trust Receipt that records what was answered and how ([aughor/trust/receipt.py](aughor/trust/receipt.py)).
-- The briefing already stamps which version of its inputs it was built on, so it can tell when it has gone stale ([aughor/knowledge/briefing.py:804](aughor/knowledge/briefing.py:804), through `aughor.kernel.rebuild`). The same stamp could sit on a receipt.
+- Answers already come with a signed Trust Receipt that records what was answered and how ([pramanyx/trust/receipt.py](pramanyx/trust/receipt.py)).
+- The briefing already stamps which version of its inputs it was built on, so it can tell when it has gone stale ([pramanyx/knowledge/briefing.py:804](pramanyx/knowledge/briefing.py:804), through `pramanyx.kernel.rebuild`). The same stamp could sit on a receipt.
 
 ## 6. Alerts that prove they work
 
@@ -80,20 +80,20 @@ Silent non-firing has already happened here: an instruction added to scheduled b
 
 Starting points in the code today:
 
-- Automation runs already record whether each tick fired ([aughor/automations/models.py:546](aughor/automations/models.py:546)), and monitors keep their last alert ([aughor/monitors/runner.py:63](aughor/monitors/runner.py:63)).
-- A proposed automation already gets a one-off dry run ([aughor/automations/propose.py:290](aughor/automations/propose.py:290)). A backtest would run the same check at past dates.
-- The anomaly check works on daily values over a rolling window ([aughor/monitors/runner.py:285](aughor/monitors/runner.py:285)).
+- Automation runs already record whether each tick fired ([pramanyx/automations/models.py:546](pramanyx/automations/models.py:546)), and monitors keep their last alert ([pramanyx/monitors/runner.py:63](pramanyx/monitors/runner.py:63)).
+- A proposed automation already gets a one-off dry run ([pramanyx/automations/propose.py:290](pramanyx/automations/propose.py:290)). A backtest would run the same check at past dates.
+- The anomaly check works on daily values over a rolling window ([pramanyx/monitors/runner.py:285](pramanyx/monitors/runner.py:285)).
 
 ## 7. Fact-check a document against the data
 
-*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.25**: `POST /factcheck`, `POST /factcheck/upload`, `@aughor check:`; every claim checked through the platform's own answer path*
+*Suggested by Claude, 2026-09-13 · **BUILT 2026-09-23 — ROADMAP §3.25**: `POST /factcheck`, `POST /factcheck/upload`, `@pramanyx check:`; every claim checked through the platform's own answer path*
 
 Paste a board memo or an email, or upload a PDF deck. The platform finds every number in it and checks each against the warehouse: it matches, it doesn't (and why: refunds excluded, a different date range), or it can't be checked. The platform stops being only something that writes reports and becomes something that checks everyone's.
 
 Starting points in the code today:
 
-- The platform already checks the numbers in its own reports against the query results ([aughor/agent/verify.py](aughor/agent/verify.py)). This points the same check at documents people wrote.
-- Charts inside PDFs are already read back as tables ([aughor/knowledge/charts.py](aughor/knowledge/charts.py)).
+- The platform already checks the numbers in its own reports against the query results ([pramanyx/agent/verify.py](pramanyx/agent/verify.py)). This points the same check at documents people wrote.
+- Charts inside PDFs are already read back as tables ([pramanyx/knowledge/charts.py](pramanyx/knowledge/charts.py)).
 
 ## 8. Retrospectives on what the platform missed
 
@@ -103,9 +103,9 @@ When someone finds a big move by asking about it, and neither exploration nor an
 
 Starting points in the code today:
 
-- Briefing triage already holds signals back and records why ([aughor/knowledge/triage.py](aughor/knowledge/triage.py), described at [aughor/knowledge/briefing.py:399](aughor/knowledge/briefing.py:399)).
-- The platform can already draft automations for review ([aughor/automations/propose.py](aughor/automations/propose.py)).
-- Exploration's time window is chosen in [aughor/explorer/agent.py:783](aughor/explorer/agent.py:783).
+- Briefing triage already holds signals back and records why ([pramanyx/knowledge/triage.py](pramanyx/knowledge/triage.py), described at [pramanyx/knowledge/briefing.py:399](pramanyx/knowledge/briefing.py:399)).
+- The platform can already draft automations for review ([pramanyx/automations/propose.py](pramanyx/automations/propose.py)).
+- Exploration's time window is chosen in [pramanyx/explorer/agent.py:783](pramanyx/explorer/agent.py:783).
 
 ## 9. An attention budget for each person
 
@@ -115,8 +115,8 @@ Each person gets a fixed number of interruptions a week, across alerts, briefing
 
 Starting points in the code today:
 
-- Monitors already have an anti-flap debounce so they don't re-alert people ([aughor/automations/engine.py:246](aughor/automations/engine.py:246)).
-- Briefing triage already ranks findings by business impact ([aughor/knowledge/briefing.py:405](aughor/knowledge/briefing.py:405)).
+- Monitors already have an anti-flap debounce so they don't re-alert people ([pramanyx/automations/engine.py:246](pramanyx/automations/engine.py:246)).
+- Briefing triage already ranks findings by business impact ([pramanyx/knowledge/briefing.py:405](pramanyx/knowledge/briefing.py:405)).
 
 ## 10. The data shopping list
 
@@ -126,7 +126,7 @@ For the questions a business in this industry usually asks, show which the conne
 
 Starting points in the code today:
 
-- Playbook entries already name the metric they depend on (`trigger_metric`, [aughor/playbook/models.py:10](aughor/playbook/models.py:10)).
+- Playbook entries already name the metric they depend on (`trigger_metric`, [pramanyx/playbook/models.py:10](pramanyx/playbook/models.py:10)).
 - Idea 2's mapping of industry metrics would produce the list of questions.
 
 ## 11. Receipts that travel with the number
@@ -137,8 +137,8 @@ Every chart or number that leaves the platform, in a PDF or a slide, carries a s
 
 Starting points in the code today:
 
-- A receipt page already exists at `GET /receipt/{receipt_id}` ([aughor/routers/receipt.py:37](aughor/routers/receipt.py:37)), and receipts are signed ([aughor/trust/receipt.py:9](aughor/trust/receipt.py:9)).
-- The PDF and slide exports ([aughor/export/pdf.py](aughor/export/pdf.py), [aughor/export/slides.py](aughor/export/slides.py)) don't link back to receipts today.
+- A receipt page already exists at `GET /receipt/{receipt_id}` ([pramanyx/routers/receipt.py:37](pramanyx/routers/receipt.py:37)), and receipts are signed ([pramanyx/trust/receipt.py:9](pramanyx/trust/receipt.py:9)).
+- The PDF and slide exports ([pramanyx/export/pdf.py](pramanyx/export/pdf.py), [pramanyx/export/slides.py](pramanyx/export/slides.py)) don't link back to receipts today.
 
 ## 12. Guess before you look
 
@@ -148,7 +148,7 @@ Before revealing a key number, say in the weekly briefing, invite people to gues
 
 Starting points in the code today:
 
-- People can already accept, correct or reject a finding ([aughor/routers/verify.py:33](aughor/routers/verify.py:33)). Guesses would be a second record of what people believed, kept beside those verdicts.
+- People can already accept, correct or reject a finding ([pramanyx/routers/verify.py:33](pramanyx/routers/verify.py:33)). Guesses would be a second record of what people believed, kept beside those verdicts.
 
 ## 13. Judge a recommendation against what would have happened anyway
 
@@ -158,7 +158,7 @@ Comparing a metric before and after a recommendation credits the recommendation 
 
 Starting points in the code today:
 
-- Recommendation outcomes already have fields for the metric before and after ([aughor/playbook/outcomes.py:27](aughor/playbook/outcomes.py:27)).
+- Recommendation outcomes already have fields for the metric before and after ([pramanyx/playbook/outcomes.py:27](pramanyx/playbook/outcomes.py:27)).
 - Idea 2's per-metric distributions would supply the expected range.
 
 ## 14. A UI that doesn't look like AI slop
@@ -188,7 +188,7 @@ Starting points in the code today:
 
 ## Company-brain idea set
 
-Every idea tagged *Company-brain idea set* under its title belongs to this set. **Planned 2026-09-22 as Arc CB — ROADMAP §3.21, eight waves in the user's order; the four shaping answers are §6 item 30.** The ideas came from reading about "company brain" products on 2026-09-22: an on-premise graph of people, projects, commitments and decisions, built by extracting small dated claims from what employees write and say (Slack, email, meeting notes, documents), which agents read over MCP. Pramanyx's context graph is similar machinery pointed at what the warehouse measures. Its node types are table, metric, glossary term, domain, finding and brief ([aughor/ontology/context_graph.py:35](aughor/ontology/context_graph.py:35)), and it allows no model-inferred source at all ([line 40](aughor/ontology/context_graph.py:40)), where a company brain is built from model extraction.
+Every idea tagged *Company-brain idea set* under its title belongs to this set. **Planned 2026-09-22 as Arc CB — ROADMAP §3.21, eight waves in the user's order; the four shaping answers are §6 item 30.** The ideas came from reading about "company brain" products on 2026-09-22: an on-premise graph of people, projects, commitments and decisions, built by extracting small dated claims from what employees write and say (Slack, email, meeting notes, documents), which agents read over MCP. Pramanyx's context graph is similar machinery pointed at what the warehouse measures. Its node types are table, metric, glossary term, domain, finding and brief ([pramanyx/ontology/context_graph.py:35](pramanyx/ontology/context_graph.py:35)), and it allows no model-inferred source at all ([line 40](pramanyx/ontology/context_graph.py:40)), where a company brain is built from model extraction.
 
 Two things were judged not worth copying. Crawling Slack history and email bodies goes against the hub's first law, that the hub owns meaning and not data ([ROADMAP.md:6344](ROADMAP.md:6344)). And a retrieval benchmark is not a race worth entering: in the published numbers the graph adds about 4.5 points over a strong model doing plain file search.
 
@@ -204,10 +204,10 @@ Idea 10, the data shopping list, is the other half: this idea says how much is c
 
 Starting points in the code today:
 
-- `Coverage` in [aughor/ontology/declarations.py:60](aughor/ontology/declarations.py:60) already computes the share of tables mapped, takes declared exclusions out of the denominator, and bands the result green, orange or red ([line 77](aughor/ontology/declarations.py:77)). Only its unit test imports it.
-- The graph's review queue already lists its own weak points (unprobed joins, isolated tables, contested findings), each with a question and a one-click check ([aughor/ontology/graph_questions.py:78](aughor/ontology/graph_questions.py:78)).
-- The warrant audit already reports the share of joins that were measured and not just matched by name ([aughor/ontology/graph_warrant.py:219](aughor/ontology/graph_warrant.py:219)).
-- The departure gate holds a send when no approved metric defines the number ([aughor/govern/departure.py:546](aughor/govern/departure.py:546)). Counting holds per missing definition gives the "fix this one and N unblock" line.
+- `Coverage` in [pramanyx/ontology/declarations.py:60](pramanyx/ontology/declarations.py:60) already computes the share of tables mapped, takes declared exclusions out of the denominator, and bands the result green, orange or red ([line 77](pramanyx/ontology/declarations.py:77)). Only its unit test imports it.
+- The graph's review queue already lists its own weak points (unprobed joins, isolated tables, contested findings), each with a question and a one-click check ([pramanyx/ontology/graph_questions.py:78](pramanyx/ontology/graph_questions.py:78)).
+- The warrant audit already reports the share of joins that were measured and not just matched by name ([pramanyx/ontology/graph_warrant.py:219](pramanyx/ontology/graph_warrant.py:219)).
+- The departure gate holds a send when no approved metric defines the number ([pramanyx/govern/departure.py:546](pramanyx/govern/departure.py:546)). Counting holds per missing definition gives the "fix this one and N unblock" line.
 
 ## 16. Put a date on every fact, and keep what it replaced
 
@@ -221,10 +221,10 @@ Idea 5 needs this too. To tell someone an answer is no longer true, the platform
 
 Starting points in the code today:
 
-- The graph's `Provenance` carries `source`, `measured` and `note`, and nothing else ([aughor/ontology/context_graph.py:57](aughor/ontology/context_graph.py:57)).
-- The hub's `Provenance` carries `observed_at`, `valid_until` and `author` ([aughor/hub/provenance.py:67](aughor/hub/provenance.py:67)).
-- Saving the graph bumps a version number and overwrites the file ([aughor/ontology/context_graph_store.py:72](aughor/ontology/context_graph_store.py:72)).
-- A superseded finding leaves only its id behind ([aughor/ontology/finding_consolidation.py:239](aughor/ontology/finding_consolidation.py:239)).
+- The graph's `Provenance` carries `source`, `measured` and `note`, and nothing else ([pramanyx/ontology/context_graph.py:57](pramanyx/ontology/context_graph.py:57)).
+- The hub's `Provenance` carries `observed_at`, `valid_until` and `author` ([pramanyx/hub/provenance.py:67](pramanyx/hub/provenance.py:67)).
+- Saving the graph bumps a version number and overwrites the file ([pramanyx/ontology/context_graph_store.py:72](pramanyx/ontology/context_graph_store.py:72)).
+- A superseded finding leaves only its id behind ([pramanyx/ontology/finding_consolidation.py:239](pramanyx/ontology/finding_consolidation.py:239)).
 
 ## 17. Check what people say against what the data shows
 
@@ -238,12 +238,12 @@ Idea 7 (fact-check a document) is the one-off version. This is the standing one.
 
 Starting points in the code today:
 
-- The hub's authority ladder already has the tiers, from `measured` down to `said` and `inferred` ([aughor/hub/provenance.py:34](aughor/hub/provenance.py:34)).
-- A reply in a filed Slack thread already arrives as a staged note ([aughor/routers/arrivals.py:38](aughor/routers/arrivals.py:38)) and becomes a context piece ([aughor/hub/adapters.py:17](aughor/hub/adapters.py:17)).
-- No prompt sees those pieces, because the injection list is empty until a kind earns its place ([aughor/hub/injection.py:22](aughor/hub/injection.py:22)). A "said" note that has been checked against the data is a candidate for the first kind let through.
-- The prose mapper already extracts only what a text explicitly states ([aughor/intake/prose.py:35](aughor/intake/prose.py:35)).
-- The platform already checks the numbers in its own reports against query results ([aughor/agent/verify.py:154](aughor/agent/verify.py:154)).
-- Asking the owner already exists for one case. When readings of a metric disagree at departure, the owner is asked ([aughor/govern/departure.py:768](aughor/govern/departure.py:768)), and the answer is remembered so it is asked once ([line 408](aughor/govern/departure.py:408)).
+- The hub's authority ladder already has the tiers, from `measured` down to `said` and `inferred` ([pramanyx/hub/provenance.py:34](pramanyx/hub/provenance.py:34)).
+- A reply in a filed Slack thread already arrives as a staged note ([pramanyx/routers/arrivals.py:38](pramanyx/routers/arrivals.py:38)) and becomes a context piece ([pramanyx/hub/adapters.py:17](pramanyx/hub/adapters.py:17)).
+- No prompt sees those pieces, because the injection list is empty until a kind earns its place ([pramanyx/hub/injection.py:22](pramanyx/hub/injection.py:22)). A "said" note that has been checked against the data is a candidate for the first kind let through.
+- The prose mapper already extracts only what a text explicitly states ([pramanyx/intake/prose.py:35](pramanyx/intake/prose.py:35)).
+- The platform already checks the numbers in its own reports against query results ([pramanyx/agent/verify.py:154](pramanyx/agent/verify.py:154)).
+- Asking the owner already exists for one case. When readings of a metric disagree at departure, the owner is asked ([pramanyx/govern/departure.py:768](pramanyx/govern/departure.py:768)), and the answer is remembered so it is asked once ([line 408](pramanyx/govern/departure.py:408)).
 
 ## 18. Owners the platform can reach
 
@@ -255,9 +255,9 @@ Ideas 17, 20 and 22 all end in "ask the owner", so they depend on this. The exis
 
 Starting points in the code today:
 
-- Free-text owners: [aughor/semantic/metrics.py:76](aughor/semantic/metrics.py:76), and `Process` and `BusinessRule` in [aughor/ontology/models.py:680](aughor/ontology/models.py:680) and [line 700](aughor/ontology/models.py:700). The glossary has no owner field.
-- `owner_principal` decides whether an owner string can be routed ([aughor/rbac/routing.py:53](aughor/rbac/routing.py:53)).
-- The identity resolver never creates a link on its own ([aughor/identity/resolver.py:15](aughor/identity/resolver.py:15)).
+- Free-text owners: [pramanyx/semantic/metrics.py:76](pramanyx/semantic/metrics.py:76), and `Process` and `BusinessRule` in [pramanyx/ontology/models.py:680](pramanyx/ontology/models.py:680) and [line 700](pramanyx/ontology/models.py:700). The glossary has no owner field.
+- `owner_principal` decides whether an owner string can be routed ([pramanyx/rbac/routing.py:53](pramanyx/rbac/routing.py:53)).
+- The identity resolver never creates a link on its own ([pramanyx/identity/resolver.py:15](pramanyx/identity/resolver.py:15)).
 
 ## 19. Remember a rejected duplicate
 
@@ -269,9 +269,9 @@ The ontology already does this right in two other places, so this is a pattern t
 
 Starting points in the code today:
 
-- The suggestions are computed on each call to `GET /ontology/duplicate-entities` ([aughor/routers/ontology.py:941](aughor/routers/ontology.py:941)) by [aughor/ontology/dedup.py](aughor/ontology/dedup.py), which has no store of decisions.
-- A dismissed ontology recommendation is never brought back ([aughor/ontology/recommendations.py:267](aughor/ontology/recommendations.py:267)).
-- The explorer remembers a proposal a person withdrew and does not make it again ([aughor/ontology/explorer.py:516](aughor/ontology/explorer.py:516)).
+- The suggestions are computed on each call to `GET /ontology/duplicate-entities` ([pramanyx/routers/ontology.py:941](pramanyx/routers/ontology.py:941)) by [pramanyx/ontology/dedup.py](pramanyx/ontology/dedup.py), which has no store of decisions.
+- A dismissed ontology recommendation is never brought back ([pramanyx/ontology/recommendations.py:267](pramanyx/ontology/recommendations.py:267)).
+- The explorer remembers a proposal a person withdrew and does not make it again ([pramanyx/ontology/explorer.py:516](pramanyx/ontology/explorer.py:516)).
 
 ## 20. One action beside each Briefing item
 
@@ -283,10 +283,10 @@ Put the single best action under each Briefing item, sent through the same gated
 
 Starting points in the code today:
 
-- The Briefing narrative and its ranking by business impact: [aughor/knowledge/briefing.py:387](aughor/knowledge/briefing.py:387) and [line 405](aughor/knowledge/briefing.py:405).
-- Executing a recommendation through a Slack, webhook or Jira trigger, behind the departure gate: [aughor/routers/actions.py:168](aughor/routers/actions.py:168).
+- The Briefing narrative and its ranking by business impact: [pramanyx/knowledge/briefing.py:387](pramanyx/knowledge/briefing.py:387) and [line 405](pramanyx/knowledge/briefing.py:405).
+- Executing a recommendation through a Slack, webhook or Jira trigger, behind the departure gate: [pramanyx/routers/actions.py:168](pramanyx/routers/actions.py:168).
 - The inbox itself: [web/components/RecommendationInbox.tsx](web/components/RecommendationInbox.tsx).
-- Past success already re-ranks which recommendation comes first ([aughor/playbook/retriever.py:45](aughor/playbook/retriever.py:45)), which is how "the single best action" would be chosen.
+- Past success already re-ranks which recommendation comes first ([pramanyx/playbook/retriever.py:45](pramanyx/playbook/retriever.py:45)), which is how "the single best action" would be chosen.
 
 ## 21. What the company is trying to do this quarter
 
@@ -298,10 +298,10 @@ A short list of priorities, written by people, each naming a metric and a target
 
 Starting points in the code today:
 
-- North-star metrics are inferred per connection ([aughor/business_profile/models.py:55](aughor/business_profile/models.py:55)).
-- Organisation settings are already written by people and already win over inference ([aughor/orgsettings/models.py:20](aughor/orgsettings/models.py:20)). That makes them the natural home.
-- The impact score is where a declared priority would count ([aughor/knowledge/triage.py:402](aughor/knowledge/triage.py:402)).
-- The hub's scope ladder already has an `organisation` level ([aughor/hub/provenance.py:45](aughor/hub/provenance.py:45)).
+- North-star metrics are inferred per connection ([pramanyx/business_profile/models.py:55](pramanyx/business_profile/models.py:55)).
+- Organisation settings are already written by people and already win over inference ([pramanyx/orgsettings/models.py:20](pramanyx/orgsettings/models.py:20)). That makes them the natural home.
+- The impact score is where a declared priority would count ([pramanyx/knowledge/triage.py:402](pramanyx/knowledge/triage.py:402)).
+- The hub's scope ladder already has an `organisation` level ([pramanyx/hub/provenance.py:45](pramanyx/hub/provenance.py:45)).
 
 ## 22. Decide when to ask whether a recommendation worked, at the moment it is accepted
 
@@ -315,9 +315,9 @@ Idea 13 then says how to judge the second measurement.
 
 Starting points in the code today:
 
-- The outcome record, with `metric_before` and `metric_after` ([aughor/playbook/outcomes.py:20](aughor/playbook/outcomes.py:20)), written by `log_outcome` ([line 56](aughor/playbook/outcomes.py:56)) from a single caller ([aughor/routers/investigations.py:6205](aughor/routers/investigations.py:6205)).
-- No review date exists anywhere in [aughor/playbook/](aughor/playbook/).
-- Verified and rejected outcomes already update each playbook entry's success rate ([aughor/playbook/outcomes.py:108](aughor/playbook/outcomes.py:108)), so an outcome that gets asked for does get used.
+- The outcome record, with `metric_before` and `metric_after` ([pramanyx/playbook/outcomes.py:20](pramanyx/playbook/outcomes.py:20)), written by `log_outcome` ([line 56](pramanyx/playbook/outcomes.py:56)) from a single caller ([pramanyx/routers/investigations.py:6205](pramanyx/routers/investigations.py:6205)).
+- No review date exists anywhere in [pramanyx/playbook/](pramanyx/playbook/).
+- Verified and rejected outcomes already update each playbook entry's success rate ([pramanyx/playbook/outcomes.py:108](pramanyx/playbook/outcomes.py:108)), so an outcome that gets asked for does get used.
 
 ## 23. One central path for every ask, and the destination decides only the delivery
 
@@ -329,12 +329,12 @@ The pattern this repo already believes in for charts. `POST /charts/svg` exists 
 
 The cost of not having it, all found in one session on 2026-09-23:
 
-- **The same operation, implemented twice.** Rasterizing an SVG lives in [aughor/export/echarts.py](aughor/export/echarts.py) for Python callers and again in [bots/slack/src/chart.ts](bots/slack/src/chart.ts) for the bot. Both had the same defect — a transparent background that made dark ink vanish on a dark Slack theme — and the fix had to be made twice, the second time only because a screenshot showed it still live.
+- **The same operation, implemented twice.** Rasterizing an SVG lives in [pramanyx/export/echarts.py](pramanyx/export/echarts.py) for Python callers and again in [bots/slack/src/chart.ts](bots/slack/src/chart.ts) for the bot. Both had the same defect — a transparent background that made dark ink vanish on a dark Slack theme — and the fix had to be made twice, the second time only because a screenshot showed it still live.
 - **A decision that drifted to the edge.** The browser resolved a chart's type before choosing an engine; the headless path resolved it one layer later. The result was that a category plus an additive measure at 7–24 rows drew nothing at all on every headless surface.
-- **Three ways to put text in Slack**, each with its own truncation: [aughor/slackbots/post.py:43](aughor/slackbots/post.py:43), [aughor/notifications/executor.py:167](aughor/notifications/executor.py:167), and the `slack.chat.postMessage` chain operation at [aughor/integrations/operations.py:213](aughor/integrations/operations.py:213).
-- **Two implementations of "attach the exhibits"**: [bots/slack/src/bot.ts:158](bots/slack/src/bot.ts:158) for the interactive path and `_attach_chart` in [aughor/automations/engine.py](aughor/automations/engine.py) for the scheduled one.
+- **Three ways to put text in Slack**, each with its own truncation: [pramanyx/slackbots/post.py:43](pramanyx/slackbots/post.py:43), [pramanyx/notifications/executor.py:167](pramanyx/notifications/executor.py:167), and the `slack.chat.postMessage` chain operation at [pramanyx/integrations/operations.py:213](pramanyx/integrations/operations.py:213).
+- **Two implementations of "attach the exhibits"**: [bots/slack/src/bot.ts:158](bots/slack/src/bot.ts:158) for the interactive path and `_attach_chart` in [pramanyx/automations/engine.py](pramanyx/automations/engine.py) for the scheduled one.
 
-The sharper half of the idea: **the core has to emit structure, not prose.** A real Slack answer measured on 2026-09-23 carried a markdown table, then the transport attached the same five rows again as the exhibit grid — neither knew the other had it. The same answer narrated "No guard receipts fired on this query", because the tool description at [aughor/agent/converse_tools.py:611](aughor/agent/converse_tools.py:611) asks the model to report guard receipts to the reader, which is the opposite of the decision that took receipts off Slack messages. Both are the same fault: prose has no fields, so a destination cannot select from it, and shortening it needs a second model call — which spends back the efficiency the centralising was for.
+The sharper half of the idea: **the core has to emit structure, not prose.** A real Slack answer measured on 2026-09-23 carried a markdown table, then the transport attached the same five rows again as the exhibit grid — neither knew the other had it. The same answer narrated "No guard receipts fired on this query", because the tool description at [pramanyx/agent/converse_tools.py:611](pramanyx/agent/converse_tools.py:611) asks the model to report guard receipts to the reader, which is the opposite of the decision that took receipts off Slack messages. Both are the same fault: prose has no fields, so a destination cannot select from it, and shortening it needs a second model call — which spends back the efficiency the centralising was for.
 
 If the core emitted a typed envelope instead — headline, grid, caveats, provenance, follow-ups — Slack takes the headline, the grid and the top caveats; email takes all of it; a PDF adds the exhibits. Selection is free. The `/ask` stream's frames (`chart_type`, `chart_config`, the grid frames) are already a partial envelope that the Slack bot consumes; the gap is that the prose is not in it.
 
@@ -347,11 +347,11 @@ Two boundaries worth keeping:
 
 *Noted 2026-09-23 · STUDIED and drafted into the roadmap the same day as **Arc CP**, §3.22, **ADOPTED** — §6 item 31, all four clauses YES. The study REFRAMED this idea: `deep_analysis` is chosen 0 times in 60 tool uses, so on the interactive path the quick/deep choice is not being made badly — it is not being made at all*
 
-Today the split between a quick answer and a deep investigation is a tool the model picks: `deep_analysis` at [aughor/agent/converse_tools.py:353](aughor/agent/converse_tools.py:353), declared at [line 640](aughor/agent/converse_tools.py:640), against the ordinary answering path, with [aughor/runners/investigation.py:234](aughor/runners/investigation.py:234) behind it. Collapse the two and let a judgement bundle decide the treatment from the question itself, on criteria we name and can measure.
+Today the split between a quick answer and a deep investigation is a tool the model picks: `deep_analysis` at [pramanyx/agent/converse_tools.py:353](pramanyx/agent/converse_tools.py:353), declared at [line 640](pramanyx/agent/converse_tools.py:640), against the ordinary answering path, with [pramanyx/runners/investigation.py:234](pramanyx/runners/investigation.py:234) behind it. Collapse the two and let a judgement bundle decide the treatment from the question itself, on criteria we name and can measure.
 
 The precedent is Adaptive-RAG (NAACL 2024), which routes a question to no-retrieval, single-step or multi-step by predicted complexity and reaches 1.03 average steps where a fixed multi-step pipeline pays for every one.
 
-The primitives are already typed in [aughor/judgment/seam.py](aughor/judgment/seam.py) — `Noul`, `Choice` and `Score` over 2–10 ordered levels. The hosted binding accepts **noul bundles only** ([aughor/judgment/jev.py:118](aughor/judgment/jev.py:118)), because the banded cascade never asked for anything else, so Choice and Score are a binding to fill in rather than a design to invent. The hosted judge evaluates a mixed bundle in parallel and its latency scales with tokens rather than question count, so a ten-question bundle costs about what one does — ask speculatively.
+The primitives are already typed in [pramanyx/judgment/seam.py](pramanyx/judgment/seam.py) — `Noul`, `Choice` and `Score` over 2–10 ordered levels. The hosted binding accepts **noul bundles only** ([pramanyx/judgment/jev.py:118](pramanyx/judgment/jev.py:118)), because the banded cascade never asked for anything else, so Choice and Score are a binding to fill in rather than a design to invent. The hosted judge evaluates a mixed bundle in parallel and its latency scales with tokens rather than question count, so a ten-question bundle costs about what one does — ask speculatively.
 
 A first set of levers:
 
@@ -363,6 +363,6 @@ A first set of levers:
 
 **The blocker is calibration, and it is the whole idea's load-bearing part.** The seam says it plainly: *"The probability is STATED, not measured."* No provider here exposes logprobs, so every probability is a number the model was asked to write into a schema — "not calibration, but the input calibration is measured ON". [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) is the instrument that would say whether those numbers mean anything, and it has never been run with real model calls. The routing literature is consistent that thresholds set by intuition are miscalibrated, that fixing calibration is where the savings actually come from, and that an escalation rate of only 1–3% can erase a cascade's savings entirely. Routing live answers on uncalibrated self-reported confidence would be building the decision on the one number nobody has checked.
 
-So the first step is **shadow mode**: extend the binding to Choice and Score, classify every incoming ask, and log the treatment it would have chosen beside what actually ran. No routing and no risk to an answer, and it produces the calibration corpus the battery needs as a by-product of ordinary use. Only once that says the numbers mean something does anything route on them, behind a flag, the way `semops.jev_cheap_tier` already is at [aughor/kernel/flags.py:92](aughor/kernel/flags.py:92).
+So the first step is **shadow mode**: extend the binding to Choice and Score, classify every incoming ask, and log the treatment it would have chosen beside what actually ran. No routing and no risk to an answer, and it produces the calibration corpus the battery needs as a by-product of ordinary use. Only once that says the numbers mean something does anything route on them, behind a flag, the way `semops.jev_cheap_tier` already is at [pramanyx/kernel/flags.py:92](pramanyx/kernel/flags.py:92).
 
 A useful built-in check comes free: a flat distribution over `treatment` means the categories overlap. The taxonomy is wrong, not the question.

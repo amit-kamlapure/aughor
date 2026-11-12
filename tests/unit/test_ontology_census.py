@@ -11,8 +11,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.ontology import census as CEN
-from aughor.ontology.models import (
+from pramanyx.ontology import census as CEN
+from pramanyx.ontology.models import (
     Backing, Binding, DisplayProperty, EntityProperty, OntologyEntity, OntologyGraph, OntologyRelationship, Process,
     ProcessStage, Promise, Rollup, Segment,
 )
@@ -90,15 +90,15 @@ def test_a_scope_counts_what_the_data_verified():
 
 def test_the_reading_adds_scopes_and_lists_a_connection_with_nothing_built(monkeypatch):
     graph = _graph()
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda *a, **k: [{"id": "c", "name": "Shop"}, {"id": "empty", "name": "New"}])
-    monkeypatch.setattr("aughor.ontology.store.list_schemas", lambda cid: ["s", "t"] if cid == "c" else [])
+    monkeypatch.setattr("pramanyx.ontology.store.list_schemas", lambda cid: ["s", "t"] if cid == "c" else [])
     built: list[tuple] = []
 
     def load(cid, schema=None):
         built.append((cid, schema))
         return graph
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", load)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", load)
     monkeypatch.setattr(CEN, "consumption", lambda: {})
     reading = CEN.take_census()
     assert [s["schema"] for s in reading["scopes"]] == ["s", "t"]
@@ -111,8 +111,8 @@ def test_the_reading_adds_scopes_and_lists_a_connection_with_nothing_built(monke
 # ── what leans on it ───────────────────────────────────────────────────────────────────────
 
 def test_what_leans_on_the_ontology_is_counted_and_an_unreadable_store_is_said(monkeypatch):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.record.claims import About, Claim, Statement
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.record.claims import About, Claim, Statement
 
     autos = [
         Automation(name="watch", conn_id="c", conditions=[Condition(kind="promise_breached", config={"process": "f"})],
@@ -127,13 +127,13 @@ def test_what_leans_on_the_ontology_is_counted_and_an_unreadable_store_is_said(m
         Claim(kind="observation", tier="measured", about=About(kind="type", key="Order"),
               statement=Statement(text="b", object_set="late_dispatch"), definition_version="r3"),
     ]
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: autos)
-    monkeypatch.setattr("aughor.record.claims.list_claims", lambda **k: claims)
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: autos)
+    monkeypatch.setattr("pramanyx.record.claims.list_claims", lambda **k: claims)
 
     def unreadable(**k):
         raise RuntimeError("decisions store is locked")
-    monkeypatch.setattr("aughor.record.decisions.list_decisions", unreadable)
-    monkeypatch.setattr("aughor.record.mission.list_missions", lambda **k: [])
+    monkeypatch.setattr("pramanyx.record.decisions.list_decisions", unreadable)
+    monkeypatch.setattr("pramanyx.record.mission.list_missions", lambda **k: [])
 
     out = CEN.consumption()
     assert out["automations"] == {"total": 3, "read_the_ontology": 2, "on_a_promise": 1, "run_a_declared_action": 1}
@@ -150,7 +150,7 @@ def test_what_leans_on_the_ontology_is_counted_and_an_unreadable_store_is_said(m
 def test_reliance_on_the_ontology_says_who_made_each_claim(monkeypatch):
     """OC-4's reading (2026-11-08) counted 80 claims about the ontology as reliance; every one was an agent's or the
     system's. The split says whose they are, so the next reading can tell a person leaning on it from the platform."""
-    from aughor.record.claims import About, Claim, Statement
+    from pramanyx.record.claims import About, Claim, Statement
 
     def about_type(author_kind, text):
         return Claim(kind="finding", tier="measured", about=About(kind="type", key="Order"),
@@ -158,10 +158,10 @@ def test_reliance_on_the_ontology_says_who_made_each_claim(monkeypatch):
     claims = [about_type("agent", "a"), about_type("agent", "b"), about_type("system", "c"), about_type("person", "d"),
               Claim(kind="observation", tier="measured", statement=Statement(text="not about the ontology"),
                     author_kind="person")]
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.record.claims.list_claims", lambda **k: claims)
-    monkeypatch.setattr("aughor.record.decisions.list_decisions", lambda **k: [])
-    monkeypatch.setattr("aughor.record.mission.list_missions", lambda **k: [])
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.record.claims.list_claims", lambda **k: claims)
+    monkeypatch.setattr("pramanyx.record.decisions.list_decisions", lambda **k: [])
+    monkeypatch.setattr("pramanyx.record.mission.list_missions", lambda **k: [])
 
     rec = CEN.consumption()["record"]
     assert rec["about_the_ontology"] == 4                       # the pre-registered total, unchanged
@@ -172,7 +172,7 @@ def test_reliance_on_the_ontology_says_who_made_each_claim(monkeypatch):
 
 @pytest.fixture
 def journal(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
     monkeypatch.setattr(CEN, "take_census",
@@ -194,15 +194,15 @@ def test_one_reading_a_day(journal, monkeypatch):
 
 
 def test_the_kind_is_catalogued_and_off_the_governance_feed():
-    from aughor.govern.audit_categories import NON_GOVERNANCE_KINDS
-    from aughor.kernel.events import CATALOGUE
+    from pramanyx.govern.audit_categories import NON_GOVERNANCE_KINDS
+    from pramanyx.kernel.events import CATALOGUE
     assert CEN.EVENT_KIND in CATALOGUE and CEN.EVENT_KIND in NON_GOVERNANCE_KINDS
 
 
 def test_the_door_serves_the_reading_and_the_kept_readings(journal, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     CEN.record_if_due()
     body = TestClient(app).get("/ontology/census").json()
     assert body["reading"]["totals"] == {"declared": {"entities": 52}}

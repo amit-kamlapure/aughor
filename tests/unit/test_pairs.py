@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.tools.concept import LAYER_PAIR
-from aughor.tools.pairs import (
+from pramanyx.tools.concept import LAYER_PAIR
+from pramanyx.tools.pairs import (
     MIN_ROWS,
     ColumnSample,
     derived_expressions,

@@ -18,7 +18,7 @@
  * change rather than mounted per tab: a CM6 view per tab would multiply the parser
  * worker and the linter by the tab count, and 20 tabs is an allowed state.
  *
- * Redone to `aughor-v2/CLARITY.md` (2026-10-12): the toolbar is Run (or Cancel), the schema, the guards' verdict as
+ * Redone to `pramanyx-v2/CLARITY.md` (2026-10-12): the toolbar is Run (or Cancel), the schema, the guards' verdict as
  * a chip and ONE Tools ▾ — Explain, Run all, Format and its preferences, Open, Recent runs and the keys moved
  * there from a row of buttons and icons, unchanged in what they do. The assistant that sat in a pane on the right is
  * `/ask` in the editor itself (`editor/ask.ts`): a line `/ask <what you want>` becomes the statement the platform's

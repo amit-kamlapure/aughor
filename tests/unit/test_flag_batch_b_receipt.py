@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.evaluator import EvalCase
-from aughor.evals.flag_batch_b_receipt import (
+from pramanyx.evals.evaluator import EvalCase
+from pramanyx.evals.flag_batch_b_receipt import (
     FLAGS, SCENARIO_PREFIX, SCENARIOS, receipt_target,
 )
 
@@ -44,7 +44,7 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
 def test_batch_b_behaviour_is_unconditional_or_still_default_on():
     """Most of batch B was HARDWIRED 2026-08-02 — those flags are gone and the
     behaviour is permanent. The few that still hold a flag must stay default-on."""
-    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
     for flag in FLAGS:
         if flag in FLAG_ENV:
@@ -61,7 +61,7 @@ def test_the_conversion_ended_in_an_unconditional_trigger():
     The receipt's claim is what is pinned here — that the TRIGGER survived the flag. Its
     description stays in CAPABILITY_TRIGGER because the Activation Receipt still reports
     why the capability fired, which has nothing to do with whether a flag gated it."""
-    from aughor.kernel.flags import AUTO_ELIGIBLE, CAPABILITY_TRIGGER, FLAG_DEFAULT, FLAG_ENV
+    from pramanyx.kernel.flags import AUTO_ELIGIBLE, CAPABILITY_TRIGGER, FLAG_DEFAULT, FLAG_ENV
 
     assert "ask.conversation_context" not in FLAG_ENV
     assert "ask.conversation_context" not in FLAG_DEFAULT
@@ -75,8 +75,8 @@ def test_federation_planner_is_kept_and_no_longer_routes_chat_on_its_own(client)
     unmeasured. The user kept the planner ("We may need cross querying across connections in the future") and the
     flag went (ROADMAP §3.65): the planner is part of the platform, served through its own doors with nothing set,
     and /ask no longer sends a turn to it."""
-    import aughor.routers.investigations as inv
-    from aughor.kernel import flags as F
+    import pramanyx.routers.investigations as inv
+    from pramanyx.kernel import flags as F
 
     for registry in (F.FLAG_ENV, F.FLAG_META, F.ALWAYS_ON, F.EXPERIMENT, F.FLAG_DEFAULT, F.GRADUATION_QUEUE):
         assert "federation.planner" not in registry

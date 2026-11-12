@@ -1,6 +1,6 @@
 # Business Calendar Events
 # ─────────────────────────────────────────────────────────────────────────────
-# Used by Aughor's Events Calendar Tool to provide business context to the
+# Used by Pramanyx's Events Calendar Tool to provide business context to the
 # analyst agent. These supplement events stored in the database itself.
 #
 # When the agent investigates anomalies that coincide with these events, it

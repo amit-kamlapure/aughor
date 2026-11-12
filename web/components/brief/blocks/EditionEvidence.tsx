@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import type { EditionSource } from "@/lib/api";
 import { projectThread, newSessionId } from "@/lib/chatTurn";
 import { fmtValue, partFocus, type AskedPart } from "@/lib/briefingEdition";
-import { useAughorChat } from "@/lib/useAughorChat";
+import { usePramanyxChat } from "@/lib/usePramanyxChat";
 
 const KIND: Record<string, string> = {
   check: "a check the guide keeps, measured for the range and the ranges before",
@@ -118,7 +118,7 @@ export function EditionAsk({ connectionId, schema, canvasId, periodKey, reader, 
 }) {
   const [sessionId] = useState(() => newSessionId());
   const edition = `${periodKey}@${reader || "_organisation"}`;
-  const { messages, sendMessage, status, error } = useAughorChat({
+  const { messages, sendMessage, status, error } = usePramanyxChat({
     connectionId, sessionId,
     body: { depth: "quick", schema: schema ?? null, canvas_id: canvasId ?? null, surface: BRIEFING_SURFACE,
             brief_period: edition },

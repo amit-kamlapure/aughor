@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.org.context import DEFAULT_ORG_ID
-from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
+from pramanyx.api import app
+from pramanyx.org.context import DEFAULT_ORG_ID
+from pramanyx.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
 
 client = TestClient(app)
 # A TestClient request carries no identity, so the endpoint scopes to DEFAULT_ORG_ID — seed the same org.

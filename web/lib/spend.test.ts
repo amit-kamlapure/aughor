@@ -125,10 +125,10 @@ describe("where tokens go", () => {
     // The deep-analysis module is read from the table, not restated here.
     const deep = CALLER_FEATURES.find(([, f]) => f === "deep_analysis")?.[0] ?? "";
     const rows = whereTokensGo(summary([
-      site("aughor.agent.tool_loop:run_tool_loop", 9, 49_460),
-      site("aughor.agent.explore:build_analysis_ledger", 6, 29_840),
-      site("aughor.sql.writer:fix", 6, 24_014),
-      site("aughor.judgment.seam:judge", 1, 2_578),
+      site("pramanyx.agent.tool_loop:run_tool_loop", 9, 49_460),
+      site("pramanyx.agent.explore:build_analysis_ledger", 6, 29_840),
+      site("pramanyx.sql.writer:fix", 6, 24_014),
+      site("pramanyx.judgment.seam:judge", 1, 2_578),
       ...["run_analysis_phase", "_run_synth", "deep_breakdown"].map((fn, i) =>
         site(`${deep}${fn}`, [21, 6, 16][i], [123_718, 45_914, 165_822][i])),
     ], 83, 451_593));
@@ -140,18 +140,18 @@ describe("where tokens go", () => {
       ["Other", 19, 12_825],
     ]);
     expect(rows[4].other).toBe(true);
-    expect(rows[4].sites).toEqual(["aughor.judgment.seam:judge"]);
+    expect(rows[4].sites).toEqual(["pramanyx.judgment.seam:judge"]);
   });
 
   it("folds named rows past the top few into Other rather than dropping them", () => {
     const rows = whereTokensGo(summary([
-      site("aughor.explorer.agent:<lambda>", 1, 500), site("aughor.sql.writer:write", 1, 400),
-      site("aughor.semantic.autoseed:_seed", 1, 300), site("aughor.ontology.enricher:x", 1, 200),
-      site("aughor.business_profile.infer:_ask", 1, 100),
+      site("pramanyx.explorer.agent:<lambda>", 1, 500), site("pramanyx.sql.writer:write", 1, 400),
+      site("pramanyx.semantic.autoseed:_seed", 1, 300), site("pramanyx.ontology.enricher:x", 1, 200),
+      site("pramanyx.business_profile.infer:_ask", 1, 100),
     ], 5, 1_500), 3);
     expect(rows.map(r => [r.label, r.tokens])).toEqual([["Exploration", 500], ["Writing SQL", 400], ["Other", 600]]);
     expect([...rows[2].sites].sort()).toEqual(
-      ["aughor.business_profile.infer:_ask", "aughor.ontology.enricher:x", "aughor.semantic.autoseed:_seed"]);
+      ["pramanyx.business_profile.infer:_ask", "pramanyx.ontology.enricher:x", "pramanyx.semantic.autoseed:_seed"]);
   });
 });
 

@@ -149,7 +149,7 @@ Entry: `HomeScreen` (web/app/page.tsx:467) → `HomeDesk` (web/components/home/H
 
 ### 5. URL params / deep links read or written
 - [ ] `?tab=home` (written by the shell; also the landing tab with no `?tab=`) and `?conn=<id>` (the shell's selected connection) (web/app/page.tsx:1244-1268)
-- [ ] localStorage `aughor_home_last_seen` — read once, rewritten on every visit (web/components/home/HomeDesk.tsx:33, :86-92)
+- [ ] localStorage `pramanyx_home_last_seen` — read once, rewritten on every visit (web/components/home/HomeDesk.tsx:33, :86-92)
 - [ ] Nothing else (lead, finding, standing question) is addressable
 
 ### 6. Empty / error / loading / withheld states that say something
@@ -165,13 +165,13 @@ Entry: `HomeScreen` (web/app/page.tsx:467) → `HomeDesk` (web/components/home/H
 - [ ] Booking/decision errors print the server's words in red under the card (web/components/home/HomeDesk.tsx:322, :378)
 
 ### 7. Loads on open
-- [ ] `GET /investigations?workspace_id=` — the recent runs Home picks its lead, question and standing questions from (default limit 50) (web/app/page.tsx:501-508; aughor/routers/investigations.py:6384)
+- [ ] `GET /investigations?workspace_id=` — the recent runs Home picks its lead, question and standing questions from (default limit 50) (web/app/page.tsx:501-508; pramanyx/routers/investigations.py:6384)
 - [ ] `GET /record/claims?kind=said` and `?kind=prediction`, `GET /record/decisions` (connection-scoped) (web/components/home/HomeDesk.tsx:100-106)
-- [ ] `GET /exploration/{conn}/domains` — findings for "a finding to act on"; opens a warehouse connection to read the cached schema for triage (introspects on a cold schema cache) (web/lib/home.ts:418-421; aughor/routers/exploration.py:639-670, :582-599)
+- [ ] `GET /exploration/{conn}/domains` — findings for "a finding to act on"; opens a warehouse connection to read the cached schema for triage (introspects on a cold schema cache) (web/lib/home.ts:418-421; pramanyx/routers/exploration.py:639-670, :582-599)
 - [ ] `GET /record/you` — the "Between you and Pramanyx" counts (web/lib/home.ts:452-453)
 - [ ] `GET /investigations/{lead id}` — the lead run's report for its figure (web/lib/home.ts:388-389)
-- [ ] `GET /metrics?connection_id=` then **`POST /exploration/{conn}/briefing/metric/{metric}?count=60` — SPENDS (warehouse): one statement, no model call**, on every Home open whose lead names an approved metric (web/components/home/HomeDesk.tsx:194-214; aughor/routers/exploration.py:1010-1027)
-- [ ] `GET /ask/prior` — debounced 350 ms while typing ≥12 characters; a read (web/components/home/AskRecall.tsx:28-36; aughor/routers/investigations.py:6056-6067)
+- [ ] `GET /metrics?connection_id=` then **`POST /exploration/{conn}/briefing/metric/{metric}?count=60` — SPENDS (warehouse): one statement, no model call**, on every Home open whose lead names an approved metric (web/components/home/HomeDesk.tsx:194-214; pramanyx/routers/exploration.py:1010-1027)
+- [ ] `GET /ask/prior` — debounced 350 ms while typing ≥12 characters; a read (web/components/home/AskRecall.tsx:28-36; pramanyx/routers/investigations.py:6056-6067)
 - [ ] `GET /metrics` again when Decide opens (approved, dated metrics for the expectation) (web/components/home/HomeDesk.tsx:342-349)
 - [ ] Who-am-I read for "Recorded as" (`useActor` → `useMe`) (web/components/record/kit.tsx:81-84)
 
@@ -193,7 +193,7 @@ items shows (IntelligenceWorkspace.tsx:201).
 
 ### 1. Controls
 - [ ] Connection picker — `Connection` select listing briefings-enabled connections. It sets the app-wide selected connection, which every layer re-reads, and `?conn=` is replaced in the URL. Shown only when there is no canvas, `onConnectionChange` is given, and there is more than one such connection (web/components/IntelligenceWorkspace.tsx:196, 204-217)
-- [ ] Schema picker — `Schema scope` select listing the connection's schemas. It scopes Briefing, Profile, Ontology and Graph together, and a change remounts the Briefing (key includes schema, IntelligenceWorkspace.tsx:263). It remembers the choice per browser in localStorage `aughor_schema_choice:<conn>` and sets the "current dataset" whose confirmed currency labels figures (web/lib/schemaChoice.ts:14-19). Shown only when there is more than one schema and no canvas. There is no "All schemas" option, which was removed (IntelligenceWorkspace.tsx:197, 221-237)
+- [ ] Schema picker — `Schema scope` select listing the connection's schemas. It scopes Briefing, Profile, Ontology and Graph together, and a change remounts the Briefing (key includes schema, IntelligenceWorkspace.tsx:263). It remembers the choice per browser in localStorage `pramanyx_schema_choice:<conn>` and sets the "current dataset" whose confirmed currency labels figures (web/lib/schemaChoice.ts:14-19). Shown only when there is more than one schema and no canvas. There is no "All schemas" option, which was removed (IntelligenceWorkspace.tsx:197, 221-237)
 - [ ] Layer tab row (Briefing · Dashboards · Profile · Ontology · Graph · Evidence · Memory · Actions · Org · Brain map, each with its blurb as hover title) — HIDDEN on the main screen (`hideTabs`). The rail replaces it. Nothing else mounts `IntelligenceWorkspace` (the Data Canvas mounts `BriefingEdition` directly, web/components/CanvasWorkspace.tsx:678), so this row is unreachable today (web/components/Workspace.tsx:81-91; IntelligenceWorkspace.tsx:70-88, 193-194)
 - [ ] Layer help "?" button — not wired for Intelligence (`help` prop not passed) (web/components/Workspace.tsx:84-90)
 
@@ -222,9 +222,9 @@ items shows (IntelligenceWorkspace.tsx:201).
 - [ ] Silent: a failed datasets read draws no maturity mark at all, with no words (web/components/DatasetProgram.tsx:360, 364). A failed catalog read leaves the schema picker hidden (IntelligenceWorkspace.tsx:179)
 
 ### 7. Loads on open
-- [ ] GET `/ontology/schemas?connection_id=` — when the registry names the connection's schema, adds ontology-built schemas to the picker. A read (web/lib/objectTypes.ts:1396-1400; aughor/routers/ontology.py:866-879)
-- [ ] GET `/catalog/tree?workspace_id=` — only when the registry names NO schema. **SPENDS (warehouse)**: it introspects the schemas of EVERY connection in the workspace, eight in parallel (aughor/routers/catalog.py:234-257). It also **WRITES** the metastore's schema rows for each connection it read (`set_catalog_schemas`, aughor/routers/catalog.py:269-273) (web/lib/api.ts:945-951; IntelligenceWorkspace.tsx:167)
-- [ ] GET `/exploration/{conn}/datasets` — the maturity readout. **SPENDS (warehouse)**: one schema/table listing through `quick_schemas` (a file listing for uploads). The rest is read from stores (aughor/routers/datasets.py:58-64, 155-159; aughor/routers/catalog.py:38-68) (web/lib/api.ts:2486-2490; web/components/DatasetProgram.tsx:360)
+- [ ] GET `/ontology/schemas?connection_id=` — when the registry names the connection's schema, adds ontology-built schemas to the picker. A read (web/lib/objectTypes.ts:1396-1400; pramanyx/routers/ontology.py:866-879)
+- [ ] GET `/catalog/tree?workspace_id=` — only when the registry names NO schema. **SPENDS (warehouse)**: it introspects the schemas of EVERY connection in the workspace, eight in parallel (pramanyx/routers/catalog.py:234-257). It also **WRITES** the metastore's schema rows for each connection it read (`set_catalog_schemas`, pramanyx/routers/catalog.py:269-273) (web/lib/api.ts:945-951; IntelligenceWorkspace.tsx:167)
+- [ ] GET `/exploration/{conn}/datasets` — the maturity readout. **SPENDS (warehouse)**: one schema/table listing through `quick_schemas` (a file listing for uploads). The rest is read from stores (pramanyx/routers/datasets.py:58-64, 155-159; pramanyx/routers/catalog.py:38-68) (web/lib/api.ts:2486-2490; web/components/DatasetProgram.tsx:360)
 
 Top rows today: on the main screen the context bar is the only row above every Intelligence layer: `Connection` select · `Schema` select · Maturity readout, each conditional. The layer tab row is hidden.
 
@@ -269,7 +269,7 @@ only there.
 - [ ] Table block — `Copy` (copies the table as cells) and `CSV` (downloads the table) (EditionBlocks.tsx:265-268; web/components/TableActions.tsx:74-112)
 - [ ] Table block object links — a key column the model linked opens the object page `/objects/<type>/<key>?conn=&schema=`. It needs the object catalog (EditionBlocks.tsx:276-281, 475-482; web/lib/objectLinks.ts:12-18)
 - [ ] Decision block `Deep analysis` — hands the decision's sentence to the Agent as a deep analysis (Data Canvas, investigate mode). With no handler, it seeds the ask box instead (EditionBlocks.tsx:165; BriefingEdition.tsx:175-180)
-- [ ] Decision block `Give it to a team` — toggles a row of function-group buttons, showing "Giving…". Each button **WRITES** to the edition and posts the decision to the channel that group binds, through the departure gate, so it can send a message (EditionBlocks.tsx:166-183; BriefingEdition.tsx:165-173; aughor/routers/exploration.py:2307-2330)
+- [ ] Decision block `Give it to a team` — toggles a row of function-group buttons, showing "Giving…". Each button **WRITES** to the edition and posts the decision to the channel that group binds, through the departure gate, so it can send a message (EditionBlocks.tsx:166-183; BriefingEdition.tsx:165-173; pramanyx/routers/exploration.py:2307-2330)
 - [ ] Decision block `Not now` — hides the decision for this visit only. Nothing is written (EditionBlocks.tsx:170; BriefingEdition.tsx:176)
 - [ ] Context block `Open the deep analysis` / `Open the decision` / `Open the decision it is about` — navigates to the chat run, or to Record ▸ Decisions with the id (EditionBlocks.tsx:130-132, 143-147)
 - [ ] Map block — hover tooltip on each country (Vega geoshape `tooltip: true`) (EditionBlocks.tsx:298-308)
@@ -299,7 +299,7 @@ only there.
 - [ ] `Redraft` / "Drafting…" (title "One model call; kept as a new draft") — **SPENDS (model)** and **WRITES** (BriefingGuidePanel.tsx:98-101)
 - [ ] `Hide` — inside the guide, goes back to the Sources tab (BriefingGuidePanel.tsx:102; BriefingEdition.tsx:356)
 - [ ] Proposed reader `Add` — **WRITES** a function group (POST `/groups`, org-wide) and adds the reader to the guide with the proposal's own checks, with no model call (BriefingGuidePanel.tsx:60-68, 188-199)
-- [ ] `+ Add a reader` — opens a form with "Reader's name" (placeholder "Product"), "What they watch" (placeholder "What this department or team watches and decides, in your words"), `Add the reader` / "Adding…" (title "One model call maps the words onto the guide's checks") and `Cancel`. **WRITES** a group and a guide draft, and **SPENDS (model)**: one call, plus up to four new checks measured (BriefingGuidePanel.tsx:200-217; aughor/routers/exploration.py:2254-2275)
+- [ ] `+ Add a reader` — opens a form with "Reader's name" (placeholder "Product"), "What they watch" (placeholder "What this department or team watches and decides, in your words"), `Add the reader` / "Adding…" (title "One model call maps the words onto the guide's checks") and `Cancel`. **WRITES** a group and a guide draft, and **SPENDS (model)**: one call, plus up to four new checks measured (BriefingGuidePanel.tsx:200-217; pramanyx/routers/exploration.py:2254-2275)
 - [ ] History `N versions` / `Hide` — expands the version list (BriefingGuidePanel.tsx:219-229)
 
 **Scheduled delivery card (web/components/brief/BriefSchedule.tsx), opened by Schedule**
@@ -376,12 +376,12 @@ only there.
 - [ ] Reader preference not kept — toast "Your reader could not be kept; it holds for this visit" (BriefingEdition.tsx:125)
 
 ### 7. Loads on open
-- [ ] GET `/groups` — the reader options. A read (web/lib/api.ts:9851-9853; aughor/routers/groups.py:68-82) (BriefingEdition.tsx:78)
-- [ ] GET `/exploration/{conn}/briefing/guide?schema=` — no model call. **SPENDS (warehouse, small)** when a schema is passed: `canonical_schema` runs one `INFORMATION_SCHEMA.TABLES` query (aughor/routers/_shared.py:589-601, 608-620). That contradicts the route's own docstring "no warehouse query" (aughor/routers/exploration.py:2051-2056) (web/lib/api.ts:8437-8439; BriefingEdition.tsx:82-86)
-- [ ] GET `/exploration/{conn}/briefing/edition?preset=&reader=&schema=&workspace_id=` — never composes and spends no model call (aughor/routers/exploration.py:2184-2217). **SPENDS (warehouse)**: `resolve_for` → `data_edge` runs one statement per table behind each approved metric's date column, cached 10 minutes in-process and NEVER cached for a live connection (aughor/briefing/ranges.py:1478-1520, 845-899, esp. 860-866). It also runs the `canonical_schema` information-schema query (aughor/routers/exploration.py:2121-2131). It runs again on every range or reader change (web/lib/api.ts:8378-8384; BriefingEdition.tsx:89-107)
+- [ ] GET `/groups` — the reader options. A read (web/lib/api.ts:9851-9853; pramanyx/routers/groups.py:68-82) (BriefingEdition.tsx:78)
+- [ ] GET `/exploration/{conn}/briefing/guide?schema=` — no model call. **SPENDS (warehouse, small)** when a schema is passed: `canonical_schema` runs one `INFORMATION_SCHEMA.TABLES` query (pramanyx/routers/_shared.py:589-601, 608-620). That contradicts the route's own docstring "no warehouse query" (pramanyx/routers/exploration.py:2051-2056) (web/lib/api.ts:8437-8439; BriefingEdition.tsx:82-86)
+- [ ] GET `/exploration/{conn}/briefing/edition?preset=&reader=&schema=&workspace_id=` — never composes and spends no model call (pramanyx/routers/exploration.py:2184-2217). **SPENDS (warehouse)**: `resolve_for` → `data_edge` runs one statement per table behind each approved metric's date column, cached 10 minutes in-process and NEVER cached for a live connection (pramanyx/briefing/ranges.py:1478-1520, 845-899, esp. 860-866). It also runs the `canonical_schema` information-schema query (pramanyx/routers/exploration.py:2121-2131). It runs again on every range or reader change (web/lib/api.ts:8378-8384; BriefingEdition.tsx:89-107)
 - [ ] Repeating GET `/exploration/{conn}/briefing/edition` every 30 s while any deep analysis the edition started is still running. It **SPENDS (warehouse)** each time, as above (BriefingEdition.tsx:109-120)
-- [ ] GET `/objects/catalog?connection_id=&schema_name=` — only when a table block links a key column. A read (web/lib/objects.ts:323-324; aughor/routers/objects.py:351-360; EditionBlocks.tsx:475-482)
-- [ ] GET `/api/chat/{session}/stream` — the ask box's resume probe on mount, which answers 204 for its new session (web/lib/useAughorChat.ts:113-118)
+- [ ] GET `/objects/catalog?connection_id=&schema_name=` — only when a table block links a key column. A read (web/lib/objects.ts:323-324; pramanyx/routers/objects.py:351-360; EditionBlocks.tsx:475-482)
+- [ ] GET `/api/chat/{session}/stream` — the ask box's resume probe on mount, which answers 204 for its new session (web/lib/usePramanyxChat.ts:113-118)
 - [ ] Only when Schedule is opened: GET `/briefing/subscriptions?conn_id=` and GET `/actions/triggers`. Both reads (BriefSchedule.tsx:69-81)
 - [ ] The owner's note "opening the Briefing can spend model calls" is no longer true of the page rendered today: model spend happens only on `Draft the guide`, `Write…` / `Write it again`, `Redraft`, `Add the reader` (words only), and the ask. It was true of the dormant `BriefingPanel` (see the appendix).
 
@@ -452,7 +452,7 @@ Entry: `NowPanel` (web/components/now/NowPanel.tsx:137), rendered at web/app/pag
 ### 5. URL params / deep links read or written
 - [ ] `?tab=now` and `?conn=` (shell) (web/app/page.tsx:1244-1268)
 - [ ] Writes `?departure=<id>` when a row opens Agent Ops ▸ Departures (web/app/page.tsx:1772-1777)
-- [ ] localStorage `aughor_now_last_seen` — read on arrival, written when the page is left (web/components/now/NowPanel.tsx:43, :161-167)
+- [ ] localStorage `pramanyx_now_last_seen` — read on arrival, written when the page is left (web/components/now/NowPanel.tsx:43, :161-167)
 - [ ] The drawer's open record is not in the URL; it closes when the page changes (web/components/record/Inspector.tsx:56-58)
 
 ### 6. Empty / error / loading / withheld states that say something
@@ -469,10 +469,10 @@ Entry: `NowPanel` (web/components/now/NowPanel.tsx:137), rendered at web/app/pag
 
 ### 7. Loads on open
 - [ ] `GET /departures?limit=200`, `GET /attention/held`, then `GET /attention/budget?addressee=` once per place (web/components/now/NowPanel.tsx:83-92)
-- [ ] `GET /record/decisions?due=true`, `GET /record/inquiries?due=true`, `GET /departures?awaiting=true&limit=50`, **`GET /control-room/needs-human?limit=50` — WRITES: sweeps lapsed kinetic-inbox proposals (`expire_stale()`) before reading** (web/components/now/NowPanel.tsx:101-106; aughor/routers/control_room.py:432-470)
-- [ ] `GET /record/set-aside` (web/components/now/NowPanel.tsx:145; aughor/routers/record.py:846-853)
-- [ ] `GET /record/corrections?limit=60` (web/components/now/NowPanel.tsx:146; aughor/routers/record.py:897-908)
-- [ ] `GET /briefing/organisation` — each connection's latest kept Briefing; a read, no narrative written (web/components/now/NowPanel.tsx:108-112; aughor/routers/briefs.py:84-90)
+- [ ] `GET /record/decisions?due=true`, `GET /record/inquiries?due=true`, `GET /departures?awaiting=true&limit=50`, **`GET /control-room/needs-human?limit=50` — WRITES: sweeps lapsed kinetic-inbox proposals (`expire_stale()`) before reading** (web/components/now/NowPanel.tsx:101-106; pramanyx/routers/control_room.py:432-470)
+- [ ] `GET /record/set-aside` (web/components/now/NowPanel.tsx:145; pramanyx/routers/record.py:846-853)
+- [ ] `GET /record/corrections?limit=60` (web/components/now/NowPanel.tsx:146; pramanyx/routers/record.py:897-908)
+- [ ] `GET /briefing/organisation` — each connection's latest kept Briefing; a read, no narrative written (web/components/now/NowPanel.tsx:108-112; pramanyx/routers/briefs.py:84-90)
 - [ ] `GET /jobs?state=active`, re-read on every `job.state` kernel event (web/components/now/NowPanel.tsx:151-154)
 - [ ] `GET /record/missions?state=active` (names a send's mission) (web/components/now/NowPanel.tsx:157)
 - [ ] Who-am-I read for "Recorded as" (web/components/record/kit.tsx:81-84)
@@ -566,10 +566,10 @@ Entry: CanvasBrowser (web/components/CanvasBrowser.tsx:175) — rendered at web/
 - [ ] Creator: create error in red in the footer ("Failed to create Data Canvas" or the server's message) (web/components/CanvasCreator.tsx:168-170, 390)
 
 #### 7. Loads on open (each API call on mount/open, method + path; mark **WRITES** / **SPENDS (model)** / **SPENDS (warehouse)** with backend evidence file:line)
-- [ ] GET /canvases?workspace_id=<ws> (web/lib/api.ts:4426-4431) — read; joins last activity from history (aughor/routers/canvas.py:55-78). Re-read after a delete (web/components/CanvasBrowser.tsx:211)
-- [ ] (on Delete, not on open) DELETE /canvases/{id} — **WRITES**: permanently purges the canvas's cards, dashboard history and exploration and cancels its explorer jobs (aughor/routers/canvas.py:209-232)
-- [ ] (creator, on picking a connection) GET /connections/{id}/schema/rich via useRichSchema (web/lib/schema-context.tsx:48-56) — **SPENDS (warehouse)** schema + declared-FK metadata read, server-cached (aughor/routers/connections.py:557-588); fallback GET /catalog/tree (web/lib/api.ts:945-953)
-- [ ] (creator, on Create) POST /canvases/suggest-name — **SPENDS (warehouse)** `db.get_schema` + **SPENDS (model)** "coder" call (aughor/routers/canvas.py:314-361); then POST /canvases — **WRITES** the canvas and **SPENDS (model + warehouse)** by submitting the canvas "birth" kernel job (intelligence build + exploration) (aughor/routers/canvas.py:94-130; aughor/routers/_shared.py:543-573)
+- [ ] GET /canvases?workspace_id=<ws> (web/lib/api.ts:4426-4431) — read; joins last activity from history (pramanyx/routers/canvas.py:55-78). Re-read after a delete (web/components/CanvasBrowser.tsx:211)
+- [ ] (on Delete, not on open) DELETE /canvases/{id} — **WRITES**: permanently purges the canvas's cards, dashboard history and exploration and cancels its explorer jobs (pramanyx/routers/canvas.py:209-232)
+- [ ] (creator, on picking a connection) GET /connections/{id}/schema/rich via useRichSchema (web/lib/schema-context.tsx:48-56) — **SPENDS (warehouse)** schema + declared-FK metadata read, server-cached (pramanyx/routers/connections.py:557-588); fallback GET /catalog/tree (web/lib/api.ts:945-953)
+- [ ] (creator, on Create) POST /canvases/suggest-name — **SPENDS (warehouse)** `db.get_schema` + **SPENDS (model)** "coder" call (pramanyx/routers/canvas.py:314-361); then POST /canvases — **WRITES** the canvas and **SPENDS (model + warehouse)** by submitting the canvas "birth" kernel job (intelligence build + exploration) (pramanyx/routers/canvas.py:94-130; pramanyx/routers/_shared.py:543-573)
 
 Top rows today: row 1 — search box (+ ✕) · "+ New"; row 2 — sliders tile · "All" · "Created by me"; row 3 (section bar) — "All Data Canvases (N)" · Card/List toggle · "Sort: … ▾". Above them the shell now draws the breadcrumb "Ask › Data Canvas" (web/app/page.tsx:1861-1863, 1926; working tree).
 
@@ -597,7 +597,7 @@ Entry: CanvasWorkspace (web/components/CanvasWorkspace.tsx:524) — rendered at 
 - [ ] History "Retry" on a failed read (web/components/CanvasWorkspace.tsx:221)
 - [ ] Opened run (HistoryDetailPanel): "← Back" to the history list, "Report" / "Evidence" tabs, "Keep on a dashboard", "Export ▾", "Thought process", report actions, evidence feedback, follow-up composer (Quick/Agentic + Send) that asks in a fresh canvas conversation — items as in the Chat sub-page's HistoryDetailPanel (web/components/CanvasWorkspace.tsx:688-708; web/components/HistoryDetailPanel.tsx:192-200)
 - [ ] Artifacts row trash "Remove artifact" — hover-only, no confirm (web/components/CanvasWorkspace.tsx:345-348, 311-319)
-- [ ] Artifacts row — title (hover shows description/question), kind chip, date; there is no open action, and nothing in the web app creates a canvas artifact (the POST route is unused) (web/components/CanvasWorkspace.tsx:333-350; aughor/routers/canvas.py:378-385)
+- [ ] Artifacts row — title (hover shows description/question), kind chip, date; there is no open action, and nothing in the web app creates a canvas artifact (the POST route is unused) (web/components/CanvasWorkspace.tsx:333-350; pramanyx/routers/canvas.py:378-385)
 - [ ] Artifacts "Retry" on a failed read (web/components/CanvasWorkspace.tsx:331)
 - [ ] Settings: "Name" input (web/components/CanvasWorkspace.tsx:469-472)
 - [ ] Settings: "Description" textarea (web/components/CanvasWorkspace.tsx:473-476)
@@ -678,19 +678,19 @@ Entry: CanvasWorkspace (web/components/CanvasWorkspace.tsx:524) — rendered at 
 - [ ] Every chat state under Chat applies inside the Chat view
 
 #### 7. Loads on open (each API call on mount/open, method + path; mark **WRITES** / **SPENDS (model)** / **SPENDS (warehouse)** with backend evidence file:line)
-- [ ] GET /canvases/{id}/documents — only when documents are pinned (web/components/CanvasWorkspace.tsx:88-101; web/lib/api.ts:4784-4787) — read (aughor/routers/canvas.py:181-206)
-- [ ] GET /canvases/{id}/history?limit=30 — the History view is always mounted, so this reads on every open (web/components/CanvasWorkspace.tsx:175-181; web/lib/api.ts:4825-4830) — read (aughor/routers/canvas.py:245-259)
-- [ ] GET /canvases/{id}/artifacts — always mounted, reads on every open even if the tab is never shown (web/components/CanvasWorkspace.tsx:303-309; web/lib/api.ts:4811-4815) — read (aughor/routers/canvas.py:373-376)
+- [ ] GET /canvases/{id}/documents — only when documents are pinned (web/components/CanvasWorkspace.tsx:88-101; web/lib/api.ts:4784-4787) — read (pramanyx/routers/canvas.py:181-206)
+- [ ] GET /canvases/{id}/history?limit=30 — the History view is always mounted, so this reads on every open (web/components/CanvasWorkspace.tsx:175-181; web/lib/api.ts:4825-4830) — read (pramanyx/routers/canvas.py:245-259)
+- [ ] GET /canvases/{id}/artifacts — always mounted, reads on every open even if the tab is never shown (web/components/CanvasWorkspace.tsx:303-309; web/lib/api.ts:4811-4815) — read (pramanyx/routers/canvas.py:373-376)
 - [ ] The canvas ChatPanel's mount (a second ChatPanel beside the shell's always-mounted one): GET /api/chat/{session}/stream, GET /agents/custom, GET /connections, POST /connections/{conn}/prewarm — **WRITES + SPENDS (warehouse)**, GET /suggestions?connection_id= — **SPENDS (warehouse)**, **SPENDS (model)** on a cache miss, **WRITES** the cache — evidence as in Chat §7 (web/components/ChatPanel.tsx:668, 675-679, 755-781)
-- [ ] Opened from a past chat: GET /chat-sessions/{id}/messages, retried up to 8 more times 1.5s apart (web/components/ChatPanel.tsx:784-819) — read (aughor/routers/investigations.py:6820-6828)
-- [ ] Opened from a past run: GET /investigations/{id} (web/components/HistoryDetailPanel.tsx:96-105) — read (aughor/routers/investigations.py:6407-6414); a legacy/direct report also GET /investigations/{id}/outcomes (web/components/ReportView.tsx:513-520)
-- [ ] Briefing view, first open: GET /groups, GET /exploration/{conn}/briefing/guide — read, "no model call, no warehouse query" (aughor/routers/exploration.py:2051-2056), GET /exploration/{conn}/briefing/edition?…&canvas_id= — read, "A READ never builds" (aughor/routers/exploration.py:2184-2190); re-read every 30s while an edition's deep analysis runs (web/components/brief/BriefingEdition.tsx:76-125)
+- [ ] Opened from a past chat: GET /chat-sessions/{id}/messages, retried up to 8 more times 1.5s apart (web/components/ChatPanel.tsx:784-819) — read (pramanyx/routers/investigations.py:6820-6828)
+- [ ] Opened from a past run: GET /investigations/{id} (web/components/HistoryDetailPanel.tsx:96-105) — read (pramanyx/routers/investigations.py:6407-6414); a legacy/direct report also GET /investigations/{id}/outcomes (web/components/ReportView.tsx:513-520)
+- [ ] Briefing view, first open: GET /groups, GET /exploration/{conn}/briefing/guide — read, "no model call, no warehouse query" (pramanyx/routers/exploration.py:2051-2056), GET /exploration/{conn}/briefing/edition?…&canvas_id= — read, "A READ never builds" (pramanyx/routers/exploration.py:2184-2190); re-read every 30s while an edition's deep analysis runs (web/components/brief/BriefingEdition.tsx:76-125)
 - [ ] Settings open: GET /canvases/{id}/documents, GET /documents, GET /lifecycle/canvas/history, GET /lifecycle/canvas/freeze (web/components/CanvasWorkspace.tsx:377-380; web/components/LifecyclePanel.tsx:60-73) — reads
-- [ ] Configure ▸ Data: the shell's SchemaProvider schema = GET /connections/{selectedConn}/schema/rich — **SPENDS (warehouse)** metadata read, server-cached (web/components/ConfigurePanel.tsx:277; web/app/page.tsx:1924; aughor/routers/connections.py:557-588)
-- [ ] Configure ▸ Data ▸ table ▸ Sample Data: GET /connections/{conn}/tables/{t}/sample?limit=100 — **SPENDS (warehouse)** `SELECT * … LIMIT 100` (web/components/ConfigurePanel.tsx:182-190; aughor/routers/connections.py:696-715)
-- [ ] Configure ▸ Instructions: GET /canvases/{id}/instructions, GET /connections/{conn}/instructions — reads (web/components/ConfigurePanel.tsx:509-512; aughor/routers/canvas.py:294-297)
+- [ ] Configure ▸ Data: the shell's SchemaProvider schema = GET /connections/{selectedConn}/schema/rich — **SPENDS (warehouse)** metadata read, server-cached (web/components/ConfigurePanel.tsx:277; web/app/page.tsx:1924; pramanyx/routers/connections.py:557-588)
+- [ ] Configure ▸ Data ▸ table ▸ Sample Data: GET /connections/{conn}/tables/{t}/sample?limit=100 — **SPENDS (warehouse)** `SELECT * … LIMIT 100` (web/components/ConfigurePanel.tsx:182-190; pramanyx/routers/connections.py:696-715)
+- [ ] Configure ▸ Instructions: GET /canvases/{id}/instructions, GET /connections/{conn}/instructions — reads (web/components/ConfigurePanel.tsx:509-512; pramanyx/routers/canvas.py:294-297)
 - [ ] Configure ▸ Instructions ▸ Metrics: GET /metrics (no connection) (web/components/MetricsPanel.tsx:777)
-- [ ] (on action) PUT /canvases/{id} name/description/tables/doc_ids, PUT instructions, DELETE /investigations/{id} (purge), DELETE /canvases/{id}/artifacts/{a}, POST/DELETE /lifecycle/canvas/{publish|revert|freeze} — **WRITES** (aughor/routers/canvas.py:142-155, 300-304, 387-391; aughor/routers/investigations.py:6632-6642); "Draft the guide" — **SPENDS (model)**, "Write it" — **SPENDS (model + warehouse)** (aughor/routers/exploration.py:2059-2066; web/components/brief/BriefingEdition.tsx:296-301)
+- [ ] (on action) PUT /canvases/{id} name/description/tables/doc_ids, PUT instructions, DELETE /investigations/{id} (purge), DELETE /canvases/{id}/artifacts/{a}, POST/DELETE /lifecycle/canvas/{publish|revert|freeze} — **WRITES** (pramanyx/routers/canvas.py:142-155, 300-304, 387-391; pramanyx/routers/investigations.py:6632-6642); "Draft the guide" — **SPENDS (model)**, "Write it" — **SPENDS (model + warehouse)** (pramanyx/routers/exploration.py:2059-2066; web/components/brief/BriefingEdition.tsx:296-301)
 
 Top rows today: the shell breadcrumb "Ask › Data Canvas › <name>" (web/app/page.tsx:1866-1869, 1926; working tree), then ONE header line (CanvasHead, web/components/CanvasWorkspace.tsx:56-83, 620-644): "← Data Canvas" · name · description · chips (connection / scope / documents / auto-generated) · [Chat | Briefing | History | Artifacts] · "+" · "Tools ▾", with the Settings popover anchored to it. Inside views: an opened run adds "← Back · Report | Evidence" (web/components/HistoryDetailPanel.tsx:191-204); the Briefing adds its own title row ("The Briefing" · period · range · Sources & guide) and a "Reading as" row (web/components/brief/BriefingEdition.tsx:221-235).
 
@@ -775,7 +775,7 @@ Each turn
 - [ ] Feedback 👍 "Helpful" / 👎 "Not helpful" → "What was wrong?", "+ add corrected SQL", "Record correction", "Cancel" (web/components/AnswerFeedback.tsx:66-87; web/components/FixItForm.tsx:40-85)
 - [ ] "Why this number →" — opens the Trust Receipt drawer (web/components/WhyThisNumber.tsx:573-583)
 - [ ] "↺ Regenerate" — last turn only (web/components/ChatPanel.tsx:1294-1306)
-- [ ] Post-run feedback (deep runs with hypotheses): textarea, "Submit feedback", "Skip" — it posts to /investigations/{id}/feedback, which refuses any run that is not paused, so a finished run's feedback is dropped (web/components/ChatPanel.tsx:1007-1016, 1307-1321; web/components/FeedbackPrompt.tsx:78-107; aughor/routers/investigations.py:4949-4960)
+- [ ] Post-run feedback (deep runs with hypotheses): textarea, "Submit feedback", "Skip" — it posts to /investigations/{id}/feedback, which refuses any run that is not paused, so a finished run's feedback is dropped (web/components/ChatPanel.tsx:1007-1016, 1307-1321; web/components/FeedbackPrompt.tsx:78-107; pramanyx/routers/investigations.py:4949-4960)
 - [ ] "Export ▾": "PDF document", "PowerPoint (.pptx)", "Add AI executive summary" checkbox (web/components/ChatMessage.tsx:1827-1834; web/components/ExportButton.tsx:47-93)
 - [ ] "Keep on a dashboard" (finished runs) → "Dashboard" select + question composer (question textarea, "Daily / Weekly / Monthly / Only when I ask", "Keep the question", "Cancel"), or "Start one" / "Cancel" when there is none (web/components/dashboards/KeepOnDashboard.tsx:64-99; web/components/dashboards/QuestionComposer.tsx:74-89)
 - [ ] "Save as skill" / "Retry — not skill-worthy?" (web/components/ChatMessage.tsx:1853-1880)
@@ -884,7 +884,7 @@ Debug log
 
 #### 6. Empty / error / loading / withheld states that say something
 - [ ] Empty conversation: "Ask your data anything" — "Agent investigates in depth — switch to Quick for a straight answer." (web/components/ChatPanel.tsx:1139-1147)
-- [ ] Suggestions: four skeleton rows while loading; "Suggested questions need a working model — <reason>" when the model half is missing (web/components/ChatPanel.tsx:1160-1168; aughor/routers/system.py:411-420)
+- [ ] Suggestions: four skeleton rows while loading; "Suggested questions need a working model — <reason>" when the model half is missing (web/components/ChatPanel.tsx:1160-1168; pramanyx/routers/system.py:411-420)
 - [ ] No connection: static starters, no prewarm, no suggestions request (web/components/ChatPanel.tsx:739-754)
 - [ ] Quick wait: bouncing dots + "Thinking…" / "Running query…" / "Investigating…" + shimmer scaffold (web/components/ChatMessage.tsx:336-352, 1552-1559, 1684-1701)
 - [ ] "Taking longer than usual — still working…" after 12s without a frame (web/components/ChatMessage.tsx:453-466)
@@ -911,22 +911,22 @@ Debug log
 
 #### 7. Loads on open (each API call on mount/open, method + path; mark **WRITES** / **SPENDS (model)** / **SPENDS (warehouse)** with backend evidence file:line)
 The chat block is mounted on every app load whatever the tab (web/app/page.tsx:2023), and its ChatPanel remounts on every New / goToChat / thread pick (chatKey, web/app/page.tsx:2124). Each mount:
-- [ ] GET /api/chat/{sessionId}/stream — reattach to an in-flight run (Next route → backend GET /ask/stream/{id}) — read (web/lib/useAughorChat.ts:113-118; web/app/api/chat/[id]/stream/route.ts:27-40)
-- [ ] GET /agents/custom (web/components/ChatPanel.tsx:668; web/lib/api.ts:10268-10269) — read (aughor/routers/agents.py:273)
+- [ ] GET /api/chat/{sessionId}/stream — reattach to an in-flight run (Next route → backend GET /ask/stream/{id}) — read (web/lib/usePramanyxChat.ts:113-118; web/app/api/chat/[id]/stream/route.ts:27-40)
+- [ ] GET /agents/custom (web/components/ChatPanel.tsx:668; web/lib/api.ts:10268-10269) — read (pramanyx/routers/agents.py:273)
 - [ ] GET /connections (web/components/ChatPanel.tsx:675-679) — read
-- [ ] POST /connections/{selectedConn}/prewarm — **WRITES** (a kernel "profile" job; profile cache and entity-value samples) and **SPENDS (warehouse)** profiling queries on a cache miss; no model; skipped when the Curator agent is off (web/components/ChatPanel.tsx:759-760; aughor/routers/connections.py:317-337, 346-378)
-- [ ] GET /suggestions?connection_id= — **SPENDS (warehouse)**: opens the connection and runs `db.get_schema` on every call (aughor/routers/system.py:320-324); **SPENDS (model)** on a cache miss (aughor/routers/system.py:394-411); **WRITES** the suggestions cache (aughor/routers/system.py:425) (web/components/ChatPanel.tsx:761-781)
-- [ ] Resuming (`restoreSessionId` or `?chat=`): GET /chat-sessions/{id}/messages, up to 9 attempts 1.5s apart (web/components/ChatPanel.tsx:784-819) — read (aughor/routers/investigations.py:6820-6828)
-- [ ] Seeded question (goToChat(q), an opened run's follow-up, ⌘K, the Catalog's "Tell me about…", the Briefing's investigate): auto-sent 80ms after mount → POST /api/chat → backend /ask — **SPENDS (model)** + **SPENDS (warehouse)** + **WRITES** the run (web/components/ChatPanel.tsx:946-966; web/app/api/chat/route.ts:333; aughor/routers/investigations.py:5999)
+- [ ] POST /connections/{selectedConn}/prewarm — **WRITES** (a kernel "profile" job; profile cache and entity-value samples) and **SPENDS (warehouse)** profiling queries on a cache miss; no model; skipped when the Curator agent is off (web/components/ChatPanel.tsx:759-760; pramanyx/routers/connections.py:317-337, 346-378)
+- [ ] GET /suggestions?connection_id= — **SPENDS (warehouse)**: opens the connection and runs `db.get_schema` on every call (pramanyx/routers/system.py:320-324); **SPENDS (model)** on a cache miss (pramanyx/routers/system.py:394-411); **WRITES** the suggestions cache (pramanyx/routers/system.py:425) (web/components/ChatPanel.tsx:761-781)
+- [ ] Resuming (`restoreSessionId` or `?chat=`): GET /chat-sessions/{id}/messages, up to 9 attempts 1.5s apart (web/components/ChatPanel.tsx:784-819) — read (pramanyx/routers/investigations.py:6820-6828)
+- [ ] Seeded question (goToChat(q), an opened run's follow-up, ⌘K, the Catalog's "Tell me about…", the Briefing's investigate): auto-sent 80ms after mount → POST /api/chat → backend /ask — **SPENDS (model)** + **SPENDS (warehouse)** + **WRITES** the run (web/components/ChatPanel.tsx:946-966; web/app/api/chat/route.ts:333; pramanyx/routers/investigations.py:5999)
 - [ ] Per finished answer with a public receipt: GET /receipt/{id} (web/components/WhyThisNumber.tsx:565-571) — read
-- [ ] Per answer table whose columns name objects: object catalog read + POST /objects/titles — **SPENDS (warehouse)**, one query per object type, also for restored conversations (web/components/objects/objectColumnLinks.tsx:31-41, 62-92; aughor/routers/objects.py:370-397)
+- [ ] Per answer table whose columns name objects: object catalog read + POST /objects/titles — **SPENDS (warehouse)**, one query per object type, also for restored conversations (web/components/objects/objectColumnLinks.tsx:31-41, 62-92; pramanyx/routers/objects.py:370-397)
 - [ ] Per staged proposal: GET the inbox record, re-polled every 15s while pending (web/components/ProposalCard.tsx:626-640)
-- [ ] Opened run: GET /investigations/{id} — read (web/components/HistoryDetailPanel.tsx:96-105; aughor/routers/investigations.py:6407-6414); Evidence tab GET /investigations/{id}/evidence (web/components/HistoryDetailPanel.tsx:108-115); legacy report GET /investigations/{id}/outcomes (web/components/ReportView.tsx:513-520)
-- [ ] Conversations toggle: GET /chat-sessions?conn_id= — read (web/components/ThreadsRail.tsx:59-67; aughor/routers/investigations.py:6663-6668)
-- [ ] History popup: GET /investigations, GET /investigations/indexed-ids (vector-store scroll), refreshed on kernel investigation events (web/components/HistoryPanel.tsx:37-59; aughor/routers/investigations.py:6384-6404)
+- [ ] Opened run: GET /investigations/{id} — read (web/components/HistoryDetailPanel.tsx:96-105; pramanyx/routers/investigations.py:6407-6414); Evidence tab GET /investigations/{id}/evidence (web/components/HistoryDetailPanel.tsx:108-115); legacy report GET /investigations/{id}/outcomes (web/components/ReportView.tsx:513-520)
+- [ ] Conversations toggle: GET /chat-sessions?conn_id= — read (web/components/ThreadsRail.tsx:59-67; pramanyx/routers/investigations.py:6663-6668)
+- [ ] History popup: GET /investigations, GET /investigations/indexed-ids (vector-store scroll), refreshed on kernel investigation events (web/components/HistoryPanel.tsx:37-59; pramanyx/routers/investigations.py:6384-6404)
 - [ ] Keep on a dashboard opened: GET dashboards list, GET /dashboards/questions/cost (web/components/dashboards/KeepOnDashboard.tsx:32-43; web/components/dashboards/QuestionComposer.tsx:49-53)
 - [ ] Receipt drawer opened: GET /receipt/{id}/trace (graph load) (web/components/WhyThisNumber.tsx:183-187)
-- [ ] (on click, not on open) any send, suggestion, follow-up, Regenerate, Run fresh, Investigate instead, Explore this fact (also POST /overview/drill **WRITES**), Retry, Edit — **SPENDS (model + warehouse)**; Validate — **SPENDS (warehouse)** live probes (aughor/routers/query.py:1381-1390); Pin to dashboard — re-runs the SQL through the guards (aughor/routers/cards.py:240-252); Run the statement now — POST /investigations/{id}/recheck **SPENDS (warehouse)**; Export with "Add AI executive summary" — **SPENDS (model)** (aughor/routers/investigations.py:6567-6573); Show grounding — GET /ask/context, schema read (aughor/routers/investigations.py:6070-6100); attachments, annotate, feedback, verdicts, rescope, skills, eval cases, thread rename/delete, run delete, Clear all — **WRITES**
+- [ ] (on click, not on open) any send, suggestion, follow-up, Regenerate, Run fresh, Investigate instead, Explore this fact (also POST /overview/drill **WRITES**), Retry, Edit — **SPENDS (model + warehouse)**; Validate — **SPENDS (warehouse)** live probes (pramanyx/routers/query.py:1381-1390); Pin to dashboard — re-runs the SQL through the guards (pramanyx/routers/cards.py:240-252); Run the statement now — POST /investigations/{id}/recheck **SPENDS (warehouse)**; Export with "Add AI executive summary" — **SPENDS (model)** (pramanyx/routers/investigations.py:6567-6573); Show grounding — GET /ask/context, schema read (pramanyx/routers/investigations.py:6070-6100); attachments, annotate, feedback, verdicts, rescope, skills, eval cases, thread rename/delete, run delete, Clear all — **WRITES**
 
 Top rows today: the shell breadcrumb "Ask › Data Canvas › Conversation" (web/app/page.tsx:1865, 1926; working tree), then the page toolbar `.aug-toolbar` (web/app/page.tsx:2026-2084): left — canvas chip · "N tables" · "×" Clear canvas, or the connection tag; right — "Canvas" (no canvas) · "+ New" · "Conversations" · "History". With a run open, HistoryDetailPanel adds a "Report | Evidence" row (no Back) and puts "Keep on a dashboard" + "Export ▾" in its Question header (web/components/HistoryDetailPanel.tsx:191-262). The composer (Quick/Agent · agent picker · Clear · attach · send/stop) floats at the bottom (web/components/ChatPanel.tsx:1364-1372).
 
@@ -984,7 +984,7 @@ Entry: `RecentsScreen` = `AgentRuns` (web/components/runs/AgentRuns.tsx:116), dy
 
 ### 7. Loads on open
 - [ ] `GET /connections` (names each row's connection) (web/components/runs/AgentRuns.tsx:128)
-- [ ] `GET /investigations?limit=50&workspace_id=` — re-read on every `investigation.*` kernel event (web/components/runs/AgentRuns.tsx:132-148; aughor/routers/investigations.py:6384)
+- [ ] `GET /investigations?limit=50&workspace_id=` — re-read on every `investigation.*` kernel event (web/components/runs/AgentRuns.tsx:132-148; pramanyx/routers/investigations.py:6384)
 - [ ] `GET /jobs?state=active` + `GET /workspaces/{id}` — live jobs on this workspace's connections; re-read on every `job.state` event (web/components/runs/AgentRuns.tsx:153-169)
 - [ ] Nothing writes or spends on open
 
@@ -1044,13 +1044,13 @@ Catalog or schema page (header and tabs)
 - [ ] Docs tab: "Documents" link — opens the Documents page (web/components/catalog/CatalogTools.tsx:462-466)
 - [ ] Settings (catalog): "Test connection", "Remove connection…" (red) (web/components/catalog/CatalogScope.tsx:225-236)
 - [ ] Settings (catalog): "Show this connection in the Briefing" switch — **WRITES** `PUT /connections/{id}/settings` `briefings_enabled` (web/components/catalog/CatalogScope.tsx:237-239; web/components/catalog/CatalogTools.tsx:257-286)
-- [ ] Settings (catalog) ▸ Exploration: "Accept the proposed layers" — **WRITES** `POST /exploration/{conn}/datasets/layers/accept`, and starts questions within the budget — **SPENDS** (web/components/DatasetProgram.tsx:282-333; aughor/routers/datasets.py:162, :247)
+- [ ] Settings (catalog) ▸ Exploration: "Accept the proposed layers" — **WRITES** `POST /exploration/{conn}/datasets/layers/accept`, and starts questions within the budget — **SPENDS** (web/components/DatasetProgram.tsx:282-333; pramanyx/routers/datasets.py:162, :247)
 - [ ] Settings (catalog) ▸ Exploration: "This connection's monthly budget (tokens)" input + "Save" — **WRITES** `exploration_monthly_tokens` (web/components/DatasetProgram.tsx:340-346)
 - [ ] Settings (catalog) ▸ "Sync now" / "Sync knowledge" (Stripe, HubSpot, Salesforce, S3 / Confluence, Notion) — **WRITES + SPENDS** a background sync (web/components/catalog/CatalogTools.tsx:324-336, :371-378)
 - [ ] Settings (catalog) ▸ "Upload CSV, Parquet or Excel" (local-upload connections) — **WRITES** a table (web/components/catalog/CatalogTools.tsx:338-350, :381-386)
 - [ ] Settings (catalog) ▸ file row "×" Remove — deletes the file and its table, NO confirm (web/components/catalog/CatalogTools.tsx:352-355, :387-395)
 - [ ] Settings (catalog) ▸ "Restore sample data" — re-adds removed bundled sample schemas (web/components/catalog/CatalogTools.tsx:357-365, :396-402)
-- [ ] Settings (schema) ▸ "Layer" select ("Not set" + layers) and "Set as <proposed>" — **WRITES** (setting a question-asking layer starts questions — SPENDS) (web/components/catalog/CatalogScope.tsx:217-222; web/components/DatasetProgram.tsx:104-140; aughor/routers/datasets.py:162, :206)
+- [ ] Settings (schema) ▸ "Layer" select ("Not set" + layers) and "Set as <proposed>" — **WRITES** (setting a question-asking layer starts questions — SPENDS) (web/components/catalog/CatalogScope.tsx:217-222; web/components/DatasetProgram.tsx:104-140; pramanyx/routers/datasets.py:162, :206)
 - [ ] Settings (schema) ▸ on/off switch → reason select + "Turn off" / "Cancel"; switching back on is immediate — **WRITES** (web/components/DatasetProgram.tsx:157-195)
 - [ ] Profile tab (schema): "Show all N tables" / "Domain tables only (N)"; per-table "derived quantities" fold; column rows with a confident concept open their evidence layers (web/components/SchemaShape.tsx:150-165, :223, :276, :460-467)
 - [ ] Volumes tab: "New volume…" input + "Add" (Enter also adds) — **WRITES** (web/components/catalog/MetastorePanels.tsx:77-80)
@@ -1155,9 +1155,9 @@ Add data page (replaces the whole Catalog while open)
 - [ ] Add data: "No sources match."; "Connection created, but it has not appeared in the catalogue yet…"; "No tables yet. Upload a file to create your first one." (web/components/AddDataPanel.tsx:791, :720-722, :601)
 
 ### 7. Loads on open
-- [ ] **`GET /catalog/tree?workspace_id=` — SPENDS (warehouse) + WRITES**: reads every listed connection's schemas from its own warehouse (in parallel) and reconciles the metastore's Schema rows (`set_catalog_schemas`). Re-runs whenever the workspace or the connection set changes, and on Refresh (web/components/CatalogScreen.tsx:246-275; aughor/routers/catalog.py:234-275)
-- [ ] **`GET /exploration/{conn}/datasets` once per catalog — SPENDS (warehouse)**: lists the schemas and tables again through `quick_schemas` (uploads answer from their files); layers, off, maturity and budget come from stores (web/components/CatalogScreen.tsx:228-240, :283-299; aughor/routers/datasets.py:58-64, :155)
-- [ ] **`GET /knowledge/status` — SPENDS (embedding model)**: probes the embedder with one real embedding call; read once per mount (web/components/CatalogScreen.tsx:291-296; aughor/knowledge/health.py:32-60)
+- [ ] **`GET /catalog/tree?workspace_id=` — SPENDS (warehouse) + WRITES**: reads every listed connection's schemas from its own warehouse (in parallel) and reconciles the metastore's Schema rows (`set_catalog_schemas`). Re-runs whenever the workspace or the connection set changes, and on Refresh (web/components/CatalogScreen.tsx:246-275; pramanyx/routers/catalog.py:234-275)
+- [ ] **`GET /exploration/{conn}/datasets` once per catalog — SPENDS (warehouse)**: lists the schemas and tables again through `quick_schemas` (uploads answer from their files); layers, off, maturity and budget come from stores (web/components/CatalogScreen.tsx:228-240, :283-299; pramanyx/routers/datasets.py:58-64, :155)
+- [ ] **`GET /knowledge/status` — SPENDS (embedding model)**: probes the embedder with one real embedding call; read once per mount (web/components/CatalogScreen.tsx:291-296; pramanyx/knowledge/health.py:32-60)
 - [ ] Shell: the selected connection's rich schema `GET /connections/{id}/schema/rich` (SchemaProvider wraps every page) (web/app/page.tsx:1923; web/lib/schema-context.tsx:48-56)
 - [ ] Opening a catalog/schema: `GET /metrics?connection_id=`, `GET /ontology?…&ontology_view=draft` per schema (stores only) (web/components/catalog/CatalogScope.tsx:83-100)
 - [ ] Settings tab: `GET /connections/{id}/settings`, `GET /exploration/{conn}/status` (polled 60 s), sync status / files reads for connector types (web/components/catalog/CatalogTools.tsx:261-267, :308-322; web/components/ExplorationBadge.tsx:28-46)
@@ -1166,7 +1166,7 @@ Add data page (replaces the whole Catalog while open)
 - [ ] Profile tab: `GET /catalog/tree` (UNSCOPED — every connection; same spend/write as above) + `GET /connections/{id}/schema/profile` + `GET /exploration/{conn}/findings` (web/components/SchemaShape.tsx:367-386)
 - [ ] Volumes tab: `GET /metastore/catalogs/{id}/volumes` (+ objects); Permissions tab: `GET /workspaces` + `GET /metastore/workspaces/{ws}/grants` per workspace (web/components/catalog/MetastorePanels.tsx:42-48, :139-147)
 - [ ] Opening a table: `GET /connections/{id}/tables/{t}/columns`, `GET /exploration/{conn}/findings`, `GET /metrics`, `GET /ontology` (web/components/catalog/CatalogTable.tsx:84-131)
-- [ ] Sample tab: **`GET /connections/{id}/tables/{t}/sample?limit=200` — SPENDS (warehouse)** (web/components/catalog/CatalogTools.tsx:480-493; aughor/routers/connections.py:696)
+- [ ] Sample tab: **`GET /connections/{id}/tables/{t}/sample?limit=200` — SPENDS (warehouse)** (web/components/catalog/CatalogTools.tsx:480-493; pramanyx/routers/connections.py:696)
 - [ ] Table Docs tab: `GET /glossary`, `GET /ontology/column-config` (web/components/catalog/GlossaryPanel.tsx:111-112)
 - [ ] Add data: `GET /connectors/types`; uploads: `GET /workspaces/{id}` + `GET /connections` to find the uploads connection (it is created only on the first upload) (web/components/AddDataPanel.tsx:659, :168-176; web/lib/uploadTarget.ts:38)
 
@@ -1201,7 +1201,7 @@ screen, so the canvas branches (canvas domains and patterns, the "connection-wid
 - [ ] Expanded finding: `Evidence` — opens the Evidence drawer (BriefingPanel.tsx:1250-1251)
 - [ ] Expanded finding: `Dismiss` — a browser `window.prompt` asks "Dismiss this finding. Why is it wrong or stale? (optional)". **WRITES** the dismissal, and the row disappears (BriefingPanel.tsx:1054-1064, 1252-1254; ProfileLayer.tsx:99-100)
 - [ ] Patterns tab: segmented filter `All · N` / `Recurring angle · N` / `Cross-domain driver · N` / `High-novelty cluster · N` (ProfileLayer.tsx:152-159, 258-259)
-- [ ] Patterns tab: `Refresh` / "Refreshing" — recomputes patterns (`refresh=true`) and **WRITES** the pattern cache. No model call (ProfileLayer.tsx:260-262; aughor/knowledge/patterns.py:215-236)
+- [ ] Patterns tab: `Refresh` / "Refreshing" — recomputes patterns (`refresh=true`) and **WRITES** the pattern cache. No model call (ProfileLayer.tsx:260-262; pramanyx/knowledge/patterns.py:215-236)
 - [ ] Pattern row — click to expand or collapse. It shows domains (this one accented), up to 8 entities "+N more", angles and example findings (ProfileLayer.tsx:161-214)
 - [ ] Retry buttons on each failed read: domains, patterns, patterns again, and org (ProfileLayer.tsx:247, 264, 282, 445; web/components/ui/states.tsx:84-98)
 
@@ -1214,7 +1214,7 @@ screen, so the canvas branches (canvas domains and patterns, the "connection-wid
 - [ ] Retry on each failed read: business profile, org settings, tables, findings (status and blanks), metrics (ProfilePanel.tsx:69-75, 199, 246, 266, 317, 350, 383)
 
 ### 2. Dialogs, drawers, popovers, panels
-- [ ] Evidence drawer — a right-side 520px drawer over a scrim. Clicking the scrim closes it, and so does `×` (aria "Close"). There is no Escape handler. Inside: the domain tag; the finding; Confidence / Novelty / Freshness; Entities and Measures chips; the dossier ("Question the explorer asked / the Briefing measured", "Why this holds — the mechanism", "Why it matters", grounded figures ✓/⚠, structural ground: joins with orphans, distributions, lifecycles, null meanings); `Re-validate` / "Re-validating…" with "as of …" and the result line "✓ Confirmed — still holds" / "⚠ Drifted — …" / "✕ Could not re-run — …" (**SPENDS (warehouse)**: re-runs the SQL, and **WRITES** a re-stamp of the dossier, aughor/routers/exploration.py:1952-1984); the source query, with `Open in SQL Editor` (opens a new SQL Editor tab named "Evidence: …" and closes the drawer) or "— no query recorded —"; and the trust receipt (job, version, inputs, ✓ guards) (web/components/BriefingPanel.tsx:1411-1551, 1273-1369, 1373-1407; ProfileLayer.tsx:430-431)
+- [ ] Evidence drawer — a right-side 520px drawer over a scrim. Clicking the scrim closes it, and so does `×` (aria "Close"). There is no Escape handler. Inside: the domain tag; the finding; Confidence / Novelty / Freshness; Entities and Measures chips; the dossier ("Question the explorer asked / the Briefing measured", "Why this holds — the mechanism", "Why it matters", grounded figures ✓/⚠, structural ground: joins with orphans, distributions, lifecycles, null meanings); `Re-validate` / "Re-validating…" with "as of …" and the result line "✓ Confirmed — still holds" / "⚠ Drifted — …" / "✕ Could not re-run — …" (**SPENDS (warehouse)**: re-runs the SQL, and **WRITES** a re-stamp of the dossier, pramanyx/routers/exploration.py:1952-1984); the source query, with `Open in SQL Editor` (opens a new SQL Editor tab named "Evidence: …" and closes the drawer) or "— no query recorded —"; and the trust receipt (job, version, inputs, ✓ guards) (web/components/BriefingPanel.tsx:1411-1551, 1273-1369, 1373-1407; ProfileLayer.tsx:430-431)
 - [ ] Share menu — an anchored popover under `Share`, as above (BriefingPanel.tsx:1226-1248)
 - [ ] Dismiss reason prompt — a native browser `window.prompt` dialog (BriefingPanel.tsx:1057)
 - [ ] Domain page — replaces the Overview beside the column (ProfileLayer.tsx:463-468)
@@ -1265,17 +1265,17 @@ screen, so the canvas branches (canvas domains and patterns, the "connection-wid
 - [ ] A finding with no data — "no data" chip, with Monitor / Pin / Promote / Share disabled (title "This finding has no data — nothing to act on") (BriefingPanel.tsx:1136-1141, 1255-1260)
 
 ### 7. Loads on open
-- [ ] GET `/actions/triggers` — read (web/lib/api.ts:7468-7470; aughor/routers/actions.py:103-107; ProfileLayer.tsx:396-400)
-- [ ] GET `/exploration/{conn}/domains?schema=` — no model call and no write. **SPENDS (warehouse, metadata)**: `canonical_schema` runs one INFORMATION_SCHEMA query when a schema is passed (aughor/routers/_shared.py:589-601, 608-620), and `_connection_col_types` opens the connection and reads its schema, which introspects on a cold schema cache (aughor/routers/exploration.py:582-595; aughor/routers/_shared.py:28-35) (web/lib/api.ts:2643-2647; ProfileLayer.tsx:404-408; aughor/routers/exploration.py:639-672)
-- [ ] GET `/org-intelligence?connection_id=&schema=` — read. A 503 when Org is unreadable (web/lib/api.ts:7596; aughor/routers/knowledge.py:667-679; ProfileLayer.tsx:411-413)
-- [ ] GET `/business-profile?connection_id=&schema_name=` — read, with no inference (web/lib/api.ts:146; aughor/routers/profile.py:55-87; ProfilePanel.tsx:129)
-- [ ] GET `/org-settings/effective?workspace_id=` — read (web/lib/api.ts:529; aughor/routers/orgsettings.py:137; ProfilePanel.tsx:130)
-- [ ] GET `/connections/{conn}/schema/profile` — read of the cached profiles. **SPENDS (warehouse, metadata)** on a cold schema cache: it opens the connection and runs `get_schema` (aughor/routers/connections.py:613-630; aughor/routers/_shared.py:28-35; ProfilePanel.tsx:131)
-- [ ] GET `/metrics` — read (web/lib/api.ts:1218; aughor/routers/metrics.py:106; ProfilePanel.tsx:132)
-- [ ] GET `/exploration/{conn}/findings?schema=` — read of explorer state. **SPENDS (warehouse, metadata)** when a schema is passed (canonical_schema plus the schema filter, aughor/routers/exploration.py:526-578; ProfilePanel.tsx:24-26, 133)
-- [ ] GET `/business-profile/currency?connection_id=&schema_name=` — read (web/lib/api.ts:8517; aughor/routers/profile.py:30-36; ProfilePanel.tsx:446-452)
-- [ ] Only when the Patterns tab opens: GET `/exploration/{conn}/patterns?schema=` — no model call. **WRITES** the pattern cache whenever the cached entry is more than 6 h old, even without Refresh (aughor/knowledge/patterns.py:26, 215-236; aughor/routers/exploration.py:676-690; ProfileLayer.tsx:239-245)
-- [ ] Only when the Evidence drawer opens: GET `/exploration/{conn}/findings/{id}/receipt` — read (web/lib/api.ts:9337-9343; aughor/routers/exploration.py:1840; BriefingPanel.tsx:1420-1424)
+- [ ] GET `/actions/triggers` — read (web/lib/api.ts:7468-7470; pramanyx/routers/actions.py:103-107; ProfileLayer.tsx:396-400)
+- [ ] GET `/exploration/{conn}/domains?schema=` — no model call and no write. **SPENDS (warehouse, metadata)**: `canonical_schema` runs one INFORMATION_SCHEMA query when a schema is passed (pramanyx/routers/_shared.py:589-601, 608-620), and `_connection_col_types` opens the connection and reads its schema, which introspects on a cold schema cache (pramanyx/routers/exploration.py:582-595; pramanyx/routers/_shared.py:28-35) (web/lib/api.ts:2643-2647; ProfileLayer.tsx:404-408; pramanyx/routers/exploration.py:639-672)
+- [ ] GET `/org-intelligence?connection_id=&schema=` — read. A 503 when Org is unreadable (web/lib/api.ts:7596; pramanyx/routers/knowledge.py:667-679; ProfileLayer.tsx:411-413)
+- [ ] GET `/business-profile?connection_id=&schema_name=` — read, with no inference (web/lib/api.ts:146; pramanyx/routers/profile.py:55-87; ProfilePanel.tsx:129)
+- [ ] GET `/org-settings/effective?workspace_id=` — read (web/lib/api.ts:529; pramanyx/routers/orgsettings.py:137; ProfilePanel.tsx:130)
+- [ ] GET `/connections/{conn}/schema/profile` — read of the cached profiles. **SPENDS (warehouse, metadata)** on a cold schema cache: it opens the connection and runs `get_schema` (pramanyx/routers/connections.py:613-630; pramanyx/routers/_shared.py:28-35; ProfilePanel.tsx:131)
+- [ ] GET `/metrics` — read (web/lib/api.ts:1218; pramanyx/routers/metrics.py:106; ProfilePanel.tsx:132)
+- [ ] GET `/exploration/{conn}/findings?schema=` — read of explorer state. **SPENDS (warehouse, metadata)** when a schema is passed (canonical_schema plus the schema filter, pramanyx/routers/exploration.py:526-578; ProfilePanel.tsx:24-26, 133)
+- [ ] GET `/business-profile/currency?connection_id=&schema_name=` — read (web/lib/api.ts:8517; pramanyx/routers/profile.py:30-36; ProfilePanel.tsx:446-452)
+- [ ] Only when the Patterns tab opens: GET `/exploration/{conn}/patterns?schema=` — no model call. **WRITES** the pattern cache whenever the cached entry is more than 6 h old, even without Refresh (pramanyx/knowledge/patterns.py:26, 215-236; pramanyx/routers/exploration.py:676-690; ProfileLayer.tsx:239-245)
+- [ ] Only when the Evidence drawer opens: GET `/exploration/{conn}/findings/{id}/receipt` — read (web/lib/api.ts:9337-9343; pramanyx/routers/exploration.py:1840; BriefingPanel.tsx:1420-1424)
 
 Top rows today: the context bar (Connection · Schema · Maturity) is the only row across the top. The Profile has no title row or toolbar of its own. Its controls are the sticky left column (Overview · Domains label/count · Filter domains… (more than 8) · domain rows · Refresh). On a domain page the header is the domain name with its counts line, then the tab row Findings · Patterns · Org knowledge with `Search findings…` at its right end. Inside Patterns there is a filter segmented and `Refresh`.
 
@@ -1373,8 +1373,8 @@ Connected sources
 - [ ] Sources: "None yet — a connected wiki's pages land in the same corpus as an upload."; "Credentials are tested live before anything is saved, then encrypted at rest." (web/components/KnowledgeSourcesSection.tsx:122, :136)
 
 ### 7. Loads on open
-- [ ] `GET /documents` (web/components/documents/DocumentsPage.tsx:110; aughor/routers/knowledge.py:599)
-- [ ] **`GET /knowledge/status` — SPENDS (embedding model)**: probes the embedder with one real embedding call ("probe") on every open, every "Check again", after every add, remove, purge or restore (web/components/documents/DocumentsPage.tsx:103-116, :126, :136, :164; aughor/routers/knowledge.py:585-596; aughor/knowledge/health.py:32-60)
+- [ ] `GET /documents` (web/components/documents/DocumentsPage.tsx:110; pramanyx/routers/knowledge.py:599)
+- [ ] **`GET /knowledge/status` — SPENDS (embedding model)**: probes the embedder with one real embedding call ("probe") on every open, every "Check again", after every add, remove, purge or restore (web/components/documents/DocumentsPage.tsx:103-116, :126, :136, :164; pramanyx/routers/knowledge.py:585-596; pramanyx/knowledge/health.py:32-60)
 - [ ] `GET /documents/formats` (web/components/documents/DocumentsPage.tsx:115)
 - [ ] `GET /knowledge/sources` (web/components/KnowledgeSourcesSection.tsx:57)
 - [ ] On "View": `GET /documents/{id}/markdown`; on the row menu: `GET /documents/{id}/formats` (web/components/documents/DocumentsPage.tsx:575, :533)

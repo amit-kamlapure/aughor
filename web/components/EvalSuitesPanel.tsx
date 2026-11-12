@@ -1,6 +1,6 @@
 "use client";
 /**
- * Evals ▸ Suites — redone to `aughor-v2/CLARITY.md` (2026-10-13): four figures (suites, cases, how many passed in full
+ * Evals ▸ Suites — redone to `pramanyx-v2/CLARITY.md` (2026-10-13): four figures (suites, cases, how many passed in full
  * at their last run, how many never ran), then what needs a person — a suite whose last run fell or failed, a suite
  * never run — with Run on the row, then the suites as one line each (name · cases · what it runs as and where · its
  * last result). Authoring sits behind *New suite*, and a suite's cases, its run settings and Delete behind *Open*.

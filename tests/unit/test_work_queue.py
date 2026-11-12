@@ -8,9 +8,9 @@ import asyncio
 
 import pytest
 
-from aughor.kernel import queue as Q
-from aughor.kernel.jobs import JobState, kernel
-from aughor.kernel import jobs as J
+from pramanyx.kernel import queue as Q
+from pramanyx.kernel.jobs import JobState, kernel
+from pramanyx.kernel import jobs as J
 
 
 @pytest.fixture(autouse=True)

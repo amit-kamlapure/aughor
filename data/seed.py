@@ -1,12 +1,12 @@
 """Seed the demo DuckDB database — thin wrapper kept for `python data/seed.py`.
 
-The scenario itself lives in ``aughor/demo/scenario.py`` (single source of
+The scenario itself lives in ``pramanyx/demo/scenario.py`` (single source of
 truth): 90 days of SaaS revenue for ~800 customers with a discoverable APAC
 payment-gateway outage on day 83, EMEA/Enterprise unaffected, and an NA promo
 planted as a red herring.
 
-Writes ``data/aughor.duckdb`` — the same file the builtin ``fixture`` connection
-and ``aughor investigate`` read (it used to write ``data/hermes.duckdb``, the
+Writes ``data/pramanyx.duckdb`` — the same file the builtin ``fixture`` connection
+and ``pramanyx investigate`` read (it used to write ``data/hermes.duckdb``, the
 project's old name, so the packaged seed→investigate flow didn't compose).
 """
 from __future__ import annotations
@@ -16,11 +16,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-DB_PATH = Path(__file__).parent / "aughor.duckdb"
+DB_PATH = Path(__file__).parent / "pramanyx.duckdb"
 
 
 def main():
-    from aughor.demo.scenario import seed_scenario_db
+    from pramanyx.demo.scenario import seed_scenario_db
 
     summary = seed_scenario_db(DB_PATH, overwrite=True)
     print(f"Database seeded at: {DB_PATH}")

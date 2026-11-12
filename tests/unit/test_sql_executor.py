@@ -1,10 +1,10 @@
-"""WS2 increment 1 — the shared guarded-SQL runner (aughor/sql/executor.py).
+"""WS2 increment 1 — the shared guarded-SQL runner (pramanyx/sql/executor.py).
 
 Characterizes ``execute_guarded`` as a verbatim lift of the ADA path's
 ``_execute_safe``: same QueryResult shape, same guard battery (defan, preflight,
 join/filter value-domain probes), same accept/reject repair gates — and pins the
 layering rule that the runner lives BELOW the agent layer (imports nothing from
-aughor/agent; the FIX prompt + provider arrive as parameters).
+pramanyx/agent; the FIX prompt + provider arrive as parameters).
 """
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.sql.executor import execute_guarded
-from aughor.stats import stats
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.sql.executor import execute_guarded
+from pramanyx.stats import stats
 
 
 def _count(key: str) -> int:
@@ -76,19 +76,19 @@ class _StubProvider:
 # ── (b) Import boundary: the runner lives BELOW the agent layer ──────────────
 
 def test_executor_imports_nothing_from_agent_layer():
-    src = Path(__file__).parent.parent.parent / "aughor" / "sql" / "executor.py"
+    src = Path(__file__).parent.parent.parent / "pramanyx" / "sql" / "executor.py"
     tree = ast.parse(src.read_text())
     offenders = []
     for node in ast.walk(tree):  # walk catches function-local imports too
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("aughor.agent"):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pramanyx.agent"):
             offenders.append(f"line {node.lineno}: from {node.module} import ...")
         if isinstance(node, ast.Import):
             offenders.extend(
                 f"line {node.lineno}: import {a.name}"
-                for a in node.names if a.name.startswith("aughor.agent")
+                for a in node.names if a.name.startswith("pramanyx.agent")
             )
     assert not offenders, (
-        "aughor/sql/executor.py must stay below the agent layer — agent-side "
+        "pramanyx/sql/executor.py must stay below the agent layer — agent-side "
         "inputs (FIX prompt, provider) are parameters, not imports: "
         + "; ".join(offenders)
     )
@@ -185,7 +185,7 @@ def test_preflight_repair_is_invoked_with_schema(monkeypatch):
         seen["sql"], seen["schema"] = sql, schema
         return sql, {}
 
-    monkeypatch.setattr("aughor.sql.safety.preflight_repair", _spy)
+    monkeypatch.setattr("pramanyx.sql.safety.preflight_repair", _spy)
     execute_guarded(_conn(), _GOOD, query_id="p1", schema="orders campaigns")
     assert seen["sql"] == _GOOD and seen["schema"] == "orders campaigns"
 
@@ -214,7 +214,7 @@ _FANNED = ("SELECT SUM(o.o_totalprice) AS total FROM orders o "
 
 
 def test_preflight_harden_defans_regardless_of_prefix():
-    from aughor.sql.executor import preflight_harden
+    from pramanyx.sql.executor import preflight_harden
 
     before = _count("guard.defan.rewritten.parent_fanout")
     out = preflight_harden(_fanout_conn(), _FANNED, _FANOUT_SCHEMA,
@@ -224,14 +224,14 @@ def test_preflight_harden_defans_regardless_of_prefix():
 
 
 def test_preflight_harden_noop_on_clean_sql():
-    from aughor.sql.executor import preflight_harden
+    from pramanyx.sql.executor import preflight_harden
 
     clean = "SELECT SUM(o_totalprice) AS total FROM orders"
     assert preflight_harden(_fanout_conn(), clean, _FANOUT_SCHEMA).strip() == clean.strip()
 
 
 def test_preflight_harden_noop_without_schema():
-    from aughor.sql.executor import preflight_harden
+    from pramanyx.sql.executor import preflight_harden
 
     assert preflight_harden(_conn(), _GOOD, "") == _GOOD  # no schema → untouched
 
@@ -251,14 +251,14 @@ def test_guard_parity_all_three_paths_share_the_hardening():
     on ALL three answer paths, not just the deep one. The ADA runner (execute_guarded)
     owns it; explore and the quick/chat path call the shared preflight_harden. A guard
     added to preflight_harden now reaches every path by construction."""
-    assert _calls_preflight_harden("aughor/sql/executor.py"), "ADA runner (execute_guarded)"
-    assert _calls_preflight_harden("aughor/agent/explore.py"), "explore _execute_one_subq"
-    assert _calls_preflight_harden("aughor/agent/nodes.py"), "quick/chat execute_planned_queries"
+    assert _calls_preflight_harden("pramanyx/sql/executor.py"), "ADA runner (execute_guarded)"
+    assert _calls_preflight_harden("pramanyx/agent/explore.py"), "explore _execute_one_subq"
+    assert _calls_preflight_harden("pramanyx/agent/nodes.py"), "quick/chat execute_planned_queries"
 
 
 def test_investigate_execute_safe_delegates_here(monkeypatch):
     """The ADA `_execute_safe` is now a thin call-site of the shared runner."""
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
 
     captured = {}
 
@@ -270,7 +270,7 @@ def test_investigate_execute_safe_delegates_here(monkeypatch):
         return QueryResult(hypothesis_id=query_id, sql=sql, columns=[], rows=[],
                            row_count=0, error=None)
 
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", _fake)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", _fake)
     r = I._execute_safe(_conn(), "phase7", "SELECT 1", schema="s")
     assert r.hypothesis_id == "phase7"
     assert captured["query_id"] == "phase7"
@@ -353,7 +353,7 @@ def test_the_date_boundary_footgun_is_read_whole_on_the_statement():
     r = execute_guarded(_ev_conn(), sql, query_id="p1")
     assert "created_at < '2024-03-02'" in r.sql and int(r.rows[0][0]) == 1   # 10:00 that day counts
     assert not any("E1-date-boundary" in c for c in r.caveats), r.caveats
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.sql.trust_checks import run_trust_checks
     assert [i.pattern for i in run_trust_checks(sql, col_types={"ev.created_at": "TIMESTAMP"})] == ["E1-date-boundary"]
 
 
@@ -361,7 +361,7 @@ def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
     """WP-1f: the E1 live check reads REAL column types (connection_column_types), so a
     DATE column named like a timestamp (`acquired_at`) is NOT flagged — the name heuristic
     would false-fire. A genuine TIMESTAMP column of the same shape still IS flagged."""
-    from aughor.sql import trust_checks
+    from pramanyx.sql import trust_checks
     monkeypatch.setattr(trust_checks, "_COLTYPE_CACHE", {})   # isolate the per-conn cache
 
     def _conn_with(coldef: str, col: str):
@@ -390,10 +390,10 @@ def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
 def test_preflight_harden_flags_a_fanout_it_cannot_rewrite(monkeypatch):
     """Detected with no provable rewrite used to be SILENT — the fanned SQL executed and no receipt
     said a guard had seen it (found building ON-2's receipt, 2026-09-11). It leaves one now."""
-    from aughor.kernel.registries.execution_hooks import collect_guard_receipts
-    from aughor.sql.executor import preflight_harden
+    from pramanyx.kernel.registries.execution_hooks import collect_guard_receipts
+    from pramanyx.sql.executor import preflight_harden
 
-    monkeypatch.setattr("aughor.sql.fanout.defan", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.sql.fanout.defan", lambda *a, **k: None)
     with collect_guard_receipts() as receipts:
         out = preflight_harden(_fanout_conn(), _FANNED, _FANOUT_SCHEMA)
     assert out.strip() == _FANNED.strip()                      # flagged, never rewritten on a guess
@@ -402,8 +402,8 @@ def test_preflight_harden_flags_a_fanout_it_cannot_rewrite(monkeypatch):
 
 
 def test_flag_fanout_says_so_for_a_door_that_runs_the_callers_exact_sql():
-    from aughor.kernel.registries.execution_hooks import collect_guard_receipts
-    from aughor.sql.executor import flag_fanout
+    from pramanyx.kernel.registries.execution_hooks import collect_guard_receipts
+    from pramanyx.sql.executor import flag_fanout
 
     with collect_guard_receipts() as receipts:
         caveat = flag_fanout(_fanout_conn(), _FANNED, schema=_FANOUT_SCHEMA)

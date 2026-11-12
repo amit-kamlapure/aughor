@@ -1,4 +1,4 @@
-# The travel, airline and hospitality industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 59
+# The travel, airline and hospitality industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 59
 # reference types) as an industry map: expectations matched to tables by name or alias, never facts. Sixty objects.
 #
 # Three of them — Airport, Aircraft and Airline — are THIS PACKAGE'S ADDITIONS, not the vocabulary's: its travel list

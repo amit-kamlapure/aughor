@@ -1,6 +1,6 @@
 "use client";
 /**
- * Monitors — redone to `aughor-v2/CLARITY.md` (2026-10-12): four figures (how many, open alerts, proven to fire,
+ * Monitors — redone to `pramanyx-v2/CLARITY.md` (2026-10-12): four figures (how many, open alerts, proven to fire,
  * checks a day), then what needs a person — open alerts, monitors never proven to fire — then the alerts over twelve
  * weeks, then the monitors; identical alerts fold into one row with a count.
  *

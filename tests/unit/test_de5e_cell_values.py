@@ -16,8 +16,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -25,7 +25,7 @@ client = TestClient(app)
 # ── 1 · a cell is a scalar, and bytes are hex ────────────────────────────────────────────────────
 
 def test_a_structured_value_is_its_json_text_and_bytes_are_hex():
-    from aughor.routers.query import _json_cell
+    from pramanyx.routers.query import _json_cell
     assert _json_cell(b"abc") == "616263"
     assert _json_cell(bytearray(b"\x01\x02")) == "0102"
     assert _json_cell(memoryview(b"\xff")) == "ff"
@@ -91,12 +91,12 @@ def test_the_typed_run_hands_the_grid_scalars_with_the_engines_own_type_names(du
     ("", ""),
 ])
 def test_a_document_shape_or_bytes_kind_keeps_its_name(kind, named):
-    from aughor.connectors.base import stage_type
+    from pramanyx.connectors.base import stage_type
     assert stage_type(kind) == named
 
 
 def test_the_stage_still_types_an_all_null_column_of_a_kept_kind_as_text():
     pa = pytest.importorskip("pyarrow")
-    from aughor.semantic.cross_source import _empty_type
+    from pramanyx.semantic.cross_source import _empty_type
     for kind in ("GEOGRAPHY", "JSON", "STRUCT<A INT64>", "BYTES"):
         assert _empty_type(kind) == pa.string(), kind

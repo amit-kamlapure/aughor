@@ -1,0 +1,1907 @@
+"""The Ledger — the kernel's single transactional state store (stage K0).
+
+One SQLite database (``data/system.db``, WAL mode) replaces the ad-hoc JSON cache
+files whose unlocked load→mutate→save round-trips were a confirmed corruption
+class (concurrent ontology builds, profile cache races). It also hosts the
+append-only **event journal** — the platform's own transaction log — which K1's
+job kernel and K2's UI event stream build on.
+
+Design constraints honoured here:
+- **Leverage, don't duplicate** (user principle): SQLite is already the house
+  pattern (history.db, evidence_ledger.db, …). This adds kernel tables, not a
+  new technology. Existing domain SQLite stores are untouched in K0.
+- **Never a rewrite**: ``KeyedJsonStore`` keeps its exact API and becomes a
+  facade over the ledger (see pramanyx/util/json_store.py); legacy JSON files are
+  imported once and left on disk untouched.
+- **Loud kernel, quiet facade**: Ledger methods raise on real failures (kernel
+  errors must be visible); the facade preserves the old best-effort contract.
+
+Tables:
+  kv(store, key, value, seq, updated_at)  — the cache backend; ``seq`` is a
+      ledger-monotonic counter giving each store an MRU order (oldest = lowest).
+  events(seq, at, kind, conn_id, canvas_id, job_id, trace_id, payload)  — append-only.
+  meta(k, v)  — kernel bookkeeping (e.g. one-time legacy-import markers).
+  session_events(...)  — the agent-session log (Wave E1, flag `obs.session_log`).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sqlite3
+import threading
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Optional, Sequence
+
+from pramanyx.db.migrations import Migration, add_column_if_missing, run_migrations
+from pramanyx.org.context import current_org_id
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "system.db"
+
+# Amortise session-log retention over inserts (see Ledger._session_events_maybe_prune).
+_SESSION_EVENT_PRUNE_EVERY = 500
+#: Also prune when the LAST prune was longer ago than this, regardless of the counter.
+#: The counter alone is per-process and starts at zero on every boot, so a deployment that
+#: restarts before accumulating 500 session-event writes in one process lifetime never
+#: prunes at all — measured on the live install 2026-09-03: 4,186 of 10,788 rows past a
+#: 14-day retention (39% of the table), the oldest 19 days. The clock is read from the `kv`
+#: table, so it survives the restart that resets the counter.
+_SESSION_EVENT_PRUNE_MAX_AGE_S = 6 * 3600
+_PRUNE_KV_STORE = "session_log"
+_PRUNE_KV_KEY = "last_pruned_at"
+
+# ── events retention ─────────────────────────────────────────────────────────
+#
+# The journal had NO retention at all. Measured on the live install 2026-09-19:
+# 430,768 rows back to 2026-06-16 (95 days), growing 8,475/day on Sep 11 → 23,287
+# on Sep 18, in a `system.db` of 247 MB with a freelist of zero.
+#
+# Unbounded growth was not the worst of it. `PramanyxOpsConnection` — the platform's
+# own "ask SQL about your own runs" surface — snapshots the NEWEST 100,000 rows per
+# curated table (pramanyx/db/connection.py:_SNAPSHOT_ROW_CAP), so what the journal
+# cannot fit under that cap is not merely old, it is INVISIBLE to self-investigation.
+# Measured the same day: the oldest visible event was 5 days back, i.e. 330,768 of
+# 430,768 rows — 76.8% of the history — could not be queried at all.
+#
+# What fills it is chatter, not evidence: over one week `job.state` (94,926) and
+# `automation.run` (31,494) were 99.1% of all events, from five automations that
+# ticked 30,470 times and fired 198. So retention here is SCOPED, not blanket —
+# operational chatter ages out, everything else (investigation.created,
+# investigation.completed, ontology.build, agent.handoff, …) is semantic history and is
+# never swept by default. Deleting evidence to save space would be the wrong trade;
+# deleting a heartbeat nobody reads is free.
+#
+# The window is short ON PURPOSE, and 2 days is not a round number — it is the
+# largest window that keeps the WHOLE signal history inside the 100k snapshot.
+# Projected against the live table (2026-09-19): 1 day → 62,223 rows kept, 2 days →
+# 85,134, 3 days → 108,048 (already over the cap), 7 days → 165,855. Signal alone is
+# 30,419 rows and spans all 95 days, so under a 2-day ops window every semantic event
+# ever emitted becomes visible to `pramanyx_ops` again.
+#
+# The row cap is what makes that durable: an age window alone re-breaks the moment the
+# tick rate rises, and it has been rising. Capping the chatter at a fixed budget keeps
+# the snapshot's headroom a property of the design rather than of today's traffic.
+_EVENT_PRUNE_KV_KEY = "events_last_pruned_at"
+#: Kinds treated as operational chatter. Anything not named here is never auto-deleted.
+_EVENT_OPS_KINDS = ("job.state", "automation.run")
+
+
+def _swept_kinds() -> tuple[str, ...]:
+    raw = os.environ.get("PRAMANYX_EVENTS_PRUNE_KINDS")
+    return (tuple(k.strip() for k in raw.split(",") if k.strip())
+            if raw is not None else _EVENT_OPS_KINDS)
+
+
+def _swept_keep_days() -> int:
+    return int(os.environ.get("PRAMANYX_EVENTS_OPS_KEEP_DAYS", "2") or 0)
+
+
+def events_swept_sooner() -> tuple[tuple[str, ...], int]:
+    """The journal kinds `Ledger.events_prune` sweeps by age, and after how many days — read from
+    the same settings the sweep reads, so a reader saying how far back the journal reaches (Arc TC,
+    TC-5: the log search) cannot drift from what the sweep does."""
+    return _swept_kinds(), _swept_keep_days()
+#: Rows removed per sweep. The sweep runs inside `Ledger.__init__` (restart insurance),
+#: and a first sweep on a hoarding install has ~350,000 rows to clear — a single
+#: unbounded DELETE there would be a boot-time stall, and a migration back-fill that
+#: raised in `__init__` has already cost this project a no-boot (see Migration 10).
+#: Bounded per sweep, the backlog drains over successive opens and writes instead.
+_EVENT_PRUNE_BATCH = 20_000
+#: Emits between amortised sweeps. The same 500 as the session log, which lands very
+#: differently: this table takes ~50× the writes, so the identical counter fires about
+#: every twenty minutes here against roughly once a day there. That gap is the whole
+#: reason the sweep hangs off `emit` — see :meth:`Ledger._events_maybe_prune`.
+_EVENT_PRUNE_EVERY = 500
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS kv (
+  store      TEXT NOT NULL,
+  key        TEXT NOT NULL,
+  value      TEXT NOT NULL,
+  seq        INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (store, key)
+);
+CREATE INDEX IF NOT EXISTS kv_store_seq ON kv(store, seq);
+CREATE TABLE IF NOT EXISTS events (
+  seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+  at        TEXT NOT NULL,
+  kind      TEXT NOT NULL,
+  conn_id   TEXT,
+  canvas_id TEXT,
+  job_id    TEXT,
+  payload   TEXT
+);
+CREATE INDEX IF NOT EXISTS events_kind ON events(kind, seq);
+CREATE TABLE IF NOT EXISTS meta (
+  k TEXT PRIMARY KEY,
+  v TEXT
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  natural_key  TEXT NOT NULL,
+  version      INTEGER NOT NULL,
+  conn_id      TEXT,
+  canvas_id    TEXT,
+  org_id       TEXT NOT NULL DEFAULT 'default',
+  payload      TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  created_by_job TEXT,
+  superseded_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS artifacts_nk ON artifacts(natural_key, version);
+CREATE TABLE IF NOT EXISTS lineage (
+  artifact_id  TEXT NOT NULL,
+  relation     TEXT NOT NULL,
+  ref          TEXT NOT NULL,
+  detail       TEXT,
+  org_id       TEXT NOT NULL DEFAULT 'default'
+);
+CREATE INDEX IF NOT EXISTS lineage_artifact ON lineage(artifact_id);
+CREATE TABLE IF NOT EXISTS jobs (
+  id              TEXT PRIMARY KEY,
+  kind            TEXT NOT NULL,
+  conn_id         TEXT,
+  canvas_id       TEXT,
+  org_id          TEXT NOT NULL DEFAULT 'default',
+  state           TEXT NOT NULL,
+  payload         TEXT,
+  error           TEXT,
+  idempotency_key TEXT,
+  attempt         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL,
+  started_at      TEXT,
+  heartbeat_at    TEXT,
+  finished_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
+CREATE INDEX IF NOT EXISTS jobs_scope ON jobs(conn_id, canvas_id);
+CREATE TABLE IF NOT EXISTS claims (
+  scope       TEXT PRIMARY KEY,
+  owner       TEXT NOT NULL,
+  lease_until TEXT NOT NULL
+);
+"""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _add_kernel_org_ids(c: sqlite3.Connection) -> None:
+    """Tenant key on the kernel's job/artifact/lineage rows (back-fills to 'default')."""
+    add_column_if_missing(c, "jobs", "org_id", "TEXT NOT NULL DEFAULT 'default'")
+    add_column_if_missing(c, "artifacts", "org_id", "TEXT NOT NULL DEFAULT 'default'")
+    add_column_if_missing(c, "lineage", "org_id", "TEXT NOT NULL DEFAULT 'default'")
+
+
+def _create_task_history(c: sqlite3.Connection) -> None:
+    """The `task_history` spine (Rec 4 of the 2026-07-11 platform study, flag
+    `obs.task_table`): one append-only row per span, with that study's exact shape, so
+    "what did the agent actually do" is a SELECT instead of a log grep. It is a
+    SINK for the span events telemetry already emits — the writer only fires under
+    the flag, so an unflagged DB keeps this table empty (byte-identical)."""
+    c.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS task_history (
+          span_id        TEXT PRIMARY KEY,
+          trace_id       TEXT,
+          parent_span_id TEXT,
+          task           TEXT NOT NULL,
+          input          TEXT,
+          captured_output TEXT,
+          start_time     TEXT NOT NULL,
+          end_time       TEXT,
+          duration_ms    REAL,
+          error_message  TEXT,
+          labels         TEXT,
+          org_id         TEXT NOT NULL DEFAULT 'default'
+        );
+        CREATE INDEX IF NOT EXISTS task_history_trace ON task_history(trace_id, start_time);
+        CREATE INDEX IF NOT EXISTS task_history_task ON task_history(task, start_time);
+        """
+    )
+
+
+def _create_session_events(c: sqlite3.Connection) -> None:
+    """The `session_events` log (Wave E1, flag `obs.session_log`): one append-only
+    row per agent-session event, so "reconstruct this run" is a single ordered
+    SELECT.
+
+    Distinct from `task_history`, which is SPAN-shaped — one row per *completed*
+    unit of work, ordered by a start-time string. This is EVENT-shaped: separate
+    records with a monotonic `seq`, written as things happen. That difference is
+    the point. A `tool_call` is written on entry, so a call that hangs, is
+    cancelled, or dies with the process still leaves evidence; a span row only
+    ever appears after the body returns. It also carries the identity
+    (`session_id`/`user_id`/`agent_id`) and the explicit `ok` boolean that
+    `task_history` has no column for.
+
+    A pure SINK: nothing writes here unless `obs.session_log` is on.
+    """
+    c.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS session_events (
+          seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+          at               TEXT NOT NULL,
+          trace_id         TEXT NOT NULL,
+          kind             TEXT NOT NULL,
+          name             TEXT,
+          span_id          TEXT,
+          parent_span_id   TEXT,
+          ok               INTEGER,
+          duration_ms      REAL,
+          error_class      TEXT,
+          investigation_id TEXT,
+          session_id       TEXT,
+          user_id          TEXT,
+          agent_id         TEXT,
+          conn_id          TEXT,
+          org_id           TEXT NOT NULL DEFAULT 'default',
+          payload          TEXT
+        );
+        CREATE INDEX IF NOT EXISTS session_events_trace ON session_events(trace_id, seq);
+        CREATE INDEX IF NOT EXISTS session_events_kind ON session_events(kind, seq);
+        CREATE INDEX IF NOT EXISTS session_events_session ON session_events(session_id, seq);
+        """
+    )
+
+
+def _add_session_event_measures(c: sqlite3.Connection) -> None:
+    """Promote the measurable facts out of the JSON payload into real columns.
+
+    They were recorded from the start, but inside ``payload`` — which makes the
+    questions worth asking ("tokens by model this week", "p95 latency per
+    provider", "which model fails") a JSON-extraction exercise instead of a
+    GROUP BY, and makes them near-unusable through the ``pramanyx_ops`` NL2SQL
+    surface where an agent has to write the SQL itself.
+
+    Sparse by design: ``model``/``provider``/token counts are only set on
+    ``llm_call`` rows, ``row_count`` only on tool results. NULLs are cheap, and
+    ``task_history`` already sets the precedent with input/captured_output.
+
+    Tokens are nullable rather than 0-defaulted on purpose: a backend that does
+    not report usage must not be indistinguishable from a genuinely empty call,
+    or every cost aggregate is quietly wrong.
+    """
+    for col, decl in (
+        ("provider", "TEXT"),
+        ("model", "TEXT"),
+        ("prompt_tokens", "INTEGER"),
+        ("completion_tokens", "INTEGER"),
+        ("total_tokens", "INTEGER"),
+        ("row_count", "INTEGER"),
+        ("retries", "INTEGER"),
+    ):
+        add_column_if_missing(c, "session_events", col, decl)
+    c.executescript(
+        "CREATE INDEX IF NOT EXISTS session_events_model ON session_events(model, seq);")
+
+
+def _as_bool_int(value: Any) -> Optional[int]:
+    """Coerce to 1/0 for SQLite, keeping ``None`` as ``None``.
+
+    The tri-state is the whole point. ``fallback`` is unknown on every non-``llm_call``
+    row — a ``tool_call`` is not a call that "did not fall back" — and collapsing unknown
+    to False would understate the fallback rate, an error in exactly the direction that
+    hides a problem. Same rule as a ratio's denominator: it may contain only things that
+    could have had the property.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return 1 if value.strip().lower() in ("1", "true", "yes", "y", "on") else 0
+    return int(bool(value))
+
+
+def _payload_text(value: Any) -> Optional[str]:
+    """A payload ``role`` as the TEXT this column already holds on every SQLite store.
+
+    Measured against the statement this replaced (2026-08-23): ``json_extract`` hands back
+    a typed JSON value, and a TEXT-affinity column then converts it — 7 becomes '7', a JSON
+    ``true`` becomes '1', an object becomes its compact JSON text. Reproducing that is
+    three lines, and it is the difference between "the two backends agree" and "the two
+    backends agree about the shapes I happened to look at". Every live role is a string
+    today; the table is what makes that a measurement rather than an assumption.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):        # before the int branch — a bool IS an int in Python
+        return "1" if value else "0"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(value, separators=(",", ":"))
+
+
+def _payload_bool(value: Any) -> Optional[int]:
+    """A payload ``fallback`` as 1 / 0 / unknown — the back-fill's truth table.
+
+    Deliberately NOT :func:`_as_bool_int`. That one is the WRITE path's rule and reads
+    any unrecognised string as False; this one answers unknown, because it has to
+    reproduce row for row what the SQL ``CASE`` this back-fill used to be already wrote
+    on every SQLite store. A migration that gives two dialects two answers for one
+    payload is a second bug wearing the first one's fix.
+
+    ``str(value).lower()`` stands in for SQLite's ``lower(CAST(x AS TEXT))`` on every
+    shape the extraction can yield: a JSON boolean arrives here as Python ``True`` and
+    arrived there as SQLite ``1``, and 'true' and '1' are both in the truthy column.
+    No ``strip()`` — the CASE had none, so a padded value was unknown there too.
+    """
+    if value is None:
+        return None
+    text = str(value).lower()
+    if text in ("1", "true", "yes"):
+        return 1
+    if text in ("0", "false", "no"):
+        return 0
+    return None
+
+
+#: The artifact kinds that are a run's RECEIPT — what a chat answer and a deep report file in
+#: this ledger. Defined beside the store that holds them; the ontology's context graph, the
+#: briefing and the canvas purge all read this one tuple.
+RECEIPT_KINDS = ("ada_report", "chat_answer")
+#: The two by name, so a reader can ask "is this receipt a deep report's?" without spelling the
+#: wire kind (the vocabulary ratchet holds the acronym's count).
+DEEP_REPORT_KIND, CHAT_ANSWER_KIND = RECEIPT_KINDS
+
+
+def _labelled_connection(labels: Optional[str]) -> Optional[str]:
+    """The ``connection_id`` a task trace's JSON labels name, or None — a predicate, since a
+    row whose labels are not JSON is an ordinary shape here (`_backfill_payload_facts`)."""
+    try:
+        parsed = json.loads(labels or "{}")
+    except ValueError:
+        return None
+    return parsed.get("connection_id") if isinstance(parsed, dict) else None
+
+
+#: Rows per back-fill round trip — bounded so a long log is never read in one gulp.
+_BACKFILL_BATCH = 500
+
+
+def _backfill_payload_facts(c: sqlite3.Connection) -> None:
+    """Populate ``role``/``fallback`` on rows written before they were columns.
+
+    In Python rather than in SQL because ``json_extract`` and ``json_valid`` are
+    SQLite-only and this store is not SQLite-only: ``PRAMANYX_DB_URL`` moves the whole
+    ledger onto shared Postgres, which is what the deployment runs. There ``json_valid``
+    does not exist at all, and ``json_extract`` transpiles to a ``json``-typed function
+    that a TEXT payload cannot feed. The statement raised, ``run_migrations`` re-raised,
+    and because this runs inside ``Ledger.__init__`` the store could not be CONSTRUCTED
+    at all — not a missing column but no ledger, therefore no boot.
+
+    ``json.loads`` in a try/except is what ``json_valid`` was for: the table holds
+    payloads that are not JSON (a clipped string, a pre-JSON row) and one bad row must
+    not abort a migration, or ``user_version`` stays behind and it re-runs forever. The
+    skipped rows are COUNTED and logged rather than dropped quietly — a back-fill that
+    passes over part of the table without saying so is indistinguishable from one that
+    had nothing to do. Not through :func:`pramanyx.kernel.errors.tolerate`, which is the
+    house idiom everywhere else: tolerate journals to the ledger, this runs inside
+    ``Ledger.__init__``, and reporting a store failure through the store it is still
+    building is the recursion #379 already paid for.
+
+    Paged forward on ``seq`` rather than looping on the filter: a row whose payload
+    carries neither fact still matches that filter after it has been visited, so an
+    OFFSET-free loop over the same predicate would never terminate.
+    """
+    last_seq = 0
+    unparsed = 0
+    while True:
+        batch = c.execute(
+            "SELECT seq, payload FROM session_events "
+            "WHERE seq > ? AND payload IS NOT NULL AND (role IS NULL OR fallback IS NULL) "
+            f"ORDER BY seq LIMIT {_BACKFILL_BATCH}", (last_seq,)).fetchall()
+        if not batch:
+            if unparsed:
+                logger.info("session_events back-fill: %d payload(s) were not a JSON object "
+                            "and kept their unknown role/fallback", unparsed)
+            return
+        roles: list[tuple[str, int]] = []
+        flags: list[tuple[int, int]] = []
+        for row in batch:
+            seq, payload = row[0], row[1]
+            last_seq = seq
+            try:
+                doc = json.loads(payload)
+            except (TypeError, ValueError):
+                unparsed += 1
+                continue
+            if not isinstance(doc, dict):
+                unparsed += 1
+                continue
+            role = _payload_text(doc.get("role"))
+            if role is not None:
+                roles.append((role, seq))
+            flag = _payload_bool(doc.get("fallback"))
+            if flag is not None:
+                flags.append((flag, seq))
+        # The `IS NULL` guard rides in the WHERE, not only in the SELECT above: it is
+        # what keeps a re-run additive instead of a rewrite of a value someone set.
+        if roles:
+            c.executemany(
+                "UPDATE session_events SET role = ? WHERE seq = ? AND role IS NULL", roles)
+        if flags:
+            c.executemany(
+                "UPDATE session_events SET fallback = ? WHERE seq = ? AND fallback IS NULL",
+                flags)
+
+
+def _older_than(iso_ts: str, seconds: float) -> bool:
+    """Is ``iso_ts`` further in the past than ``seconds``? Unparseable/absent reads as
+    YES — an unreadable clock must not be the reason retention stops happening, which is
+    the failure mode this whole seam exists to end."""
+    try:
+        ts = datetime.fromisoformat(str(iso_ts))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return True
+    return (datetime.now(timezone.utc) - ts).total_seconds() > seconds
+
+
+def _add_session_event_attribution(c: sqlite3.Connection) -> None:
+    """Which RUN produced this call, and which agent charter owned that run.
+
+    ``agent_id`` answers "whose custom agent asked" and is written only when a custom
+    agent is active on the /ask door — measured 2026-08-17 at **0 of 7,365 rows**, because
+    platform work (explorations, profiles, briefs, monitors) never activates one. That is
+    a semantic, not a bug: there was no column that could say a call belonged to the
+    Explorer or the Curator, so charter identity and model spend lived in two stores with
+    no join between them. ``charter_id`` is that join, and ``job_id`` is the run beneath it.
+
+    ``role`` and ``fallback`` come out of ``payload`` for the same reason Migration 7 moved
+    the token counts: they are the two facts the usage surface groups by, and a JSON
+    extraction per row is not a GROUP BY. ``fallback`` in particular has been WRITTEN by
+    the provider since the failover work and read by nothing — no fold, no endpoint.
+
+    ``at`` gets an index because every panel on the Agent Ops surface is about to ask for
+    a time window, and until now the only time-ordered access path was ``seq``.
+
+    NOTE: ``c.execute`` per statement, never ``executescript`` — the latter issues an
+    implicit COMMIT that tears the migration out of ``run_migrations``' transaction, so
+    the ALTERs land while ``user_version`` stays behind and the migration re-runs forever.
+    That failure corrupted this exact store on 2026-08-14.
+    """
+    for col, decl in (
+        ("job_id", "TEXT"),
+        ("charter_id", "TEXT"),
+        ("role", "TEXT"),
+        ("fallback", "INTEGER"),
+    ):
+        add_column_if_missing(c, "session_events", col, decl)
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_charter "
+              "ON session_events(charter_id, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_job ON session_events(job_id, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_role ON session_events(role, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_at ON session_events(at)")
+    # Back-fill from the payload, so a window spanning the migration does not read as
+    # "role coverage collapsed today". A migration that only helps FUTURE rows leaves the
+    # operator with an empty view on the day it ships.
+    _backfill_payload_facts(c)
+
+
+def _add_session_event_pin(c: sqlite3.Connection) -> None:
+    """MI-2 — ``pinned_at``: retention follows GRADING, not the other way round.
+
+    `session_events` expires on a 14-day sweep while `finding_verdicts`,
+    `staged_proposals` and `evidence_claims` are unbounded, so a verdict recorded late
+    joins to rows that are already gone — the run it grades has been swept out from under
+    it. The strongest supervision signal the platform has is the one whose evidence
+    expires fastest.
+
+    A pin is a timestamp rather than a flag so the row records WHEN it became permanent,
+    which is the only way to tell a deliberate pin from a default that drifted. Empty
+    string, not NULL, to match every other text column here and keep the sweep's predicate
+    index-friendly on both backends.
+
+    Portable SQL only: this store also runs on Postgres, where Migration 10's original
+    `json_extract` back-fill raised inside `Ledger.__init__` and left those stores at 8.
+    An additive ALTER with a literal default is safe on both. `c.execute` per statement,
+    never `executescript` — the implicit COMMIT tears the migration out of
+    `run_migrations`' transaction and it re-runs forever (it corrupted this store once).
+    """
+    add_column_if_missing(c, "session_events", "pinned_at", "TEXT NOT NULL DEFAULT ''")
+    # The sweep filters on it on every pass, and a pinned row is the rare case — an index
+    # keeps the common "nothing is pinned" delete from degrading into a full scan.
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_pinned "
+              "ON session_events(pinned_at)")
+
+
+def _add_events_indexes(c: sqlite3.Connection) -> None:
+    """The journal carried ONE index — ``events_kind`` on (kind, seq) — against the
+    430,768 rows measured live on 2026-09-19, and the two columns most asked about were
+    not in it.
+
+    ``trace_id`` is the correlation key: Migration 6 added the column with a
+    ``DEFAULT ''`` and no index, and ``emit`` has since stamped it from the ambient run
+    on every call, so "everything that happened in this run" — the question the column
+    was added to answer — has been a full scan of the whole table for its entire life.
+
+    ``at`` is what the new retention sweep filters on, every pass. Adding retention
+    without this index would trade unbounded growth for a scan on each prune, and the
+    sweep runs at open; the index is what keeps that bounded.
+
+    ``(kind, at)`` rather than ``at`` alone because the sweep's predicate names BOTH —
+    it deletes one kind's rows below a cutoff — so the composite serves the delete and
+    still answers a bare time range on its prefix... which is the one thing it does not
+    do, kind being leftmost. So both are created: the composite for the sweep, the plain
+    one for "what happened on Tuesday".
+
+    Portable SQL only (this store also runs on Postgres), `c.execute` per statement, and
+    every statement IF NOT EXISTS so a re-run is a no-op — the same rules Migration 11
+    records above.
+    """
+    c.execute("CREATE INDEX IF NOT EXISTS events_trace ON events(trace_id, seq)")
+    c.execute("CREATE INDEX IF NOT EXISTS events_kind_at ON events(kind, at)")
+    c.execute("CREATE INDEX IF NOT EXISTS events_at ON events(at)")
+
+
+# Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
+_MIGRATIONS = [
+    Migration(2, "per-run compute metering (jobs.metrics)",
+              lambda c: add_column_if_missing(c, "jobs", "metrics", "TEXT")),
+    Migration(3, "tenant key on jobs/artifacts/lineage", _add_kernel_org_ids),
+    Migration(4, "task_history spans-as-a-table (obs.task_table)", _create_task_history),
+    Migration(5, "session_events agent-session log (obs.session_log)", _create_session_events),
+    # Wave E1: correlate the journal to the run that produced it. All ~29 event
+    # kinds gain this at once because emit() defaults it from the ambient trace —
+    # no call site changes. Until now `node.span` smuggled the trace into job_id
+    # and nothing else in the journal was correlated at all.
+    Migration(6, "correlation key: trace_id on events",
+              lambda c: add_column_if_missing(c, "events", "trace_id", "TEXT NOT NULL DEFAULT ''")),
+    Migration(7, "session_events: measurable facts as columns", _add_session_event_measures),
+    # DATA-06 completion: `events` was the LAST audit sink with no tenant key, and the
+    # only one the governance feed could not scope — the org existed solely inside the
+    # payload, where coverage was partial (measured 2026-08-12: `action.approval` carried
+    # it on 50 of 50 rows, `govern.tag` on 0 of 4), so a payload filter would have scoped
+    # one governance category and silently emptied another. A column ends that: emit()
+    # stamps it from the ambient tenant, so all ~29 kinds gain it without a call site
+    # changing, exactly as Migration 6 did for trace_id. Back-fills to 'default', which
+    # is what every pre-migration row was written under.
+    Migration(8, "tenant key: org_id on events",
+              lambda c: add_column_if_missing(c, "events", "org_id",
+                                              "TEXT NOT NULL DEFAULT 'default'")),
+    # W0 of the Agent Ops control room: the join that lets charter identity meet model
+    # spend, plus the two payload facts the usage surface groups by and a time index.
+    #
+    # ⚠️ VERSION 10, NOT 9, AND THE REASON MATTERS. A version-9 migration adding `role` and
+    # `fallback` was already applied to the live store by a parallel session whose CODE was
+    # then lost (a tree-wide revert). The store is at user_version=9 with those two columns;
+    # this file's history has no migration 9 at all. Numbering this one 9 would make
+    # `run_migrations` skip it forever on every existing database — `job_id`/`charter_id`
+    # would never be added, and since `_SESSION_EVENT_COLS` selects them, EVERY read and
+    # write of the session log would fail on exactly the machines that already have data.
+    # Hermetic tests cannot see this: they build a fresh database, which gets everything.
+    # The body is idempotent (add_column_if_missing / CREATE INDEX IF NOT EXISTS), so it is
+    # a no-op for the columns v9 already added and additive for the rest.
+    #
+    # ⚠️ REPAIRED IN PLACE 2026-08-23, and in place is the CORRECT repair here — the usual
+    # rule (a shipped migration is frozen; fix forward with a new version) does not apply,
+    # because this one never SUCCEEDED anywhere it is still needed. Its back-fill used
+    # `json_extract`/`json_valid`, which do not exist on Postgres, so on the shared-database
+    # backend it raised inside `Ledger.__init__` and nothing committed: those stores sit at
+    # user_version=8 and will run this body, now portable, on their next connect. Every
+    # SQLite store is already at 10 with the back-fill done, so the edit is invisible there.
+    # A Migration(11) would have been the wrong shape: it would re-scan every SQLite log to
+    # redo work already done, and still leave Postgres stuck at 8 behind the failing v10.
+    Migration(10, "session_events: run attribution (job/charter), role, fallback, at index",
+              _add_session_event_attribution),
+    #: Version 11, numbered off the LIVE store rather than off this file: `PRAGMA
+    #: user_version` on the deployed `data/system.db` returns 10, so 11 is the next one
+    #: that will actually execute. The note above explains why the PREVIOUS change chose
+    #: to edit Migration 10 in place instead of adding an 11 — that reasoning was about a
+    #: back-fill nobody should re-run, and does not apply to an additive column.
+    Migration(11, "session_events: pinned_at (MI-2 — a verdict pins its evidence)",
+              _add_session_event_pin),
+    #: Version 12, numbered off the LIVE store as the note above requires: `PRAGMA
+    #: user_version` on the deployed `data/system.db` returns 11 on 2026-09-19, and this
+    #: file's highest was 11, so 12 is both next-in-file and next-to-execute.
+    Migration(12, "events: trace correlation + retention indexes", _add_events_indexes),
+    #: Version 13 (Track C1, 2026-11-06): every local and remote branch's ledger was checked and none
+    #: carries a 13, and `main` has stopped at 12 since 2026-09-19 — next in the file and next to execute.
+    Migration(13, "jobs: the authority a job runs on (Track C1)",
+              lambda c: add_column_if_missing(c, "jobs", "auth", "TEXT")),
+]
+
+
+class Ledger:
+    """Thread-safe transactional store. One instance per database path."""
+
+    _instances: dict[str, "Ledger"] = {}
+    _instances_lock = threading.Lock()
+
+    def __init__(self, path: Path | str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        self._session_event_writes = 0  # drives amortised session-log retention
+        self._event_writes = 0          # drives amortised journal retention
+        # Through the backend seam: sqlite gets exactly the old inline PRAGMAs (they
+        # are what sqlite_util.tune applies); PRAMANYX_DB_URL moves this store — and
+        # everything riding it, KeyedJsonStore included — onto shared Postgres.
+        from pramanyx.db.backend import connect_store
+        self._conn = connect_store(self.path, check_same_thread=False)
+        # Startup integrity probe — the guard the 2026-08-14 corruption post-mortem
+        # named and nobody built: every writer on this store is tolerate()-wrapped,
+        # so a damaged file failed SILENTLY for a day (swallowed receipts, obs
+        # spans, saved-query revisions) and was found by a bare script tripping over
+        # `database disk image is malformed`. It happened AGAIN on 2026-08-15 (a third
+        # SIGBUS "FS pagein error: 22" the evening before; the API and an eval grid
+        # then wrote onto an inconsistent WAL for hours). Loud, once, before anything
+        # writes; never fatal — a damaged ledger must still let the app boot so the
+        # operator can see the message. SQLite-only: Postgres has no quick_check.
+        self.integrity_error: Optional[str] = None
+        try:
+            if isinstance(self._conn, sqlite3.Connection):
+                verdict = self._conn.execute("PRAGMA quick_check").fetchone()
+                if verdict and str(verdict[0]).lower() != "ok":
+                    self.integrity_error = str(verdict[0])
+        except sqlite3.DatabaseError as exc:
+            self.integrity_error = f"{type(exc).__name__}: {exc}"
+        if self.integrity_error:
+            logger.critical(
+                "LEDGER INTEGRITY FAILURE on %s: %s — stop every process holding this "
+                "file (uvicorn, grids, scripts), then recover with `sqlite3 .recover` "
+                "into a NEW file and swap atomically (see the 2026-08-14 recipe). "
+                "Writes on this store are best-effort and WILL be silently lost until then.",
+                self.path, self.integrity_error)
+        with self._lock:
+            with self._conn:
+                self._conn.executescript(_SCHEMA)
+            # Schema evolution through the versioned framework (DATA-05). Idempotent +
+            # forward-only; back-fills existing rows to the bootstrap org.
+            run_migrations(self._conn, _MIGRATIONS, store="ledger")
+        self._prune_if_overdue_at_open()
+
+    def _prune_if_overdue_at_open(self) -> None:
+        """Retention's restart insurance: prune once at OPEN when the durable clock says
+        nobody has in a while.
+
+        The amortised counter is per-process and starts at zero on every boot, so an
+        install that restarts before 500 session-event writes in one process lifetime
+        never pruned at all — the stated 14-day policy silently did not hold. Measured on
+        the live install 2026-09-03: 4,186 of 10,788 rows past the cutoff, the oldest 19
+        days, with `session_events_prune` working perfectly and called by nothing but an
+        eval receipt and a test.
+
+        AT OPEN rather than on the first write, and the difference is not cosmetic:
+        `session_event_insert` prunes AFTER inserting, so a first write that is itself
+        backdated — a back-fill, an import, a test fixture — would be deleted by the very
+        sweep its own arrival triggered. Opening is also the honest place for it: the
+        thing being insured against is a process starting, not a row arriving.
+
+        Best-effort and last in ``__init__`` by design. A prune that raises must never be
+        the reason the app cannot boot — Migration 10's back-fill did exactly that on
+        Postgres, and the store sat at user_version=8 until it was repaired."""
+        try:
+            last = self.kv_get(_PRUNE_KV_STORE, _PRUNE_KV_KEY)
+            if not (last and not _older_than(last, _SESSION_EVENT_PRUNE_MAX_AGE_S)):
+                self._prune_and_stamp()
+        except Exception as exc:
+            logger.debug("open-time session_events prune skipped: %s", exc)
+        # Independently guarded: the journal sweep must not be skipped because the
+        # session-log sweep was recent, and must not be the reason the session-log
+        # stamp goes unwritten. Two clocks, two try blocks, one open.
+        try:
+            last = self.kv_get(_PRUNE_KV_STORE, _EVENT_PRUNE_KV_KEY)
+            if not (last and not _older_than(last, _SESSION_EVENT_PRUNE_MAX_AGE_S)):
+                self._prune_events_and_stamp()
+        except Exception as exc:
+            logger.debug("open-time events prune skipped: %s", exc)
+
+    def _prune_and_stamp(self) -> None:
+        """Prune, then record WHEN — the stamp is what survives the restart that resets
+        the counter. Best-effort on both halves; a failed stamp only means the next open
+        checks again, which is the safe direction."""
+        try:
+            self.session_events_prune()
+            self.kv_put(_PRUNE_KV_STORE, _PRUNE_KV_KEY,
+                        datetime.now(timezone.utc).isoformat())
+        except Exception as exc:
+            logger.debug("session_events prune failed: %s", exc)
+
+    def _prune_events_and_stamp(self) -> None:
+        """The journal's half of :meth:`_prune_and_stamp`, with its own durable clock.
+
+        Stamped only when the sweep came back UNDER its batch bound. A bounded sweep on a
+        backlog deletes exactly ``_EVENT_PRUNE_BATCH`` rows and leaves more behind, and
+        stamping that would put the next attempt six hours away — the backlog would drain
+        at 20,000 rows per six hours instead of per write burst. A full batch therefore
+        means "come back immediately", which is what the amortised path then does."""
+        try:
+            deleted = self.events_prune()
+            if deleted < _EVENT_PRUNE_BATCH:
+                self.kv_put(_PRUNE_KV_STORE, _EVENT_PRUNE_KV_KEY,
+                            datetime.now(timezone.utc).isoformat())
+        except Exception as exc:
+            logger.debug("events prune failed: %s", exc)
+
+    def _events_maybe_prune(self) -> None:
+        """Amortised journal retention, every ``_EVENT_PRUNE_EVERY`` emits.
+
+        Hung off ``emit`` rather than off the session-log counter on purpose. The two
+        tables are written at utterly different rates — measured live 2026-09-19, the
+        journal took ~23,000 rows/day against the session log's ~450 — so a sweep driven
+        by session writes would fire about once a day and, bounded at 20,000 rows, would
+        need over two weeks to clear the backlog it was added to clear. Driven by emits it
+        fires roughly every twenty minutes at that rate, and the backlog is gone the same
+        day.
+
+        Best-effort and after the insert, never before: a prune must not be able to fail
+        the write that triggered it, and a first write that is itself backdated must not
+        be deleted by its own sweep."""
+        with self._lock:
+            self._event_writes += 1
+            due = self._event_writes % _EVENT_PRUNE_EVERY == 0
+        if not due:
+            return
+        self._prune_events_and_stamp()
+
+    @classmethod
+    def default(cls) -> "Ledger":
+        """The process-wide ledger. ``PRAMANYX_SYSTEM_DB`` overrides the path
+        (tests point it at a tmp dir so runs stay hermetic).
+
+        Through ``resolve_db_path`` like every other store, so a migrated data home (IN-4)
+        reaches it: this read the env and the checkout default directly, which would have
+        left the platform's main store behind in the checkout after `migrate-state`."""
+        from pramanyx.db.sqlite_util import resolve_db_path
+        path = str(resolve_db_path("PRAMANYX_SYSTEM_DB", _DEFAULT_DB))
+        with cls._instances_lock:
+            inst = cls._instances.get(path)
+            if inst is None:
+                inst = cls._instances[path] = cls(path)
+            return inst
+
+    # ── kv: the cache backend ────────────────────────────────────────────────
+
+    def _next_seq(self) -> int:
+        row = self._conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 FROM kv").fetchone()
+        return int(row[0])
+
+    def kv_get(self, store: str, key: str, default: Any = None) -> Any:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM kv WHERE store=? AND key=?", (store, key)
+            ).fetchone()
+        return json.loads(row[0]) if row else default
+
+    def kv_put(self, store: str, key: str, value: Any, *, max_entries: Optional[int] = None) -> None:
+        """Atomic insert/update as most-recently-used; evicts oldest past the cap.
+        This single transaction replaces the load-all→mutate→save-all round-trip
+        that made concurrent puts last-write-wins corrupt each other."""
+        payload = json.dumps(value, default=str)
+        with self._lock, self._conn:
+            seq = self._next_seq()
+            self._conn.execute(
+                "INSERT INTO kv (store, key, value, seq, updated_at) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(store, key) DO UPDATE SET value=excluded.value, "
+                "seq=excluded.seq, updated_at=excluded.updated_at",
+                (store, key, payload, seq, _now()),
+            )
+            if max_entries:
+                self._conn.execute(
+                    "DELETE FROM kv WHERE store=? AND key NOT IN ("
+                    "  SELECT key FROM kv WHERE store=? ORDER BY seq DESC LIMIT ?)",
+                    (store, store, max_entries),
+                )
+
+    def kv_put_if_absent(self, store: str, key: str, value: Any, *,
+                         max_entries: Optional[int] = None) -> bool:
+        """Insert only when ``key`` is not there, in one statement; True when this call wrote it.
+        Two processes racing for one key get exactly one True — the claim a send makes before it
+        leaves (Track C3, `notifications/sent_once.py`), which `kv_put` cannot be: it overwrites."""
+        payload = json.dumps(value, default=str)
+        with self._lock, self._conn:
+            seq = self._next_seq()
+            cur = self._conn.execute(
+                "INSERT INTO kv (store, key, value, seq, updated_at) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(store, key) DO NOTHING",
+                (store, key, payload, seq, _now()),
+            )
+            wrote = cur.rowcount > 0
+            if wrote and max_entries:
+                self._conn.execute(
+                    "DELETE FROM kv WHERE store=? AND key NOT IN ("
+                    "  SELECT key FROM kv WHERE store=? ORDER BY seq DESC LIMIT ?)",
+                    (store, store, max_entries),
+                )
+        return wrote
+
+    def kv_delete(self, store: str, key: str) -> bool:
+        with self._lock, self._conn:
+            cur = self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, key))
+        return cur.rowcount > 0
+
+    def kv_has(self, store: str) -> bool:
+        """Whether any row lives under ``store`` — one indexed probe, not a load."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT 1 FROM kv WHERE store=? LIMIT 1", (store,)).fetchone() is not None
+
+    def kv_load_all(self, store: str) -> dict:
+        """Whole store as a dict, oldest-first (parity with the JSON file whose
+        insertion order encoded MRU — ``next(iter(d))`` is the eviction victim)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key, value FROM kv WHERE store=? ORDER BY seq ASC", (store,)
+            ).fetchall()
+        return {k: json.loads(v) for k, v in rows}
+
+    def kv_replace_all(self, store: str, data: dict, *, max_entries: Optional[int] = None) -> None:
+        """Atomically replace the whole store (the facade's ``save``)."""
+        items = list(data.items())
+        if max_entries and len(items) > max_entries:
+            items = items[-max_entries:]          # keep the newest (end of dict)
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM kv WHERE store=?", (store,))
+            seq = self._next_seq()
+            now = _now()
+            for i, (k, v) in enumerate(items):
+                self._conn.execute(
+                    "INSERT INTO kv (store, key, value, seq, updated_at) VALUES (?,?,?,?,?)",
+                    (store, k, json.dumps(v, default=str), seq + i, now),
+                )
+
+    def kv_invalidate_prefix(self, store: str, prefix: str) -> int:
+        with self._lock, self._conn:
+            keys = [
+                r[0] for r in self._conn.execute(
+                    "SELECT key FROM kv WHERE store=?", (store,)
+                ).fetchall()
+                if r[0].startswith(prefix)
+            ]
+            for k in keys:
+                self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, k))
+        return len(keys)
+
+    def kv_trim_prefix(self, store: str, prefix: str, keep: int) -> int:
+        """Keep the ``keep`` most recently used keys starting with ``prefix``; drop the older ones.
+        Returns how many were dropped. A cap per prefix, where ``max_entries`` caps the whole store."""
+        with self._lock, self._conn:
+            keys = [r[0] for r in self._conn.execute(
+                "SELECT key FROM kv WHERE store=? ORDER BY seq DESC", (store,)).fetchall()
+                if r[0].startswith(prefix)]
+            for k in keys[keep:]:
+                self._conn.execute("DELETE FROM kv WHERE store=? AND key=?", (store, k))
+        return max(0, len(keys) - keep)
+
+    # ── meta ─────────────────────────────────────────────────────────────────
+
+    def meta_get(self, k: str) -> Optional[str]:
+        with self._lock:
+            row = self._conn.execute("SELECT v FROM meta WHERE k=?", (k,)).fetchone()
+        return row[0] if row else None
+
+    def meta_set(self, k: str, v: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT INTO meta (k, v) VALUES (?,?) "
+                "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+                (k, v),
+            )
+
+    # ── artifacts + lineage: versioned outputs with provenance (K3) ──────────
+    # Supersede, never delete — the preserve-artifacts rule at schema level.
+    # A Trust Receipt is a SELECT over these two tables, not a feature build.
+
+    def artifact_write(
+        self,
+        kind: str,
+        natural_key: str,
+        payload: Any,
+        *,
+        conn_id: Optional[str] = None,
+        canvas_id: Optional[str] = None,
+        org_id: Optional[str] = None,
+        created_by_job: Optional[str] = None,
+        lineage: Optional[list[tuple[str, str, Optional[str]]]] = None,
+    ) -> str:
+        """Write a new VERSION of an artifact (id returned). The previous
+        version (if any) gets `superseded_by` set — never deleted. ``lineage``
+        is a list of (relation, ref, detail) provenance edges. ``org_id`` defaults
+        to the current tenant context so every receipt is tenant-keyed."""
+        import uuid as _uuid
+        art_id = _uuid.uuid4().hex[:12]
+        oid = org_id or current_org_id()
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT id, version FROM artifacts WHERE natural_key=? AND superseded_by IS NULL "
+                "ORDER BY version DESC LIMIT 1", (natural_key,)
+            ).fetchone()
+            prev_id, prev_ver = (row[0], row[1]) if row else (None, 0)
+            self._conn.execute(
+                "INSERT INTO artifacts (id, kind, natural_key, version, conn_id, canvas_id, "
+                "org_id, payload, created_at, created_by_job) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (art_id, kind, natural_key, prev_ver + 1, conn_id, canvas_id,
+                 oid, json.dumps(payload, default=str), _now(), created_by_job),
+            )
+            if prev_id:
+                self._conn.execute(
+                    "UPDATE artifacts SET superseded_by=? WHERE id=?", (art_id, prev_id)
+                )
+            for relation, ref, detail in (lineage or []):
+                self._conn.execute(
+                    "INSERT INTO lineage (artifact_id, relation, ref, detail, org_id) VALUES (?,?,?,?,?)",
+                    (art_id, relation, ref, detail, oid),
+                )
+        return art_id
+
+    @staticmethod
+    def _artifact_row(cur, row) -> Optional[dict]:
+        """A fetched artifacts row → dict with its JSON payload decoded (best-effort — a
+        non-JSON payload stays a string). Shared by artifact_latest/artifact_by_id."""
+        if row is None:
+            return None
+        out = dict(zip([d[0] for d in cur.description], row))
+        try:
+            out["payload"] = json.loads(out["payload"])
+        except Exception:
+            pass
+        return out
+
+    def artifact_latest(self, natural_key: str) -> Optional[dict]:
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM artifacts WHERE natural_key=? ORDER BY version DESC LIMIT 1",
+                (natural_key,),
+            )
+            return self._artifact_row(cur, cur.fetchone())
+
+    def artifact_versions(self, natural_key: str, *, limit: int = 100) -> list[dict]:
+        """Every stored version of one artifact, newest first — the version HISTORY.
+
+        ``artifact_latest`` answers "what is current" and ``artifact_by_id`` answers "give
+        me exactly this one"; neither can show a user what changed over time. Wave V3's
+        history/diff/revert surface needs the series, and supersede-not-delete means it is
+        already all on disk (``artifacts_nk(natural_key, version)`` indexes it).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM artifacts WHERE natural_key=? ORDER BY version DESC LIMIT ?",
+                (natural_key, int(limit)),
+            )
+            rows = cur.fetchall()
+            return [a for a in (self._artifact_row(cur, r) for r in rows) if a]
+
+    def artifacts_of_kind(
+        self,
+        kinds: "str | list[str]",
+        *,
+        conn_id: Optional[str] = None,
+        org_id: Optional[str] = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """Current (non-superseded) artifacts of one or more kinds, newest first.
+
+        ``artifact_latest``/``artifact_versions``/``artifact_by_id`` all require the
+        caller to already know a natural_key — they answer "this artifact", never
+        "which artifacts exist". Wave L1 needs the enumeration: the context graph
+        projects a connection's answer receipts into `finding` nodes, and it cannot
+        guess the per-investigation keys (``ada:{conn}:{inv_id}``).
+
+        Scoped to the tenant (``org_id`` defaults to the current context) and, when
+        given, to one connection. Superseded versions are excluded, so a re-answered
+        question contributes one node, not one per revision.
+        """
+        ks = [kinds] if isinstance(kinds, str) else list(kinds)
+        if not ks:
+            return []
+        oid = org_id or current_org_id()
+        sql = ("SELECT * FROM artifacts WHERE superseded_by IS NULL AND org_id=? "
+               f"AND kind IN ({','.join('?' * len(ks))})")
+        params: list[Any] = [oid, *ks]
+        if conn_id:
+            sql += " AND conn_id=?"
+            params.append(conn_id)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            rows = cur.fetchall()
+            return [a for a in (self._artifact_row(cur, r) for r in rows) if a]
+
+    def artifact_by_id(self, art_id: str) -> Optional[dict]:
+        """One artifact by its stable id (the receipt id — WP-10), payload decoded.
+        Unlike ``artifact_latest`` (keyed by natural_key → newest version) this resolves
+        the EXACT version a caller was handed, so a receipt link is immutable."""
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM artifacts WHERE id=? LIMIT 1", (art_id,))
+            return self._artifact_row(cur, cur.fetchone())
+
+    def _receipt_from_artifact(self, art: Optional[dict]) -> Optional[dict]:
+        """Assemble the Trust Receipt view from a resolved artifact: provenance edges
+        + the job that computed it + one normalized cost field."""
+        if art is None:
+            return None
+        with self._lock:
+            edges = self._conn.execute(
+                "SELECT relation, ref, detail FROM lineage WHERE artifact_id=?", (art["id"],)
+            ).fetchall()
+        job = self.job_get(art["created_by_job"]) if art.get("created_by_job") else None
+        job_view = (
+            {k: job.get(k) for k in ("id", "kind", "state", "started_at", "finished_at", "metrics")}
+            if job else None
+        )
+        # One normalized cost field for consumers: the job-row metrics (full per-run
+        # total) when this artifact was produced by a kernel job, else the cost
+        # stamped on the artifact itself (the synchronous chat/insight path has no job).
+        cost = None
+        if job_view and job_view.get("metrics"):
+            cost = job_view["metrics"]
+        elif isinstance(art.get("payload"), dict):
+            cost = art["payload"].get("cost")
+        return {
+            "artifact": art,
+            "lineage": [{"relation": r, "ref": ref, "detail": d} for r, ref, d in edges],
+            "job": job_view,
+            "cost": cost,
+        }
+
+    def receipt(self, natural_key: str) -> Optional[dict]:
+        """The Trust Receipt: the latest artifact version + its provenance edges
+        + the job that computed it. One query path answers 'why should I trust
+        this number'."""
+        return self._receipt_from_artifact(self.artifact_latest(natural_key))
+
+    def receipt_by_id(self, art_id: str) -> Optional[dict]:
+        """The Trust Receipt for one EXACT artifact id (the receipt id — WP-10's unified
+        `GET /receipt/{id}`), rather than the latest version of a natural_key."""
+        return self._receipt_from_artifact(self.artifact_by_id(art_id))
+
+    # ── jobs: rows for the K1 job kernel (state machine lives in jobs.py) ────
+
+    def job_insert(self, row: dict) -> None:
+        cols = ("id", "kind", "conn_id", "canvas_id", "org_id", "state", "payload", "error",
+                "idempotency_key", "attempt", "created_at", "started_at",
+                "heartbeat_at", "finished_at", "auth")
+        row = {**row, "org_id": row.get("org_id") or current_org_id()}
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"INSERT INTO jobs ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                tuple(
+                    json.dumps(row.get(c), default=str) if c in ("payload", "auth") and row.get(c) is not None
+                    else row.get(c)
+                    for c in cols
+                ),
+            )
+
+    def job_update(self, job_id: str, **fields) -> None:
+        if not fields:
+            return
+        if "auth" in fields:
+            # Track C1: the authority a job runs on is written once, at submit. A retry, a resume or a
+            # transition never widens or rewrites it; a different authority is a different job.
+            raise ValueError("a job's authority is written once, at submit, and never updated")
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"UPDATE jobs SET {sets} WHERE id=?", (*fields.values(), job_id)
+            )
+
+    def job_get(self, job_id: str) -> Optional[dict]:
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cur.description]
+        out = dict(zip(cols, row))
+        for _jf in ("payload", "metrics", "auth"):
+            if out.get(_jf):
+                try:
+                    out[_jf] = json.loads(out[_jf])
+                except Exception:
+                    pass
+        return out
+
+    def job_kinds_in(self, *, since: Optional[str] = None,
+                     until: Optional[str] = None) -> list[str]:
+        """Distinct job kinds created inside the window, same half-open bounds as
+        :meth:`jobs_where`.
+
+        Exists so a caller can split a capped read BY KIND instead of reading one page
+        and classifying it afterwards. When one kind outnumbers the others by orders of
+        magnitude — the automation tick does — a single page is all tick, and everything
+        else falls off the end without a word.
+        """
+        q, args = "SELECT DISTINCT kind FROM jobs WHERE 1=1", []
+        if since:
+            q += " AND created_at>=?"; args.append(since)
+        if until:
+            q += " AND created_at<?"; args.append(until)
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        return [r[0] for r in rows if r[0]]
+
+    def jobs_where(self, *, states: Optional[list[str]] = None,
+                   conn_id: Optional[str] = None, canvas_id: Optional[str] = None,
+                   idempotency_key: Optional[str] = None,
+                   kinds: Optional[list[str]] = None,
+                   since: Optional[str] = None, until: Optional[str] = None,
+                   limit: int = 500) -> list[dict]:
+        """``since``/``until`` bound ``created_at`` (half-open) as ISO-8601 UTC strings.
+
+        Compare only against strings produced the same way ``_now`` produces them —
+        ``2026-08-17T21:52:03.116+00:00``. SQLite's own ``datetime('now')`` renders a
+        SPACE where this format has a ``T``, and ``'2026-08-17 21:00' < '2026-08-17T21:00'``
+        lexically, so mixing the two silently widens the window instead of erroring.
+        """
+        q, args = "SELECT * FROM jobs WHERE 1=1", []
+        if states:
+            q += f" AND state IN ({','.join('?' * len(states))})"; args.extend(states)
+        if conn_id is not None:
+            q += " AND conn_id=?"; args.append(conn_id)
+        if canvas_id is not None:
+            q += " AND canvas_id=?"; args.append(canvas_id)
+        if idempotency_key is not None:
+            q += " AND idempotency_key=?"; args.append(idempotency_key)
+        if kinds:
+            q += f" AND kind IN ({','.join('?' * len(kinds))})"; args.extend(kinds)
+        if since:
+            q += " AND created_at>=?"; args.append(since)
+        if until:
+            q += " AND created_at<?"; args.append(until)
+        q += " ORDER BY created_at DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            cur = self._conn.execute(q, args)
+            cols = [d[0] for d in cur.description]
+            rows = cur.fetchall()
+        out = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            for _jf in ("payload", "metrics", "auth"):
+                if d.get(_jf):
+                    try:
+                        d[_jf] = json.loads(d[_jf])
+                    except Exception:
+                        pass
+            out.append(d)
+        return out
+
+    # ── events: the append-only journal ──────────────────────────────────────
+
+    # ── slice claims (Phase 2 durable execution) ─────────────────────────────
+    # The unit-of-work lease the sliced explorer runs on: a worker claims a scope
+    # (e.g. "explore:{conn}:{angle}") before touching it, renews while working,
+    # releases when done. The 2026-08-05 durable-execution spike proved this shape
+    # (second worker refused, reclaim after expiry); this is that mechanism as a
+    # kernel primitive, one atomic statement per operation so two workers racing a
+    # claim cannot both read "free" and both proceed.
+
+    def try_claim(self, scope: str, owner: str, lease_s: float) -> bool:
+        """Claim ``scope`` for ``owner``, or steal it if the current lease lapsed.
+        Returns whether THIS owner now holds it. Atomic: the expiry check lives in
+        the upsert's WHERE, not in a read-then-write."""
+        now = datetime.now(timezone.utc)
+        until = (now + timedelta(seconds=lease_s)).isoformat()
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "INSERT INTO claims (scope, owner, lease_until) VALUES (?,?,?) "
+                "ON CONFLICT(scope) DO UPDATE SET owner=excluded.owner, lease_until=excluded.lease_until "
+                "WHERE claims.lease_until < ? OR claims.owner = excluded.owner",
+                (scope, owner, until, now.isoformat()),
+            )
+            return cur.rowcount == 1
+
+    def lapsed_claim_owner(self, scope: str) -> str:
+        """The owner of a LAPSED claim on ``scope``, or ``""``.
+
+        Wave 4 (4.1c): ``try_claim`` returns a bare bool, so a caller cannot tell a
+        fresh claim from stealing a dead worker's lease — and that difference is a
+        fact the next worker needs: the slice it is about to run was already started
+        by someone who never finished, so recorded findings may be half-written.
+
+        Deliberately a separate read rather than a richer ``try_claim`` return: this
+        is ADVISORY (it decides a cautionary sentence, never correctness), and the
+        claim itself must stay one atomic statement. It races with the upsert that
+        follows — another worker can take the scope in between — but a false positive
+        costs one extra sentence of caution and a false negative costs nothing, which
+        is the right way round for a marker.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT owner FROM claims WHERE scope = ? AND lease_until < ?",
+                (scope, now),
+            ).fetchone()
+        return (row[0] if row else "") or ""
+
+    def renew_claim(self, scope: str, owner: str, lease_s: float) -> bool:
+        """Extend a held claim. False when the claim lapsed and someone else took it
+        — the worker must STOP, its work now belongs to the new owner."""
+        until = (datetime.now(timezone.utc) + timedelta(seconds=lease_s)).isoformat()
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "UPDATE claims SET lease_until=? WHERE scope=? AND owner=?",
+                (until, scope, owner),
+            )
+            return cur.rowcount == 1
+
+    def release_claim(self, scope: str, owner: str) -> bool:
+        """Release a held claim (owner-checked — a lapsed-and-stolen claim is not
+        yours to release)."""
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "DELETE FROM claims WHERE scope=? AND owner=?", (scope, owner))
+            return cur.rowcount == 1
+
+    def emit(
+        self,
+        kind: str,
+        payload: Any = None,
+        *,
+        conn_id: Optional[str] = None,
+        canvas_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+    ) -> int:
+        """Append one event; returns its seq. Every state transition the kernel
+        cares about flows through here — 'why did X happen at 14:32' becomes a
+        query instead of an archaeology dig.
+
+        ``trace_id`` defaults to the ambient run, so every kind correlates to the
+        run that caused it without a single call site being touched. ``org_id`` is
+        stamped the same way (DATA-06): the tenant is a property of WHO emitted the
+        event, never of what the caller remembered to pass, and a governance sink can
+        only be scoped by a column that is always there."""
+        if trace_id is None:
+            try:
+                from pramanyx.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            except Exception:
+                trace_id = ""
+        try:
+            from pramanyx.org.context import current_org_id
+            org_id = current_org_id() or "default"
+        except Exception:
+            org_id = "default"
+        from pramanyx.db.backend import insert_returning_id
+        with self._lock, self._conn:
+            seq = insert_returning_id(
+                self._conn,
+                "INSERT INTO events (at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (_now(), kind, conn_id, canvas_id, job_id,
+                 json.dumps(payload, default=str) if payload is not None else None,
+                 trace_id or "", org_id),
+                pk="seq",
+            )
+        self._events_maybe_prune()
+        return seq
+
+    def events(
+        self,
+        *,
+        kind: Optional[str] = None,
+        conn_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        since_seq: Optional[int] = None,
+        org_id: Optional[str] = None,
+        limit: int = 200,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+    ) -> list[dict]:
+        """Read journal events, newest first.
+
+        ``org_id`` is the tenant filter (DATA-06), mirroring ``session_events``:
+        ``None`` means no filter — localhost/identity-off, where one tenant owns
+        every row — and a value scopes to rows emitted under it. Rows written before
+        the tenant column existed read as ``'default'``, which is the org they in
+        fact ran under.
+
+        ``since``/``until`` bound ``at`` half-open, as ``session_events`` does (Arc TC,
+        TC-5: the governance feed's window); both ``None`` adds no clause."""
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
+             "FROM events WHERE 1=1")
+        args: list[Any] = []
+        if since is not None:
+            q += " AND at>=?"; args.append(since)
+        if until is not None:
+            q += " AND at<?"; args.append(until)
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if kind:
+            q += " AND kind=?"; args.append(kind)
+        if conn_id:
+            q += " AND conn_id=?"; args.append(conn_id)
+        if job_id:
+            q += " AND job_id=?"; args.append(job_id)
+        if org_id is not None:
+            q += " AND org_id=?"; args.append(org_id)
+        if since_seq is not None:
+            q += " AND seq>?"; args.append(since_seq)
+        q += " ORDER BY seq DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for seq, at, k, c, cv, j, p, tid, oid in rows:
+            out.append({
+                "seq": seq, "at": at, "kind": k, "conn_id": c,
+                "canvas_id": cv, "job_id": j, "trace_id": tid, "org_id": oid,
+                "payload": json.loads(p) if p else None,
+            })
+        return out
+
+    # ── Arc TC, TC-5: the journal's run lines, read across runs (`obs/log_search.py`) ──
+
+    def run_lines(
+        self,
+        *,
+        since: str,
+        before_seq: Optional[int] = None,
+        text: str = "",
+        org_id: Optional[str] = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Journal lines written under a run (a non-empty ``trace_id``) at or after ``since``,
+        newest first, below ``before_seq`` when given — the rows ``/traces/{id}/logs`` reads one
+        run at a time, read across runs. ``text`` matches the line as it was kept, its kind and
+        its payload, case-folded, with LIKE's own wildcards escaped so a ``%`` or ``_`` in the
+        words is a character, never a pattern. Portable: no JSON operator, which Postgres lacks
+        here (``_backfill_payload_facts`` says why)."""
+        q = ("SELECT seq, at, kind, conn_id, canvas_id, job_id, payload, trace_id, org_id "
+             "FROM events WHERE trace_id <> '' AND at >= ?")
+        args: list[Any] = [since]
+        if before_seq is not None:
+            q += " AND seq < ?"; args.append(int(before_seq))
+        if org_id is not None:
+            q += " AND org_id = ?"; args.append(org_id)
+        if text:
+            needle = "%" + (text.lower().replace("\\", "\\\\").replace("%", "\\%")
+                            .replace("_", "\\_")) + "%"
+            q += (" AND (LOWER(kind) LIKE ? ESCAPE '\\'"
+                  " OR LOWER(COALESCE(payload, '')) LIKE ? ESCAPE '\\')")
+            args.extend([needle, needle])
+        q += " ORDER BY seq DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for seq, at, k, c, cv, j, p, tid, oid in rows:
+            try:
+                payload = json.loads(p) if p else None
+            except Exception:
+                payload = p
+            out.append({"seq": seq, "at": at, "kind": k, "conn_id": c, "canvas_id": cv,
+                        "job_id": j, "trace_id": tid, "org_id": oid, "payload": payload})
+        return out
+
+    def run_lines_extent(self, *, since: str, org_id: Optional[str] = None) -> dict:
+        """What a search over the run lines since ``since`` covers: how many runs, how many
+        lines, the oldest line kept, and the kinds of run those lines were written under (a
+        job's kind; ``""`` for a line written outside any job). Counted, never sampled."""
+        where, args = "e.trace_id <> '' AND e.at >= ?", [since]
+        if org_id is not None:
+            where += " AND e.org_id = ?"; args.append(org_id)
+        with self._lock:
+            runs, lines, oldest = self._conn.execute(
+                f"SELECT COUNT(DISTINCT e.trace_id), COUNT(*), MIN(e.at) FROM events e WHERE {where}",
+                args).fetchone()
+            kinds = self._conn.execute(
+                "SELECT DISTINCT COALESCE(j.kind, '') FROM events e LEFT JOIN jobs j ON j.id = e.job_id "
+                f"WHERE {where}", args).fetchall()
+        return {"runs": int(runs or 0), "lines": int(lines or 0), "oldest_at": oldest,
+                "run_kinds": sorted({str(k[0] or "") for k in kinds})}
+
+    # ── task_history: spans as a queryable table (Rec 4, flag obs.task_table) ──
+
+    def task_history_insert(self, row: dict) -> None:
+        """Append one span row. Idempotent on ``span_id`` (INSERT OR REPLACE) so a
+        double-emit — a retried wave, a redelivered event — never duplicates. The
+        writer (``telemetry.span``) only calls this under the ``obs.task_table``
+        flag; an unflagged process leaves the table empty."""
+        labels = row.get("labels")
+        with self._lock, self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO task_history "
+                "(span_id, trace_id, parent_span_id, task, input, captured_output, "
+                " start_time, end_time, duration_ms, error_message, labels, org_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    row["span_id"], row.get("trace_id"), row.get("parent_span_id"),
+                    row["task"], row.get("input"), row.get("captured_output"),
+                    row["start_time"], row.get("end_time"), row.get("duration_ms"),
+                    row.get("error_message"),
+                    json.dumps(labels, default=str) if labels is not None else None,
+                    row.get("org_id") or "default",
+                ),
+            )
+
+    def task_history(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        task: Optional[str] = None,
+        task_prefix: Optional[str] = None,
+        org_id: Optional[str] = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Read span rows, newest first. ``task_prefix`` matches a taxonomy family
+        (e.g. ``ada.node.`` or ``tool.``); ``task`` matches exactly."""
+        q = ("SELECT span_id, trace_id, parent_span_id, task, input, captured_output, "
+             "start_time, end_time, duration_ms, error_message, labels, org_id "
+             "FROM task_history WHERE 1=1")
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if task:
+            q += " AND task=?"; args.append(task)
+        if task_prefix:
+            q += " AND task LIKE ?"; args.append(task_prefix.replace("%", r"\%") + "%")
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        q += " ORDER BY start_time DESC, rowid DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for (sid, tid, pid, task_, inp, outp, st, et, dur, err, lbl, org) in rows:
+            out.append({
+                "span_id": sid, "trace_id": tid, "parent_span_id": pid,
+                "task": task_, "input": inp, "captured_output": outp,
+                "start_time": st, "end_time": et, "duration_ms": dur,
+                "error_message": err,
+                "labels": json.loads(lbl) if lbl else None, "org_id": org,
+            })
+        return out
+
+    # ── session_events: the agent-session log (Wave E1, flag obs.session_log) ──
+
+    _SESSION_EVENT_COLS = (
+        "seq", "at", "trace_id", "kind", "name", "span_id", "parent_span_id",
+        "ok", "duration_ms", "error_class", "investigation_id", "session_id",
+        "user_id", "agent_id", "conn_id", "org_id",
+        # Migration 7 — measurable facts as columns, not payload JSON.
+        "provider", "model", "prompt_tokens", "completion_tokens", "total_tokens",
+        "row_count", "retries",
+        # Migration 10 — which run, which charter, which prompt role, did it fail over.
+        "job_id", "charter_id", "role", "fallback",
+        # Migration 11 (MI-2) — when a verdict made this row permanent. Projected, not
+        # just stored: a reader that cannot see the pin cannot tell a kept run from one
+        # the sweep simply has not reached yet.
+        "pinned_at",
+        "payload",
+    )
+
+    def session_event_insert(self, row: dict) -> int:
+        """Append one session event; returns its ``seq``.
+
+        Unlike ``task_history_insert`` this is NOT idempotent on a key — every
+        call is a distinct occurrence, and ``seq`` (AUTOINCREMENT) is the
+        within-run ordering that ``task_history``'s start-time string cannot give
+        (equal-millisecond spans there tie-break on a random span id).
+
+        Retention runs opportunistically here rather than from a sweep so the
+        table cannot grow unbounded if no scheduler is running — the failure mode
+        `events`/`task_history` both have today.
+        """
+        payload = row.get("payload")
+        # `role` and `fallback` are derived from the payload here rather than at every
+        # call site: `_record_llm_call` has been putting both in the payload since the
+        # failover work, so promoting them to columns costs no emitter a single line.
+        # An explicitly passed column still wins — a caller that knows better is not
+        # overruled by a stale payload copy.
+        _pay = payload if isinstance(payload, dict) else {}
+        _role = row.get("role") if "role" in row else _pay.get("role")
+        _fallback = row.get("fallback") if "fallback" in row else _pay.get("fallback")
+        from pramanyx.db.backend import insert_returning_id
+        with self._lock, self._conn:
+            seq = insert_returning_id(
+                self._conn,
+                "INSERT INTO session_events "
+                "(at, trace_id, kind, name, span_id, parent_span_id, ok, duration_ms, "
+                " error_class, investigation_id, session_id, user_id, agent_id, conn_id, "
+                " org_id, provider, model, prompt_tokens, completion_tokens, total_tokens, "
+                " row_count, retries, job_id, charter_id, role, fallback, payload) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    row.get("at") or _now(), row["trace_id"], row["kind"], row.get("name"),
+                    row.get("span_id"), row.get("parent_span_id"),
+                    None if row.get("ok") is None else int(bool(row["ok"])),
+                    row.get("duration_ms"), row.get("error_class"),
+                    row.get("investigation_id"), row.get("session_id"),
+                    row.get("user_id"), row.get("agent_id"), row.get("conn_id"),
+                    row.get("org_id") or "default",
+                    row.get("provider"), row.get("model"),
+                    row.get("prompt_tokens"), row.get("completion_tokens"),
+                    row.get("total_tokens"), row.get("row_count"), row.get("retries"),
+                    row.get("job_id"), row.get("charter_id"), _role,
+                    _as_bool_int(_fallback),
+                    json.dumps(payload, default=str) if payload is not None else None,
+                ),
+                pk="seq",
+            )
+        self._session_events_maybe_prune()
+        return seq
+
+    def session_events(
+        self,
+        *,
+        trace_id: Optional[str] = None,
+        kind: Optional[str] = None,
+        session_id: Optional[str] = None,
+        investigation_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        conn_id: Optional[str] = None,
+        errors_only: bool = False,
+        org_id: Optional[str] = None,
+        since_seq: Optional[int] = None,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        charter_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        role: Optional[str] = None,
+        fallback_only: bool = False,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        limit: int = 500,
+        ascending: bool = False,
+    ) -> list[dict]:
+        """Read session events. Defaults to newest-first (the feed shape); pass
+        ``ascending=True`` for replay order, which is what reconstructing a single
+        run wants. ``errors_only`` keeps rows that RECORDED a failure (``ok=0``) —
+        rows with no verdict yet (entry-side ``tool_call``) are not failures.
+
+        ``since``/``until`` are ISO-8601 UTC bounds on ``at`` (half-open: ``since`` is
+        inclusive, ``until`` exclusive), which is what every windowed panel needs and
+        what ``since_seq`` — a cursor, not a clock — cannot express. The remaining
+        filters exist so a ranked list can DRILL: clicking a model or a call site has to
+        be able to ask for exactly those rows rather than re-scanning client-side.
+        """
+        q = f"SELECT {', '.join(self._SESSION_EVENT_COLS)} FROM session_events WHERE 1=1"
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if kind:
+            q += " AND kind=?"; args.append(kind)
+        if session_id:
+            q += " AND session_id=?"; args.append(session_id)
+        if investigation_id:
+            q += " AND investigation_id=?"; args.append(investigation_id)
+        if agent_id:
+            q += " AND agent_id=?"; args.append(agent_id)
+        if conn_id:
+            q += " AND conn_id=?"; args.append(conn_id)
+        if model:
+            q += " AND model=?"; args.append(model)
+        if provider:
+            q += " AND provider=?"; args.append(provider)
+        if charter_id:
+            q += " AND charter_id=?"; args.append(charter_id)
+        if job_id:
+            q += " AND job_id=?"; args.append(job_id)
+        if role:
+            q += " AND role=?"; args.append(role)
+        if fallback_only:
+            # `=1`, never `IS NOT 0` — the latter sweeps in every unknown, which is most
+            # of the table (no non-llm_call row ever carried the fact).
+            q += " AND fallback=1"
+        if since:
+            q += " AND at>=?"; args.append(since)
+        if until:
+            q += " AND at<?"; args.append(until)
+        if errors_only:
+            q += " AND ok=0"
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        if since_seq is not None:
+            q += " AND seq>?"; args.append(since_seq)
+        q += f" ORDER BY seq {'ASC' if ascending else 'DESC'} LIMIT ?"
+        args.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(q, args).fetchall()
+        out = []
+        for r in rows:
+            d = dict(zip(self._SESSION_EVENT_COLS, r))
+            if d.get("ok") is not None:
+                d["ok"] = bool(d["ok"])
+            # Unknown must survive the trip out, not arrive as a confident False.
+            if d.get("fallback") is not None:
+                d["fallback"] = bool(d["fallback"])
+            if d.get("payload"):
+                try:
+                    d["payload"] = json.loads(d["payload"])
+                except Exception as exc:
+                    from pramanyx.kernel.errors import tolerate
+                    tolerate(exc, f"session_events seq={d.get('seq')} has an unparseable "
+                                  "payload; serving it as the raw string",
+                             counter="obs.session_log.bad_payload")
+            out.append(d)
+        return out
+
+    def session_people(self, trace_ids: list[str], *, org_id: Optional[str] = None) -> dict[str, str]:
+        """The person each run was for, by trace id, where the session log says — a run it never logged (the log is
+        on with `obs.session_log` and pruned by age), or logged with no person, is absent. Arc FA, FA-3: who read an
+        entity, read from the runs whose statements named its tables. Read-only."""
+        wanted = sorted({t for t in trace_ids if t})
+        out: dict[str, str] = {}
+        for i in range(0, len(wanted), 500):
+            chunk = wanted[i:i + 500]
+            q = (f"SELECT trace_id, MAX(user_id) FROM session_events WHERE trace_id IN ({','.join('?' * len(chunk))})"
+                 " AND user_id IS NOT NULL AND user_id != ''")
+            args: list[Any] = list(chunk)
+            if org_id:
+                q += " AND org_id=?"
+                args.append(org_id)
+            q += " GROUP BY trace_id"
+            with self._lock:
+                rows = self._conn.execute(q, args).fetchall()
+            out.update({str(r[0]): str(r[1]) for r in rows if r[1]})
+        return out
+
+    def purge_connection(self, conn_id: str) -> dict[str, int]:
+        """Delete what the kernel kept about one connection — its jobs, their events, the
+        artifacts they produced (and those artifacts' lineage), and the task traces labelled
+        with it. Idea 1: measured 2026-10-04, two connections deleted in September still
+        held 51 events, 12 artifacts (43 lineage rows), 8 jobs and 2 task traces here.
+
+        The session log (`session_events`) is NOT purged: it is the model-spend ledger, a
+        record of what the platform did and paid, kept on purpose (`purge.KEPT_ON_DELETE`)."""
+        if not conn_id:
+            return {}
+        out: dict[str, int] = {}
+        with self._lock, self._conn:
+            ids = [r[0] for r in self._conn.execute(
+                "SELECT id FROM artifacts WHERE conn_id=?", (conn_id,)).fetchall()]
+            if ids:
+                marks = ",".join("?" * len(ids))
+                out["kernel_lineage"] = self._conn.execute(
+                    f"DELETE FROM lineage WHERE artifact_id IN ({marks})", ids).rowcount
+            out["kernel_artifacts"] = self._conn.execute(
+                "DELETE FROM artifacts WHERE conn_id=?", (conn_id,)).rowcount
+            out["kernel_events"] = self._conn.execute(
+                "DELETE FROM events WHERE conn_id=?", (conn_id,)).rowcount
+            out["kernel_jobs"] = self._conn.execute(
+                "DELETE FROM jobs WHERE conn_id=?", (conn_id,)).rowcount
+            # Labels are JSON text; matched in Python, not with json_extract, which this
+            # store cannot use on Postgres (`_backfill_payload_facts` says why).
+            spans = [span_id for span_id, labels in self._conn.execute(
+                         "SELECT span_id, labels FROM task_history WHERE labels LIKE ?",
+                         (f"%{conn_id}%",)).fetchall()
+                     if _labelled_connection(labels) == conn_id]
+            out["task_traces"] = 0
+            for i in range(0, len(spans), _BACKFILL_BATCH):
+                batch = spans[i:i + _BACKFILL_BATCH]
+                out["task_traces"] += self._conn.execute(
+                    f"DELETE FROM task_history WHERE span_id IN ({','.join('?' * len(batch))})",
+                    batch).rowcount
+        return {k: max(v, 0) for k, v in out.items()}
+
+    def purge_key_prefix(self, prefix: str) -> dict[str, int]:
+        """Delete every artifact whose natural key starts with ``prefix`` (matched as text, never as a LIKE
+        pattern — a schema's name holds ``_``), with its lineage. A removed schema's findings' receipts share one
+        (`explorer.dossier.receipt_key`, `explorer.store.scoped_finding_id`)."""
+        if not prefix:
+            return {}
+        out: dict[str, int] = {}
+        with self._lock, self._conn:
+            ids = [r[0] for r in self._conn.execute(
+                "SELECT id FROM artifacts WHERE substr(natural_key, 1, ?) = ?", (len(prefix), prefix)).fetchall()]
+            for i in range(0, len(ids), _BACKFILL_BATCH):
+                batch = ids[i:i + _BACKFILL_BATCH]
+                marks = ",".join("?" * len(batch))
+                out["kernel_lineage"] = out.get("kernel_lineage", 0) + self._conn.execute(
+                    f"DELETE FROM lineage WHERE artifact_id IN ({marks})", batch).rowcount
+                out["kernel_artifacts"] = out.get("kernel_artifacts", 0) + self._conn.execute(
+                    f"DELETE FROM artifacts WHERE id IN ({marks})", batch).rowcount
+        return {k: max(v, 0) for k, v in out.items()}
+
+    def purge_canvas(self, canvas_id: str, *, keep_kinds: tuple[str, ...] = ()) -> dict[str, int]:
+        """Delete what the kernel kept for one canvas — its artifacts (but ``keep_kinds``) and
+        their lineage, its jobs and its events. Found by CT-3 and measured 2026-10-04: four
+        deleted canvases still held 881 artifacts, 680 jobs and 5,478 events here."""
+        if not canvas_id:
+            return {}
+        out: dict[str, int] = {}
+        keep = list(keep_kinds)
+        not_kept = f" AND kind NOT IN ({','.join('?' * len(keep))})" if keep else ""
+        with self._lock, self._conn:
+            ids = [r[0] for r in self._conn.execute(
+                f"SELECT id FROM artifacts WHERE canvas_id=?{not_kept}", [canvas_id, *keep]).fetchall()]
+            for i in range(0, len(ids), _BACKFILL_BATCH):
+                batch = ids[i:i + _BACKFILL_BATCH]
+                marks = ",".join("?" * len(batch))
+                out["kernel_lineage"] = out.get("kernel_lineage", 0) + self._conn.execute(
+                    f"DELETE FROM lineage WHERE artifact_id IN ({marks})", batch).rowcount
+                out["kernel_artifacts"] = out.get("kernel_artifacts", 0) + self._conn.execute(
+                    f"DELETE FROM artifacts WHERE id IN ({marks})", batch).rowcount
+            out["kernel_jobs"] = self._conn.execute(
+                "DELETE FROM jobs WHERE canvas_id=?", (canvas_id,)).rowcount
+            out["kernel_events"] = self._conn.execute(
+                "DELETE FROM events WHERE canvas_id=?", (canvas_id,)).rowcount
+        return {k: max(v, 0) for k, v in out.items()}
+
+    def session_events_clear(self, *, trace_id: Optional[str] = None,
+                             org_id: Optional[str] = None) -> int:
+        """Delete a run's session log (or the whole table when unscoped); returns
+        rows deleted. Distinct from :meth:`session_events_prune`, which is
+        age/size retention — this is a deliberate purge of a named run, the
+        primitive a "forget this session" request needs."""
+        q = "DELETE FROM session_events WHERE 1=1"
+        args: list[Any] = []
+        if trace_id:
+            q += " AND trace_id=?"; args.append(trace_id)
+        if org_id:
+            q += " AND org_id=?"; args.append(org_id)
+        with self._lock, self._conn:
+            return max(self._conn.execute(q, args).rowcount, 0)
+
+    def _session_events_maybe_prune(self) -> None:
+        """Prune every ``_SESSION_EVENT_PRUNE_EVERY`` inserts (amortised, so the common
+        insert stays one statement). The restart case is covered at OPEN instead — see
+        :meth:`_prune_if_overdue_at_open`.
+
+        The counter alone was not retention, it was retention *on a long-lived process*.
+        ``_session_event_writes`` starts at 0 in ``__init__``, so an install that restarts
+        before reaching 500 session-event writes in one process lifetime never pruned —
+        and the stated 14-day policy silently did not hold. Measured on the live install
+        2026-09-03, before this: 4,186 of 10,788 rows past the cutoff, the oldest 19 days
+        old, with `session_events_prune` itself working perfectly and called by nothing but
+        an eval receipt and a test.
+
+        The fix keeps the amortised shape (no new loop — periodic work joins the one that
+        exists, it does not grow a timer) and gives it a DURABLE memory: the last prune
+        time lives in `kv`, so exactly the event the counter cannot survive — a restart —
+        is the one that now forces a check. One extra read per process, not per write.
+
+        Best-effort: a prune failure must never surface to the answer path that produced
+        the event."""
+        with self._lock:
+            self._session_event_writes += 1
+            due = self._session_event_writes % _SESSION_EVENT_PRUNE_EVERY == 0
+        if not due:
+            return
+        self._prune_and_stamp()
+
+    def session_events_prune(self, *, keep_days: Optional[int] = None,
+                             max_rows: Optional[int] = None) -> int:
+        """Delete events older than ``keep_days`` and any beyond ``max_rows``
+        (newest kept). Returns rows deleted. Env-tunable via
+        ``PRAMANYX_SESSION_LOG_KEEP_DAYS`` / ``PRAMANYX_SESSION_LOG_MAX_ROWS``; set
+        either to 0 to disable that half."""
+        if keep_days is None:
+            keep_days = int(os.environ.get("PRAMANYX_SESSION_LOG_KEEP_DAYS", "14") or 0)
+        if max_rows is None:
+            max_rows = int(os.environ.get("PRAMANYX_SESSION_LOG_MAX_ROWS", "200000") or 0)
+        deleted = 0
+        with self._lock, self._conn:
+            if keep_days > 0:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+                deleted += self._conn.execute(
+                    "DELETE FROM session_events WHERE at < ? AND pinned_at = ''",
+                    (cutoff,)).rowcount
+            if max_rows > 0:
+                # MI-2: the row cap spares pinned rows too, and — importantly — does not
+                # COUNT them toward the cap. A graded run is evidence, not budget: letting
+                # pins consume the newest-N window would mean grading enough runs quietly
+                # starved the log of everything else.
+                deleted += self._conn.execute(
+                    "DELETE FROM session_events WHERE pinned_at = '' AND seq NOT IN ("
+                    "  SELECT seq FROM session_events WHERE pinned_at = '' "
+                    "  ORDER BY seq DESC LIMIT ?)",
+                    (max_rows,),
+                ).rowcount
+        return max(deleted, 0)
+
+    def events_prune(self, *, keep_days: Optional[int] = None,
+                     max_rows: Optional[int] = None,
+                     kinds: Optional[Sequence[str]] = None,
+                     batch: Optional[int] = None) -> int:
+        """Age out operational chatter from the journal. Returns rows deleted.
+
+        Same two-policy shape as :meth:`session_events_prune` — an age window and a row
+        cap — because that pair is already proven here and a second retention idiom would
+        be a second thing to reason about. The difference is the scope: this sweep names
+        the kinds it may delete (``PRAMANYX_EVENTS_PRUNE_KINDS``, default ``job.state`` and
+        ``automation.run``) and touches nothing else. `session_events` can sweep broadly
+        because a pin exempts what matters; `events` has no pin, so the exemption has to
+        be the default, and a kind not named here is kept forever.
+
+        Both halves are bounded by ``batch``. An unbounded first DELETE would run inside
+        ``Ledger.__init__`` against a ~350,000-row backlog, and this store has already
+        been made unbootable once by work that raised in ``__init__`` (Migration 10). A
+        bounded sweep drains over successive opens and writes; the only cost of the bound
+        is that the backlog clears over minutes rather than in one stall.
+
+        Env-tunable: ``PRAMANYX_EVENTS_OPS_KEEP_DAYS`` / ``PRAMANYX_EVENTS_OPS_MAX_ROWS``;
+        set either to 0 to disable that half, and ``PRAMANYX_EVENTS_PRUNE_KINDS`` to an
+        empty string to disable the sweep entirely.
+
+        Portable SQL: `DELETE ... LIMIT` needs a compile-time option SQLite does not ship
+        by default and Postgres does not have at all, so both halves select the victim
+        seqs in a subquery and delete by primary key.
+        """
+        if kinds is None:
+            kinds = _swept_kinds()
+        kinds = tuple(kinds)
+        if not kinds:
+            return 0
+        if keep_days is None:
+            keep_days = _swept_keep_days()
+        if max_rows is None:
+            max_rows = int(os.environ.get("PRAMANYX_EVENTS_OPS_MAX_ROWS", "50000") or 0)
+        if batch is None:
+            batch = _EVENT_PRUNE_BATCH
+        marks = ",".join("?" for _ in kinds)
+        deleted = 0
+        with self._lock, self._conn:
+            if keep_days > 0:
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+                # Oldest first: a bounded sweep should drain the backlog from the old end,
+                # so repeated passes converge instead of nibbling at an arbitrary slice.
+                deleted += self._conn.execute(
+                    f"DELETE FROM events WHERE seq IN ("
+                    f"  SELECT seq FROM events WHERE kind IN ({marks}) AND at < ? "
+                    f"  ORDER BY seq ASC LIMIT ?)",
+                    (*kinds, cutoff, batch)).rowcount
+            if max_rows > 0:
+                # The cap is expressed as a seq threshold rather than a NOT IN over the
+                # kept window: `events_kind` is (kind, seq), so both the OFFSET probe and
+                # the delete ride it, and neither degrades into a scan as the table grows.
+                row = self._conn.execute(
+                    f"SELECT seq FROM events WHERE kind IN ({marks}) "
+                    f"ORDER BY seq DESC LIMIT 1 OFFSET ?", (*kinds, max_rows)).fetchone()
+                if row:
+                    deleted += self._conn.execute(
+                        f"DELETE FROM events WHERE seq IN ("
+                        f"  SELECT seq FROM events WHERE kind IN ({marks}) AND seq <= ? "
+                        f"  ORDER BY seq ASC LIMIT ?)",
+                        (*kinds, row[0], batch)).rowcount
+        return max(deleted, 0)
+
+    def pin_session_events(self, *, trace_id: str = "",
+                           investigation_id: str = "") -> int:
+        """MI-2 — mark a run's session events permanent. Returns rows pinned.
+
+        Called at VERDICT time, by whoever records the human judgement: retention follows
+        grading. Idempotent — a row already pinned keeps its original timestamp, so
+        re-grading does not rewrite when the evidence became permanent.
+
+        At least one selector is required. A pin with neither would match the whole table,
+        which is the kind of mistake that turns a retention policy into a no-op — the
+        exact failure this wave exists to fix, arriving from the other direction.
+        """
+        if not trace_id and not investigation_id:
+            raise ValueError(
+                "pin_session_events needs a trace_id or an investigation_id — "
+                "an unfiltered pin would make every row permanent")
+        clauses, args = [], []
+        if trace_id:
+            clauses.append("trace_id = ?")
+            args.append(trace_id)
+        if investigation_id:
+            clauses.append("investigation_id = ?")
+            args.append(investigation_id)
+        where = " OR ".join(clauses)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn:
+            return max(self._conn.execute(
+                f"UPDATE session_events SET pinned_at = ? "
+                f"WHERE pinned_at = '' AND ({where})", (now, *args)).rowcount, 0)

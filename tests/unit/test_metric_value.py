@@ -20,8 +20,8 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.db.connection import DuckDBConnection
-from aughor.semantic.metrics import MetricDefinition, compute_value, value_query
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.semantic.metrics import MetricDefinition, compute_value, value_query
 
 
 @pytest.fixture

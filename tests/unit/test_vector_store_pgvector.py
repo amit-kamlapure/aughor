@@ -1,6 +1,6 @@
 """The pgvector backend of the semantic-index seam, proven on a live server.
 
-Runs against a pgvector-enabled Postgres (AUGHOR_PGVECTOR_TEST_URL, defaulting to
+Runs against a pgvector-enabled Postgres (PRAMANYX_PGVECTOR_TEST_URL, defaulting to
 the local pgvector/pgvector:pg16 container) and SKIPS when none is reachable —
 similarity ordering and filter semantics are server behaviour, not mockable.
 """
@@ -10,10 +10,10 @@ import os
 
 import pytest
 
-from aughor.semantic import vector_store as V
+from pramanyx.semantic import vector_store as V
 
-PG_URL = os.environ.get("AUGHOR_PGVECTOR_TEST_URL",
-                        "postgres://postgres:aughor@localhost:5545/aughor")
+PG_URL = os.environ.get("PRAMANYX_PGVECTOR_TEST_URL",
+                        "postgres://postgres:pramanyx@localhost:5545/pramanyx")
 
 
 def _pgvector_available() -> bool:
@@ -35,10 +35,10 @@ pytestmark = pytest.mark.skipif(not _pgvector_available(),
 
 @pytest.fixture(autouse=True)
 def pg_backend(monkeypatch):
-    """Select the pgvector backend the way a deployment does: AUGHOR_DB_URL set,
+    """Select the pgvector backend the way a deployment does: PRAMANYX_DB_URL set,
     no explicit Qdrant URL. Each test gets a clean collection namespace."""
     monkeypatch.delenv(V.QDRANT_URL_ENV, raising=False)
-    monkeypatch.setenv("AUGHOR_DB_URL", PG_URL)
+    monkeypatch.setenv("PRAMANYX_DB_URL", PG_URL)
     assert V.backend() == "pgvector" and V.available()
     yield
     V.delete_by_filter("t_probe", V.match_filter("suite", "pgvector"))
@@ -67,7 +67,7 @@ def test_backend_selection_rules(monkeypatch):
     monkeypatch.setenv(V.QDRANT_URL_ENV, "http://somewhere:6333")
     assert V.backend() == "qdrant"          # explicit Qdrant URL pins Qdrant
     monkeypatch.delenv(V.QDRANT_URL_ENV, raising=False)
-    assert V.backend() == "pgvector"        # AUGHOR_DB_URL alone → pgvector
+    assert V.backend() == "pgvector"        # PRAMANYX_DB_URL alone → pgvector
 
 
 def test_upsert_search_orders_by_similarity_and_scores_cosine():

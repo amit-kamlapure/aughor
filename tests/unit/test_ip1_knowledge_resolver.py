@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.packs import knowledge
+from pramanyx.packs import knowledge
 
 
 def _package(root: Path, pid: str, *, layer: str, industry: str = "", status: str = "active",
@@ -43,8 +43,8 @@ def roots(tmp_path, monkeypatch):
     authored, imported = tmp_path / "authored", tmp_path / "imported"
     authored.mkdir()
     imported.mkdir()
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(authored))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(imported))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(authored))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(imported))
     knowledge.reset()
     yield authored, imported
     knowledge.reset()
@@ -154,7 +154,7 @@ def test_the_index_is_keyed_by_the_roots_and_reset_rereads_in_place(roots, tmp_p
 
     other = tmp_path / "other"
     _package(other, "base", layer="base", kb={"two": [{"id": "y"}]})
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(other))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(other))
     assert [f.name for f in knowledge.kb_files()] == ["two.json"]      # a moved root is never stale
 
     (other / "base" / "kb" / "three.json").write_text("[]", encoding="utf-8")
@@ -164,7 +164,7 @@ def test_the_index_is_keyed_by_the_roots_and_reset_rereads_in_place(roots, tmp_p
 
 
 def test_the_validator_checks_a_package_by_its_own_rules(roots):
-    from aughor.packs.validate import validate_pack
+    from pramanyx.packs.validate import validate_pack
 
     authored, _ = roots
     ok = _package(authored, "rail", layer="industry", industry="rail",
@@ -185,8 +185,8 @@ def test_the_validator_checks_a_package_by_its_own_rules(roots):
 
 def test_the_shipped_packages_validate_clean():
     """The eleven packages IP-1 moved the KB into, read from the session's authored copy."""
-    from aughor.packs.roots import authored_root
-    from aughor.packs.validate import validate_pack
+    from pramanyx.packs.roots import authored_root
+    from pramanyx.packs.validate import validate_pack
 
     knowledge.reset()
     ids = {"airline", "food-delivery", "logistics", "manufacturing", "retail", "saas",
@@ -201,8 +201,8 @@ def test_the_shipped_packages_validate_clean():
 def test_a_package_is_not_an_agent_template_and_the_roster_names_its_layer():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    from aughor.custom_agents.templates import get_template, list_templates
+    from pramanyx.api import app
+    from pramanyx.custom_agents.templates import get_template, list_templates
 
     template_ids = {t.get("id") or t.get("pack_id") for t in list_templates()}
     assert "retail" not in template_ids and "analytics-base" not in template_ids

@@ -647,7 +647,7 @@
           },
           "controls_lost": []
         },
-        "dataset": "/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_olist_business.jsonl",
+        "dataset": "/Users/amitkamlapure/dev/pramanyx/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_olist_business.jsonl",
         "connection": "baef6c3e/ecommerce",
         "reference_failed": [],
         "llm": {
@@ -657,7 +657,7 @@
           "fallback_chain": []
         },
         "ontology_available": null,
-        "ontology_source": "file:/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_olist_business_ontology.json",
+        "ontology_source": "file:/Users/amitkamlapure/dev/pramanyx/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_olist_business_ontology.json",
         "ontology_context_chars": 0,
         "arms_dropped": [],
         "framing_model_calls": 0,
@@ -1263,7 +1263,7 @@
           },
           "controls_lost": []
         },
-        "dataset": "/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_luxexperience_business.jsonl",
+        "dataset": "/Users/amitkamlapure/dev/pramanyx/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_luxexperience_business.jsonl",
         "connection": "914df862/luxexperience",
         "reference_failed": [],
         "llm": {
@@ -1273,7 +1273,7 @@
           "fallback_chain": []
         },
         "ontology_available": null,
-        "ontology_source": "file:/Users/amitkamlapure/dev/aughor/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_luxexperience_business_ontology.json",
+        "ontology_source": "file:/Users/amitkamlapure/dev/pramanyx/.claude/worktrees/ontology-first-platform-2417bc/evals/ablation_luxexperience_business_ontology.json",
         "ontology_context_chars": 0,
         "arms_dropped": [
           "framed_impact"

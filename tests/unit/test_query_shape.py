@@ -5,7 +5,7 @@ that were all "customer count by continent/country" in cosmetic disguises. The s
 must collapse the cosmetic variants and keep the genuinely-distinct cuts (different grain,
 different measure, different tables).
 """
-from aughor.sql.shape import query_signature, is_structural_duplicate, is_semantically_redundant
+from pramanyx.sql.shape import query_signature, is_structural_duplicate, is_semantically_redundant
 
 # The four findings the live run actually produced (verbatim shapes).
 F1 = ("SELECT continent, country, COUNT(DISTINCT customerID) AS customer_count "

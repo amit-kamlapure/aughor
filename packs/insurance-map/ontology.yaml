@@ -1,4 +1,4 @@
-# The insurance carriers and brokers industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 57 reference
+# The insurance carriers and brokers industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 57 reference
 # types) as an industry map: what an insurer's data is expected to hold, matched to tables by name or alias and
 # measured — expectations, never facts. Fifty-six objects: Risk Item is folded into InsuredAsset as a spelling of it
 # (the thing underwritten is the thing insured once the policy is issued); every other type is an object here.

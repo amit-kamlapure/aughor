@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.knowledge.briefing_content import (
+from pramanyx.knowledge.briefing_content import (
     DEFAULT_WINDOW_DAYS,
     BriefingContent,
     Section,
@@ -77,7 +77,7 @@ def test_an_unmeasurable_section_renders_without_a_number():
 # ── robustness: one failure never sinks the digest ──────────────────────────────────
 
 def test_a_failed_section_is_reported_not_dropped(monkeypatch):
-    import aughor.knowledge.briefing_content as D
+    import pramanyx.knowledge.briefing_content as D
 
     def _boom(*a, **k):
         raise RuntimeError("store down")
@@ -92,7 +92,7 @@ def test_a_failed_section_is_reported_not_dropped(monkeypatch):
 
 
 def test_the_digest_survives_every_section_failing(monkeypatch):
-    import aughor.knowledge.briefing_content as D
+    import pramanyx.knowledge.briefing_content as D
 
     def _boom(*a, **k):
         raise RuntimeError("everything is down")
@@ -112,7 +112,7 @@ def test_the_narrative_takes_no_model_call():
     have to notice."""
     import inspect
 
-    import aughor.knowledge.briefing_content as D
+    import pramanyx.knowledge.briefing_content as D
 
     src = inspect.getsource(D)
     for llm in ("complete(", "chat(", "llm", "generate("):

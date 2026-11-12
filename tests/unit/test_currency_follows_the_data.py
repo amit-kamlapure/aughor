@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.orgsettings import store as S
+from pramanyx.orgsettings import store as S
 
 
 def _org(monkeypatch, *, currency: str = "", industry: str = "") -> None:
@@ -52,8 +52,8 @@ def profiles(monkeypatch, tmp_path):
     """The profiles' INFERRED codes — Olist's reais and a franchise's euros on ONE connection, as
     measured on the user's instance (2026-10-23), and theLook's dollars on another. Each test keeps
     its confirmations in its own settings file."""
-    import aughor.business_profile.store as pstore
-    import aughor.db.registry as registry
+    import pramanyx.business_profile.store as pstore
+    import pramanyx.db.registry as registry
     monkeypatch.setattr(registry, "_SETTINGS_PATH", tmp_path / "connection_settings.json")
     monkeypatch.setattr(pstore, "load_raw", lambda conn, schema=None: (
         {"profile": {"currency_code": PROFILES[(conn, schema)], "confidence": 0.97}}
@@ -78,7 +78,7 @@ def test_a_confirmation_labels_its_own_dataset_and_no_other(profiles):
     S.confirm_currency("workspace", "olist", "brl", actor="amit")
     assert S.figure_currency("workspace", "olist") == "BRL"
     assert S.figure_currency("workspace", "main") == ""                      # still unconfirmed
-    from aughor.routers import profile as R
+    from pramanyx.routers import profile as R
     assert R.get_dataset_currency("workspace", "main")["inferred"] == "EUR"
     held = S.data_currency("workspace", "olist")
     assert (held["status"], held["confirmed_by"]) == ("confirmed", "amit") and held["confirmed_at"]
@@ -87,7 +87,7 @@ def test_a_confirmation_labels_its_own_dataset_and_no_other(profiles):
 def test_a_person_may_state_another_currency_and_clear_it(profiles):
     S.confirm_currency("8233e4fd", None, "USD", actor="amit")
     S.confirm_currency("8233e4fd", None, "EUR", actor="amit")
-    from aughor.db.registry import get_connection_settings
+    from pramanyx.db.registry import get_connection_settings
     assert get_connection_settings("8233e4fd")[S.CURRENCIES_KEY][""]["was"] == "USD"   # the change is kept
     assert S.figure_currency("8233e4fd") == "EUR"
     S.confirm_currency("8233e4fd", None, "", actor="amit")
@@ -130,8 +130,8 @@ def test_a_person_confirms_through_the_profile_door(profiles, monkeypatch):
     proposal and the confirmation the Profile page shows."""
     from fastapi import HTTPException
 
-    from aughor.routers import profile as R
-    monkeypatch.setattr("aughor.security.authz.caller", lambda: "amit")
+    from pramanyx.routers import profile as R
+    monkeypatch.setattr("pramanyx.security.authz.caller", lambda: "amit")
     before = R.get_dataset_currency("workspace", "olist")
     assert (before["status"], before["inferred"], before["code"]) == ("inferred", "BRL", "")
     after = R.put_dataset_currency(R._CurrencyBody(code="BRL"), "workspace", "olist")
@@ -145,5 +145,5 @@ def test_a_person_confirms_through_the_profile_door(profiles, monkeypatch):
                                          (0.142134, "0.1421"), (2.5, "2.50")])
 def test_a_reading_is_never_in_scientific_notation(value, said):
     """Gap 23: the approval panel read Olist's GMV as "1.34944e+07" where the decision was taken."""
-    from aughor.semantic.definition_report import plain_reading
+    from pramanyx.semantic.definition_report import plain_reading
     assert plain_reading(value) == said

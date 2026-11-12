@@ -218,7 +218,7 @@ function NarrativeText({
   // Every cited finding — a synthesized number may have come from any of them, so we
   // ground against all (primary = nearest) rather than only the nearest citation.
   const allInsightIds = Array.from(new Set(citations.map(c => c.insight_id).filter(Boolean)));
-  // Render-boundary backstop for float noise. Upstream (aughor/util/format.py) now rounds on
+  // Render-boundary backstop for float noise. Upstream (pramanyx/util/format.py) now rounds on
   // the way into the prompt AND at emit, so this is a no-op on fresh briefs — it exists to
   // correct prose synthesized before that landed, including anything still in the 2h cache.
   // Rounding only shortens a decimal run, so the GroundedNumber receipt still matches its cell.

@@ -13,7 +13,7 @@ These pin the rules that make that list trustworthy rather than merely long:
 """
 import pytest
 
-from aughor.semantic import metric_catalogue as MC
+from pramanyx.semantic import metric_catalogue as MC
 
 
 # ── doubles ───────────────────────────────────────────────────────────────────
@@ -71,13 +71,13 @@ def wired(monkeypatch):
                                   "COUNT(returned_at)/COUNT(id)", "returns erode margin")]),
     }
     monkeypatch.setattr(MC, "_defined_entries", lambda c, s=None: list(state["defined"]))
-    monkeypatch.setattr("aughor.business_profile.metric_kb.industry_scope",
+    monkeypatch.setattr("pramanyx.business_profile.metric_kb.industry_scope",
                         lambda c, s=None, **k: "retail")
-    monkeypatch.setattr("aughor.packs.knowledge.packages", lambda: tuple(state["packages"]))
-    monkeypatch.setattr("aughor.packs.loader.load_pack", lambda d: state["pack"])
-    monkeypatch.setattr("aughor.packs.bindings.load_binding",
+    monkeypatch.setattr("pramanyx.packs.knowledge.packages", lambda: tuple(state["packages"]))
+    monkeypatch.setattr("pramanyx.packs.loader.load_pack", lambda d: state["pack"])
+    monkeypatch.setattr("pramanyx.packs.bindings.load_binding",
                         lambda p, c, s="": {"bindings": dict(state["bound"])})
-    monkeypatch.setattr("aughor.business_profile.store.load",
+    monkeypatch.setattr("pramanyx.business_profile.store.load",
                         lambda c, s=None: state["profile"])
     return state
 
@@ -117,7 +117,7 @@ class TestBindingHonesty:
         assert row.status != "approved"
 
     def test_no_binding_record_means_nothing_is_bound(self, wired, monkeypatch):
-        monkeypatch.setattr("aughor.packs.bindings.load_binding", lambda p, c, s="": None)
+        monkeypatch.setattr("pramanyx.packs.bindings.load_binding", lambda p, c, s="": None)
         states = {r.name: r.state for r in MC.catalogue_for("c1")}
         assert states["gross_margin_rate"] == MC.STATE_NEEDS_BINDING
 
@@ -139,7 +139,7 @@ class TestFormulaHonesty:
         needs editing as the only one that cannot be."""
         wired["profile"] = _Profile([_NSM("Return Rate", "order_items.id", value_sql="")])
         saved = {}
-        monkeypatch.setattr("aughor.semantic.metrics.save_metric",
+        monkeypatch.setattr("pramanyx.semantic.metrics.save_metric",
                             lambda m, *a, **k: saved.update(m.model_dump()))
         MC.materialise("c1", "return_rate")
         assert saved["sql"] == "" and saved["status"] == "draft"
@@ -167,7 +167,7 @@ class TestPrecedence:
 class TestMaterialise:
     def test_it_scopes_to_the_connection_and_lands_draft(self, wired, monkeypatch):
         saved = {}
-        monkeypatch.setattr("aughor.semantic.metrics.save_metric",
+        monkeypatch.setattr("pramanyx.semantic.metrics.save_metric",
                             lambda m, *a, **k: saved.update(m.model_dump()))
         m = MC.materialise("c1", "gross_margin_rate", actor="amit")
         assert saved["connection"] == "c1", "a copy must not overwrite the global definition"
@@ -188,7 +188,7 @@ class TestMaterialise:
         draft WITHOUT SQL — never an unexecutable formula — carrying the package's formula and the
         roles it needs, for the person to write over this connection's columns."""
         saved = {}
-        monkeypatch.setattr("aughor.semantic.metrics.save_metric",
+        monkeypatch.setattr("pramanyx.semantic.metrics.save_metric",
                             lambda m, *a, **k: saved.update(m.model_dump()))
         MC.materialise("c1", "net_interest_margin")
         assert saved["sql"] == "" and saved["status"] == "draft"
@@ -201,7 +201,7 @@ class TestMaterialise:
 
     def test_the_explorer_metric_carries_its_provenance(self, wired, monkeypatch):
         saved = {}
-        monkeypatch.setattr("aughor.semantic.metrics.save_metric",
+        monkeypatch.setattr("pramanyx.semantic.metrics.save_metric",
                             lambda m, *a, **k: saved.update(m.model_dump()))
         MC.materialise("c1", "return_rate")
         assert saved["lineage"] == ["explorer"], "a reader must see where the formula came from"
@@ -212,8 +212,8 @@ def test_a_definition_is_listed_under_the_dataset_its_tables_are_in(monkeypatch,
     too: every definition on a connection of several datasets showed under each (2026-10-07). A
     definition whose tables name no dataset still shows everywhere — there is nothing to judge by.
     Read through the real store, whose dataset rule now decides it (`list_metrics(schema_name=…)`)."""
-    from aughor.semantic.metrics import MetricDefinition, save_metric
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
     for name, sql, tables in (("ride_completion_rate", "SELECT COUNT(*) * 1.0 / 1 FROM uber_ncr.ncr_ride_bookings", []),
                               ("Daily Sales", 'SELECT SUM(totalPrice) AS "Daily Sales" FROM main.sales_transactions', []),
                               ("orders", "COUNT(*)", ["orders"])):
@@ -228,7 +228,7 @@ def test_a_definition_is_listed_under_the_dataset_its_tables_are_in(monkeypatch,
 
 def test_a_bound_recipe_reads_the_table_its_role_was_bound_to(wired):
     """2026-10-13: a bound recipe carried no table, so its copy was `SELECT <expression>` with no FROM."""
-    from aughor.semantic.metric_statement import as_statement
+    from pramanyx.semantic.metric_statement import as_statement
     by = {r.name: r for r in MC.catalogue_for("c1")}
     assert by["gross_margin_rate"].tables == ["order_items"]
     assert by["net_interest_margin"].tables == []                    # its role is not bound: nothing to read yet

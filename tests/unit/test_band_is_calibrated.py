@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import random
 
-from aughor.record import scenario as S
+from pramanyx.record import scenario as S
 
 
 def _rolling_coverage(series: list[float], rule) -> float:
@@ -76,7 +76,7 @@ def test_every_caller_draws_the_one_band(monkeypatch):
     own copy of the formula (the Briefing kept one until 2026-11-06)."""
     import inspect
 
-    from aughor.briefing import expected
+    from pramanyx.briefing import expected
     for fn in (S.history_of, S.intervention, S.comparison):
         assert "band(" in inspect.getsource(fn), fn.__name__
     src = inspect.getsource(expected.expected_next)

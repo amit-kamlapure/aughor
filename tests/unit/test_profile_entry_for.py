@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.tools import profile_cache as pc
+from pramanyx.tools import profile_cache as pc
 
 
 def _entry(table: str, columns: dict[str, str], primary: str = "") -> dict:
@@ -56,7 +56,7 @@ def test_the_editor_proposes_the_uber_dates_again(workspace):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers.metrics import router
+    from pramanyx.routers.metrics import router
     app = FastAPI()
     app.include_router(router)
     body = TestClient(app).post("/metrics/proposals", json={
@@ -71,9 +71,9 @@ def test_the_editor_proposes_the_uber_dates_again(workspace):
 def test_the_date_rule_sets_an_uber_metrics_date_though_traffic_was_profiled_after_it(workspace, monkeypatch, tmp_path):
     """`ensure_dates` read ONE profile for the whole connection — the newest — so an approved metric on
     any other schema of it could not have its date set by rule. It now reads each metric's own tables."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    from aughor.semantic.metric_time import ensure_dates
-    from aughor.semantic.metrics import MetricDefinition, get_metric, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    from pramanyx.semantic.metric_time import ensure_dates
+    from pramanyx.semantic.metrics import MetricDefinition, get_metric, save_metric
     save_metric(MetricDefinition(name="rides", connection=workspace, label="Rides", sql="COUNT(*)",
                                  tables=["uber_ncr.ncr_ride_bookings"], status="approved", approved_by="test"))
     said = ensure_dates(workspace)

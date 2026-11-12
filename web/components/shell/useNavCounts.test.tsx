@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api", async importOriginal => ({ ...(await importOriginal<typeof import("@/lib/api")>()), ...api }));
 vi.mock("@/lib/record", () => ({
-  WAITING_CHANGED_EVENT: "aughor:waiting-changed",
+  WAITING_CHANGED_EVENT: "pramanyx:waiting-changed",
   getSetAside: vi.fn(async () => ({ active: [] })),
   listDecisions: vi.fn(async () => []),
   listInquiries: vi.fn(async () => []),

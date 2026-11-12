@@ -49,7 +49,7 @@ def api(path, method="GET", body=None, timeout=15):
 
 def start_server():
     proc = subprocess.Popen(
-        [PY, "-m", "uvicorn", "aughor.api:app", "--host", "0.0.0.0", "--port", "8000"],
+        [PY, "-m", "uvicorn", "pramanyx.api:app", "--host", "0.0.0.0", "--port", "8000"],
         cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     for _ in range(60):
@@ -143,7 +143,7 @@ def drill(iteration: int) -> list[str]:
 
 def main():
     iterations = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    subprocess.run(["pkill", "-f", "uvicorn aughor.api"], capture_output=True)
+    subprocess.run(["pkill", "-f", "uvicorn pramanyx.api"], capture_output=True)
     time.sleep(2)
     all_failures = []
     for i in range(1, iterations + 1):

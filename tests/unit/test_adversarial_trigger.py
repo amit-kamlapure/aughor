@@ -4,9 +4,9 @@ ReFoRCE-style tiering: an expensive skeptic pass should fire ONLY on decision-ch
 (a premise rejection — "X is not the problem" — or an abstention — "within normal variance"), not
 on every finding. `is_decision_changing_verdict` is the deterministic gate; the refuter itself
 (`run_refutation`) is gated by the materiality tier (`ada.adversarial_high_stakes`, auto-eligible)
-so the default path stays deterministic. See aughor/agent/orchestrator.py + investigate.py.
+so the default path stays deterministic. See pramanyx/agent/orchestrator.py + investigate.py.
 """
-from aughor.agent.orchestrator import is_decision_changing_verdict
+from pramanyx.agent.orchestrator import is_decision_changing_verdict
 
 
 def test_premise_rejection_is_decision_changing():
@@ -36,7 +36,7 @@ def test_the_full_tier_stays_deleted_and_high_stakes_is_unconditional():
     (Wave 3): the materiality test — a HIGH-confidence decision-changing verdict where
     the cap bites — was always the real gate, so the tier is now unconditional. What must
     NOT come back is the always-challenge tier, and neither name may re-register."""
-    from aughor.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV
+    from pramanyx.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV
 
     assert "deep_analysis.adversarial_verify" not in FLAG_ENV
     assert "deep_analysis.adversarial_high_stakes" not in FLAG_ENV
@@ -44,5 +44,5 @@ def test_the_full_tier_stays_deleted_and_high_stakes_is_unconditional():
 
 
 def test_refuter_alias_is_public_and_callable():
-    from aughor.agent.explore import run_refutation
+    from pramanyx.agent.explore import run_refutation
     assert callable(run_refutation)

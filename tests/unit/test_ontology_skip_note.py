@@ -1,6 +1,6 @@
-"""Actionable 'why is the Hub empty' note — see aughor/explorer/agent._ontology_skip_note.
+"""Actionable 'why is the Hub empty' note — see pramanyx/explorer/agent._ontology_skip_note.
 Turns a silent ontology-build failure into a specific, retryable status message."""
-from aughor.explorer.agent import _ontology_skip_note
+from pramanyx.explorer.agent import _ontology_skip_note
 
 
 def test_stage_and_error_is_specific():

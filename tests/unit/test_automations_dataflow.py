@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.dataflow import (CASTS, UncastableBinding, UnresolvedBinding,
+from pramanyx.automations.dataflow import (CASTS, UncastableBinding, UnresolvedBinding,
                                          alias_for, collect_refs, is_binding, resolve)
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
 def _effect(alias="", **config) -> Effect:
@@ -142,7 +142,7 @@ def _run(automation, dispatch):
     for real — this suite spent 89 seconds waiting before that was passed in. The retry
     policy is exercised by its own tests; what these assert is the chain.
     """
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     return run_automation(automation, dispatch=dispatch, persist=False,
                           probe=lambda *a, **k: True,
                           sleeper=lambda _s: None, rng=lambda: 0.0)
@@ -239,7 +239,7 @@ def test_an_unknown_step_is_also_a_422(client):
 # ── VA-9b: an automation is an agent operating, not a cron with side effects ─────
 
 def _agentic(*effects, agent="ag-analyst"):
-    from aughor.automations.models import Automation, Condition
+    from pramanyx.automations.models import Automation, Condition
     return Automation(name="agentic", conn_id="conn-a", agent_id=agent, max_retries=0,
                       conditions=[Condition(kind="schedule", config={"cron": "* * * * *"})],
                       effects=list(effects))
@@ -249,13 +249,13 @@ def test_every_effect_inherits_the_automations_agent():
     """Measured before this wave: only `investigate` consulted an agent, so every other
     step ran as nobody. An automation that is one agent's work must act as that agent
     throughout, or 'agentic' is a label on the surface and not a property of the run."""
-    from aughor.automations.engine import acting_agent
+    from pramanyx.automations.engine import acting_agent
     a = _agentic(_effect(), _effect())
     assert [acting_agent(e, a) for e in a.effects] == ["ag-analyst", "ag-analyst"]
 
 
 def test_a_step_may_delegate_to_its_own_agent():
-    from aughor.automations.engine import acting_agent
+    from pramanyx.automations.engine import acting_agent
     a = _agentic(_effect(), _effect(agent_id="ag-reviewer"))
     assert [acting_agent(e, a) for e in a.effects] == ["ag-analyst", "ag-reviewer"]
 
@@ -264,8 +264,8 @@ def test_a_governed_action_is_attributed_to_the_AGENT_not_the_mechanism():
     """`automation:<id>` names a cron. `agent:<id>` names an actor with a charter,
     instructions, bound documents and an owner — and parses as a principal ref, so RC-4's
     identity plane resolves it like any other."""
-    from aughor.automations.engine import acting_agent_ref
-    from aughor.identity import parse_ref
+    from pramanyx.automations.engine import acting_agent_ref
+    from pramanyx.identity import parse_ref
     a = _agentic(_effect())
     ref = acting_agent_ref(a.effects[0], a)
     assert ref == "agent:ag-analyst"
@@ -276,7 +276,7 @@ def test_a_governed_action_is_attributed_to_the_AGENT_not_the_mechanism():
 def test_an_unattributed_automation_still_records_the_mechanism():
     """Every automation written before this field has agent_id="" and must keep the
     attribution it already has — nothing already stored changes meaning."""
-    from aughor.automations.engine import acting_agent_ref
+    from pramanyx.automations.engine import acting_agent_ref
     a = _automation(_effect())          # no agent
     assert acting_agent_ref(a.effects[0], a).startswith("automation:")
 
@@ -294,7 +294,7 @@ def test_the_run_and_every_outcome_record_who_acted():
 def test_a_gated_run_still_records_the_agent():
     """A run that did nothing still did nothing on someone's behalf; an agent's history
     is incomplete if it holds only the ticks that acted."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     a = _agentic(_effect())
     a = a.model_copy(update={"enabled": False})
     run = run_automation(a, persist=False, dispatch=lambda e, au: None,
@@ -303,7 +303,7 @@ def test_a_gated_run_still_records_the_agent():
 
 
 def test_the_graph_says_which_agent_acts_and_which_step_delegates():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     g = build_graph(_agentic(_effect(), _effect(agent_id="ag-reviewer")))
     steps = [n for n in g["nodes"] if n["type"] == "effect"]
     assert g["agent_id"] == "ag-analyst"
@@ -335,7 +335,7 @@ def test_a_run_emits_ONE_TRACE_that_Activity_Runs_can_group_by():
     the whole run groups, and clicking it lands on exactly this AutomationRun rather than
     on a second correlation key kept in sync by hand."""
     seen: list[str] = []
-    import aughor.obs.session_log as slog
+    import pramanyx.obs.session_log as slog
     real = slog.emit
 
     def _capture(kind, **kw):
@@ -360,7 +360,7 @@ def test_a_broken_telemetry_sink_never_fails_the_run():
     """Telemetry is best-effort everywhere else in this engine and must be here too."""
     import pytest as _pytest
     mp = _pytest.MonkeyPatch()
-    mp.setattr("aughor.telemetry.mlflow_tool_span",
+    mp.setattr("pramanyx.telemetry.mlflow_tool_span",
                lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sink down")))
     try:
         run = _run(_automation(_effect()),
@@ -380,7 +380,7 @@ def test_a_step_nobody_consumes_is_not_waited_for():
     Activity when it lands. Waiting unconditionally would turn every existing nightly run
     into a tick that blocks for its whole token budget, for no reader.
     """
-    from aughor.automations.engine import AWAIT_KEY
+    from pramanyx.automations.engine import AWAIT_KEY
 
     seen: list[dict] = []
 
@@ -396,7 +396,7 @@ def test_a_step_nobody_consumes_is_not_waited_for():
 def test_a_step_SOMETHING_BINDS_TO_is_waited_for():
     """The whole point: `{"$from": "step1.answer"}` means step 2 needs step 1's answer,
     and there is no answer until the run that produces it has finished."""
-    from aughor.automations.engine import AWAIT_KEY
+    from pramanyx.automations.engine import AWAIT_KEY
 
     seen: list[dict] = []
 
@@ -418,7 +418,7 @@ def test_the_wait_marker_follows_the_ALIAS_not_the_position():
     """A named step referenced by name must be waited for, and its unnamed neighbour
     must not — the marker is derived from `collect_refs`, so it tracks whatever the
     graph would draw an edge from."""
-    from aughor.automations.engine import AWAIT_KEY
+    from pramanyx.automations.engine import AWAIT_KEY
 
     seen: list[dict] = []
 
@@ -600,7 +600,7 @@ def test_an_unknown_cast_is_refused_at_SAVE_and_the_message_names_the_whole_set(
     """A chain that would raise at 09:00 against somebody else's data is one that "looks
     schedulable" — K1's expensive kind of broken. And a refusal that does not say what IS
     accepted sends the reader to the source: `"int"` is one word from `integer`."""
-    from aughor.automations.dataflow import validate_chain
+    from pramanyx.automations.dataflow import validate_chain
     problem = validate_chain([Effect(kind="slack_post", alias="post", config={
         "bot_id": "sb_1", "channel": {"$from": "rows.c", "$as": "int"}})])
     assert problem and "not a conversion" in problem

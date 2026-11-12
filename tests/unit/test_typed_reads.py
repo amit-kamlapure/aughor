@@ -17,11 +17,11 @@ import pytest
 
 
 DUCKDB_BACKED = [
-    ("aughor.connectors.warehouse.motherduck", "MotherDuckConnection", "_conn", "aughor.connectors.warehouse.motherduck"),
-    ("aughor.connectors.file.s3", "S3Connection", "_duckdb", "aughor.connectors.file.s3"),
-    ("aughor.connectors.api.gsheets", "GoogleSheetsConnector", "_duckdb", "aughor.connectors.api.gsheets"),
-    ("aughor.connectors.federated", "FederatedConnection", "_duckdb", "aughor.connectors.federated"),
-    ("aughor.connectors.api.stripe", "StripeConnector", "_duckdb", "aughor.connectors.api.base_sync"),
+    ("pramanyx.connectors.warehouse.motherduck", "MotherDuckConnection", "_conn", "pramanyx.connectors.warehouse.motherduck"),
+    ("pramanyx.connectors.file.s3", "S3Connection", "_duckdb", "pramanyx.connectors.file.s3"),
+    ("pramanyx.connectors.api.gsheets", "GoogleSheetsConnector", "_duckdb", "pramanyx.connectors.api.gsheets"),
+    ("pramanyx.connectors.federated", "FederatedConnection", "_duckdb", "pramanyx.connectors.federated"),
+    ("pramanyx.connectors.api.stripe", "StripeConnector", "_duckdb", "pramanyx.connectors.api.base_sync"),
 ]
 
 
@@ -77,7 +77,7 @@ class _Cursor:
 
 
 def _snowflake(monkeypatch):
-    import aughor.connectors.warehouse.snowflake as S
+    import pramanyx.connectors.warehouse.snowflake as S
     monkeypatch.setattr(S, "MAX_ROWS", 2)
     conn = S.SnowflakeConnection.__new__(S.SnowflakeConnection)
     rows = [(i, f"x{i}") for i in range(5)]
@@ -89,7 +89,7 @@ def _snowflake(monkeypatch):
 def _mysql(monkeypatch):
     from pymysql.constants import FIELD_TYPE
 
-    import aughor.connectors.warehouse.mysql as M
+    import pramanyx.connectors.warehouse.mysql as M
     monkeypatch.setattr(M, "MAX_ROWS", 2)
     conn = M.MySQLConnection.__new__(M.MySQLConnection)
     rows = [{"n": i, "s": f"x{i}"} for i in range(5)]
@@ -101,7 +101,7 @@ def _mysql(monkeypatch):
 
 
 def _exasol(monkeypatch):
-    import aughor.connectors.warehouse.exasol as E
+    import pramanyx.connectors.warehouse.exasol as E
     monkeypatch.setattr(E, "MAX_ROWS", 2)
     conn = E.ExasolConnection.__new__(E.ExasolConnection)
     rows = [(i, f"x{i}") for i in range(5)]
@@ -118,7 +118,7 @@ def _bigquery(monkeypatch):
     pytest.importorskip("google.cloud.bigquery")
     from google.cloud.bigquery import SchemaField
 
-    import aughor.connectors.warehouse.bigquery as B
+    import pramanyx.connectors.warehouse.bigquery as B
     monkeypatch.setattr(B, "MAX_ROWS", 2)
     conn = B.BigQueryConnection.__new__(B.BigQueryConnection)
     conn._project, conn._dataset = "p", "d"
@@ -163,5 +163,5 @@ def test_a_warehouse_offers_typed_values_named_for_the_stage_and_a_bounded_read(
     ("DATETIME", None, None, "TIMESTAMP"), ("GEOGRAPHY", None, None, "GEOGRAPHY"), ("", None, None, ""),
 ])
 def test_a_driver_type_is_named_the_way_the_stage_reads_it(kind, precision, scale, named):
-    from aughor.connectors.base import stage_type
+    from pramanyx.connectors.base import stage_type
     assert stage_type(kind, precision, scale) == named

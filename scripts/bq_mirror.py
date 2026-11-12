@@ -12,7 +12,7 @@ run idempotent.
 
 Usage:
   python scripts/bq_mirror.py --project MY_PROJECT \
-      --credentials ~/.config/aughor/bq-sa.json \
+      --credentials ~/.config/pramanyx/bq-sa.json \
       [--source bigquery-public-data.thelook_ecommerce] [--dest thelook]
 
 The credentials flag is optional; without it the client uses Application

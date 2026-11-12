@@ -18,11 +18,11 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
-from aughor.kernel import cancellation, metering
-from aughor.kernel.cancellation import RunStopped, StopScope
-from aughor.kernel.concurrency import ContextThreadPoolExecutor
-from aughor.llm import provider as P
-from aughor.llm.provider import LLMProvider
+from pramanyx.kernel import cancellation, metering
+from pramanyx.kernel.cancellation import RunStopped, StopScope
+from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
+from pramanyx.llm import provider as P
+from pramanyx.llm.provider import LLMProvider
 
 
 # ── the scope ─────────────────────────────────────────────────────────────────
@@ -132,9 +132,9 @@ def test_a_stopped_run_sends_no_request():
 
 def test_a_stopped_analyst_sends_no_next_tool_choice(monkeypatch):
     """The tool-choice request skips `_run_resilient`; it must still honour the stop."""
-    from aughor.llm.faux import set_responses
+    from pramanyx.llm.faux import set_responses
 
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
     prov = LLMProvider(backend="faux", role="coder")
     set_responses(["the queued turn"])
     with cancellation.scope() as s:
@@ -193,7 +193,7 @@ def test_no_retry_is_sent_after_the_stop(monkeypatch):
 async def test_a_reader_that_leaves_stops_the_body_at_its_next_model_call(monkeypatch):
     """`emit` only reaches code that emits. A phase issues several model calls between
     emits, so the stop has to reach the funnel itself."""
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     started, outcome = threading.Event(), {}
 
@@ -224,7 +224,7 @@ async def test_a_reader_that_leaves_stops_the_body_at_its_next_model_call(monkey
 @pytest.mark.anyio
 async def test_a_body_that_finished_is_never_stopped(monkeypatch):
     """Work a finished answer handed to a background thread must outlive the turn."""
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     seen: dict = {}
 
@@ -240,7 +240,7 @@ async def test_a_body_that_finished_is_never_stopped(monkeypatch):
 # ── the synthesis rescue ──────────────────────────────────────────────────────
 
 def test_an_abandoned_rescue_sends_nothing_more(monkeypatch):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
 
     release, after = threading.Event(), {}
 
@@ -254,7 +254,7 @@ def test_an_abandoned_rescue_sends_nothing_more(monkeypatch):
                 after["stopped"] = True
                 raise
 
-    monkeypatch.setenv("AUGHOR_SYNTH_FAST_TIMEOUT_S", "0.05")
+    monkeypatch.setenv("PRAMANYX_SYNTH_FAST_TIMEOUT_S", "0.05")
     monkeypatch.setattr(I, "_provider", lambda role: _SlowFast())
     assert I._fast_synthesis_rescue("s", "u", _Out) is None
     release.set()

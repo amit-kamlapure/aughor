@@ -16,8 +16,8 @@ The regex is the cause; the binding is what the reader sees. Both are asserted h
 """
 from types import SimpleNamespace
 
-from aughor.agent.investigate import _align_narrator_findings
-from aughor.explorer.verify import _salient_number_pairs, grounded_fraction
+from pramanyx.agent.investigate import _align_narrator_findings
+from pramanyx.explorer.verify import _salient_number_pairs, grounded_fraction
 
 # The two results whose narration was swapped, with the rows the live run returned.
 COUNTRY_ROWS = [

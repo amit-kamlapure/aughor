@@ -1,4 +1,4 @@
-"""The PII redactor's second, validated set (2026-10-27; `aughor/security/pii.py`).
+"""The PII redactor's second, validated set (2026-10-27; `pramanyx/security/pii.py`).
 
 Measured when mail and Google comments began arriving into the Record: the redactor caught emails and US phones and let
 international numbers, grouped card numbers and IBANs through. What these hold: each of those is redacted in prose and
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.security.pii import PiiScanner, redact_text
+from pramanyx.security.pii import PiiScanner, redact_text
 
 
 @pytest.mark.parametrize("said, kept", [

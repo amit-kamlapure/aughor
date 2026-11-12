@@ -21,26 +21,26 @@ import importlib
 
 import pytest
 
-from aughor.kernel.lifecycle import history
+from pramanyx.kernel.lifecycle import history
 
 
 @pytest.fixture
 def _on(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
 # ── canvas ────────────────────────────────────────────────────────────────────
 
 def _canvas_store(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_CANVAS_DB", str(tmp_path / "canvas.db"))
-    from aughor.canvas import store as cv
+    monkeypatch.setenv("PRAMANYX_CANVAS_DB", str(tmp_path / "canvas.db"))
+    from pramanyx.canvas import store as cv
     importlib.reload(cv)
     return cv
 
 
 def test_canvas_update_records_a_revision(_on, monkeypatch, tmp_path):
     cv = _canvas_store(monkeypatch, tmp_path)
-    from aughor.canvas.models import CanvasScope
+    from pramanyx.canvas.models import CanvasScope
 
     c = cv.create_canvas("v1", [CanvasScope(connection_id="c1", tables=["t1"])])
     cv.update_canvas(c.id, name="v2", scopes=[CanvasScope(connection_id="c1", tables=["t2"])])
@@ -54,15 +54,15 @@ def test_canvas_update_records_a_revision(_on, monkeypatch, tmp_path):
 
 
 def _dash_store(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_DASHBOARD_DB", str(tmp_path / "dash.db"))
-    from aughor.cards import store as ds
+    monkeypatch.setenv("PRAMANYX_DASHBOARD_DB", str(tmp_path / "dash.db"))
+    from pramanyx.cards import store as ds
     importlib.reload(ds)
     return ds
 
 
 def test_card_update_records_a_revision_but_create_does_not(_on, monkeypatch, tmp_path):
     ds = _dash_store(monkeypatch, tmp_path)
-    from aughor.cards.models import StoredCard
+    from pramanyx.cards.models import StoredCard
 
     card = ds.upsert_card(StoredCard(connection_id="c1", title="v1", sql="SELECT 1"))
     assert history("dashboard", f"dashboard:{card.id}") == [], \
@@ -76,8 +76,8 @@ def test_card_update_records_a_revision_but_create_does_not(_on, monkeypatch, tm
 
 
 def _evals_store(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
-    from aughor.evals import store as ev
+    monkeypatch.setenv("PRAMANYX_EVALS_DB", str(tmp_path / "evals.db"))
+    from pramanyx.evals import store as ev
     importlib.reload(ev)
     return ev
 

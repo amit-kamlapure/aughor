@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from aughor.packs import knowledge
-from aughor.semantic import metric_map as M
+from pramanyx.packs import knowledge
+from pramanyx.semantic import metric_map as M
 
 
 def _map_for(industry: str = "") -> M.MetricMap:
@@ -122,7 +122,7 @@ def test_the_workspaces_airline_tables_are_each_placed_where_an_airline_reads_th
     """2026-10-26, the user: "add the airline words" — on the workspace's main (re-profiled an airline), baggage,
     upgrades, crew, boarding passes and airports were placed in no area, and flights only under capacity, so on-time
     performance had no table to be written over."""
-    from aughor.semantic.metric_coverage import TableFacts, place_table
+    from pramanyx.semantic.metric_coverage import TableFacts, place_table
     areas = _map_for("airline").readable
     placed = {t: {p.area for p in place_table(TableFacts(t), areas)}
               for t in ("baggage", "upgrades", "crew", "crew_assignments", "boarding_passes", "airports", "flights")}

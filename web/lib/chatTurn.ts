@@ -18,7 +18,7 @@
  *     projects nor has an explicit fallback. That is the open-model discipline
  *     the reducer could not offer.
  *   • text parts — the adapter stamps each block's channel
- *     (`providerMetadata.aughor.channel`), so streaming prose lands in
+ *     (`providerMetadata.pramanyx.channel`), so streaming prose lands in
  *     `headlineStream` / `narrativeStream` / `reportStream` exactly as the
  *     `*_delta` actions used to write it. Settled values arrive as data parts
  *     (`data-headline`, `data-narrative`, `data-answer`) and win, clearing the
@@ -45,7 +45,7 @@ import type {
   SubQuestionAnswer,
 } from "@/lib/types";
 
-import type { AughorUIDataTypes } from "./aughorUIDataTypes";
+import type { PramanyxUIDataTypes } from "./pramanyxUIDataTypes";
 import { synthesizeResumedUserMessage } from "./uiMessageAdapter";
 
 // Re-export so surfaces can keep saying `InvPhase` without naming the types module.
@@ -53,7 +53,7 @@ import { synthesizeResumedUserMessage } from "./uiMessageAdapter";
 export type { InvestigationPhase as InvPhase };
 
 /** A message whose data parts are Pramanyx's declared vocabulary. */
-export type AughorUIMessage = UIMessage<unknown, AughorUIDataTypes>;
+export type PramanyxUIMessage = UIMessage<unknown, PramanyxUIDataTypes>;
 
 // ── The turn shape (moved verbatim from the retired reducer) ──────────────────
 
@@ -399,7 +399,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
 };
 
 // The one shared sentence for interrupted work (unified plan Layer 0.4) — mirrors
-// aughor/kernel/jobs.py UNCERTAIN_RESULT. Interrupted ≠ failed: "failed" claims a
+// pramanyx/kernel/jobs.py UNCERTAIN_RESULT. Interrupted ≠ failed: "failed" claims a
 // fact nobody observed, so every surface that gives up on learning the truth says
 // this instead of coining its own wording.
 export const UNCERTAIN_RESULT = "its result is uncertain and was not replayed";
@@ -741,14 +741,14 @@ export interface ProjectTurnOptions {
 
 /** Read a text part's channel stamp; unstamped text reads as narrative prose. */
 function textChannel(part: { providerMetadata?: Record<string, unknown> }): string {
-  const aughor = part.providerMetadata?.["aughor"] as { channel?: string } | undefined;
-  return aughor?.channel ?? "narrative";
+  const pramanyx = part.providerMetadata?.["pramanyx"] as { channel?: string } | undefined;
+  return pramanyx?.channel ?? "narrative";
 }
 
 export interface ProjectedThreadTurn {
   turn: ChatTurn;
-  userMsg: AughorUIMessage;
-  assistantMsg?: AughorUIMessage;
+  userMsg: PramanyxUIMessage;
+  assistantMsg?: PramanyxUIMessage;
 }
 
 /**
@@ -759,7 +759,7 @@ export interface ProjectedThreadTurn {
  * so the pairing rule cannot fork.
  */
 export function projectThread(
-  messages: AughorUIMessage[],
+  messages: PramanyxUIMessage[],
   opts: {
     /** True while the SDK is mid-stream (status submitted | streaming). */
     streaming?: boolean;
@@ -769,8 +769,8 @@ export function projectThread(
     timingFor?: (userMessageId: string) => { startedAt: number; elapsedMs: number | null } | undefined;
   } = {},
 ): ProjectedThreadTurn[] {
-  const pairs: { userMsg: AughorUIMessage; assistantMsg?: AughorUIMessage }[] = [];
-  let pendingUser: AughorUIMessage | null = null;
+  const pairs: { userMsg: PramanyxUIMessage; assistantMsg?: PramanyxUIMessage }[] = [];
+  let pendingUser: PramanyxUIMessage | null = null;
   for (const m of messages) {
     if (m.role === "user") {
       if (pendingUser) pairs.push({ userMsg: pendingUser });
@@ -786,7 +786,7 @@ export function projectThread(
         // the user side from the question it stashed off the wire's `start`
         // frame, so the turn renders whole.
         pairs.push({
-          userMsg: synthesizeResumedUserMessage(m) as AughorUIMessage,
+          userMsg: synthesizeResumedUserMessage(m) as PramanyxUIMessage,
           assistantMsg: m,
         });
       }
@@ -858,7 +858,7 @@ function seedHop(hops: Map<string, DelegatedHop>,
 
 export function projectTurn(
   question: string,
-  message: AughorUIMessage | undefined,
+  message: PramanyxUIMessage | undefined,
   opts: ProjectTurnOptions = {},
 ): ChatTurn {
   const t: ChatTurn = {

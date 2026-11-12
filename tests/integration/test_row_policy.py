@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import duckdb
 
-import aughor.licensing as _lic
-import aughor.rbac.resolver as _resolver
-import aughor.rbac.row_policy as rp
-import aughor.security.authz as _authz
-from aughor.db import registry
-from aughor.db.connection import open_connection_for
-from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
+import pramanyx.licensing as _lic
+import pramanyx.rbac.resolver as _resolver
+import pramanyx.rbac.row_policy as rp
+import pramanyx.security.authz as _authz
+from pramanyx.db import registry
+from pramanyx.db.connection import open_connection_for
+from pramanyx.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
 
 
 def _orders(tmp_path, name):
@@ -93,7 +93,7 @@ def test_enforced_on_non_run_connector_path(monkeypatch, tmp_path):
     use works outside _run."""
     import sqlite3
 
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
     _enable(monkeypatch, roles=["viewer"])
     dbf = tmp_path / "rp.sqlite"
     con = sqlite3.connect(str(dbf))

@@ -1,5 +1,5 @@
-"""Phase 7 of the 2027 study, P7-3 — the pack kit (`aughor/packs/kit.py`) and a pack's measured record
-(`aughor/packs/record.py`).
+"""Phase 7 of the 2027 study, P7-3 — the pack kit (`pramanyx/packs/kit.py`) and a pack's measured record
+(`pramanyx/packs/record.py`).
 
 What these hold: the kit refuses what is not a pack of declarations (no manifest, a path outside the
 pack, a code file), runs the static gate without writing, and writes a passing pack as a draft under the
@@ -13,10 +13,10 @@ import uuid
 
 import pytest
 
-from aughor.packs import kit as KIT
-from aughor.packs import record as PR
-from aughor.packs.loader import load_pack
-from aughor.routers import packs as R
+from pramanyx.packs import kit as KIT
+from pramanyx.packs import record as PR
+from pramanyx.packs.loader import load_pack
+from pramanyx.routers import packs as R
 
 
 def _files(pack_id: str, **extra) -> dict[str, str]:
@@ -29,7 +29,7 @@ def _files(pack_id: str, **extra) -> dict[str, str]:
 
 @pytest.fixture(autouse=True)
 def _imported_root(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
 
 
 def test_the_kit_refuses_what_is_not_a_pack_of_declarations():
@@ -48,7 +48,7 @@ def test_the_kit_refuses_what_is_not_a_pack_of_declarations():
 
 
 def test_a_passing_pack_is_checked_without_writing_and_uploaded_as_a_draft_with_its_provenance():
-    from aughor.packs.roots import imported_root
+    from pramanyx.packs.roots import imported_root
     pid = "acme-" + uuid.uuid4().hex[:6]
     verdict = KIT.check(_files(pid))
     assert verdict["ok"] and verdict["pack_id"] == pid and verdict["declares"]["monitors"] == 1 and verdict["declares"]["missions"] == 1
@@ -59,7 +59,7 @@ def test_a_passing_pack_is_checked_without_writing_and_uploaded_as_a_draft_with_
     assert pack.manifest.status == "draft" and pack.manifest.source == "upload" and pack.manifest.source_url == "https://example.com/acme-pack"
     raw = (imported_root() / pid / "pack.yaml").read_text()
     assert "uploaded_by: user:ana" in raw and "uploaded_at:" in raw
-    from aughor.packs.roots import all_pack_ids
+    from pramanyx.packs.roots import all_pack_ids
     assert pid in all_pack_ids()
     with pytest.raises(KIT.KitRefused, match="already exists"):
         KIT.upload(_files(pid), by="user:ana")
@@ -89,8 +89,8 @@ def test_the_guide_is_read_from_the_models_and_names_the_gates():
 
 
 def test_a_packs_record_counts_what_installs_found_and_demotes_only_on_the_record(monkeypatch):
-    from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
-    from aughor.packs.ontology_map import apply_core_claims, record_claims, resolve_ontology
+    from pramanyx.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
+    from pramanyx.packs.ontology_map import apply_core_claims, record_claims, resolve_ontology
     pid = "rec-" + uuid.uuid4().hex[:6]
     KIT.upload(_files(pid, **{"ontology.yaml": ("objects:\n  - {name: Order, aliases: [orders]}\n  - {name: Customer, aliases: [customers]}\n"
                                                 "  - {name: Ghost, aliases: [ghosts]}\nlinks:\n"
@@ -118,7 +118,7 @@ def test_a_packs_record_counts_what_installs_found_and_demotes_only_on_the_recor
     with pytest.raises(ValueError, match="says why"):
         PR.demote(pid, by="user:ana", force=True)
     pushed: list = []          # Arc OC-6, D6 — listed subscribable, and now pushed to the people subscribed to it
-    monkeypatch.setattr("aughor.record.subscriptions.notify", lambda kind, payload, conn_id="": pushed.append((kind, payload["text"])))
+    monkeypatch.setattr("pramanyx.record.subscriptions.notify", lambda kind, payload, conn_id="": pushed.append((kind, payload["text"])))
     out = PR.demote(pid, by="user:ana", force=True, why="the author withdrew it")
     assert out["status"] == "deprecated" and out["demoted"] and any(j["kind"] == "pack.demoted" and j.get("forced") for j in out["journal"])
     assert pushed == [("pack.demoted", f"The pack {pid} was demoted to deprecated: the author withdrew it")]

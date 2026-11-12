@@ -4,8 +4,8 @@
 # version under you (Track A6, docs/TENX_PROGRAM_2026-11-05.md; `latest` is nowhere).
 # A production manifest is Track E's, written when there is a second host to run it on.
 services:
-  # Only needed when AUGHOR_QDRANT_URL points here — the default install runs Qdrant
-  # EMBEDDED at AUGHOR_QDRANT_PATH and never opens a port.
+  # Only needed when PRAMANYX_QDRANT_URL points here — the default install runs Qdrant
+  # EMBEDDED at PRAMANYX_QDRANT_PATH and never opens a port.
   qdrant:
     image: qdrant/qdrant:v1.15.4@sha256:6ac4807063bbecddca0250bfbcff52acf18c22263b904d12919349e6d0a408f1
     ports:
@@ -18,7 +18,7 @@ services:
 
   # Opt-in observability backend for MLflow tracing:
   #   docker compose --profile obs up -d mlflow
-  # then set AUGHOR_MLFLOW_TRACKING_URI=http://localhost:5001 — that env var is
+  # then set PRAMANYX_MLFLOW_TRACKING_URI=http://localhost:5001 — that env var is
   # the on switch; there is no feature flag. Default `docker compose up` is
   # unchanged — the profile keeps this service off.
   mlflow:
@@ -35,7 +35,7 @@ services:
 
   # Opt-in OTLP backend (VA-3):
   #   docker compose --profile obs up -d jaeger
-  # then set AUGHOR_OTLP_ENDPOINT=http://localhost:4318/v1/traces and restart the
+  # then set PRAMANYX_OTLP_ENDPOINT=http://localhost:4318/v1/traces and restart the
   # API; the UI is http://localhost:16686. Setting the endpoint is the on switch —
   # unset means no export and zero egress, so the default `docker compose up` and
   # an unconfigured install are both unchanged.
@@ -52,8 +52,8 @@ services:
     profiles: ["obs"]
     ports:
       - "127.0.0.1:16686:16686"   # UI
-      - "127.0.0.1:4318:4318"     # OTLP/HTTP — the default AUGHOR_OTLP_PROTOCOL
-      - "127.0.0.1:4317:4317"     # OTLP/gRPC — AUGHOR_OTLP_PROTOCOL=grpc
+      - "127.0.0.1:4318:4318"     # OTLP/HTTP — the default PRAMANYX_OTLP_PROTOCOL
+      - "127.0.0.1:4317:4317"     # OTLP/gRPC — PRAMANYX_OTLP_PROTOCOL=grpc
 
 volumes:
   qdrant_data:

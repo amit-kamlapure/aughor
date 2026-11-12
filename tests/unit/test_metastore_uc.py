@@ -10,8 +10,8 @@ import asyncio
 
 import pytest
 
-import aughor.routers.metastore as uc
-from aughor.metastore import upsert_catalog, upsert_schema
+import pramanyx.routers.metastore as uc
+from pramanyx.metastore import upsert_catalog, upsert_schema
 
 
 def _run(coro):
@@ -20,7 +20,7 @@ def _run(coro):
 
 @pytest.fixture()
 def seeded(tmp_path, monkeypatch):
-    import aughor.metastore.store as ms_store
+    import pramanyx.metastore.store as ms_store
     monkeypatch.setattr(ms_store, "_DB_PATH", tmp_path / "metastore.db")
     upsert_catalog("workspace", name="Workspace", conn_id="workspace")
     upsert_schema("workspace", "missimi")

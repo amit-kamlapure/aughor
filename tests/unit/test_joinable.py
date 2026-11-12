@@ -3,8 +3,8 @@ coincidence is demoted to DO-NOT-JOIN before generation (prevention, not recover
 Hermetic: the overlap probe is stubbed to drive the verdict deterministically."""
 from __future__ import annotations
 
-import aughor.sql.join_guard as jg
-from aughor.sql.join_guard import VerifiedJoin, render_verified_joins
+import pramanyx.sql.join_guard as jg
+from pramanyx.sql.join_guard import VerifiedJoin, render_verified_joins
 
 
 def test_verify_rejects_value_disjoint_keeps_real_fk(monkeypatch):
@@ -106,9 +106,9 @@ def test_a_verified_edge_without_counts_keeps_its_verification_but_reports_no_nu
     not contain. Turning it into `-1.0` alone then LOST the verification downstream, so an
     explorer-checked FK was demoted to "name match, not probed". The verification travels
     on its own field."""
-    from aughor.sql import join_guard as jg
-    from aughor.ontology.builder import apply_join_verifications
-    from aughor.ontology.models import OntologyGraph, OntologyRelationship
+    from pramanyx.sql import join_guard as jg
+    from pramanyx.ontology.builder import apply_join_verifications
+    from pramanyx.ontology.models import OntologyGraph, OntologyRelationship
 
     jg._VERIFIED_JOIN_CACHE.clear()
     try:
@@ -142,8 +142,8 @@ def test_a_verified_edge_without_counts_keeps_its_verification_but_reports_no_nu
         assert rel.value_overlap is None
 
         # …which the warrant class reports honestly: checked, but not measured here.
-        from aughor.ontology.graph_warrant import warrant_for
-        from aughor.ontology.context_graph import Provenance
+        from pramanyx.ontology.graph_warrant import warrant_for
+        from pramanyx.ontology.context_graph import Provenance
         v = warrant_for(Provenance(source="join_guard",
                                    note=f"unprobed join_confidence={rel.join_confidence}"))
         assert v.warrant == "declared"
@@ -152,7 +152,7 @@ def test_a_verified_edge_without_counts_keeps_its_verification_but_reports_no_nu
 
 
 def test_a_verification_with_counts_still_reports_the_measured_number():
-    from aughor.sql import join_guard as jg
+    from pramanyx.sql import join_guard as jg
 
     jg._VERIFIED_JOIN_CACHE.clear()
     try:

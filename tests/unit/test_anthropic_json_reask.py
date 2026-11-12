@@ -14,8 +14,8 @@ import pytest
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 from pydantic import BaseModel
 
-from aughor.llm import provider as P
-from aughor.llm.reliability import StructuredOutputError
+from pramanyx.llm import provider as P
+from pramanyx.llm.reliability import StructuredOutputError
 
 
 class Out(BaseModel):

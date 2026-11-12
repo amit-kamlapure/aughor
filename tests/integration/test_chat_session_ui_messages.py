@@ -14,9 +14,9 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor.db.history import save_chat_turn
-from aughor.kernel.jobs import UNCERTAIN_RESULT
-from aughor.routers.investigations import get_chat_session_messages
+from pramanyx.db.history import save_chat_turn
+from pramanyx.kernel.jobs import UNCERTAIN_RESULT
+from pramanyx.routers.investigations import get_chat_session_messages
 
 
 def _parts_by_type(msg: dict) -> dict:
@@ -51,7 +51,7 @@ def test_thread_maps_to_ui_message_pairs():
     parts = _parts_by_type(assistant)
     # Prose: a channel-stamped text part (the streamed form) + its settled data part.
     assert parts["text"]["text"] == "West leads at 10"
-    assert parts["text"]["providerMetadata"] == {"aughor": {"channel": "headline"}}
+    assert parts["text"]["providerMetadata"] == {"pramanyx": {"channel": "headline"}}
     assert parts["data-headline"]["data"] == {"headline": "West leads at 10"}
     # Structure: the typed parts the projection reads.
     assert "GROUP BY" in parts["data-sql"]["data"]["sql"]

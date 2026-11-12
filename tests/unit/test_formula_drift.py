@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.explorer.agent import verify_insight as emission_gate
-from aughor.explorer.metric_coherence import (
+from pramanyx.explorer.agent import verify_insight as emission_gate
+from pramanyx.explorer.metric_coherence import (
     drifted_registered_metric, _asserted_registered, _wrong_usage_idents, _alias_stripped_norm,
 )
-from aughor.semantic.metrics import list_metrics
+from pramanyx.semantic.metrics import list_metrics
 
 _REVENUE = SimpleNamespace(
     name="revenue", label="Revenue", sql="SUM(total_amount)",
@@ -49,7 +49,7 @@ def test_asserted_requires_a_value_in_the_clause():
 
 def _drift_via_stub(finding, sql, monkeypatch):
     # list_metrics is imported inside the function from its source module — patch there.
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
     return drifted_registered_metric(finding, sql)
 
 
@@ -61,7 +61,7 @@ def test_the_registry_it_judges_by_is_the_connection_the_finding_was_read_on(mon
     def scoped(connection_id=None):
         asked.append(connection_id)
         return [_REVENUE] if connection_id == "conn_a" else []
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", scoped)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", scoped)
     finding, sql = "Revenue was 4.1M last month.", "SELECT SUM(line_total) FROM order_items"
     assert drifted_registered_metric(finding, sql, "conn_a")
     assert drifted_registered_metric(finding, sql, "conn_b") is None
@@ -69,7 +69,7 @@ def test_the_registry_it_judges_by_is_the_connection_the_finding_was_read_on(mon
 
 
 def test_the_emission_gate_hands_the_drift_check_the_connection_it_read(monkeypatch):
-    from aughor.explorer import verify as V
+    from pramanyx.explorer import verify as V
     seen = []
 
     def drift(finding_text, sql, connection_id="", table_cols=None):
@@ -110,7 +110,7 @@ def test_a_metric_the_connection_cannot_compute_never_judges_it(monkeypatch):
     # Live 2026-09-16: the global revenue (samples' orders.total_amount) condemned theLook,
     # whose only revenue basis IS order_items.sale_price — no total_amount column exists
     # there — and the daily brief departed flagged NOT reliable.
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
     finding = "Net revenue was 22,128.43 on 2026-09-08."
     sql = "SELECT SUM(oi.sale_price) FROM order_items oi"
     thelook = {"orders": ["order_id", "status", "created_at"],
@@ -124,7 +124,7 @@ def test_a_metric_the_connection_cannot_compute_never_judges_it(monkeypatch):
 
 def test_an_unknown_schema_does_not_narrow(monkeypatch):
     # None/empty table_cols can't prove absence → the guard behaves exactly as before.
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
     finding, sql = "Revenue was 4.1M.", "SELECT SUM(line_total) FROM order_items"
     assert drifted_registered_metric(finding, sql, "c", table_cols=None)
     assert drifted_registered_metric(finding, sql, "c", table_cols={})
@@ -142,7 +142,7 @@ def test_a_query_matching_the_other_grain_of_the_same_name_is_not_drift(monkeypa
         tables=["order_items"], dimensions=[], wrong_usage_examples=[])
     finding, sql = "Revenue was 4.1M.", "SELECT SUM(oi.sale_price) FROM order_items oi"
     for registry in ([_REVENUE, item_grain], [item_grain, _REVENUE]):
-        monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda _r=registry, **_: _r)
+        monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda _r=registry, **_: _r)
         assert drifted_registered_metric(finding, sql) is None
 
 
@@ -226,5 +226,5 @@ def test_the_caveat_still_trips_the_headline_reframe():
     """`_COMPUTATION_ERROR_CAVEAT_RE` matches on the literal words "formula drift" to
     reframe the headline. The phrase is load-bearing text, not a label, so a reword that
     dropped it would silently un-wire the reframe while every other test stayed green."""
-    from aughor.agent.investigate import _COMPUTATION_ERROR_CAVEAT_RE
+    from pramanyx.agent.investigate import _COMPUTATION_ERROR_CAVEAT_RE
     assert _COMPUTATION_ERROR_CAVEAT_RE.search(_drift_reason())

@@ -1,5 +1,5 @@
 """Decisions by email, inbound only (the decision-framework study §3.2; the user's call of 2026-10-27;
-`aughor/record/email_door.py`, `POST /doors/email`).
+`pramanyx/record/email_door.py`, `POST /doors/email`).
 
 What these hold: until the install sets its inbound domain and its secret, a decision shows no address and says which
 is missing, and the door answers 503 saying the same — never an address that could receive nothing; the door takes
@@ -17,11 +17,11 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.record import byproducts as B
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import email_door as E
-from aughor.record import inquiry_view as V
+from pramanyx.record import byproducts as B
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import email_door as E
+from pramanyx.record import inquiry_view as V
 
 DOMAIN = "decide.example.test"
 SECRET = "s3cret-inbound"
@@ -35,7 +35,7 @@ def door(monkeypatch):
 
 @pytest.fixture
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -52,19 +52,19 @@ def _mail(d: D.Decision, sender: str, text: str, *, dkim: str = "pass", subject:
 
 
 def _post(client, payload, secret=SECRET):
-    return client.post("/doors/email", json=payload, headers={"X-Aughor-Inbound-Secret": secret} if secret else {})
+    return client.post("/doors/email", json=payload, headers={"X-Pramanyx-Inbound-Secret": secret} if secret else {})
 
 
 @pytest.mark.parametrize("domain, secret, said", [
-    ("", "", "this install sets no inbound mail domain (AUGHOR_INBOUND_EMAIL_DOMAIN) and no inbound secret "
-             "(AUGHOR_INBOUND_EMAIL_SECRET)."),
-    ("", SECRET, "this install sets no inbound mail domain (AUGHOR_INBOUND_EMAIL_DOMAIN)."),
-    (DOMAIN, "", "this install sets no inbound secret (AUGHOR_INBOUND_EMAIL_SECRET)."),
+    ("", "", "this install sets no inbound mail domain (PRAMANYX_INBOUND_EMAIL_DOMAIN) and no inbound secret "
+             "(PRAMANYX_INBOUND_EMAIL_SECRET)."),
+    ("", SECRET, "this install sets no inbound mail domain (PRAMANYX_INBOUND_EMAIL_DOMAIN)."),
+    (DOMAIN, "", "this install sets no inbound secret (PRAMANYX_INBOUND_EMAIL_SECRET)."),
 ])
 def test_without_its_setup_a_decision_has_no_address_and_it_and_the_door_say_what_is_missing(
         client, monkeypatch, domain, secret, said):
     """A domain with no secret used to show an address that could receive nothing, its note out of sight."""
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     monkeypatch.setenv(E.DOMAIN_ENV, domain)
     monkeypatch.setenv(E.SECRET_ENV, secret)
     monkeypatch.setattr(R, "_visible", lambda conn_id: True)
@@ -77,7 +77,7 @@ def test_without_its_setup_a_decision_has_no_address_and_it_and_the_door_say_wha
 
 
 def test_set_up_a_decision_shows_its_address_and_no_note(door, monkeypatch):
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     monkeypatch.setattr(R, "_visible", lambda conn_id: True)
     d = _decision()
     assert R.get_record_decision(d.id)["email"] == {"address": f"decision+{d.id}@{DOMAIN}", "note": ""}

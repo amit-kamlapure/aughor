@@ -19,21 +19,21 @@ e481f51c,delivered,1,29.99
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
-    from aughor.rbac import store as rbac_store
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
+    from pramanyx.rbac import store as rbac_store
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     monkeypatch.setattr(rbac_store, "_DB_PATH", tmp_path / "rbac.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _orders(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "orders.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -42,14 +42,14 @@ def _orders(env):
 
 def _stored_columns(sheet_id: str) -> list[dict]:
     """The columns as the ledger holds them — not as a read fills in their defaults."""
-    from aughor.kernel import lifecycle
-    from aughor.sheets import model
+    from pramanyx.kernel import lifecycle
+    from pramanyx.sheets import model
     rev = lifecycle.resolve(model.KIND, model.natural_key(sheet_id, model._org()), audience="editor")
     return rev.body["columns"]
 
 
 def test_a_format_is_the_sheets_kept_in_words_and_undone_and_redone_whole(env):
-    from aughor.sheets import model, projection, service
+    from pramanyx.sheets import model, projection, service
     sheet = _orders(env)
     items = sheet.column("items")
     assert items.kind == "number" and items.format == ""
@@ -86,7 +86,7 @@ def test_a_format_is_the_sheets_kept_in_words_and_undone_and_redone_whole(env):
 
 
 def test_a_format_is_one_of_the_seven_and_only_a_number_column_takes_one(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _orders(env)
     items, price, status = sheet.column("items"), sheet.column("price"), sheet.column("order_status")
     # refused in a sentence — not any error that happens to stop it further on
@@ -105,14 +105,14 @@ def test_a_format_is_one_of_the_seven_and_only_a_number_column_takes_one(env):
     after = model.get(sheet.id)
     assert after.column("items").name == "items" and len(model.history(sheet.id)) == 1
     # every one of the seven is taken
-    from aughor.sheets import kinds
+    from pramanyx.sheets import kinds
     for fmt in kinds.NUMBER_FORMATS:
         service.update_column(model.get(sheet.id), items.id, by="user:ana", format=fmt)
         assert model.get(sheet.id).column("items").format == fmt
 
 
 def test_a_column_that_stops_being_a_number_loses_its_format_and_says_so(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _orders(env)
     items = sheet.column("items")
     service.update_column(sheet, items.id, by="user:ana", format="bytes")
@@ -132,8 +132,8 @@ def test_the_route_sets_a_format_for_an_editor_and_refuses_it_in_a_sentence(env,
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import sheets as sheets_router
-    from aughor.sheets import model, sharing
+    from pramanyx.routers import sheets as sheets_router
+    from pramanyx.sheets import model, sharing
     sheet = _orders(env)
     app = FastAPI()
     app.include_router(sheets_router.router)
@@ -146,7 +146,7 @@ def test_the_route_sets_a_format_for_an_editor_and_refuses_it_in_a_sentence(env,
     assert bad.status_code == 422 and "is not a number format" in bad.json()["detail"]
     # someone who may only read the sheet does not change how it shows
     sharing.set_sharing(model.get(sheet.id), "chosen", [{"kind": "person", "id": "bo", "level": "view"}], by="user:ana")
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "bo")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "bo")
     refused = client.patch(f"/sheets/{sheet.id}/columns/{items}", json={"format": "bytes"})
     assert refused.status_code == 403
     assert model.get(sheet.id).column("items").format == "compact"

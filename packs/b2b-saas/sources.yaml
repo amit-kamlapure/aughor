@@ -4,7 +4,7 @@
 # of them that day — a report of a report. For that reason no source carries `figures` (a figure's quote is the words
 # it was published in), the bands' `basis` names each figure as indexed, and the package cannot be promoted to
 # active until a person has read each document, carried its figures with their quotes, and dropped `unread`
-# (`aughor/packs/promote.py` refuses it; the static gate refuses figures on an unread source).
+# (`pramanyx/packs/promote.py` refuses it; the static gate refuses figures on an unread source).
 # `published` is given to the precision the publisher's page or upload path gives: a month, or the report's year.
 sources:
   - id: saas-capital-retention-2025

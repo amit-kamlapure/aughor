@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.db.registry import add_connection
-from aughor.metastore import accessible_catalog_ids
-from aughor.workspace.store import (
+from pramanyx.db.registry import add_connection
+from pramanyx.metastore import accessible_catalog_ids
+from pramanyx.workspace.store import (
     DEFAULT_WORKSPACE_ID,
     create_workspace,
     ensure_default_workspace,
@@ -44,7 +44,7 @@ def test_premise_without_the_join_the_connection_is_invisible(default_ws, monkey
     With the membership grant suppressed, `add_connection` reproduces the old
     behaviour exactly: a registry row the visibility gate cannot see.
     """
-    import aughor.workspace.store as store
+    import pramanyx.workspace.store as store
     monkeypatch.setattr(store, "join_connection", lambda *a, **k: None)
     conn_id = _add("invisible")
     assert conn_id not in (accessible_catalog_ids(default_ws) or set())

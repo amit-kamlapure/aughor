@@ -14,8 +14,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.intake import prose
+from pramanyx.api import app
+from pramanyx.intake import prose
 
 client = TestClient(app)
 
@@ -24,12 +24,12 @@ CONN = "prose_conn"
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_INTAKE_DB", str(tmp_path / "intake.db"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
-    import aughor.semantic.connection_kb as kb
+    monkeypatch.setenv("PRAMANYX_INTAKE_DB", str(tmp_path / "intake.db"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    import pramanyx.semantic.connection_kb as kb
     monkeypatch.setattr(kb, "_DATA_DIR", tmp_path / "kb")
     monkeypatch.setattr(kb, "_index_entry", lambda e: None)
     monkeypatch.setattr(kb, "_delete_from_index", lambda c, i: None)
@@ -43,7 +43,7 @@ def demo_conn(tmp_path, monkeypatch):
     c = duckdb.connect(str(dbfile))
     c.execute("CREATE TABLE orders AS SELECT 1 AS id")
     c.close()
-    from aughor.db import connection as conn_mod
+    from pramanyx.db import connection as conn_mod
 
     def _open(conn_id, *args, **kwargs):
         if conn_id != CONN:
@@ -123,7 +123,7 @@ def test_prose_stages_and_llm_synonyms_stay_out_of_the_prompt(
 
     # The cross-slice law: accepted as llm_candidate ⇒ retrieval widens,
     # prompt does NOT — until a human promotes it.
-    from aughor.ontology.vocabulary import add_synonym, build_synonyms_block, synonyms_for
+    from pramanyx.ontology.vocabulary import add_synonym, build_synonyms_block, synonyms_for
     assert any(s.synonym == "takings" and s.source == "llm_candidate"
                for s in synonyms_for(CONN))
     assert build_synonyms_block(CONN) == ""

@@ -14,10 +14,10 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.connectors.federated import COPY_SETTING, FederatedConnection
-from aughor.db import doors as D
-from aughor.orgsettings import allows as A
-from aughor.orgsettings.models import OrgSettings
+from pramanyx.connectors.federated import COPY_SETTING, FederatedConnection
+from pramanyx.db import doors as D
+from pramanyx.orgsettings import allows as A
+from pramanyx.orgsettings.models import OrgSettings
 
 
 class _Mirror:
@@ -29,9 +29,9 @@ class _Mirror:
 
 @pytest.fixture
 def mirror_member(monkeypatch):
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: _Mirror())
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda cid: {})
-    monkeypatch.setattr("aughor.db.registry.get_dsn", lambda cid: ("duckdb", ""))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: _Mirror())
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda cid: {})
+    monkeypatch.setattr("pramanyx.db.registry.get_dsn", lambda cid: ("duckdb", ""))
 
 
 def test_the_setting_is_born_without_a_flag_and_off():
@@ -61,9 +61,9 @@ def test_with_the_setting_the_copy_is_taken_and_said_on_every_answer(mirror_memb
 
 
 def test_a_join_in_the_platform_names_the_connection_its_right_rows_came_from():
-    from aughor.connectors.remote_join import batched_foreach_join
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.connectors.remote_join import batched_foreach_join
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.db.connection import DuckDBConnection
 
     from pathlib import Path
     right = DuckDBConnection.__new__(DuckDBConnection)      # as test_remote_join builds one: in memory, no file

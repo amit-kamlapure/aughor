@@ -63,7 +63,7 @@ class Receipt:
 
 
 def _open(conn_id: str):
-    from aughor.db.connection import open_connection_for
+    from pramanyx.db.connection import open_connection_for
     return open_connection_for(conn_id)
 
 
@@ -82,7 +82,7 @@ def _script(name: str, *args: str) -> str:
 
 
 def _schema(conn_id: str, db) -> str:
-    from aughor.routers._shared import get_schema_cached
+    from pramanyx.routers._shared import get_schema_cached
     return get_schema_cached(conn_id, db)
 
 
@@ -93,7 +93,7 @@ def _first_table(schema_text: str, *, min_rows: int = 0) -> tuple[str, str] | No
     """The first table with a column — and, with ``min_rows``, the first whose stated row count exceeds it,
     so a paging measurement has a second page to read (theLook's first table holds 10 rows). Falls back to
     the first table when the schema text states no count that large."""
-    from aughor.db.schema_render import parse_schema_tables
+    from pramanyx.db.schema_render import parse_schema_tables
     stated = {m.group(1): int(m.group(2).replace(",", ""))
               for m in (_ROWS.match(line) for line in (schema_text or "").splitlines()) if m}
     tables = [(t, cols[0]) for t, cols in parse_schema_tables(schema_text or "").items() if cols]
@@ -107,7 +107,7 @@ def _typed_columns(schema_text: str) -> list[tuple[str, str, str]]:
     """``(table, column, declared type)`` from the schema text's ``TABLE:`` blocks, both forms. `sqlglot_schema`
     is not a type reader — it answers ``UNKNOWN`` for every column — so reading types from it found no geometry
     on a connection whose schema text names two GEOGRAPHY columns (2026-10-03)."""
-    from aughor.db.schema_render import ends_column_block, parse_inline_columns
+    from pramanyx.db.schema_render import ends_column_block, parse_inline_columns
     out: list[tuple[str, str, str]] = []
     current: str | None = None
     for line in (schema_text or "").splitlines():
@@ -148,7 +148,7 @@ def de4_lineage(conn_id: str) -> str:
 
 
 def de3c_metadata(conn_id: str) -> str:
-    from aughor.db.metadata import read_declared_metadata
+    from pramanyx.db.metadata import read_declared_metadata
     db = _open(conn_id)
     try:
         read = read_declared_metadata(db, cache_key=conn_id)
@@ -173,7 +173,7 @@ def de5d_bytes(conn_id: str) -> str:
         if not picked:
             return "no table with a column in the schema text — nothing to measure"
         table, column = picked
-        from aughor.db.quoting import ident_quote
+        from pramanyx.db.quoting import ident_quote
         q = ident_quote(db)
         qt = ".".join(f"{q}{p}{q}" for p in table.split("."))
         inner = f"SELECT * FROM {qt} ORDER BY {q}{column}{q}"
@@ -206,7 +206,7 @@ def de5e_geometry(conn_id: str) -> str:
         if not found:
             return "no GEOGRAPHY or GEOMETRY column in the schema text — this connection holds no geometry to read"
         table, column, declared = found[0]
-        from aughor.db.quoting import ident_quote
+        from pramanyx.db.quoting import ident_quote
         q = ident_quote(db)
         qt = ".".join(f"{q}{p}{q}" for p in table.split("."))
         res, payload = db.execute_typed(LABEL, f"SELECT {q}{column}{q} FROM {qt} WHERE {q}{column}{q} IS NOT NULL LIMIT 1")
@@ -214,7 +214,7 @@ def de5e_geometry(conn_id: str) -> str:
             return f"`{table}.{column}` ({declared}): the read failed — {res.error[:300]}"
         if not res.rows:
             return f"`{table}.{column}` ({declared}): every row is NULL — nothing to read"
-        from aughor.routers.query import _json_cell
+        from pramanyx.routers.query import _json_cell
         raw = (payload or {}).get("rows") or [[res.rows[0][0]]]
         cell = _json_cell(raw[0][0])
         typed_name = ((payload or {}).get("types") or [""])[0]
@@ -235,7 +235,7 @@ def de5e_geometry(conn_id: str) -> str:
 
 
 def de3b_trino(conn_id: str) -> str:
-    from aughor.db.metadata import engine_type_of
+    from pramanyx.db.metadata import engine_type_of
     db = _open(conn_id)
     try:
         res = db.execute(LABEL, "SELECT 1 AS one")

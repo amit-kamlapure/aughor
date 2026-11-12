@@ -7,41 +7,41 @@ external-context formatter cites the ontology node instead of a filename.
 
 Hermetic: embedder + vector store are monkeypatched at their module seams (the
 established per-test pattern — no Ollama/Qdrant); the registry rides the
-conftest AUGHOR_DOCUMENTS_REGISTRY temp override, re-pointed per test.
+conftest PRAMANYX_DOCUMENTS_REGISTRY temp override, re-pointed per test.
 """
 from __future__ import annotations
 
 import pytest
 
-import aughor.knowledge.indexer as idx
+import pramanyx.knowledge.indexer as idx
 
 
 @pytest.fixture()
 def fakes(monkeypatch, tmp_path):
     """Capture upserts/deletes; stub the embedder; isolate the registry."""
     state = {"upserts": [], "deleted": [], "ensured": 0}
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
-    monkeypatch.setattr("aughor.semantic.embedder.embed",
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed",
                         lambda texts: [[0.0] * 8 for _ in texts])
-    monkeypatch.setattr("aughor.semantic.vector_store.upsert",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.upsert",
                         lambda coll, points: state["upserts"].extend(points))
     # `ensure_collection` now takes the active embedder's width, so the stub has to accept
     # it — and `collection_dim` has to be stubbed too. Without it this "hermetic" fixture
     # reached a REAL Qdrant for the existing collection's width and compared 768 against
     # this file's 8-dimension fake embedder. It was hermetic only while nothing READ from
     # the store; the first read escaped.
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection",
                         lambda coll, dim=None: state.__setitem__("ensured",
                                                                  state["ensured"] + 1))
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: None)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda coll: None)
     monkeypatch.setattr(idx, "_delete_doc_chunks",
                         lambda doc_id: state["deleted"].append(doc_id))
     return state
 
 
 def _tree():
-    from aughor.ontology.doctree import build_doc_tree
-    from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+    from pramanyx.ontology.doctree import build_doc_tree
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
     ent = OntologyEntity(
         id="sales", display_name="Sales", source_tables=["sales"],
         identity_key="id", grain_verified=True,
@@ -91,7 +91,7 @@ def test_formatter_cites_fqn_for_schema_docs(monkeypatch):
          "text": "Uploaded doc", "doc_id": "u1", "chunk_index": 0},
     ]
     monkeypatch.setattr(idx, "search_documents", lambda q, top_k=4, **_: hits)
-    monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids", lambda: None)
+    monkeypatch.setattr("pramanyx.custom_agents.context.agent_doc_ids", lambda: None)
     section = idx.build_external_context_section("anything")
     assert "── Sales (s.sales) ──" in section           # compiled docs cite the node
     assert "── Q3 report (q3.pdf) ──" in section        # uploads keep the filename
@@ -108,27 +108,27 @@ def test_index_text_source_url_reaches_the_payload(fakes):
 def test_index_doc_tree_is_raise_transparent(monkeypatch, tmp_path):
     """Dead infra must RAISE (like index_text) — the autodoc hook's tolerate()
     wrapper is the resilience layer, and it can only work if failures surface."""
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
 
     # This test used no fixture, so it reached a REAL embedder and a REAL Qdrant — which
     # made it pass on a laptop and fail in CI, and worse, pass on the laptop for the WRONG
     # REASON: `EmbeddingDimensionMismatch` is a RuntimeError, so it satisfied the assertion
     # below without the stub ever being called. Both halves are stubbed now, so what is
     # asserted is propagation and nothing else.
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: None)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 768)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: None)
 
     def _down(coll, dim=None):
         raise RuntimeError("qdrant down")
 
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection", _down)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection", _down)
     with pytest.raises(RuntimeError, match="qdrant down"):
         idx.index_doc_tree(_tree(), connection_id="c", schema="s")
 
 
 def test_empty_tree_indexes_nothing(fakes):
-    from aughor.ontology.doctree import build_doc_tree
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.ontology.doctree import build_doc_tree
+    from pramanyx.ontology.models import OntologyGraph
     empty = build_doc_tree(OntologyGraph(connection_id="c", schema_name="s",
                                          schema_fingerprint="f"))
     out = idx.index_doc_tree(empty, connection_id="c", schema="s")

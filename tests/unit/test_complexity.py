@@ -1,7 +1,7 @@
 """Deterministic complexity assessment + cost-tiered routing (Part 2 winning formula)."""
 from __future__ import annotations
 
-from aughor.agent.complexity import assess_complexity, model_role_for
+from pramanyx.agent.complexity import assess_complexity, model_role_for
 
 
 def test_trivial_single_metric_is_simple():

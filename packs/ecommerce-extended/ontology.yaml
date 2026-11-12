@@ -1,4 +1,4 @@
-# Extends core-ecommerce with the rest of the e-commerce industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1,
+# Extends core-ecommerce with the rest of the e-commerce industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1,
 # 2026-11-11: 59 reference types). Nineteen of them are the core's objects, some under another name (Order Line, Cart
 # Line, Inventory Item, Product Variant, Return Request, Coupon, Customer Feedback); the other forty are here. The core
 # stays a map of ten to twenty objects; this is the wider one, for a business that records more.

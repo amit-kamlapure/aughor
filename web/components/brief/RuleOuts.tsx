@@ -3,7 +3,7 @@
  * Rule out first — IP-1. The known ways a reported move can be the data rather than the business: the
  * playbook's data-quality checks for the metric in the direction it moved (read high when it rose, low
  * when it fell), each with its fix. Nothing here was run against the data, and the lead line says so in
- * the words the backend sent (`aughor/playbook/rule_outs.py`) — a list without that note would read as
+ * the words the backend sent (`pramanyx/playbook/rule_outs.py`) — a list without that note would read as
  * findings, so a payload without its lead still shows the note. Rendered before the recommended
  * actions; absent when the report states no move.
  */

@@ -18,10 +18,10 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-import aughor.agent.investigate as I
-from aughor.agent.analyst import AnalystTurn, _phase_payload, _unique_phase_ids, conclude
-from aughor.sql.writer import diagnose_sql_error
-from aughor.tools.schema_linker import complete_join_paths
+import pramanyx.agent.investigate as I
+from pramanyx.agent.analyst import AnalystTurn, _phase_payload, _unique_phase_ids, conclude
+from pramanyx.sql.writer import diagnose_sql_error
+from pramanyx.tools.schema_linker import complete_join_paths
 
 FULL = """TABLE: brands  (120 rows)
   brand_id  text
@@ -102,7 +102,7 @@ class _Intake:
         self.date_column = date_column
 
     def complete(self, **kw):
-        from aughor.agent.prompts_investigate import IntakeOutput
+        from pramanyx.agent.prompts_investigate import IntakeOutput
         return IntakeOutput(metric_label="revenue", metric_sql="SUM(unit_price_eur * quantity)", observation_start="2026-09-01",
                             observation_end="2026-09-30", observation_label="September 2026", comparison_start="2026-08-01",
                             comparison_end="2026-08-31", comparison_label="August 2026", date_column=self.date_column,
@@ -111,10 +111,10 @@ class _Intake:
 
 @pytest.fixture
 def hermetic_intake(monkeypatch):
-    import aughor.agent.explore as ex
-    import aughor.agent.framing as AF
-    import aughor.llm.profile as P
-    import aughor.semantic.data_understanding as du
+    import pramanyx.agent.explore as ex
+    import pramanyx.agent.framing as AF
+    import pramanyx.llm.profile as P
+    import pramanyx.semantic.data_understanding as du
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
     monkeypatch.setattr(du, "build_data_understanding", lambda *a, **k: NS(grounding_block=lambda: "", trusted_used=[]))
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: ("", ""))
@@ -167,14 +167,14 @@ def test_an_unqualified_missing_column_lists_every_table_the_query_reads():
 
 
 def test_run_sql_hands_the_diagnosis_back_with_the_error(monkeypatch):
-    import aughor.agent.converse_tools as CT
-    import aughor.sql.executor as EX
+    import pramanyx.agent.converse_tools as CT
+    import pramanyx.sql.executor as EX
     conn = NS(dialect="postgres", get_schema=lambda: FULL)
     monkeypatch.setattr(CT, "_connection", lambda cid, canvas_id=None, schema_scope=None: conn)
     monkeypatch.setattr(EX, "execute_guarded", lambda c, sql, query_id, metric_rules: NS(
         error="column o.order_ts does not exist\nHINT:  Perhaps you meant to reference the column \"o.order_id\".",
         columns=[], rows=[], row_count=0, caveats=[], sql=sql, doors=["failed:sql"]))
-    import aughor.semantic.enforcement as EN
+    import pramanyx.semantic.enforcement as EN
     monkeypatch.setattr(EN, "rules_for_statement", lambda *a, **k: [])
     out = CT.run_sql("c1", {"sql": SQL})
     assert out["error"].startswith("column o.order_ts does not exist")
@@ -261,8 +261,8 @@ def test_the_answer_is_held_to_the_same_register_and_words_that_merely_contain_i
 
 def test_a_date_on_a_table_the_definition_does_not_read_is_refused_at_the_door(monkeypatch):
     from fastapi.testclient import TestClient
-    import aughor.routers.metrics as MR
-    from aughor.api import app
+    import pramanyx.routers.metrics as MR
+    from pramanyx.api import app
     saved: list = []
     # The door is what is under test; nothing is written to the shared catalogue (a row left behind
     # here reached `test_metric_dedup`'s raw read of the file).
@@ -296,9 +296,9 @@ def test_a_date_on_a_table_the_definition_does_not_read_is_refused_at_the_door(m
 def test_the_metrics_list_says_whether_each_can_be_measured_and_why_not(monkeypatch):
     """The row read "✓ measured" from a kind and a column alone (Gross Margin %, 2026-10-15)."""
     from fastapi.testclient import TestClient
-    import aughor.routers.metrics as MR
-    from aughor.api import app
-    from aughor.semantic.metrics import MetricDefinition
+    import pramanyx.routers.metrics as MR
+    from pramanyx.api import app
+    from pramanyx.semantic.metrics import MetricDefinition
     gm = MetricDefinition(name="gross_margin", label="Gross Margin %", connection="lux-list-conn", tables=[],
                           sql="SELECT SUM(unit_price_eur * quantity) AS gm FROM order_items",
                           time_kind="flow", time_column="luxexperience.orders.order_date")
@@ -316,7 +316,7 @@ def test_an_edit_that_leaves_a_stored_date_as_it_was_is_not_refused_for_it():
     """The trap of 2026-10-14: with the typo stored, the SQL could not be saved with its join (the stored
     date rode along and was refused) and the date could not be corrected (the Dates form saved the stored
     SQL). Only a date this edit SETS is held to the tables the SQL reads."""
-    import aughor.routers.metrics as MR
+    import pramanyx.routers.metrics as MR
     from fastapi import HTTPException
     stored = NS(time_column="luxexperience.order.order_date", sql="SELECT 1 FROM order_items")
     joined = {"sql": "SELECT SUM(oi.unit_price_eur) AS gm FROM order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id",

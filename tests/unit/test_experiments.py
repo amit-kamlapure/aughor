@@ -1,4 +1,4 @@
-"""Wave E4 — the run-scoped experiment plane (`aughor/evals/experiments.py`).
+"""Wave E4 — the run-scoped experiment plane (`pramanyx/evals/experiments.py`).
 
 Hermetic: the instructor client is stubbed and the two recording sinks are neutered, so no
 network, no LLM and no writes under `data/`.
@@ -21,10 +21,10 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
-from aughor.evals import experiments as X
-from aughor.evals.experiments import Cell, MeasurementIntegrityError
-from aughor.kernel.flags import clear_flag, flag_enabled
-from aughor.llm import provider as P
+from pramanyx.evals import experiments as X
+from pramanyx.evals.experiments import Cell, MeasurementIntegrityError
+from pramanyx.kernel.flags import clear_flag, flag_enabled
+from pramanyx.llm import provider as P
 
 # Two registered flags, only ever cleared between tests — nothing here depends on what
 # they DO. Both are EXPERIMENT-dispositioned so they outlive the endgame's hardwiring
@@ -37,7 +37,7 @@ OTHER = "_synthetic.other_off"   # the synthetic pair's second
 @pytest.fixture(autouse=True)
 def _measurable(monkeypatch, synthetic_flags):
     """Default every test into a measurable environment; the guard has its own tests."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
     yield
     for name in (FLAG, OTHER):
         clear_flag(name)
@@ -46,21 +46,21 @@ def _measurable(monkeypatch, synthetic_flags):
 # ── the integrity precondition ────────────────────────────────────────────────
 
 def test_refuses_to_measure_while_the_fallback_chain_is_live(monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     with pytest.raises(MeasurementIntegrityError) as exc:
         X.assert_measurable()
-    assert "AUGHOR_FALLBACK_DISABLED" in str(exc.value)
+    assert "PRAMANYX_FALLBACK_DISABLED" in str(exc.value)
 
 
 def test_applied_refuses_before_spending_a_single_request(monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     with pytest.raises(MeasurementIntegrityError):
         with X.applied(Cell(label="variant", flags={FLAG: True})):
             pytest.fail("the block must not run")
 
 
 def test_dry_run_may_opt_out_of_the_precondition(monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     with X.applied(Cell(label="dry"), require_measurable=False) as resolved:
         assert resolved["effective"]["fallback_disabled"] is False
 
@@ -70,7 +70,7 @@ def test_dry_run_may_opt_out_of_the_precondition(monkeypatch):
     ("0", False), ("false", False), ("", False),
 ])
 def test_fallback_disabled_reads_the_env_the_same_way_the_provider_does(monkeypatch, raw, expected):
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", raw)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", raw)
     assert X.fallback_disabled() is expected
 
 
@@ -202,7 +202,7 @@ def _client(anthropic: bool):
 def _no_recording(monkeypatch):
     """Neuter the two sinks so the call stays hermetic and touches nothing under data/."""
     monkeypatch.setattr(P, "_record_llm_call", lambda **kw: None)
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
     monkeypatch.setattr(metering, "record_llm", lambda *a, **k: None)
 
 

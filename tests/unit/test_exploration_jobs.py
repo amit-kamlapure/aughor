@@ -15,7 +15,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.db.connection import open_connection
+from pramanyx.db.connection import open_connection
 
 
 @pytest.fixture
@@ -31,13 +31,13 @@ def wh(tmp_path):
 
 
 def test_the_structure_job_learns_the_structure_and_calls_no_model(wh, monkeypatch):
-    from aughor.explorer import program
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer import program
+    from pramanyx.explorer.agent import SchemaExplorer
 
     def no_model(*a, **k):
         raise AssertionError("the structure job called a model")
 
-    monkeypatch.setattr("aughor.llm.provider.get_provider", no_model)
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", no_model)
     conn_id, path = wh
     ex = SchemaExplorer(conn_id, open_connection("duckdb", path, connection_id=conn_id))
     ex.build_intelligence = no_model
@@ -54,12 +54,12 @@ def test_the_structure_job_learns_the_structure_and_calls_no_model(wh, monkeypat
 
 @pytest.fixture
 def client(monkeypatch):
-    from aughor.routers import datasets as D
+    from pramanyx.routers import datasets as D
     monkeypatch.setattr(D, "_schemas_of", lambda conn_id: [
         {"name": "stage_marketing", "tables": [{"name": "stg_clicks"}, {"name": "stg_sessions"}]},
         {"name": "marts", "tables": [{"name": "fct_orders"}, {"name": "dim_calendar"}, {"name": "orders"}]}])
-    monkeypatch.setattr("aughor.routers.datasets._questions_on_layer", lambda *a: "its questions have started")
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "amit")
+    monkeypatch.setattr("pramanyx.routers.datasets._questions_on_layer", lambda *a: "its questions have started")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "amit")
     app = FastAPI()
     app.include_router(D.router)
     return TestClient(app)
@@ -96,7 +96,7 @@ def test_a_person_sets_a_layer_accepts_the_rest_and_turns_one_off(client):
     off = client.put(f"/exploration/{conn}/datasets/off",
                      json={"schema_name": "stage_marketing", "off": True, "reason": "out_of_domain"})
     assert off.status_code == 200 and off.json()["off"]["declared_by"] == "amit"
-    from aughor.ontology.visibility import excluded
+    from pramanyx.ontology.visibility import excluded
     assert excluded(conn, "stage_marketing", "stg_clicks") is not None
     body = client.get(f"/exploration/{conn}/datasets").json()
     stage = next(s for s in body["schemas"] if s["name"] == "stage_marketing")
@@ -108,7 +108,7 @@ def test_a_person_sets_a_layer_accepts_the_rest_and_turns_one_off(client):
 def test_the_system_layer_is_never_read(client):
     conn = f"c-{uuid.uuid4().hex[:6]}"
     client.put(f"/exploration/{conn}/datasets/layer", json={"schema_name": "marts", "layer": "system"})
-    from aughor.ontology.visibility import excluded
+    from pramanyx.ontology.visibility import excluded
     hit = excluded(conn, "marts", "fct_orders")
     assert hit is not None and hit.reason == "system_table"
 
@@ -117,9 +117,9 @@ def test_a_heartbeats_budget_kill_is_a_budget_stop_not_a_persons(monkeypatch):
     """§1 measured it: the kernel's heartbeat enforces the run budget with a bare cancel, and the
     run wrote "budget exceeded or stopped" — which the continuous loop must read as a person's stop,
     so it was never continued. The kernel's own stop reason now tells them apart."""
-    from aughor.explorer.agent import SchemaExplorer
-    from aughor.explorer.continuous import stopped_on_budget_at
-    from aughor.explorer.models import ExplorationPhase
+    from pramanyx.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.continuous import stopped_on_budget_at
+    from pramanyx.explorer.models import ExplorationPhase
 
     def run(reason: str) -> SchemaExplorer:
         ex = SchemaExplorer.__new__(SchemaExplorer)
@@ -139,7 +139,7 @@ def test_a_heartbeats_budget_kill_is_a_budget_stop_not_a_persons(monkeypatch):
         monkeypatch.setattr(ex, "_compute_macro_context", lambda *a, **k: None)
         monkeypatch.setattr(ex, "_save_state", lambda: None)
         monkeypatch.setattr(ex, "_journal", lambda *a, **k: None)
-        monkeypatch.setattr("aughor.kernel.jobs.stop_reason", lambda job_id=None: reason)
+        monkeypatch.setattr("pramanyx.kernel.jobs.stop_reason", lambda job_id=None: reason)
 
         async def cancel(*a, **k):
             raise asyncio.CancelledError()
@@ -159,11 +159,11 @@ def test_a_heartbeats_budget_kill_is_a_budget_stop_not_a_persons(monkeypatch):
 
 
 def test_a_staging_copy_inside_a_business_schema_says_whose_copy_it_is_and_goes_quiet_on_accept(monkeypatch):
-    from aughor.routers import datasets as D
+    from pramanyx.routers import datasets as D
     monkeypatch.setattr(D, "_schemas_of", lambda conn_id: [
         {"name": "public", "tables": [{"name": "stg_orders"}, {"name": "orders"}, {"name": "customers"}]}])
-    monkeypatch.setattr("aughor.routers.datasets._questions_on_layer", lambda *a: None)
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "amit")
+    monkeypatch.setattr("pramanyx.routers.datasets._questions_on_layer", lambda *a: None)
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "amit")
     app = FastAPI()
     app.include_router(D.router)
     c = TestClient(app)
@@ -175,5 +175,5 @@ def test_a_staging_copy_inside_a_business_schema_says_whose_copy_it_is_and_goes_
     assert any("the same entity as public.orders" in e for e in rows["stg_orders"]["layer"]["proposed"]["evidence"])
     acc = c.post(f"/exploration/{conn}/datasets/layers/accept", json={}).json()
     assert {"schema": "public", "table": "stg_orders", "layer": "raw"} in acc["accepted"]
-    from aughor.ontology.dataset_layers import layer_of
+    from pramanyx.ontology.dataset_layers import layer_of
     assert layer_of(conn, "public", "stg_orders") == "raw" and layer_of(conn, "public", "orders") == "business"

@@ -17,8 +17,8 @@ import threading
 
 import pytest
 
-from aughor.semantic import metrics as m
-from aughor.semantic.metrics import MetricDefinition, MetricsStoreError
+from pramanyx.semantic import metrics as m
+from pramanyx.semantic.metrics import MetricDefinition, MetricsStoreError
 
 
 def row(name, conn="samples", sql="SUM(x)", **extra):
@@ -32,7 +32,7 @@ BASELINE = [row("revenue"), row("aov", sql="AVG(x)")]
 @pytest.fixture
 def layers(tmp_path, monkeypatch):
     """Seed, frozen baseline, legacy file and instance path, all in tmp. The instance is
-    reached through AUGHOR_METRICS_PATH unless a test takes the env-unset route."""
+    reached through PRAMANYX_METRICS_PATH unless a test takes the env-unset route."""
     seed, base, legacy = tmp_path / "seed.json", tmp_path / "legacy.base.json", tmp_path / "metrics.json"
     inst = tmp_path / "metrics.instance.json"
     seed.write_text(json.dumps(BASELINE))
@@ -41,15 +41,15 @@ def layers(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_LEGACY_PATH", legacy)
     monkeypatch.setattr(m, "_LEGACY_BASELINE", base)
     monkeypatch.setattr(m, "_DEFAULT_PATH", inst)
-    monkeypatch.setenv("AUGHOR_HOME", str(tmp_path / "home"))        # no marker: nothing rehomes
-    monkeypatch.setenv("AUGHOR_METRICS_SEED_PATH", str(seed))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(inst))
+    monkeypatch.setenv("PRAMANYX_HOME", str(tmp_path / "home"))        # no marker: nothing rehomes
+    monkeypatch.setenv("PRAMANYX_METRICS_SEED_PATH", str(seed))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(inst))
 
     class L:
         pass
     ns = L()
     ns.seed, ns.base, ns.legacy, ns.inst = seed, base, legacy, inst
-    ns.unset = lambda: monkeypatch.delenv("AUGHOR_METRICS_PATH")   # the production route: derive from legacy
+    ns.unset = lambda: monkeypatch.delenv("PRAMANYX_METRICS_PATH")   # the production route: derive from legacy
     return ns
 
 
@@ -300,7 +300,7 @@ def test_M9_an_unreadable_instance_is_an_error_never_an_emptier_catalogue(layers
 def test_M11_a_named_instance_path_never_reads_the_checkouts_file(layers):
     """The hermeticity hole the design review found: a test that names an absent instance file
     must not fall through to the checkout's `data/metrics.json` — on a developer's machine that is
-    their live catalogue. Kills: deriving from the legacy file while AUGHOR_METRICS_PATH is set."""
+    their live catalogue. Kills: deriving from the legacy file while PRAMANYX_METRICS_PATH is set."""
     layers.legacy.write_text(json.dumps([row("live_only", "8233e4fd")]))
     assert ("8233e4fd", "live_only") not in names(m.list_metrics())
     m.save_metric(MetricDefinition(name="x", connection="c1", label="X", sql="SUM(x)"))
@@ -308,7 +308,7 @@ def test_M11_a_named_instance_path_never_reads_the_checkouts_file(layers):
 
 
 def test_a_bare_list_is_a_whole_catalogue_and_reads_as_it_did_alone(layers):
-    """What a pre-overlay AUGHOR_METRICS_PATH file (an operator's per-store path) and every test's
+    """What a pre-overlay PRAMANYX_METRICS_PATH file (an operator's per-store path) and every test's
     own registry hold. A shipped key it lacks was deleted there and stays gone; only a key shipped
     SINCE arrives. Kills: reading a bare list with no hidden keys — the review found the operator's
     deleted `samples` rows coming back."""
@@ -319,7 +319,7 @@ def test_a_bare_list_is_a_whole_catalogue_and_reads_as_it_did_alone(layers):
 
 
 def test_the_shipped_files_are_never_a_write_target(layers, monkeypatch):
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(layers.seed))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(layers.seed))
     with pytest.raises(MetricsStoreError, match="shipped"):
         m.save_metric(MetricDefinition(name="x", connection="c1", label="X", sql="SUM(x)"))
     with pytest.raises(MetricsStoreError, match="shipped"):
@@ -344,7 +344,7 @@ def test_M10_concurrent_saves_lose_nothing(layers):
 def test_M12_the_schema_linker_sees_what_this_install_wrote(layers):
     """It read `data/metrics.json` directly — past the test isolation and, after the overlay,
     past everything an install writes. Kills: restoring the direct file read."""
-    from aughor.tools import schema_linker as sl
+    from pramanyx.tools import schema_linker as sl
     m.save_metric(MetricDefinition(name="zorblax", connection="c1", label="Zorblax",
                                    sql="SUM(quuxcol)", tables=["frobtable"]))
     sl.invalidate_hints()

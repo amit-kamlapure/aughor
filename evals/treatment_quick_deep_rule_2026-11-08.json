@@ -2,7 +2,7 @@
   "what": "PENDING item 4 / ROADMAP 3.22 CP-3 — the paid quick-vs-deep comparison, its rule written BEFORE the run (2026-11-08, before any model call of the run: before the fresh judgments, before either arm). The result is evals/treatment_quick_deep_ab_2026-11-08.json, which records this file's sha256.",
   "approved_by": "the user, punch list item 30 (the paid comparison); hard ceiling $10 for the whole task",
   "connection": "LuxExperience, dcc63d83 (Postgres, lux-postgres on :5555). Never theLook.",
-  "install": "a COPY of the newest hourly backup (~/.aughor/state/backups/2026-11-08T094316Z), served by this worktree's API on :8013 with AUGHOR_DISABLE_SCHEDULERS=1; only AUGHOR_SECRET_KEY and AUGHOR_DEFAULT_POSTGRES_DSN taken from the live .env",
+  "install": "a COPY of the newest hourly backup (~/.pramanyx/state/backups/2026-11-08T094316Z), served by this worktree's API on :8013 with PRAMANYX_DISABLE_SCHEDULERS=1; only PRAMANYX_SECRET_KEY and PRAMANYX_DEFAULT_POSTGRES_DSN taken from the live .env",
   "arms": {
     "quick": "POST /ask {connection_id: dcc63d83, depth: 'quick', a fresh session_id, no history} — the light body (the conversation's tool loop)",
     "deep": "POST /ask {connection_id: dcc63d83, depth: 'deep', a fresh session_id, no history} — the analyst loop",
@@ -16,7 +16,7 @@
     "invalid": "an ask with an invalid arm is EXCLUDED from the tally and reported, never scored"
   },
   "the_judge": {
-    "what": "aughor.judgment.treatment.classify — the CP-1 bundle, unchanged, through the seam's provider (the install's coder binding, as the shadow used), no prior turn",
+    "what": "pramanyx.judgment.treatment.classify — the CP-1 bundle, unchanged, through the seam's provider (the install's coder binding, as the shadow used), no prior turn",
     "tier": "TIER_FOR: investigation -> heavy; lookup / single_query / multi_query -> light",
     "p_heavy": "the stated distribution's probability on 'investigation'",
     "logged_verdicts": "for asks that are in the shadow corpus, the verdict the live shadow logged is recorded beside the fresh one; the FRESH one is scored (one judge, one moment, every ask)"

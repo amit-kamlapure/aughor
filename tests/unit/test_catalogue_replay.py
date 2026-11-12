@@ -12,9 +12,9 @@ import copy
 
 import pytest
 
-from aughor.kernel import lifecycle
-from aughor.ontology import compatibility as C
-from aughor.ontology.history import KIND, element_key
+from pramanyx.kernel import lifecycle
+from pramanyx.ontology import compatibility as C
+from pramanyx.ontology.history import KIND, element_key
 
 PROCESS = {"display_name": "Order fulfilment", "entity": "Order", "stages": [
     {"name": "placed", "timestamp": "created_at"},
@@ -24,7 +24,7 @@ RULE = {"entity": "Order", "kind": "value_set", "property": "status", "values": 
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
 
@@ -85,7 +85,7 @@ def test_one_change_that_moved_a_definition_and_was_classed_safe_is_a_miss(monke
 
 
 def test_the_census_journals_the_replay_with_each_reading(monkeypatch):
-    from aughor.ontology import census
+    from pramanyx.ontology import census
     _keep("rule", "completed", ("published", RULE), ("published", {**RULE, "values": ["Complete", "Shipped"]}))
     monkeypatch.setattr(census, "take_census", lambda: {"totals": {}, "scopes": [], "not_built": [], "leaned_on": {},
                                                         "keyed": {}, "replay": census._replay()})

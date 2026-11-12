@@ -1,7 +1,7 @@
 """Integration tests for the value-domain join-guard repair in the EXPLORE path.
 
 Mirror tests/unit/test_join_guard_repair.py (which covers the ADA path) for
-`plan_and_execute_subq` in aughor/agent/explore.py. Uses a real in-memory DuckDB
+`plan_and_execute_subq` in pramanyx/agent/explore.py. Uses a real in-memory DuckDB
 and a stubbed LLM so the accept/reject wiring is deterministic.
 
 Also guards the pre-existing `metrics_section` omission: the explore error-fix
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
-from aughor.agent.state import QueryPlan, SQLFix, SubQuestion
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.agent.state import QueryPlan, SQLFix, SubQuestion
 
 
 def _conn():
@@ -78,10 +78,10 @@ def _state():
 
 
 def _run(monkeypatch, plan_sql, fix_sql):
-    from aughor.agent import explore as E
+    from pramanyx.agent import explore as E
     monkeypatch.setattr(E, "get_provider", lambda role="coder": _StubProvider(plan_sql, fix_sql))
     # Neutralise schema-linking so the stub schema is used verbatim.
-    monkeypatch.setattr("aughor.tools.schema_linker.link_schema", lambda *a, **k: "")
+    monkeypatch.setattr("pramanyx.tools.schema_linker.link_schema", lambda *a, **k: "")
     out = E.plan_and_execute_subq(_state(), _conn())
     return out
 

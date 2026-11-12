@@ -4,7 +4,7 @@
  * Only for where there is no stylesheet to read: the server's render, a headless print, a
  * test. In a browser `lib/tokenColor.ts` reads the live value, so a person's own accent and
  * grey win there. This is a mirror, and mirrors drift; `tokenFallback.test.ts` resolves each
- * name through `aughor-v2/theme/tokens-v2.css` into Radix Themes' own stylesheet and fails
+ * name through `pramanyx-v2/theme/tokens-v2.css` into Radix Themes' own stylesheet and fails
  * on any difference. Change a token's step, or the default look, and that test says what to
  * write here.
  */

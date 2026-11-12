@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import types
 
-from aughor.packs.dryrun import dry_run_binding
+from pramanyx.packs.dryrun import dry_run_binding
 
 LUX = ("TABLE: luxexperience.order_items\n  order_item_id  TEXT\n  order_id  TEXT\n  unit_price_eur  NUMERIC\n"
        "  returned  BOOLEAN\n"
@@ -18,16 +18,16 @@ LUX = ("TABLE: luxexperience.order_items\n  order_item_id  TEXT\n  order_id  TEX
 
 
 def test_proposing_reads_a_postgres_connection_through_its_schema_text(client, monkeypatch):
-    import aughor.tools.schema as S
+    import pramanyx.tools.schema as S
 
     def duckdb_only(*a, **k):
         raise TypeError("not a DuckDB connection")
 
     monkeypatch.setattr(S, "build_schema_context", duckdb_only)
-    monkeypatch.setattr("aughor.routers.connections.open_connection_for", lambda c: types.SimpleNamespace())
+    monkeypatch.setattr("pramanyx.routers.connections.open_connection_for", lambda c: types.SimpleNamespace())
     opened: list = []
     fake = types.SimpleNamespace(get_schema=lambda: LUX, close=lambda: None)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema",
                         lambda c, schema_name=None: opened.append(schema_name) or fake)
     r = client.post("/packs/retail/propose-bindings", json={"connection_id": "dcc63d83", "schema": "luxexperience"})
     assert r.status_code == 200, r.text

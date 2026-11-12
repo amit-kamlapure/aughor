@@ -19,8 +19,8 @@ from typing import Literal, Optional
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm import reliability as R
-from aughor.llm.provider import LLMProvider
+from pramanyx.llm import reliability as R
+from pramanyx.llm.provider import LLMProvider
 
 
 class Verdict(BaseModel):
@@ -289,7 +289,7 @@ def test_the_repair_prompt_carries_the_specific_error_and_forbids_invention():
 
 
 def test_the_gate_counts_both_sides():
-    from aughor.stats import stats
+    from pramanyx.stats import stats
 
     before = stats.snapshot()["counters"]
     assert R.gate("t.optional", True) is True
@@ -345,7 +345,7 @@ def test_instructor_gets_one_attempt_not_its_default_three(monkeypatch):
     _run(ep)
     assert ep.calls[0]["max_retries"] == 1
 
-    monkeypatch.setenv("AUGHOR_LLM_STRUCTURED_ATTEMPTS", "3")   # the escape hatch
+    monkeypatch.setenv("PRAMANYX_LLM_STRUCTURED_ATTEMPTS", "3")   # the escape hatch
     ep2 = _FakeEndpoint((Verdict(verdict="high", note="ok"), _completion(GOOD)))
     _run(ep2)
     assert ep2.calls[0]["max_retries"] == 3
@@ -432,7 +432,7 @@ def test_a_rate_limit_is_never_reclassified_as_a_formatting_problem():
     InstructorRetryException. Reading that as bad formatting would strip the markers
     the quota cooldown matches on — turning a day-long block back into a per-call
     probe, which is the regression #197 was landed to prevent."""
-    from aughor.llm import provider as P
+    from pramanyx.llm import provider as P
 
     exc = _retry_exc(_completion(""), message="429 Too Many Requests: rate limit exceeded")
     assert not P._is_structured_failure(exc)
@@ -441,7 +441,7 @@ def test_a_rate_limit_is_never_reclassified_as_a_formatting_problem():
 
 
 def test_a_daily_quota_error_still_reaches_the_cooldown():
-    from aughor.llm import provider as P
+    from pramanyx.llm import provider as P
 
     exc = _retry_exc(_completion(""), message="RESOURCE_EXHAUSTED: GenerateRequestsPerDay")
     assert not P._is_structured_failure(exc)
@@ -449,7 +449,7 @@ def test_a_daily_quota_error_still_reaches_the_cooldown():
 
 
 def test_an_ordinary_transport_error_is_untouched():
-    from aughor.llm import provider as P
+    from pramanyx.llm import provider as P
 
     exc = RuntimeError("connection reset by peer")
     assert not P._is_structured_failure(exc)

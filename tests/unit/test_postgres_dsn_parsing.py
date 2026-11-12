@@ -13,7 +13,7 @@ from __future__ import annotations
 import psycopg2
 import pytest
 
-from aughor.db.dsn import LIBPQ_PARAMS, merge_options, split_dsn
+from pramanyx.db.dsn import LIBPQ_PARAMS, merge_options, split_dsn
 
 # Supabase's copy-paste pooler DSN: a vendor marker libpq has never heard of.
 SUPABASE_POOLER = "postgresql://u:p@db.example.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x"
@@ -99,7 +99,7 @@ def test_data_connector_never_hands_a_query_string_to_the_uri_parser(monkeypatch
         return _FakeConn()
 
     monkeypatch.setattr(psycopg2, "connect", _fake_connect)
-    from aughor.db.connection import PostgresConnection
+    from pramanyx.db.connection import PostgresConnection
     PostgresConnection(dsn, schema_name="public")
 
     assert "?" not in captured["target"], (
@@ -117,7 +117,7 @@ def test_read_only_survives_a_dsn_that_carries_its_own_options(monkeypatch) -> N
         return _FakeConn()
 
     monkeypatch.setattr(psycopg2, "connect", _fake_connect)
-    from aughor.db.connection import PostgresConnection
+    from pramanyx.db.connection import PostgresConnection
     PostgresConnection(
         "postgresql://u:p@host/db?options=-c default_transaction_read_only=off",
         schema_name="public")
@@ -137,7 +137,7 @@ def test_store_backend_lifts_query_params(monkeypatch) -> None:
         return _FakeConn()
 
     monkeypatch.setattr(psycopg2, "connect", _fake_connect)
-    from aughor.db.backend import PgConnection
+    from pramanyx.db.backend import PgConnection
     PgConnection(SUPABASE_POOLER, schema="store_test")
 
     assert "?" not in captured["target"]
@@ -151,9 +151,9 @@ def test_vector_store_lifts_query_params(monkeypatch) -> None:
         captured["target"], captured["kwargs"] = target, kwargs
         raise RuntimeError("stop after connect — the rest needs a live pgvector")
 
-    monkeypatch.setenv("AUGHOR_DB_URL", SUPABASE_POOLER)
+    monkeypatch.setenv("PRAMANYX_DB_URL", SUPABASE_POOLER)
     monkeypatch.setattr(psycopg2, "connect", _fake_connect)
-    from aughor.semantic import vector_store
+    from pramanyx.semantic import vector_store
 
     with pytest.raises(RuntimeError):
         vector_store._pg()

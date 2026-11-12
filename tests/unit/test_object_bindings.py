@@ -17,12 +17,12 @@ import duckdb
 import pytest
 import yaml
 
-import aughor.mcp.knowledge_tools as KT
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.backing import apply_backing_measurements
-from aughor.ontology.bindings import (
+import pramanyx.mcp.knowledge_tools as KT
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.backing import apply_backing_measurements
+from pramanyx.ontology.bindings import (
     bind_binding,
     binding_block,
     binding_spec,
@@ -33,11 +33,11 @@ from aughor.ontology.bindings import (
     propose_bindings,
     select_lineage,
 )
-from aughor.ontology.filetree import export_tree, import_tree
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
-from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
-from aughor.semantic.object_types import describe_object_type, object_type_map
+from pramanyx.ontology.filetree import export_tree, import_tree
+from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.semantic.object_instances import get_object
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.semantic.object_types import describe_object_type, object_type_map
 
 REPO = Path(__file__).resolve().parents[2]
 GRAPH = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -200,7 +200,7 @@ def test_the_probe_counts_orphans_with_an_anti_join_an_engine_can_hash():
     door. The test above holds the count to a hand-written reference; this holds the shape."""
     import inspect
 
-    from aughor.ontology.bindings import measure_binding
+    from pramanyx.ontology.bindings import measure_binding
     probe = inspect.getsource(measure_binding)
     assert "NOT IN (SELECT" not in probe and "NOT EXISTS (SELECT 1 FROM object_keys" in probe
 
@@ -598,9 +598,9 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "d
 def door(tmp_path, monkeypatch):
     """A cached graph for CONN/ecommerce (with the Payment type), an empty overrides tree, and a warehouse every
     opener resolves to."""
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
@@ -697,8 +697,8 @@ def test_an_expression_property_is_declared_verified_read_compiled_and_removed_o
 
 def test_an_expression_that_did_not_bind_is_listed_but_never_compiled():
     """The overlay's law, without a database: a recorded refusal keeps the property off every reader."""
-    from aughor.ontology.expressions import declared_expressions
-    from aughor.ontology.models import OntologyEntity
+    from pramanyx.ontology.expressions import declared_expressions
+    from pramanyx.ontology.models import OntologyEntity
     ent = OntologyEntity(id="Order", display_name="Order", source_tables=["orders"], identity_key="order_id",
                          grain_verified=True)
     specs = {"ok": {"expression": "1 + 1"}, "bad": {"expression": "no_such()"}, "unknown": {"expression": "2"}}

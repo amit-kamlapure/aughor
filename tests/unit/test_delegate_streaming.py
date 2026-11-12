@@ -18,8 +18,8 @@ Two rules, and they pull in opposite directions on purpose:
 """
 from __future__ import annotations
 
-from aughor.agent.delegate_tool import _DELEGATE_SUPPRESSED, delegated_emit
-from aughor.agent.delegation import DelegationContext
+from pramanyx.agent.delegate_tool import _DELEGATE_SUPPRESSED, delegated_emit
+from pramanyx.agent.delegation import DelegationContext
 
 
 def _capture():
@@ -162,7 +162,7 @@ def test_a_non_streaming_caller_stays_non_streaming():
 def test_the_hop_streams_under_the_delegate_s_identity_not_the_caller_s():
     """The seam test: wiring the wrapper and never calling it would pass every test
     above. This one drives `_run_one` and reads what the pipeline was handed."""
-    from aughor.agent.delegate_tool import _run_one
+    from pramanyx.agent.delegate_tool import _run_one
 
     seen, emit = _capture()
     handed: dict = {}
@@ -193,14 +193,14 @@ def test_the_hop_streams_under_the_delegate_s_identity_not_the_caller_s():
 # way that gap was ever going to show is by looking at what a run actually wrote.
 
 def _hop_spans(trace_id: str) -> list[dict]:
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     return [e for e in session_log.recover_session(trace_id)
             if (e.get("payload") or {}).get("span_kind") == "delegation"]
 
 
 def _drive_one_hop(trace_id: str, ctx=None, target=None):
-    from aughor.agent.delegate_tool import _run_one
-    from aughor import telemetry
+    from pramanyx.agent.delegate_tool import _run_one
+    from pramanyx import telemetry
 
     def _answer(conn, args, *, emit=None, session_id=""):
         return {"headline": "42", "outcome": "answered", "usage": {}}
@@ -229,8 +229,8 @@ def test_the_span_carries_the_delegation_identity_into_the_payload():
     _drive_one_hop("trace-hop-2", DelegationContext(agent_path=("supervisor",)))
 
     payload = _hop_spans("trace-hop-2")[0]["payload"]
-    assert payload["aughor.delegation.path"] == "supervisor/analyst"
-    assert payload["aughor.delegation.depth"] == 2
+    assert payload["pramanyx.delegation.path"] == "supervisor/analyst"
+    assert payload["pramanyx.delegation.depth"] == 2
     assert payload["delegate_agent_id"] == "analyst"
     assert payload["delegate_agent_name"] == "Analyst"
 
@@ -242,13 +242,13 @@ def test_the_span_identity_matches_what_the_runtime_refuses_cycles_on():
                    {"id": "c", "name": "C", "connection_id": "x"})
 
     payload = _hop_spans("trace-hop-3")[0]["payload"]
-    assert payload["aughor.delegation.path"] == "/".join(ctx.child("c").agent_path)
+    assert payload["pramanyx.delegation.path"] == "/".join(ctx.child("c").agent_path)
 
 
 def test_the_timeline_reads_the_hop_back_as_a_delegation_node():
     """End to end: emission → store → the layout the node view renders."""
-    from aughor.obs import session_log
-    from aughor.obs.trace_tree import build_timeline
+    from pramanyx.obs import session_log
+    from pramanyx.obs.trace_tree import build_timeline
 
     _drive_one_hop("trace-hop-4")
     tl = build_timeline(session_log.recover_session("trace-hop-4"))

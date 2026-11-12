@@ -2,7 +2,7 @@
 
 /**
  * Org — what the organisation knows, read as a page (the Intelligence workspace's Org tab), to CLARITY
- * (`aughor-v2/CLARITY.md`) and its rule for a knowledge view: prose and facts under headings, not tiles. One sheet: a
+ * (`pramanyx-v2/CLARITY.md`) and its rule for a knowledge view: prose and facts under headings, not tiles. One sheet: a
  * sentence saying what Org holds and what it is for, then the promoted findings by domain — each finding its own
  * sentence, one muted line of where it came from and when, and the door that takes it out. Nothing here waits on a
  * person, so there is no Needs you; no number is the point, so there are no figures.

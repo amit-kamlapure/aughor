@@ -18,9 +18,9 @@ from __future__ import annotations
 # ── the rebuild collector ───────────────────────────────────────────────────────────
 
 def test_rebuild_skips_receipts_whose_headline_is_the_question(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LEDGER_DIR", str(tmp_path))
-    from aughor.kernel.ledger import Ledger
-    from aughor.ontology.context_graph_build import load_investigation_findings
+    monkeypatch.setenv("PRAMANYX_LEDGER_DIR", str(tmp_path))
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.ontology.context_graph_build import load_investigation_findings
 
     led = Ledger.default()
     question = ("[Scheduled-run context — written by code, not inferred]\n"
@@ -40,8 +40,8 @@ def test_rebuild_skips_receipts_whose_headline_is_the_question(monkeypatch, tmp_
 # ── the live writer's gate ──────────────────────────────────────────────────────────
 
 def test_live_writer_never_projects_the_question(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_LEDGER_DIR", str(tmp_path))
-    import aughor.routers.investigations as inv
+    monkeypatch.setenv("PRAMANYX_LEDGER_DIR", str(tmp_path))
+    import pramanyx.routers.investigations as inv
 
     noted: list[dict] = []
     monkeypatch.setattr(inv, "_note_finding_on_graph",
@@ -60,7 +60,7 @@ def test_live_writer_never_projects_the_question(monkeypatch, tmp_path):
 
     assert [n["headline"] for n in noted] == ["", "Orders fell 7.3% on Sep 5."]
     # And the receipt PAGE still shows something for the inconclusive answer.
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     arts = Ledger.default().artifacts_of_kind(["chat_answer"], conn_id="conn-h", limit=5)
     assert all((a.get("payload") or {}).get("headline") for a in arts)
 
@@ -68,7 +68,7 @@ def test_live_writer_never_projects_the_question(monkeypatch, tmp_path):
 # ── the model-facing search ─────────────────────────────────────────────────────────
 
 def test_search_result_is_clipped_and_deduped(monkeypatch):
-    import aughor.agent.platform_tools as pt
+    import pramanyx.agent.platform_tools as pt
 
     long_echo = "[Scheduled-run context — written by code, not inferred]\n" + ("x" * 2000)
     def _fake_search(connection_id, query, limit=10):
@@ -78,7 +78,7 @@ def test_search_result_is_clipped_and_deduped(monkeypatch):
             {"id": "finding:3", "kind": "finding", "label": long_echo[:80], "summary": long_echo},
             {"id": "metric:aov", "kind": "metric", "label": "AOV", "summary": "average order value"},
         ]}
-    monkeypatch.setattr("aughor.mcp.knowledge_tools.search_graph", _fake_search)
+    monkeypatch.setattr("pramanyx.mcp.knowledge_tools.search_graph", _fake_search)
     monkeypatch.setattr(pt, "_graph_staleness", lambda c: "fresh")
 
     out = pt.search_graph("conn-h", {"query": "orders"})

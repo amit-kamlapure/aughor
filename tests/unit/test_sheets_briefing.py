@@ -42,23 +42,23 @@ def _recent(today: date) -> str:
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.briefing import ranges
-    from aughor.sheets import projection
+    from pramanyx.briefing import ranges
+    from pramanyx.sheets import projection
     projection.reset()
     ranges._EDGE_CACHE.clear()
     yield tmp_path
-    from aughor.semantic.metrics import delete_metric
+    from pramanyx.semantic.metrics import delete_metric
     delete_metric("paid", connection_id="sheets")
     ranges._EDGE_CACHE.clear()
     projection.reset()
 
 
 def _sheet(env, text: str):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "orders.csv"
     path.write_text(text)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -69,7 +69,7 @@ def _client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import exploration, metrics
+    from pramanyx.routers import exploration, metrics
     app = FastAPI()
     app.include_router(metrics.router)
     app.include_router(exploration.router)
@@ -89,8 +89,8 @@ def _approve_paid(client, sheet) -> None:
 
 def _grid_sum(sheet, first: date, end: date) -> float:
     """The grid's own total of price over the rows the range holds — the falsifier's other side."""
-    from aughor.sheets import model, projection
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets import model, projection
+    from pramanyx.sheets.model import Condition
     sheet = model.get(sheet.id)
     ts, price = sheet.column("order_purchase_timestamp").id, sheet.column("price").id
     read = projection.read_rows(sheet, limit=1, conditions=[
@@ -127,10 +127,10 @@ def test_a_sheets_figure_is_its_own_total_never_final_and_still_read_as_a_move(e
 def test_the_send_and_the_narrator_say_a_sheet_is_live_and_never_that_its_figures_are_final(env):
     from dataclasses import replace
 
-    from aughor.briefing import ranges
-    from aughor.briefing.delivery import render_period_markdown
-    from aughor.knowledge.brief_context import _period_lines
-    from aughor.knowledge.period_brief import period_note
+    from pramanyx.briefing import ranges
+    from pramanyx.briefing.delivery import render_period_markdown
+    from pramanyx.knowledge.brief_context import _period_lines
+    from pramanyx.knowledge.period_brief import period_note
     sheet = _sheet(env, ENDED)
     _approve_paid(_client(), sheet)
     spec, why = ranges.resolve_for("sheets", "last_week")
@@ -150,9 +150,9 @@ def test_the_send_and_the_narrator_say_a_sheet_is_live_and_never_that_its_figure
 
 def test_an_edit_moves_the_figure_on_its_next_read_with_a_briefing_of_the_range_kept(env):
     """The falsifier: a sheet's figure never shows what it held before an edit."""
-    from aughor.briefing import ranges
-    from aughor.knowledge import briefing as built
-    from aughor.sheets import model, service
+    from pramanyx.briefing import ranges
+    from pramanyx.knowledge import briefing as built
+    from pramanyx.sheets import model, service
     today = datetime.now(timezone.utc).date()
     sheet = _sheet(env, _recent(today))
     client = _client()
@@ -180,8 +180,8 @@ def test_an_edit_moves_the_figure_on_its_next_read_with_a_briefing_of_the_range_
 
 
 def test_where_a_sheets_data_ends_moves_with_the_row_added_not_ten_minutes_later(env):
-    from aughor.briefing import ranges
-    from aughor.sheets import model, service
+    from pramanyx.briefing import ranges
+    from pramanyx.sheets import model, service
     today = datetime.now(timezone.utc).date()
     sheet = _sheet(env, _recent(today))
     _approve_paid(_client(), sheet)
@@ -195,7 +195,7 @@ def test_where_a_sheets_data_ends_moves_with_the_row_added_not_ten_minutes_later
 def test_a_live_answer_says_what_it_is_wherever_it_is_asked():
     """The settling answer is the only place a source's days are worded: a live one keeps its words in every form, and
     is never narrowed into a source that says nothing."""
-    from aughor.settling.answer import LIVE, answer_from, answer_of_block
+    from pramanyx.settling.answer import LIVE, answer_from, answer_of_block
     said = answer_from({"live": True, "days": 1, "still_moving": ["x"]})
     assert said.kind == LIVE and said.live and said.never_settled
     assert said.about({"sql": "SELECT SUM(price) FROM olist_orders"}).kind == LIVE
@@ -207,7 +207,7 @@ def test_a_live_answer_says_what_it_is_wherever_it_is_asked():
 
 
 def test_one_answer_says_a_connection_is_live_and_the_result_cache_reads_it():
-    from aughor.db import matcache
-    from aughor.db.registry import SHEETS_ID, is_live
+    from pramanyx.db import matcache
+    from pramanyx.db.registry import SHEETS_ID, is_live
     assert is_live(SHEETS_ID) and not is_live("samples") and not is_live("")
     assert matcache._never_cached(SHEETS_ID) and not matcache._never_cached("samples")

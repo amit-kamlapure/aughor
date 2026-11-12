@@ -1,4 +1,4 @@
-"""Arc TC, TC-4 — alerts that close (`aughor/monitors/recovery.py`; part of the platform since 2026-10-28).
+"""Arc TC, TC-4 — alerts that close (`pramanyx/monitors/recovery.py`; part of the platform since 2026-10-28).
 
 What these hold: the first check back within its limit after an alert writes ONE *recovered* alert
 naming the alert it closes, when, and the value that came back; a second check within its limit writes nothing more;
@@ -16,10 +16,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db.connection import DatabaseConnection
-from aughor.monitors import recovery
-from aughor.monitors.models import Monitor, MonitorAlert
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db.connection import DatabaseConnection
+from pramanyx.monitors import recovery
+from pramanyx.monitors.models import Monitor, MonitorAlert
 
 
 class _Warehouse:
@@ -57,15 +57,15 @@ def _watch(**over) -> Monitor:
 @pytest.fixture
 def heartbeat(monkeypatch):
     """``tick(value)`` runs the monitor effect once over a warehouse reading ``value``; returns the run's message."""
-    from aughor.automations.adopt import monitor_as_automation
-    from aughor.automations.engine import _dispatch_monitor
-    from aughor.automations.models import Effect
-    from aughor.monitors.store import upsert_monitor
+    from pramanyx.automations.adopt import monitor_as_automation
+    from pramanyx.automations.engine import _dispatch_monitor
+    from pramanyx.automations.models import Effect
+    from pramanyx.monitors.store import upsert_monitor
 
     watch = _watch()
     upsert_monitor(watch)
     wh = _Warehouse(0)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: wh)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: wh)
 
     def tick(value):
         wh.set(value)
@@ -78,7 +78,7 @@ def heartbeat(monkeypatch):
 
 
 def _alerts(monitor_id: str) -> list[MonitorAlert]:
-    from aughor.monitors.store import get_alerts
+    from pramanyx.monitors.store import get_alerts
     return list(reversed(get_alerts(monitor_id=monitor_id, limit=100)))      # oldest first
 
 
@@ -118,8 +118,8 @@ def test_the_first_check_back_within_its_limit_closes_the_alert_once_and_a_new_a
 
 
 def test_two_checks_racing_to_close_one_alert_write_one_recovery(heartbeat):
-    from aughor.monitors.runner import check_monitor
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.runner import check_monitor
+    from pramanyx.monitors.store import append_alert
 
     watch = heartbeat.watch
     heartbeat(5)
@@ -131,7 +131,7 @@ def test_two_checks_racing_to_close_one_alert_write_one_recovery(heartbeat):
 
 
 def test_only_an_alert_from_a_rule_with_a_limit_is_closed():
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.store import append_alert
 
     m = _watch()
     append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(3), alert_on="threshold_cross", severity="warning"))
@@ -148,7 +148,7 @@ def test_only_an_alert_from_a_rule_with_a_limit_is_closed():
 # ── what a check found ──────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_check_says_within_its_limit_only_where_its_rule_judged_a_value_against_a_line():
-    from aughor.monitors.runner import WITHIN, check_monitor
+    from pramanyx.monitors.runner import WITHIN, check_monitor
 
     assert check_monitor(_watch(), _Warehouse(15)).outcome == WITHIN
     assert check_monitor(_watch(warning_threshold=None), _Warehouse(15)).outcome == "", "no line, nothing to be within"
@@ -157,7 +157,7 @@ def test_a_check_says_within_its_limit_only_where_its_rule_judged_a_value_agains
 
 
 def test_freshness_anomaly_and_drift_say_within_their_limit_with_what_they_judged():
-    from aughor.monitors.runner import WITHIN, check_monitor
+    from pramanyx.monitors.runner import WITHIN, check_monitor
 
     fresh = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     run = check_monitor(_watch(alert_on="data_freshness", freshness_table="orders"), _Warehouse(fresh))
@@ -168,7 +168,7 @@ def test_freshness_anomaly_and_drift_say_within_their_limit_with_what_they_judge
     assert run.outcome == WITHIN and "from its rolling mean" in run.judged_words and run.judged == days[-1][1]
 
     pytest.importorskip("scipy")
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.store import append_alert
     drift = _watch(alert_on="segment_drift", dimension_column="region", custom_sql="SELECT r, v FROM s")
     append_alert(MonitorAlert(monitor_id=drift.id, triggered_at=_ago(1), alert_on="segment_drift", severity="info",
                               message="segment baseline recorded"))     # its first run records a baseline instead
@@ -184,8 +184,8 @@ def _ago(hours: float) -> str:
 
 
 def test_a_recovery_ends_the_grace_period():
-    from aughor.monitors.runner import _suppressed_by_grace
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.runner import _suppressed_by_grace
+    from pramanyx.monitors.store import append_alert
 
     m = _watch()
     append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(1.0), alert_on="threshold_cross", severity="warning"))
@@ -195,8 +195,8 @@ def test_a_recovery_ends_the_grace_period():
 
 
 def test_a_recovery_is_never_a_baseline_a_trend_point_or_the_last_alert():
-    from aughor.monitors.runner import _last_alert, _last_alert_value
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.runner import _last_alert, _last_alert_value
+    from pramanyx.monitors.store import append_alert
 
     m = _watch()
     append_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(1.0), alert_on="threshold_cross", severity="warning",
@@ -209,11 +209,11 @@ def test_a_recovery_is_never_a_baseline_a_trend_point_or_the_last_alert():
 # ── not sent ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_recovery_is_recorded_and_never_sent_nor_asked_about(monkeypatch):
-    from aughor.monitors import notify
+    from pramanyx.monitors import notify
 
     touched: list[str] = []
     monkeypatch.setattr(notify, "_open_inquiry_for_alert", lambda a, m: touched.append("inquiry"))
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: touched.append("send") or None)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: touched.append("send") or None)
     m = _watch(notification_channel="trg-ops")
     notify.dispatch_alert(MonitorAlert(monitor_id=m.id, triggered_at=_ago(0), alert_on="recovered", severity="info"), m)
     assert touched == []
@@ -231,9 +231,9 @@ def _closed_pair(heartbeat) -> tuple[MonitorAlert, MonitorAlert]:
 
 
 def test_the_alert_lists_say_which_recovery_closed_an_alert(heartbeat):
-    from aughor.routers.monitors import get_all_alerts, get_monitor_alerts
+    from pramanyx.routers.monitors import get_all_alerts, get_monitor_alerts
 
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.store import append_alert
 
     # an information alert sits before the recovery, and no recovery closes it
     failing = MonitorAlert(monitor_id=heartbeat.watch.id, conn_id=heartbeat.watch.conn_id, triggered_at=_ago(2),
@@ -251,7 +251,7 @@ def test_the_alert_lists_say_which_recovery_closed_an_alert(heartbeat):
 
 
 def test_what_waits_on_a_person_is_neither_a_recovery_nor_an_alert_one_closed(heartbeat):
-    from aughor.agent.platform_tools import list_monitors
+    from pramanyx.agent.platform_tools import list_monitors
 
     _closed_pair(heartbeat)
     conn = heartbeat.watch.conn_id
@@ -261,9 +261,9 @@ def test_what_waits_on_a_person_is_neither_a_recovery_nor_an_alert_one_closed(he
 def test_a_recovery_is_no_alert_that_fired_to_the_other_readers(heartbeat):
     from types import SimpleNamespace
 
-    from aughor.knowledge.period_brief import alert_findings
-    from aughor.monitors.alert_summary import build_alert_summary
-    from aughor.monitors.missed import _fired_around
+    from pramanyx.knowledge.period_brief import alert_findings
+    from pramanyx.monitors.alert_summary import build_alert_summary
+    from pramanyx.monitors.missed import _fired_around
 
     first, rec = _closed_pair(heartbeat)
     conn, mid = heartbeat.watch.conn_id, heartbeat.watch.id
@@ -278,7 +278,7 @@ def test_a_recovery_is_no_alert_that_fired_to_the_other_readers(heartbeat):
 
 
 def test_a_missions_watch_counts_the_alerts_that_fired_not_their_recovery(heartbeat):
-    from aughor.record import mission as M
+    from pramanyx.record import mission as M
 
     _closed_pair(heartbeat)
     conn = heartbeat.watch.conn_id

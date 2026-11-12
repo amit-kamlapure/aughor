@@ -22,25 +22,25 @@ from pathlib import Path
 import pytest
 import sqlglot
 
-import aughor.connectors
-import aughor.db.connection as dbc
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db.connection import DatabaseConnection
-from aughor.db.dialects import native_sql
+import pramanyx.connectors
+import pramanyx.db.connection as dbc
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db.connection import DatabaseConnection
+from pramanyx.db.dialects import native_sql
 
 #: Platform SQL as the probes write it: double-quoted identifiers, a DuckDB cast, the `::` operator.
 PLATFORM = 'SELECT "user_id", CAST("created_at" AS VARCHAR) AS d, "sale_price"::DOUBLE AS p FROM "orders"'
 
 
 def _all_connection_classes() -> list[type]:
-    for mod in pkgutil.walk_packages(aughor.connectors.__path__, "aughor.connectors."):
+    for mod in pkgutil.walk_packages(pramanyx.connectors.__path__, "pramanyx.connectors."):
         importlib.import_module(mod.name)
 
     def walk(cls):
         for sub in cls.__subclasses__():
             yield sub
             yield from walk(sub)
-    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("aughor.")
+    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("pramanyx.")
                    and not inspect.isabstract(c)}, key=lambda c: c.__qualname__)
 
 
@@ -55,7 +55,7 @@ def test_the_census_of_doors_found_them_all():
             "SnowflakeConnection", "MySQLConnection", "ExasolConnection", "TrinoConnection"} <= names
     # DE-3b: the native set is what the declarations say it is — a class that runs SQL as written
     # without declaring so, or the reverse, fails here.
-    from aughor.connectors.declarations import ENGINES
+    from pramanyx.connectors.declarations import ENGINES
     declared_native = {e.connector.rsplit(":", 1)[1] for e in ENGINES if e.connector and e.native_sql}
     assert {c.__name__ for c in NATIVE} == declared_native == {
         "BigQueryConnection", "SnowflakeConnection", "MySQLConnection", "MySQLWireConnection", "ExasolConnection", "TrinoConnection",
@@ -174,8 +174,8 @@ def test_a_declaration_the_door_cannot_read_is_not_swallowed_by_rows():
 
 
 def test_the_guard_battery_translates_before_its_first_guard(monkeypatch):
-    import aughor.trust as trust
-    from aughor.sql.executor import execute_guarded
+    import pramanyx.trust as trust
+    from pramanyx.sql.executor import execute_guarded
 
     verified: list[str] = []
     real_verify = trust.verify
@@ -199,4 +199,4 @@ def test_native_sql_is_the_doors_own_step():
         for p in root.rglob("*.py")
         if re.search(r"(?<![\w.])native_sql\(", p.read_text(errors="ignore"))
     )
-    assert callers == ["aughor/db/dialects.py", "aughor/sql/writer.py"], callers
+    assert callers == ["pramanyx/db/dialects.py", "pramanyx/sql/writer.py"], callers

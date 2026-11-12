@@ -11,7 +11,7 @@ two things per question:
 - **accuracy** — execution-grounded, via :func:`evals.sql_accuracy.score_single`
   (multi-reference aware: ``accept_sql`` alternatives don't penalise a correct
   answer that picked a different-but-canonical metric).
-- **compute** — tokens · LLM calls · latency, via :mod:`aughor.kernel.metering`
+- **compute** — tokens · LLM calls · latency, via :mod:`pramanyx.kernel.metering`
   (honest compute, *not* dollars — the metering contract deliberately avoids a
   drifting price table; a $ figure is derivable later from ``total_tokens``).
 
@@ -296,8 +296,8 @@ def score_dataset(dataset: str = DEFAULT_DATASET, connection: str = DEFAULT_CONN
                   ids: Optional[list[str]] = None, temperature: float = 0.0,
                   progress: bool = True) -> list[RatchetItem]:
     """Run the golden set through the real pipeline, metering each question."""
-    import aughor.kernel.metering as metering
-    from aughor.db.connection import open_connection_for
+    import pramanyx.kernel.metering as metering
+    from pramanyx.db.connection import open_connection_for
 
     records = [json.loads(l) for l in open(dataset) if l.strip()]
     if ids:

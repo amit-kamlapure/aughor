@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-import aughor.db.history as history
+import pramanyx.db.history as history
 
 
 class _StubLedger:
@@ -28,7 +28,7 @@ class _StubLedger:
 def hist(monkeypatch, tmp_path):
     """history store pointed at a throwaway DB, with a recording Ledger stub."""
     monkeypatch.setattr(history, "_DB_PATH", tmp_path / "history.db")
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
     stub = _StubLedger()
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: stub))
     return stub
@@ -123,7 +123,7 @@ def test_streams_reconcile_orphans_in_finally():
     investigation orphans in 'running' with no terminal event (the 27dcd642 class).
     The CancelledError path can't run in the unit suite, so assert the source guard
     exists in BOTH streaming entrypoints — brittle by design."""
-    from aughor.routers import investigations as inv_mod
+    from pramanyx.routers import investigations as inv_mod
     for fn_name in ("_stream_investigation", "_stream_resume"):
         src = inspect.getsource(getattr(inv_mod, fn_name))
         finally_body = src.split("finally:", 1)

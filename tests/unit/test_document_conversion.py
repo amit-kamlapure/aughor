@@ -31,7 +31,7 @@ import pytest
 converter = pytest.importorskip("anydoc", reason="the 'docs' extra is not installed")
 docx = pytest.importorskip("docx", reason="the 'docs' extra is not installed")
 
-from aughor.knowledge import blobs, convert  # noqa: E402
+from pramanyx.knowledge import blobs, convert  # noqa: E402
 
 TABLE_ROWS = [("Region", "Revenue", "Growth"), ("EMEA", "4,200,000", "12%"),
               ("AMER", "7,850,000", "8%"), ("APAC", "3,100,000", "23%")]
@@ -51,9 +51,9 @@ def _offline_embedder(monkeypatch):
     module-level cache that outlives monkeypatch, so a narrower fake would be compared
     against an earlier test's 768 and every write refused.
     """
-    monkeypatch.setattr("aughor.semantic.embedder.embed",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed",
                         lambda texts: [[0.0] * 768 for _ in texts])
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 768)
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ def test_the_supported_set_is_asked_of_the_converter_not_hand_listed():
 def test_the_router_allowlist_is_the_converters_set():
     """One source for upload and preview — a preview that accepted what upload
     rejects would show a person chunks they can never index."""
-    from aughor.routers.knowledge import _allowed_suffixes
+    from pramanyx.routers.knowledge import _allowed_suffixes
 
     assert _allowed_suffixes() == convert.supported_suffixes()
 
@@ -178,9 +178,9 @@ def test_an_oversized_file_is_refused_before_it_is_parsed():
 
 def test_hosted_ocr_is_off_unless_asked_for(monkeypatch):
     """OCR sends the document to a third party. Absence of the variable means no."""
-    monkeypatch.delenv("AUGHOR_DOC_OCR", raising=False)
+    monkeypatch.delenv("PRAMANYX_DOC_OCR", raising=False)
     assert convert._ocr_mode() == ("reject", None)
-    monkeypatch.setenv("AUGHOR_DOC_OCR", "hosted")
+    monkeypatch.setenv("PRAMANYX_DOC_OCR", "hosted")
     monkeypatch.setenv("FIRECRAWL_API_KEY", "k")
     assert convert._ocr_mode() == ("hosted", "k")
 
@@ -239,7 +239,7 @@ def test_deleting_a_document_removes_its_bytes(revenue_docx: Path):
 def test_a_doc_id_cannot_escape_its_directory():
     """`doc_id` reaches this store from a URL path segment."""
     escaped = blobs.doc_dir("../../etc/passwd")
-    root = Path(os.environ["AUGHOR_DOCUMENTS_DIR"]).resolve()
+    root = Path(os.environ["PRAMANYX_DOCUMENTS_DIR"]).resolve()
     assert root in escaped.resolve().parents, f"{escaped} escaped {root}"
 
 
@@ -247,7 +247,7 @@ def test_the_store_root_is_resolved_per_call_not_frozen_at_import(monkeypatch, t
     """A module-level `Path(os.environ[...])` is bound by the first import, so a test
     that sets the variable afterwards is ignored and the write lands in the real
     `data/`. That has cost this codebase live data three times."""
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_DIR", str(tmp_path / "elsewhere"))
     assert (tmp_path / "elsewhere") in blobs.doc_dir("d").parents
 
 
@@ -364,7 +364,7 @@ def test_a_document_too_short_to_index_is_refused_not_silently_accepted(client):
 def test_a_refused_upload_leaves_no_orphaned_bytes(client):
     """Retention happens after indexing succeeds. Storing bytes under a doc_id that
     was never registered would leave a file nothing in the product can reach."""
-    root = Path(os.environ["AUGHOR_DOCUMENTS_DIR"])
+    root = Path(os.environ["PRAMANYX_DOCUMENTS_DIR"])
     count = lambda: len(list(root.rglob("original*"))) if root.is_dir() else 0
     before = count()
 
@@ -583,7 +583,7 @@ def test_a_two_line_header_is_put_back_together():
     the column, which is why a table row is never suppressed as a numeric run. A
     corrupted row inside one is content nothing else will question.
     """
-    from aughor.knowledge.convert import _repair_wrapped_headers
+    from pramanyx.knowledge.convert import _repair_wrapped_headers
 
     fixed = _repair_wrapped_headers(WRAPPED).splitlines()
 
@@ -597,7 +597,7 @@ def test_a_two_line_header_is_put_back_together():
 def test_a_first_row_that_is_merely_first_is_left_alone():
     """The rule is that the leading word is UNIQUE to the first row. A word the column
     genuinely holds appears again further down, and moving it would eat real data."""
-    from aughor.knowledge.convert import _repair_wrapped_headers
+    from pramanyx.knowledge.convert import _repair_wrapped_headers
 
     honest = """| Quarter | Tenant |
 |---|---|
@@ -610,7 +610,7 @@ def test_a_first_row_that_is_merely_first_is_left_alone():
 
 def test_a_table_too_short_to_judge_is_left_alone():
     """"No other row starts with it" means nothing across two rows."""
-    from aughor.knowledge.convert import _repair_wrapped_headers
+    from pramanyx.knowledge.convert import _repair_wrapped_headers
 
     short = "| Quarter / | Area |\n|---|---|\n| year 2024 Q1 | area 3,400 sqm |\n"
     assert _repair_wrapped_headers(short) == short.rstrip("\n")
@@ -642,7 +642,7 @@ def test_a_city_map_is_not_a_data_table():
     It is armoured, too: a table row is never suppressed as a numeric run, on the
     grounds that its header names the column. Here the header names a legend.
     """
-    from aughor.knowledge.convert import _demote_layout_tables
+    from pramanyx.knowledge.convert import _demote_layout_tables
 
     demoted = _demote_layout_tables(MAP_LEGEND)
 
@@ -656,7 +656,7 @@ def test_a_city_map_is_not_a_data_table():
 def test_a_real_table_with_figures_in_every_row_is_left_alone():
     """The rule keys on rows that have figures and NO words. A data table's rows have
     both, which is exactly what makes their header meaningful."""
-    from aughor.knowledge.convert import _demote_layout_tables
+    from pramanyx.knowledge.convert import _demote_layout_tables
 
     assert _demote_layout_tables(LETTINGS) == LETTINGS.rstrip("\n")
 
@@ -664,7 +664,7 @@ def test_a_real_table_with_figures_in_every_row_is_left_alone():
 def test_one_odd_row_does_not_condemn_a_table():
     """Most of the rows have to be bare figures. A single sparse row is a gap in a real
     table, not evidence that the whole thing is layout."""
-    from aughor.knowledge.convert import _demote_layout_tables
+    from pramanyx.knowledge.convert import _demote_layout_tables
 
     with_gap = LETTINGS.replace("| 2023 Q1 | Prager Straße 3 | Go Asia | 1,500 sqm |",
                                 "| | | | 1,500 |")
@@ -683,7 +683,7 @@ def test_a_chart_run_is_recognised_and_a_sentence_is_not():
     quarters extract as nine correct figures attached to nothing. A sentence citing
     the same figures carries its own attribution and must survive.
     """
-    from aughor.knowledge.documents import is_numeric_run
+    from pramanyx.knowledge.documents import is_numeric_run
 
     assert is_numeric_run(CHART_RUN) is True
     assert is_numeric_run("+140bps +700bps +70bps +240bps (60bps) +390bps") is True, \
@@ -702,7 +702,7 @@ def test_a_colon_names_the_figure_that_follows_it():
     period it measures was held out of the index, while the scrambled chart axes
     around it, being shorter than four numbers, went in.
     """
-    from aughor.knowledge.documents import is_numeric_run
+    from pramanyx.knowledge.documents import is_numeric_run
 
     assert is_numeric_run(
         "Take-up H1 2026: 24,000 sqm | H1 2025: 32,000 sqm | Ø 5 years 24,000 sqm"
@@ -717,7 +717,7 @@ def test_one_label_does_not_launder_an_axis():
     it, and a labelled axis is still an axis. These are the lines that would come
     back into the index if the rescue were applied to the whole line instead.
     """
-    from aughor.knowledge.documents import is_numeric_run
+    from pramanyx.knowledge.documents import is_numeric_run
 
     assert is_numeric_run("Prime rent: 340 320 300 280 260") is True
     assert is_numeric_run("Take-up: 24,000 32,000 18,000 9,000") is True
@@ -737,7 +737,7 @@ def test_a_chart_spread_thin_is_still_a_chart():
     back 83 lines and left 73 more of this kind in the index — a plausible-looking
     splice of two different charts, which is worse company than the long row ever was.
     """
-    from aughor.knowledge.documents import _strip_numeric_runs, is_numeric_run
+    from pramanyx.knowledge.documents import _strip_numeric_runs, is_numeric_run
 
     # The premise: every line here is individually innocent.
     for line in INTERLEAVED.splitlines():
@@ -753,7 +753,7 @@ def test_a_line_that_carries_a_name_survives_the_block_around_it():
     sits in the middle of the axis debris the block rule is there to take, and it is
     the one line in that block nothing else attributes.
     """
-    from aughor.knowledge.documents import _strip_numeric_runs
+    from pramanyx.knowledge.documents import _strip_numeric_runs
 
     kept = _strip_numeric_runs("40.000 80 79\n52.225.499 Friedrichstr.\n25.000 50\n37")
     assert kept.strip() == "52.225.499 Friedrichstr."
@@ -763,7 +763,7 @@ def test_a_heading_survives_the_block_around_it():
     """`##### 2021 - H1 2026` is the period a chart covers. It has no words in it — `H1`
     is not one by design — so only its heading marker keeps it, and it must: dropping it
     takes away the chunk's last remaining context."""
-    from aughor.knowledge.documents import _strip_numeric_runs
+    from pramanyx.knowledge.documents import _strip_numeric_runs
 
     kept = _strip_numeric_runs("40.000 80 79\n##### 2021 - H1 2026\n25.000 50\n37")
     assert kept.strip() == "##### 2021 - H1 2026"
@@ -776,7 +776,7 @@ def test_prose_beside_a_headless_row_does_not_rescue_it():
     the block says nothing about it and the line rule still has to. Reading only the
     block would have quietly let this back into the index.
     """
-    from aughor.knowledge.documents import _strip_numeric_runs
+    from pramanyx.knowledge.documents import _strip_numeric_runs
 
     prose = "Revenue rose sharply across every region we operate in this year."
     kept = _strip_numeric_runs(f"{prose}\n245.9 268.9 279.6 224.5")
@@ -786,7 +786,7 @@ def test_prose_beside_a_headless_row_does_not_rescue_it():
 def test_a_pair_in_its_own_paragraph_is_still_left_alone():
     """The floor holds at the block level too — four figures, not two. A heading and a
     pair is a shape people write on purpose."""
-    from aughor.knowledge.documents import _strip_numeric_runs
+    from pramanyx.knowledge.documents import _strip_numeric_runs
 
     assert _strip_numeric_runs("#### 774 847").strip() == "#### 774 847"
 
@@ -795,7 +795,7 @@ def test_what_is_reported_is_exactly_what_is_removed():
     """The count shown at the door and the lines taken from the index come from one
     answer. They were two passes over the same text, which is a drift waiting to
     happen — and the number is the only thing a person sees before approving."""
-    from aughor.knowledge.documents import _strip_numeric_runs, numeric_run_lines
+    from pramanyx.knowledge.documents import _strip_numeric_runs, numeric_run_lines
 
     text = f"# Deck\n\n{INTERLEAVED}\n\nSome prose that carries the chunk.\n\n{CHART_RUN}\n"
     removed = [line for line in text.splitlines()
@@ -807,7 +807,7 @@ def test_what_is_reported_is_exactly_what_is_removed():
 def test_a_table_row_is_never_a_run_however_many_numbers_it_holds():
     """Its header names the column, so every figure in it is attributed. This is the
     guard that keeps the financial tables — the part worth indexing — intact."""
-    from aughor.knowledge.documents import is_numeric_run
+    from pramanyx.knowledge.documents import is_numeric_run
 
     assert is_numeric_run("| EMEA | 4,200,000 | 12% | 47.1% | 86.8 | 1,064 |") is False
 
@@ -815,7 +815,7 @@ def test_a_table_row_is_never_a_run_however_many_numbers_it_holds():
 def test_two_numbers_are_left_alone():
     """Four is the floor on purpose. A pair under a heading is usually readable from
     its context, and suppressing it would widen the blast radius for no gain."""
-    from aughor.knowledge.documents import is_numeric_run
+    from pramanyx.knowledge.documents import is_numeric_run
 
     assert is_numeric_run("#### 774 847") is False
 
@@ -823,7 +823,7 @@ def test_two_numbers_are_left_alone():
 def test_numbers_inside_a_code_fence_are_kept():
     """The fence IS their attribution — that is program output or data someone pasted
     deliberately, not a chart axis."""
-    from aughor.knowledge.documents import _strip_numeric_runs
+    from pramanyx.knowledge.documents import _strip_numeric_runs
 
     fenced = "```\n1.1 2.2 3.3 4.4 5.5 6.6\n```\n"
     assert "1.1 2.2 3.3" in _strip_numeric_runs(fenced)
@@ -879,7 +879,7 @@ def test_the_preview_door_reports_the_same_suppression(client):
 
 def test_the_setting_round_trips_through_the_registry():
     """A re-index has to reproduce what cut a document, including this."""
-    from aughor.knowledge.documents import ChunkSettings
+    from pramanyx.knowledge.documents import ChunkSettings
 
     off = ChunkSettings(suppress_numeric_runs=False)
     assert off.as_dict()["suppress_numeric_runs"] is False
@@ -914,7 +914,7 @@ def test_convert_shows_the_result_without_indexing_anything(client):
 
 def test_convert_retains_no_bytes(client):
     """No staging area means nothing to expire, sweep or leak."""
-    root = Path(os.environ["AUGHOR_DOCUMENTS_DIR"])
+    root = Path(os.environ["PRAMANYX_DOCUMENTS_DIR"])
     count = lambda: len(list(root.rglob("original*"))) if root.is_dir() else 0
     before = count()
 
@@ -967,7 +967,7 @@ def test_what_convert_shows_is_what_upload_indexes(client):
 def test_the_listing_says_which_rows_the_platform_generated(client):
     """Measured on a live install: 15 of 16 rows were compiled schema docs, so one real
     upload looked like sixteen documents nobody could act on."""
-    from aughor.knowledge.indexer import index_text, is_generated
+    from pramanyx.knowledge.indexer import index_text, is_generated
 
     client.post("/documents/upload",
                 files={"file": ("mine.md",
@@ -991,12 +991,12 @@ def test_purging_orphans_embeds_nothing(client, monkeypatch):
     """`/documents/reindex` re-embeds the whole corpus on its way past the orphans —
     148 chunks paid for to delete 14 on the live install. An orphan needs no vector to
     be deleted."""
-    from aughor.knowledge import reindex
+    from pramanyx.knowledge import reindex
 
     def _forbidden(*a, **k):
         raise AssertionError("purging orphans must never call the embedder")
 
-    monkeypatch.setattr("aughor.semantic.embedder.embed", _forbidden)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed", _forbidden)
 
     result = reindex.purge_orphans_only()
     assert result["ok"] is True

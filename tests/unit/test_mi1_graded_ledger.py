@@ -11,20 +11,20 @@ Four things are proven here, and the fourth is the point of the whole slice:
 """
 from __future__ import annotations
 
-from aughor.security.audit import AuditLogger, GuardVerdicts
+from pramanyx.security.audit import AuditLogger, GuardVerdicts
 
 
 def _tel():
     """The CURRENT telemetry module, resolved per call.
 
-    `test_telemetry.py::_reload_telemetry` re-imports `aughor.telemetry`, so a module-scope
+    `test_telemetry.py::_reload_telemetry` re-imports `pramanyx.telemetry`, so a module-scope
     binding here could hold a module object that is no longer the one the code under test
     reads — binding a ContextVar nobody looks at. That made these tests pass alone and fail
     in the suite, which is worse than failing outright. The reload now keeps `sys.modules`
     and the package attribute in sync (that divergence WAS the bug); resolving per call
     here, the way production code does, keeps these tests honest either way.
     """
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     return tel
 
 
@@ -58,7 +58,7 @@ def test_a_verdict_with_no_trace_is_still_kept():
 def test_phase_separates_production_supervision_from_the_eval_plane():
     """Every fire is kept now, so `phase` is what stops a dataset built from this table
     containing the benchmark cases it will be measured against."""
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.sql.trust_checks import run_trust_checks
 
     sql = "SELECT * FROM shipments WHERE dispatched_ts BETWEEN '2026-03-01' AND '2026-03-31'"
     run_trust_checks(sql, col_types={"shipments.dispatched_ts": "TIMESTAMP"}, phase="eval")
@@ -70,7 +70,7 @@ def test_phase_separates_production_supervision_from_the_eval_plane():
 def test_trust_checks_persist_from_the_shared_seam_not_the_callers():
     """Four sites run these checks; recording at each would be four chances to miss one.
     Calling the pure function is enough to leave a durable row."""
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.sql.trust_checks import run_trust_checks
 
     sql = "SELECT * FROM orders WHERE created_at BETWEEN '2026-01-01' AND '2026-01-31'"
     with _tel().bind_trace("trace-mi1-b"):
@@ -86,7 +86,7 @@ def test_a_rewrite_receipt_persists_without_any_hook_registered():
     """The kernel seam records directly rather than through a registered hook: the only
     hook that exists is the agent's SSE forwarder, so riding it would mean a bare
     platform, an automation tick and the quick path recorded nothing."""
-    from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+    from pramanyx.kernel.registries.execution_hooks import emit_guard_receipt
 
     with _tel().bind_trace("trace-mi1-c"):
         emit_guard_receipt("fanout_defan", "rewrote_sql", detail="join fans out",
@@ -103,8 +103,8 @@ def test_a_rewrite_receipt_persists_without_any_hook_registered():
 def test_an_automation_run_records_its_agent_and_trace():
     """`AutomationRun.agent_id` has been declared since VA-9b and silently dropped by the
     named INSERT ever since — this store's fourth half-added field. `trace_id` is new."""
-    from aughor.automations.models import AutomationRun
-    from aughor.automations.store import append_run, get_run
+    from pramanyx.automations.models import AutomationRun
+    from pramanyx.automations.store import append_run, get_run
 
     with _tel().bind_trace("trace-mi1-d"):
         run = append_run(AutomationRun(automation_id="auto-1", outcome="fired",
@@ -118,11 +118,11 @@ def test_an_automation_run_records_its_agent_and_trace():
 # ── the receipt §3.9 asks for ────────────────────────────────────────────────────────
 
 def test_one_query_walks_run_to_executed_sql_to_guard_fire():
-    """MI-1's stated receipt. Both tables live in AUGHOR_AUDIT_DB precisely so this is a
+    """MI-1's stated receipt. Both tables live in PRAMANYX_AUDIT_DB precisely so this is a
     single-store join instead of a cross-database reconstruction."""
     import sqlite3
 
-    from aughor.security import audit as audit_mod
+    from pramanyx.security import audit as audit_mod
 
     trace = "trace-mi1-receipt"
     sql = "SELECT * FROM orders WHERE created_at BETWEEN '2026-01-01' AND '2026-01-31'"
@@ -154,7 +154,7 @@ def test_one_query_walks_run_to_executed_sql_to_guard_fire():
 def test_the_question_leaves_the_box_only_inside_a_capture_window(monkeypatch):
     """`langfuse.trace.input` put the raw question on the OTLP wire on every run. It is an
     export, not a read, so no break-glass ever fired on it and nothing audited it."""
-    from aughor.obs import prompt_window
+    from pramanyx.obs import prompt_window
 
     monkeypatch.setattr(prompt_window, "active", lambda: False)
     closed = _tel()._trace_input("who churned in Q3?", "conn-1")
@@ -168,7 +168,7 @@ def test_the_question_leaves_the_box_only_inside_a_capture_window(monkeypatch):
 
 def test_a_broken_window_read_fails_safe_to_no_capture(monkeypatch):
     """Same posture as every read in prompt_window: an error means no window."""
-    from aughor.obs import prompt_window
+    from pramanyx.obs import prompt_window
 
     def _boom():
         raise RuntimeError("store unavailable")

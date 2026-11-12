@@ -11,7 +11,7 @@
  * The skin's home in this browser. The boot script (`lib/themeBoot.ts`) reads the same key before
  * the first paint; the shell (`app/page.tsx`) writes it and mirrors it to the person's settings.
  */
-export const THEME_KEY = "aughor_theme";
+export const THEME_KEY = "pramanyx_theme";
 
 export function applyTheme(theme: string, doc: Document = document): void {
   const root = doc.documentElement;

@@ -10,7 +10,7 @@ to TODAY instead of the literal dates, the phase runner forces one corrective re
 These pin the detector so the guard keeps firing (and never over-fires on legit SQL).
 The full LLM-in-the-loop behavior is verified manually by evals/verify_clamp.py.
 """
-from aughor.agent.investigate import _uses_relative_date
+from pramanyx.agent.investigate import _uses_relative_date
 
 
 class TestFlagsRelativeDate:

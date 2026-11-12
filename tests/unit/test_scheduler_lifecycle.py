@@ -5,9 +5,9 @@ Both halves of one investigation. `test_store_pool` asserted `120 == 1` and
 flakes, one cause, traced by instrumenting `connect_store`:
 
     apscheduler/executors/base.py:131   run_job
-    aughor/automations/scheduler.py:54  tick_once
-    aughor/automations/store.py:281     list_automations
-    aughor/db/backend.py:403            connect_store
+    pramanyx/automations/scheduler.py:54  tick_once
+    pramanyx/automations/store.py:281     list_automations
+    pramanyx/db/backend.py:403            connect_store
 
 The `client` fixture is session-scoped, so the app's lifespan runs once and its
 APScheduler threads then tick for the entire session — ~5 store opens per 60-second
@@ -16,7 +16,7 @@ tick, landing in whatever a later test had patched onto a process-global seam.
 Two things were wrong, and they are separate:
 
   * Nothing turned the clocks off for a process that only wants the routes. Now
-    `AUGHOR_DISABLE_SCHEDULERS` does, and `conftest.py` sets it.
+    `PRAMANYX_DISABLE_SCHEDULERS` does, and `conftest.py` sets it.
   * Nothing ever STOPPED them. Both scheduler modules have carried a `stop()` since
     they were written and no caller existed — the lifespan's shutdown reasoned about
     asyncio tasks, and these are daemon THREADS. In production the process exits and
@@ -28,7 +28,7 @@ import threading
 
 import pytest
 
-from aughor import api
+from pramanyx import api
 
 
 # ── the switch ────────────────────────────────────────────────────────────────
@@ -38,23 +38,23 @@ from aughor import api
     ("0", False), ("false", False), ("no", False), ("", False),
 ])
 def test_the_switch_reads_the_obvious_spellings(monkeypatch, value, off):
-    monkeypatch.setenv("AUGHOR_DISABLE_SCHEDULERS", value)
+    monkeypatch.setenv("PRAMANYX_DISABLE_SCHEDULERS", value)
     assert api._schedulers_disabled() is off
 
 
 def test_absence_means_clocks_run(monkeypatch):
     """The default has to be "on". A deployment that forgets this variable must get a
     working platform, not a silent one."""
-    monkeypatch.delenv("AUGHOR_DISABLE_SCHEDULERS", raising=False)
+    monkeypatch.delenv("PRAMANYX_DISABLE_SCHEDULERS", raising=False)
     assert api._schedulers_disabled() is False
 
 
 def test_the_switch_is_read_per_call_not_captured_at_import(monkeypatch):
     """`conftest` sets it before the app is constructed but after this module is
     imported. A value frozen at import would ignore that and the clocks would run."""
-    monkeypatch.setenv("AUGHOR_DISABLE_SCHEDULERS", "0")
+    monkeypatch.setenv("PRAMANYX_DISABLE_SCHEDULERS", "0")
     assert api._schedulers_disabled() is False
-    monkeypatch.setenv("AUGHOR_DISABLE_SCHEDULERS", "1")
+    monkeypatch.setenv("PRAMANYX_DISABLE_SCHEDULERS", "1")
     assert api._schedulers_disabled() is True
 
 
@@ -70,7 +70,7 @@ def test_stopping_is_safe_when_nothing_was_started():
 def test_a_scheduler_that_refuses_to_stop_does_not_block_shutdown(monkeypatch):
     """A stuck clock must not keep an app from exiting — and it must be reported
     rather than swallowed."""
-    import aughor.automations.scheduler as autos
+    import pramanyx.automations.scheduler as autos
 
     def _refuse() -> None:
         raise RuntimeError("scheduler wedged")
@@ -82,8 +82,8 @@ def test_a_scheduler_that_refuses_to_stop_does_not_block_shutdown(monkeypatch):
 def test_both_schedulers_are_asked_to_stop(monkeypatch):
     """The bug was a `stop()` nobody called. Pin that BOTH are reached, because one of
     two is the shape this arrives in again."""
-    import aughor.automations.scheduler as autos
-    import aughor.monitors.scheduler as monitors
+    import pramanyx.automations.scheduler as autos
+    import pramanyx.monitors.scheduler as monitors
 
     called: list[str] = []
     monkeypatch.setattr(autos, "stop", lambda: called.append("automations"))
@@ -103,7 +103,7 @@ def test_the_test_process_runs_no_clock(client):
     report that no clock is running here — otherwise a 60-second tick is loose in the
     suite, opening stores on a background thread for the rest of the session.
     """
-    from aughor.automations.scheduler import clock
+    from pramanyx.automations.scheduler import clock
 
     state, reason = clock()
     assert state != "heartbeat", (

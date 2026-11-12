@@ -17,7 +17,7 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
 import { backendBase, backendHeaders } from "@/lib/chatProxy";
-import { AughorToUIMessage } from "@/lib/uiMessageAdapter";
+import { PramanyxToUIMessage } from "@/lib/uiMessageAdapter";
 import { readFrames } from "@/lib/sseFrames";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ export async function GET(
       // Stable per-conversation id: a conversation runs one turn at a time, so
       // repeated reconnects (strict-mode double mounts, a second reload) update
       // one message rather than stacking duplicate turns.
-      const adapter = new AughorToUIMessage({ messageId: `resume-${id}` });
+      const adapter = new PramanyxToUIMessage({ messageId: `resume-${id}` });
       try {
         for await (const frame of readFrames(body, req.signal)) {
           const { chunks, terminal } = adapter.feed(frame);

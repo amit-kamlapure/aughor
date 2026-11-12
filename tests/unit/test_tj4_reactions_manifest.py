@@ -5,7 +5,7 @@ without `reactions:read` and `reaction_added` in the manifest, no reaction ever 
 """
 from __future__ import annotations
 
-from aughor.slackbots.manifest import BOT_EVENTS, BOT_SCOPES, render_manifest
+from pramanyx.slackbots.manifest import BOT_EVENTS, BOT_SCOPES, render_manifest
 
 
 def test_the_manifest_asks_for_reactions():

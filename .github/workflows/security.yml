@@ -49,7 +49,7 @@ jobs:
           node-version: "22"
       # The locked resolution, every extra, no hashes (pip-audit reads names and versions). `--no-emit-project` leaves
       # out the project's own `-e .` line: under `--strict`, pip-audit fails on a package it cannot find on PyPI, so
-      # from 2026-11-05 to 11-08 every run stopped on `aughor 0.1.0` before auditing a single dependency (it found 186
+      # from 2026-11-05 to 11-08 every run stopped on `pramanyx 0.1.0` before auditing a single dependency (it found 186
       # advisories in 23 packages the first time it ran whole).
       - name: pip-audit over uv.lock
         run: |

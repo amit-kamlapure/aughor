@@ -14,31 +14,31 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.evals import store
-from aughor.evals.experiments import (
+from pramanyx.evals import store
+from pramanyx.evals.experiments import (
     Cell,
     MeasurementIntegrityError,
     assert_within_budget,
     estimate_requests,
 )
-from aughor.evals.fidelity import assess, axis_of
-from aughor.evals.perturb import DEFAULT_PERTURBATIONS
-from aughor.evals.runner import run_experiment, run_suite
-from aughor.evals.targets import reference_checker, reference_target
-from aughor.kernel.flags import clear_flag
+from pramanyx.evals.fidelity import assess, axis_of
+from pramanyx.evals.perturb import DEFAULT_PERTURBATIONS
+from pramanyx.evals.runner import run_experiment, run_suite
+from pramanyx.evals.targets import reference_checker, reference_target
+from pramanyx.kernel.flags import clear_flag
 
 FLAG = "_synthetic.default_off"   # a synthetic default-off flag (tests/conftest.py `synthetic_flags`) — no product flag is a switch since 2026-10-28
 
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch, synthetic_flags):
-    monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
+    monkeypatch.setenv("PRAMANYX_EVALS_DB", str(tmp_path / "evals.db"))
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
-    monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "1")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_EVALS_EXPERIMENTS", "1")
     # `_ENABLED` is resolved at module import, so patch the attribute — a setenv here is a
     # no-op. Keeps the seeder's live LLM calls out of a test that does not measure it.
-    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
+    monkeypatch.setattr("pramanyx.semantic.autoseed._ENABLED", False)
     yield
     clear_flag(FLAG)
     clear_flag("evals.experiments")
@@ -51,7 +51,7 @@ def db(tmp_path):
     con.execute("CREATE TABLE orders(id INT, amount INT)")
     con.execute("INSERT INTO orders VALUES (1,100),(2,250),(3,90)")
     con.close()
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(str(path), connection_id="e4ctest")
     yield conn
     conn.close()

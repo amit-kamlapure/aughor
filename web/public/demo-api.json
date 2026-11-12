@@ -8017,11 +8017,11 @@
    "format": 1,
    "freshness": {
     "degraded": true,
-    "gate": "UNKNOWN \u2014 the freshness of this pack could not be determined at export time (Aughor could not read the live ontology). Treat it as possibly out of date and say so when it matters.",
+    "gate": "UNKNOWN \u2014 the freshness of this pack could not be determined at export time (Pramanyx could not read the live ontology). Treat it as possibly out of date and say so when it matters.",
     "reason": "",
     "state": "unknown"
    },
-   "generator": "aughor",
+   "generator": "pramanyx",
    "nodes": [
     {
      "data": {
@@ -9870,11 +9870,11 @@
    "format": 1,
    "freshness": {
     "degraded": true,
-    "gate": "UNKNOWN \u2014 the freshness of this pack could not be determined at export time (Aughor could not read the live ontology). Treat it as possibly out of date and say so when it matters.",
+    "gate": "UNKNOWN \u2014 the freshness of this pack could not be determined at export time (Pramanyx could not read the live ontology). Treat it as possibly out of date and say so when it matters.",
     "reason": "",
     "state": "unknown"
    },
-   "generator": "aughor",
+   "generator": "pramanyx",
    "nodes": [
     {
      "data": {

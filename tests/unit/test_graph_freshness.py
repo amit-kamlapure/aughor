@@ -6,13 +6,13 @@ deterministic — no LLM, no infra (refresh runs with reindex=False so no Qdrant
 """
 from __future__ import annotations
 
-from aughor.ontology.context_graph import project_graph
-from aughor.ontology.graph_freshness import (
+from pramanyx.ontology.context_graph import project_graph
+from pramanyx.ontology.graph_freshness import (
     classify,
     structural_fingerprint,
     table_fingerprints,
 )
-from aughor.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
 
 
 def _ent(eid: str, table: str, cols: dict[str, str]) -> OntologyEntity:
@@ -108,10 +108,10 @@ def test_no_ontology_is_unknown_and_no_prev_is_full():
 # ── the read-back token budget ───────────────────────────────────────────────
 
 def test_readback_slice_respects_its_token_budget(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
-    from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+    from pramanyx.ontology import context_graph_store as store
+    from pramanyx.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "1")
+    monkeypatch.setenv("PRAMANYX_GRAPH_READBACK", "1")
 
     # a graph with many long findings on one table — the slice would blow a small budget
     cg = ContextGraph(org_id="o", connection_id="c", schema_name="main")
@@ -126,7 +126,7 @@ def test_readback_slice_respects_its_token_budget(monkeypatch, tmp_path):
                               to_id="table:Order", provenance=Provenance(source="dossier")))
     store.save_graph(cg)
 
-    from aughor.ontology.context_graph_readback import build_graph_prior
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
     budget = 400
     p = build_graph_prior("orders", "c", org_id="o", max_chars=budget)
     assert p.fired
@@ -140,8 +140,8 @@ def test_readback_slice_respects_its_token_budget(monkeypatch, tmp_path):
 def test_refresh_builds_then_skips(monkeypatch):
     """First refresh (no committed graph) is FULL and rebuilds; a second with the same
     ontology is SKIP and does no work — refresh cost proportional to change."""
-    from aughor.ontology.store import save_ontology
-    from aughor.ontology.graph_freshness import refresh_context_graph
+    from pramanyx.ontology.store import save_ontology
+    from pramanyx.ontology.graph_freshness import refresh_context_graph
 
     onto = _onto([_order({"id": "INTEGER", "revenue": "DECIMAL"})], data_fp="d1")
     save_ontology("c", "main", "d1", onto)

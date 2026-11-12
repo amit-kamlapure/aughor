@@ -17,7 +17,7 @@ def _make_duckdb_conn():
     and set the internal attributes directly with a writable connection.
     """
     import duckdb
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     from pathlib import Path
 
     conn = DuckDBConnection.__new__(DuckDBConnection)
@@ -75,38 +75,38 @@ def test_duckdb_execute_blocked_query_returns_error() -> None:
 # ── SQL Safety checker ────────────────────────────────────────────────────────
 
 def test_safety_blocks_drop_table() -> None:
-    from aughor.security.safety import SafetyChecker, SafetyVerdict
+    from pramanyx.security.safety import SafetyChecker, SafetyVerdict
     result = SafetyChecker.check("DROP TABLE users")
     assert result.verdict == SafetyVerdict.BLOCKED
 
 
 def test_safety_blocks_delete() -> None:
-    from aughor.security.safety import SafetyChecker, SafetyVerdict
+    from pramanyx.security.safety import SafetyChecker, SafetyVerdict
     result = SafetyChecker.check("DELETE FROM orders WHERE 1=1")
     assert result.verdict == SafetyVerdict.BLOCKED
 
 
 def test_safety_blocks_truncate() -> None:
-    from aughor.security.safety import SafetyChecker, SafetyVerdict
+    from pramanyx.security.safety import SafetyChecker, SafetyVerdict
     result = SafetyChecker.check("TRUNCATE TABLE events")
     assert result.verdict == SafetyVerdict.BLOCKED
 
 
 def test_safety_allows_select() -> None:
-    from aughor.security.safety import SafetyChecker, SafetyVerdict
+    from pramanyx.security.safety import SafetyChecker, SafetyVerdict
     result = SafetyChecker.check("SELECT * FROM orders LIMIT 100")
     assert result.verdict == SafetyVerdict.SAFE
 
 
 def test_safety_allows_select_literal() -> None:
-    from aughor.security.safety import SafetyChecker, SafetyVerdict
+    from pramanyx.security.safety import SafetyChecker, SafetyVerdict
     result = SafetyChecker.check("SELECT 1")
     assert result.verdict == SafetyVerdict.SAFE
 
 
 def test_safety_is_allowed_interface() -> None:
     """is_allowed() returns (bool, reason_str) tuple."""
-    from aughor.security.safety import SafetyChecker
+    from pramanyx.security.safety import SafetyChecker
     ok, reason = SafetyChecker.is_allowed("SELECT 1")
     assert ok is True
     assert isinstance(reason, str)
@@ -121,7 +121,7 @@ def test_safety_is_allowed_interface() -> None:
 def test_a_label_exempts_nothing() -> None:
     """GM-5 — the label's spelling used to exempt a statement from the safety check and the audit: any dunder, and a
     hand-listed set of bare names (`__bulk__` among them, a person's own SQL). Now every label is checked."""
-    from aughor.db.connection import security_pre
+    from pramanyx.db.connection import security_pre
     for h in ("__catalog__", "__schema_filter__", "__profiler__", "__bulk__",
               "scan", "columns", "freshness", "list_schemas", "sample", "chat", "h1", ""):
         blocked = security_pre("c1", h, "DROP TABLE x")
@@ -133,8 +133,8 @@ def test_security_pre_skips_a_statement_declared_internal() -> None:
     not even scored under it (the census holds who may declare it — the platform's own statements). The parse step
     is not the checker's and is not skipped (DE-1): a DROP is refused by it under any declaration, as the built-in
     connections always refused it before the checker was reached."""
-    from aughor.db.connection import security_pre
-    from aughor.db.doors import through_door
+    from pramanyx.db.connection import security_pre
+    from pramanyx.db.doors import through_door
     denied = "SELECT pg_read_file('/etc/passwd')"
     out = through_door(object(), denied, None, lambda s: security_pre("c1", "any label", s), internal=True)
     assert out is None
@@ -149,7 +149,7 @@ def test_fleet_agent_data_queries_are_audited() -> None:
     revalidate paths) from Security & Audit. The federation paths' reads are
     plumbing since 2026-09-14; their ANSWERS are audited on every connection
     they read (tests/unit/test_security_post_across_connections.py)."""
-    from aughor.db.connection import security_pre
+    from pramanyx.db.connection import security_pre
 
     for h in ("__explorer__", "__monitor__", "__monitor_window__", "__revalidate__", "__fix_save__"):
         blocked = security_pre("c1", h, "DROP TABLE x")
@@ -160,11 +160,11 @@ def test_fleet_agent_data_queries_are_audited() -> None:
 
 def test_explorer_query_lands_in_audit_log(tmp_path) -> None:
     """Live path: a Scout-labelled query through DuckDBConnection.execute is
-    recorded in the audit store (AUGHOR_AUDIT_DB is a temp dir via conftest)."""
+    recorded in the audit store (PRAMANYX_AUDIT_DB is a temp dir via conftest)."""
     import duckdb
 
-    from aughor.db.connection import DuckDBConnection
-    from aughor.security.audit import AuditLogger
+    from pramanyx.db.connection import DuckDBConnection
+    from pramanyx.security.audit import AuditLogger
 
     db_file = tmp_path / "t.duckdb"
     seed = duckdb.connect(str(db_file))

@@ -103,7 +103,7 @@ beforeEach(() => {
   try { localStorage.clear(); } catch { /* jsdom */ }
   // A person who left off on a dashboard of their own. Nothing remembered opens the metrics —
   // the last block below.
-  localStorage.setItem("aughor:cockpit:thelook", "returns-1");
+  localStorage.setItem("pramanyx:cockpit:thelook", "returns-1");
   api.getSystemFlags.mockResolvedValue({});
   api.getGroups.mockResolvedValue({ ladder: [], builtin_groups: [], groups: [] });
   api.listDashboards.mockResolvedValue(LIST);
@@ -147,7 +147,7 @@ describe("a person's dashboards", () => {
   });
 
   it("opens the one the person chose last time", async () => {
-    localStorage.setItem("aughor:cockpit:thelook", "pricing-1");
+    localStorage.setItem("pramanyx:cockpit:thelook", "pricing-1");
     show();
     await waitFor(() => expect(api.getDashboard).toHaveBeenCalledWith("thelook", "pricing-1", { preset: "previous_month" }));
   });
@@ -403,7 +403,7 @@ describe("the metrics, the dashboard a person opens on", () => {
     // the person's own dashboards are still there, one click away, and that choice is remembered
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Returns" }));   // a Radix tab opens on mouseDown
     await waitFor(() => expect(api.getDashboard).toHaveBeenCalledWith("thelook", "returns-1", { preset: "previous_month" }));
-    expect(localStorage.getItem("aughor:cockpit:thelook")).toBe("returns-1");
+    expect(localStorage.getItem("pramanyx:cockpit:thelook")).toBe("returns-1");
   });
 
   it("still explains what a dashboard of your own is when you have none", async () => {
@@ -634,7 +634,7 @@ describe("building a dashboard in place (Arc AP-1)", () => {
     expect(screen.queryAllByRole("tab")).toHaveLength(0);
     expect(screen.getByLabelText("The dashboard being edited")).toBeInTheDocument();
     expect(document.documentElement.getAttribute("data-nav")).toBe("collapsed");
-    expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
+    expect(localStorage.getItem("pramanyx_nav_collapsed")).toBeNull();
     expect(screen.getByTestId("builder-saved")).toHaveTextContent("version 3");
     for (const id of ["dashboard-card-new", "dashboard-note-new", "dashboard-publish-open", "dashboard-retire-open", "dashboard-ask"]) {
       expect(screen.getByTestId(id)).toBeInTheDocument();
@@ -643,7 +643,7 @@ describe("building a dashboard in place (Arc AP-1)", () => {
     fireEvent.click(screen.getByTestId("builder-done"));
     await waitFor(() => expect(screen.queryByTestId("dashboard-builder")).toBeNull());
     expect(document.documentElement.hasAttribute("data-nav")).toBe(false);
-    expect(localStorage.getItem("aughor_nav_collapsed")).toBeNull();
+    expect(localStorage.getItem("pramanyx_nav_collapsed")).toBeNull();
     expect(stripTabs()).toContain("Returns");
   });
 

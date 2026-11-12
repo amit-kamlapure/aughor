@@ -15,10 +15,10 @@ import uuid
 
 import pytest
 
-from aughor.db.history import append_recheck, complete_investigation, create_investigation, save_chat_turn
-from aughor.record import claims as C
-from aughor.record import confidence as K
-from aughor.routers import investigations as inv
+from pramanyx.db.history import append_recheck, complete_investigation, create_investigation, save_chat_turn
+from pramanyx.record import claims as C
+from pramanyx.record import confidence as K
+from pramanyx.routers import investigations as inv
 
 
 def _conn():
@@ -120,7 +120,7 @@ def test_confidence_is_filled_on_read_and_never_lands_in_the_row(monkeypatch):
     assert C.get(out["claim_id"]).confidence is None                           # still none after the read
     with pytest.raises(C.ClaimRefused, match="counted"):
         C.book(seen, key=stored.key)                                           # a writer still cannot set it
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     view = R.get_record_claim(stored.id)
     assert view["confidence"]["reference_class"] == K.RECHECKED and "confidence_note" not in view
 
@@ -129,8 +129,8 @@ def test_confidence_is_filled_on_read_and_never_lands_in_the_row(monkeypatch):
 
 def test_the_receipt_carries_the_counted_confidence_and_who_else_was_told(client, monkeypatch):
     monkeypatch.setattr(K, "MIN_N", 1)
-    from aughor.govern.departure_store import record_departure
-    from aughor.trust.receipt import verify
+    from pramanyx.govern.departure_store import record_departure
+    from pramanyx.trust.receipt import verify
     conn = _conn()
     inv_id = _chat_answer(conn, rechecks=["unchanged"])
     out = inv.write_answer_receipt(kind="chat_answer", natural_key=f"chat:{conn}:{inv_id}", question="q",
@@ -161,6 +161,6 @@ def test_the_receipt_carries_the_counted_confidence_and_who_else_was_told(client
 
 def test_exports_print_a_stated_confidence_as_a_word_never_a_percentage():
     pytest.importorskip("reportlab")                    # the PDF export's optional dependency
-    from aughor.export.pdf import _confidence_chip
+    from pramanyx.export.pdf import _confidence_chip
     assert _confidence_chip(0.83) == "stated confidence: High"
     assert _confidence_chip(0.5) == "stated confidence: Medium" and "%" not in _confidence_chip(0.2)

@@ -21,13 +21,13 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.db.connection import DuckDBConnection
-from aughor.semantic.definition_report import (
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.semantic.definition_report import (
     CLEAN, DEFECT, FINDINGS, FINGERPRINTED, NOT_APPLICABLE, PINNED, UNAVAILABLE,
     UNPINNABLE, Claim, Finding, Population, build_report, declaration_claim, execution_claim,
     population_of, predecessor_claim, segments_claim, _is_approved,
 )
-from aughor.semantic.metrics import MetricDefinition, value_query
+from pramanyx.semantic.metrics import MetricDefinition, value_query
 
 # The specimen, transcribed from the live reading above. Kept as one object so a test that
 # needs a variant derives it with `model_copy`, rather than hand-writing a shape that happens
@@ -45,7 +45,7 @@ RETURN_RATE = MetricDefinition(
 def isolated_metrics(tmp_path, monkeypatch):
     """Give THIS file its own metrics registry.
 
-    `tests/conftest.py` points `AUGHOR_METRICS_PATH` at a throwaway temp COPY of
+    `tests/conftest.py` points `PRAMANYX_METRICS_PATH` at a throwaway temp COPY of
     `data/metrics.json` — which keeps writes away from live data, but the copy is
     SESSION-scoped and every test in the run shares it. Two tests here call `save_metric`
     through the real route, and without this fixture those rows stayed visible to every later
@@ -56,7 +56,7 @@ def isolated_metrics(tmp_path, monkeypatch):
     """
     path = tmp_path / "metrics.json"
     path.write_text("[]")
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(path))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(path))
     return path
 
 
@@ -347,7 +347,7 @@ def test_the_report_cannot_reach_anything_that_holds_a_send():
     rather than left to reviewer memory."""
     import ast
     import inspect
-    from aughor.semantic import definition_report
+    from pramanyx.semantic import definition_report
 
     # Parsed, NOT grepped. The first version of this test searched the source TEXT and failed on
     # the module docstring — which names `gate_departure` precisely to explain why it is not
@@ -363,7 +363,7 @@ def test_the_report_cannot_reach_anything_that_holds_a_send():
             imported.extend(alias.name for alias in node.names)
 
     assert imported, "parsed no imports at all — the guard would pass vacuously"
-    offenders = [m for m in imported if m.startswith("aughor.govern")]
+    offenders = [m for m in imported if m.startswith("pramanyx.govern")]
     assert not offenders, f"A3 must not import govern — it is advisory, never a gate: {offenders}"
     assert build_report(RETURN_RATE).advisory is True
 
@@ -372,7 +372,7 @@ def test_the_mirrored_approval_check_agrees_with_the_gates_own():
     """`_is_approved` mirrors `govern.departure.metric_is_approved` rather than importing it, to
     keep the import graph clean. Mirroring risks a second vocabulary, so the two are pinned to
     agree on every lifecycle state instead of being trusted to."""
-    from aughor.govern.departure import metric_is_approved
+    from pramanyx.govern.departure import metric_is_approved
 
     for status in ("draft", "proposed", "approved", "deprecated", ""):
         m = RETURN_RATE.model_copy(update={"status": status})
@@ -398,7 +398,7 @@ def test_the_door_refuses_to_report_on_another_connections_definition(client):
     The first assertion proves the fallback is real, so the second is testing the route's own
     check rather than an absence.
     """
-    from aughor.semantic.metrics import GLOBAL_CONNECTION, MetricDefinition, get_metric, save_metric
+    from pramanyx.semantic.metrics import GLOBAL_CONNECTION, MetricDefinition, get_metric, save_metric
 
     save_metric(MetricDefinition(name="ghost", label="Ghost", sql="COUNT(*)",
                                  tables=["t"], connection=GLOBAL_CONNECTION, status="approved"))
@@ -415,12 +415,12 @@ def test_the_door_keeps_every_typed_word_on_the_wire(client, items, monkeypatch)
     """`unavailable` and `unpinnable` must survive serialisation as WORDS. Flattening them to a
     null value or an absent field is the collapse the dataclasses refuse to make in memory, and
     a payload that undoes it there would put the whole report back where it started."""
-    from aughor.routers import metrics as router_mod
-    from aughor.semantic.metrics import save_metric
+    from pramanyx.routers import metrics as router_mod
+    from pramanyx.semantic.metrics import save_metric
 
     save_metric(RETURN_RATE.model_copy(update={"connection": "c1"}))
     monkeypatch.setattr(router_mod, "open_connection_for", lambda _c: items, raising=False)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda _c: items,
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda _c: items,
                         raising=False)
 
     r = client.get("/metrics/return_rate/definition-report?conn_id=c1")

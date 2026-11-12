@@ -22,8 +22,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.knowledge.brief_context import MAX_PART_ROWS, edition_part
-from aughor.routers.investigations import AskRequest
+from pramanyx.knowledge.brief_context import MAX_PART_ROWS, edition_part
+from pramanyx.routers.investigations import AskRequest
 
 CONN = "c0ffee00"
 RANGE = "range:last_week:2026-10-19..2026-10-25"
@@ -79,7 +79,7 @@ def kept(tmp_path, monkeypatch):
     """The Briefing cache on a temp file, holding the edition under the key the edition routes keep it under
     (`briefing.edition.cache_key`): ``<scope>#<range>@<reader>``."""
     path = tmp_path / "briefing_cache.json"
-    monkeypatch.setattr("aughor.knowledge.briefing._CACHE_PATH", path)
+    monkeypatch.setattr("pramanyx.knowledge.briefing._CACHE_PATH", path)
     path.write_text(json.dumps({f"{CONN}#{KEY}": EDITION,
                                 f"{CONN}#{RANGE}@finance": {"narrative": "a range Briefing kept before editions"}}))
     return path
@@ -170,7 +170,7 @@ def test_an_edition_that_is_not_there_holds_no_part(kept, key, why):
 def _ask(monkeypatch, focus: dict, *, converse: bool = True) -> tuple[list[dict], dict]:
     """One `/ask` turn through the real `_stream_ask` and the real `_stream_converse`, with only the model's loop
     stood in for: the frames, and what the loop was HANDED as its context."""
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     held: dict = {"routed": 0, "context": None, "quick": 0}
     route = SimpleNamespace(depth="quick", forced=None, mode="", shape="describe",
                             to_event=lambda: {"depth": "quick", "why": "asked quickly"})
@@ -178,7 +178,7 @@ def _ask(monkeypatch, focus: dict, *, converse: bool = True) -> tuple[list[dict]
     def _route(*a, **k):
         held["routed"] += 1
         return route
-    monkeypatch.setattr("aughor.agent.ask_router.decide_ask_route", _route)
+    monkeypatch.setattr("pramanyx.agent.ask_router.decide_ask_route", _route)
     monkeypatch.setattr(inv, "_converse_eligible", lambda req, r: converse)
     monkeypatch.setattr(inv, "_analyst_eligible", lambda req, r: False)
     monkeypatch.setattr(inv, "_overview_eligible", lambda req: False)
@@ -186,8 +186,8 @@ def _ask(monkeypatch, focus: dict, *, converse: bool = True) -> tuple[list[dict]
     monkeypatch.setattr(inv, "build_history_section", lambda h: "")
     monkeypatch.setattr(inv, "resolve_prior_answers", lambda *a, **k: [])
     monkeypatch.setattr(inv, "build_prior_answers_section", lambda a: "")
-    monkeypatch.setattr("aughor.briefing.compose.sources.known_context", lambda *a, **k: "")
-    monkeypatch.setattr("aughor.agent.converse_tools.ground_answer_numbers", lambda answer, rows, question="": (answer, None))
+    monkeypatch.setattr("pramanyx.briefing.compose.sources.known_context", lambda *a, **k: "")
+    monkeypatch.setattr("pramanyx.agent.converse_tools.ground_answer_numbers", lambda answer, rows, question="": (answer, None))
 
     async def metered(gen, budget=None):
         async for ev in gen:
@@ -198,7 +198,7 @@ def _ask(monkeypatch, focus: dict, *, converse: bool = True) -> tuple[list[dict]
         held["context"] = extra_context or ""
         return SimpleNamespace(answer="An answer.", steps=[], stop_reason="answered", injected_chars=0,
                                reinjection_ratio=0.0)
-    monkeypatch.setattr("aughor.agent.converse_tools.converse", _loop)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse", _loop)
 
     async def quick(*a, **k):
         held["quick"] += 1
@@ -250,11 +250,11 @@ def test_a_canvas_on_every_table_reads_the_datasets_own_edition_as_its_context(t
     built" beside the very edition on screen."""
     import duckdb
 
-    from aughor.canvas.models import CanvasScope
-    from aughor.canvas.store import create_canvas
-    from aughor.db import registry
-    from aughor.knowledge.brief_context import brief_block_for_scope
-    from aughor.routers.investigations import _briefing_scope_key
+    from pramanyx.canvas.models import CanvasScope
+    from pramanyx.canvas.store import create_canvas
+    from pramanyx.db import registry
+    from pramanyx.knowledge.brief_context import brief_block_for_scope
+    from pramanyx.routers.investigations import _briefing_scope_key
 
     duckdb.connect(str(tmp_path / "w.duckdb")).close()
     conn = registry.add_connection("every-table", "duckdb", str(tmp_path / "w.duckdb"))
@@ -264,7 +264,7 @@ def test_a_canvas_on_every_table_reads_the_datasets_own_edition_as_its_context(t
         assert scope and not scope.startswith("canvas:"), scope          # the dataset's own scope
         period = "range:last_week:2026-10-26..2026-11-01"
         cache = tmp_path / "briefing_cache.json"
-        monkeypatch.setattr("aughor.knowledge.briefing._CACHE_PATH", cache)
+        monkeypatch.setattr("pramanyx.knowledge.briefing._CACHE_PATH", cache)
         cache.write_text(json.dumps({f"{scope}#{period}": {"narrative": "Sales held inside their usual range."}}))
         said = brief_block_for_scope(conn, None, canvas.id, period_key=period, scope_key=scope)
         assert "has not been built" not in said and "usual range" in said

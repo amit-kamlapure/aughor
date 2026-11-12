@@ -1,4 +1,4 @@
-"""Phase 7 of the 2027 study, P7-5 — aggregate priors across installs (`aughor/packs/aggregates.py`)
+"""Phase 7 of the 2027 study, P7-5 — aggregate priors across installs (`pramanyx/packs/aggregates.py`)
 behind the off-by-default flag `aggregates.share`.
 
 What these hold: the aggregate carries pack records, base rates, normal ranges and method backtests
@@ -13,10 +13,10 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from aughor.packs import aggregates as AG
-from aughor.record import claims as C
-from aughor.record import scenario as S
-from aughor.routers import ledger as R
+from pramanyx.packs import aggregates as AG
+from pramanyx.record import claims as C
+from pramanyx.record import scenario as S
+from pramanyx.routers import ledger as R
 
 
 def _conn():
@@ -49,9 +49,9 @@ def test_the_aggregate_never_carries_a_customers_data_and_the_rule_is_enforced()
 
 
 def test_nothing_leaves_until_a_person_turns_sharing_on(monkeypatch):
-    from aughor.kernel.flags import FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_ENV
     assert "aggregates.share" not in FLAG_ENV   # the organisation's setting since 2026-10-28 (ROADMAP §3.65)
-    monkeypatch.delenv("AUGHOR_AGGREGATES_SHARE", raising=False)
+    monkeypatch.delenv("PRAMANYX_AGGREGATES_SHARE", raising=False)
     assert AG.sharing_enabled() is False
     with pytest.raises(PermissionError, match="the organisation's call"):
         AG.export()
@@ -60,7 +60,7 @@ def test_nothing_leaves_until_a_person_turns_sharing_on(monkeypatch):
     assert e.value.status_code == 403 and "nothing leaves" in e.value.detail
     local = R.read_aggregates()
     assert local["sharing"] is False and local["setting"] == "share_aggregates" and "normal_ranges" in local
-    monkeypatch.setenv("AUGHOR_AGGREGATES_SHARE", "1")
+    monkeypatch.setenv("PRAMANYX_AGGREGATES_SHARE", "1")
     assert AG.sharing_enabled() is True
     out = R.export_aggregates()
     assert out["shareable"] is True and "install" in out and "never_includes" in out

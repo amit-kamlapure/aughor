@@ -41,8 +41,8 @@ layer down: a failure may not become a *report*. This pins: it may not become a 
 """
 import inspect
 
-from aughor.agent import investigate as I
-from aughor.agent import graph as G
+from pramanyx.agent import investigate as I
+from pramanyx.agent import graph as G
 
 
 _HEALTHY = {
@@ -117,7 +117,7 @@ class TestTheWiring:
         assert "_intake_failed" in branch
 
     def test_the_state_declares_it(self):
-        from aughor.agent.state import AgentState
+        from pramanyx.agent.state import AgentState
         assert "_intake_failed" in AgentState.__annotations__
 
 

@@ -849,8 +849,8 @@ function DeleteConnModal({
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
-const LAST_CONN_KEY = "aughor_last_conn";
-const LAST_WS_KEY = "aughor_last_workspace";
+const LAST_CONN_KEY = "pramanyx_last_conn";
+const LAST_WS_KEY = "pramanyx_last_workspace";
 
 /** S1 — the URL is the router. Every screen in the NavTab union is addressable
  *  as `?tab=<id>` (+ `&conn=<id>` for the bound connection), so screens are
@@ -1334,7 +1334,7 @@ export default function Home() {
   // the wrong theme while a request is in flight); then the per-user settings store is
   // the truth (SP-3/SP-4): a preference set anywhere — this Settings screen, another
   // browser, or Spotlight's set_preference in chat — wins here on load, and again at
-  // the end of any chat turn (the "aughor:turn-complete" event from useAughorChat),
+  // the end of any chat turn (the "pramanyx:turn-complete" event from usePramanyxChat),
   // so a theme switched in conversation is visible without a reload.
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) as Theme | null : null;
@@ -1363,8 +1363,8 @@ export default function Home() {
         .catch(() => {});
     };
     syncStoredTheme();
-    window.addEventListener("aughor:turn-complete", syncStoredTheme);
-    return () => window.removeEventListener("aughor:turn-complete", syncStoredTheme);
+    window.addEventListener("pramanyx:turn-complete", syncStoredTheme);
+    return () => window.removeEventListener("pramanyx:turn-complete", syncStoredTheme);
   }, []);
 
   // SP-2 — in-context handles (an empty Agents screen, a failed run row) summon
@@ -1372,8 +1372,8 @@ export default function Home() {
   // only opens the overlay; the palette consumes the parked question on open.
   useEffect(() => {
     const summon = () => setShowSearch(true);
-    window.addEventListener("aughor:ask-spotlight", summon);
-    return () => window.removeEventListener("aughor:ask-spotlight", summon);
+    window.addEventListener("pramanyx:ask-spotlight", summon);
+    return () => window.removeEventListener("pramanyx:ask-spotlight", summon);
   }, []);
 
   const setTheme = (t: Theme) => {

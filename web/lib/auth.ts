@@ -13,9 +13,9 @@
    `claimsOf` decodes a token for DISPLAY only — trusting a claim client-side would be
    decorating, not authenticating; the server verifies it before any session exists. */
 
-const WHO_KEY = "aughor_signed_in";            // the email shown in the chip; never a token
-const LEGACY_TOKEN_KEY = "aughor_id_token";    // what the page used to keep — cleared on sight
-export const AUTH_EXPIRED_EVENT = "aughor-auth-expired";
+const WHO_KEY = "pramanyx_signed_in";            // the email shown in the chip; never a token
+const LEGACY_TOKEN_KEY = "pramanyx_id_token";    // what the page used to keep — cleared on sight
+export const AUTH_EXPIRED_EVENT = "pramanyx-auth-expired";
 
 /** The signed-in person's email, as the page remembers it (display only), or null. */
 export function signedInEmail(): string | null {

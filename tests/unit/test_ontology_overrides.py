@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyMetric
-from aughor.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph, OntologyMetric
+from pramanyx.ontology import overrides as OV
 
 
 def _graph() -> OntologyGraph:
@@ -66,8 +66,8 @@ def test_yaml_roundtrip():
 
 def test_override_survives_fingerprint_rebuild(tmp_path, monkeypatch):
     """A data refresh re-fingerprints and rebuilds; the override must still apply."""
-    from aughor.util.json_store import KeyedJsonStore
-    from aughor.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
+    from pramanyx.ontology import store as ST
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
 
     base = _graph()
@@ -94,7 +94,7 @@ def test_override_survives_fingerprint_rebuild(tmp_path, monkeypatch):
 
 def test_additive_metric_overlay_injects_human_metric(monkeypatch):
     """A verified ontology metric with no catalog counterpart renders; unverified doesn't."""
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
 
     g = OntologyGraph(connection_id="c", schema_name="s", schema_fingerprint="fp", validated=True)
     g.metrics["category_revenue"] = OntologyMetric(
@@ -107,7 +107,7 @@ def test_additive_metric_overlay_injects_human_metric(monkeypatch):
 
     monkeypatch.setattr(M, "load_latest_ontology", lambda *_a, **_k: g, raising=False)
     # also patch the name the function imports at call time
-    import aughor.ontology.store as ST
+    import pramanyx.ontology.store as ST
     monkeypatch.setattr(ST, "load_latest_ontology", lambda *_a, **_k: g)
 
     block = M.build_metrics_block(schema_text="", connection_id="c")

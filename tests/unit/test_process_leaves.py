@@ -13,7 +13,7 @@ import copy
 
 import pytest
 
-from aughor.ontology.processes import describe_process, process_entry, process_fields, process_spec_problem, \
+from pramanyx.ontology.processes import describe_process, process_entry, process_fields, process_spec_problem, \
     resolve_process
 from tests.unit import test_object_listing as _listing
 from tests.unit.test_object_listing import listing, run, total
@@ -46,7 +46,7 @@ def test_who_left_is_counted_and_is_no_longer_open_or_overdue(db, graph, monkeyp
     assert was.open == gone and was.open_overdue == gone                  # every one of them was counted late
     assert (now.open, now.open_overdue) == (0, None)                      # they left: nothing is waiting
     assert (now.reached, now.breached) == (was.reached, was.breached)    # what was reached and broken stands
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     assert total(db, listing(graph, segment="overdue_delivery")) == 0     # the board and the table say the same
 
 

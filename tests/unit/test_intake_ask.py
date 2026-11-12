@@ -13,8 +13,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import INTAKE_ASK, INTAKE_PROMPT, IntakeOutput, intake_prompt
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import INTAKE_ASK, INTAKE_PROMPT, IntakeOutput, intake_prompt
 
 KW = dict(question="q", schema="TABLE: orders\n  id INT", scan_context="", scan_section="", sql_context="ENGINE: duckdb",
           events_section="", origin_finding_section="")
@@ -58,18 +58,18 @@ SCHEMA = "TABLE: orders\n  id VARCHAR\n  created_at TIMESTAMP\n  sale_price DOUB
 def intake(monkeypatch):
     model = _Intake()
     monkeypatch.setattr(I, "_provider", lambda role: model)
-    import aughor.agent.explore as ex
-    import aughor.semantic.data_understanding as du
+    import pramanyx.agent.explore as ex
+    import pramanyx.semantic.data_understanding as du
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
     monkeypatch.setattr(du, "build_data_understanding", lambda *a, **k: NS(grounding_block=lambda: "", trusted_used=[]))
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: ("", ""))
-    import aughor.agent.framing as AF
+    import pramanyx.agent.framing as AF
     monkeypatch.setattr(AF, "frame_from_state", lambda state, dialect="duckdb", provider=None: None)
     return model
 
 
 def _run(model, capable: bool, monkeypatch, scan: str = ""):
-    import aughor.llm.profile as P
+    import pramanyx.llm.profile as P
     monkeypatch.setattr(P, "profile_for", lambda role: NS(capable=capable))
     state = {"question": "Which 10 categories brought in the most revenue in the last 6 months?",
              "schema_context": SCHEMA, "scan_context": scan, "connection_id": "", "scope_schema": ""}

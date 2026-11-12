@@ -11,7 +11,7 @@ testable rather than merely documented).
 """
 from __future__ import annotations
 
-from aughor.ontology.ranking import (
+from pramanyx.ontology.ranking import (
     Signals,
     ambiguity,
     has_edge_signal,
@@ -92,7 +92,7 @@ def test_ranking_never_reads_edge_evidence():
     """J4/J14 made testable. A join's measured overlap is evidence a join is SAFE, not
     that a table is what the user MEANT. Ordering retrieval must never become weighting
     the graph."""
-    import aughor.ontology.ranking as R
+    import pramanyx.ontology.ranking as R
 
     assert has_edge_signal([]) is False
     src = open(R.__file__).read()
@@ -142,20 +142,20 @@ def test_ambiguity_reports_the_number_that_scoped_this_item():
 # ── signals from the stores ─────────────────────────────────────────────────────────
 
 def test_signals_come_from_the_declared_synonym_store(tmp_path, monkeypatch):
-    import aughor.ontology.vocabulary as V
-    from aughor.ontology.ranking import signals_from_stores
+    import pramanyx.ontology.vocabulary as V
+    from pramanyx.ontology.ranking import signals_from_stores
 
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
     V.add_synonym("c1", "metric", "gmv_eur", "revenue", source="human")
     sig = signals_from_stores("c1")
     assert sig["gmv_eur"].source == "human"
 
 
 def test_the_strongest_source_wins_per_subject(tmp_path, monkeypatch):
-    import aughor.ontology.vocabulary as V
-    from aughor.ontology.ranking import signals_from_stores
+    import pramanyx.ontology.vocabulary as V
+    from pramanyx.ontology.ranking import signals_from_stores
 
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
     V.add_synonym("c1", "metric", "m", "a", source="llm_candidate")
     V.add_synonym("c1", "metric", "m", "b", source="human")
     assert signals_from_stores("c1")["m"].source == "human"
@@ -163,10 +163,10 @@ def test_the_strongest_source_wins_per_subject(tmp_path, monkeypatch):
 
 def test_an_unavailable_signal_store_degrades_rather_than_raising(monkeypatch):
     """Ranking must never fail a question; it degrades to the deterministic tie-break."""
-    import aughor.ontology.ranking as R
+    import pramanyx.ontology.ranking as R
 
     def _boom(_):
         raise RuntimeError("store down")
 
-    monkeypatch.setattr("aughor.ontology.vocabulary.synonyms_for", _boom)
+    monkeypatch.setattr("pramanyx.ontology.vocabulary.synonyms_for", _boom)
     assert R.signals_from_stores("c1") == {}

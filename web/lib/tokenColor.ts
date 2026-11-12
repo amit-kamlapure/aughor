@@ -13,7 +13,7 @@
  * a test), the fallback is `lib/tokenFallback.ts` — the same steps at the default look.
  *
  * No React here: the chart config is bundled for the headless export path
- * (`aughor/export/chart_ssr.bundle.mjs`), and a hook in this module put React in that
+ * (`pramanyx/export/chart_ssr.bundle.mjs`), and a hook in this module put React in that
  * bundle. The hook that re-reads tokens when `<html>` changes is `lib/useThemeStamp.ts`.
  */
 import { TOKEN_FALLBACK, type TokenName } from "@/lib/tokenFallback";

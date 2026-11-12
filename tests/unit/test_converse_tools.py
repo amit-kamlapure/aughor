@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import converse_tools as ct
+from pramanyx.agent import converse_tools as ct
 
 
 class _Result:
@@ -43,7 +43,7 @@ def test_run_sql_goes_through_the_guarded_chokepoint(monkeypatch, fake_conn):
         seen["query_id"] = query_id
         return _Result()
 
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", _guarded)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", _guarded)
 
     out = ct.run_sql("c1", {"sql": "SELECT count(*) FROM orders"})
 
@@ -54,14 +54,14 @@ def test_run_sql_goes_through_the_guarded_chokepoint(monkeypatch, fake_conn):
 def test_guard_receipts_ride_back_with_the_rows(monkeypatch, fake_conn):
     """#279 shipped the collector with no consumer; this is it. A number handed over
     without the guard record is the thing this product exists not to do."""
-    from aughor.kernel.registries import execution_hooks
+    from pramanyx.kernel.registries import execution_hooks
 
     def _guarded(conn, sql, *, query_id, **kw):
         execution_hooks.emit_guard_receipt(
             "defan", "rewrote", "collapsed a fan-out join")
         return _Result()
 
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", _guarded)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", _guarded)
 
     out = ct.run_sql("c1", {"sql": "SELECT 1"})
 
@@ -72,7 +72,7 @@ def test_guard_receipts_ride_back_with_the_rows(monkeypatch, fake_conn):
 def test_caveats_reach_the_model(monkeypatch, fake_conn):
     """A query that ran without error can still be silently wrong — that knowledge has
     to arrive with the number, not be dropped at the boundary."""
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded",
                         lambda *a, **k: _Result(caveats=["value-disjoint join"]))
 
     assert ct.run_sql("c1", {"sql": "SELECT 1"})["caveats"] == ["value-disjoint join"]
@@ -81,7 +81,7 @@ def test_caveats_reach_the_model(monkeypatch, fake_conn):
 def test_large_results_are_truncated_and_say_so(monkeypatch, fake_conn):
     """The model reasons about a shape. A 10k-row answer spends the context the rest of
     the conversation needs — but silently truncating would make it miscount."""
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded",
                         lambda *a, **k: _Result(rows=[[i] for i in range(500)],
                                                 row_count=500))
 
@@ -102,9 +102,9 @@ def test_empty_sql_is_an_answer_not_a_crash(fake_conn):
 # the observation was empty, the case scored wrong, and the user had no receipt.
 
 def test_run_sql_with_emit_streams_the_core_frame_shapes(monkeypatch, fake_conn):
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded",
                         lambda *a, **k: _Result(columns=["avg_days"], rows=[[3.96]], row_count=1))
-    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt",
+    monkeypatch.setattr("pramanyx.routers.investigations.write_answer_receipt",
                         lambda **kw: {"receipt_id": "rcpt-1", "learning": None, "activations": None})
     frames: list[tuple[str, dict]] = []
     ct.run_sql("c1", {"sql": "SELECT AVG(ship_date - order_date) FROM orders"},
@@ -118,14 +118,14 @@ def test_run_sql_with_emit_streams_the_core_frame_shapes(monkeypatch, fake_conn)
 
 
 def test_run_sql_receipt_carries_the_users_question_and_the_sql(monkeypatch, fake_conn):
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: _Result())
     seen: dict = {}
 
     def _write(**kw):
         seen.update(kw)
         return {"receipt_id": "r", "learning": None, "activations": None}
 
-    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt", _write)
+    monkeypatch.setattr("pramanyx.routers.investigations.write_answer_receipt", _write)
     ct.run_sql("c1", {"sql": "SELECT 1"}, emit=lambda t, p: None, user_question="how many?")
     assert seen["kind"] == "chat_answer"
     assert seen["question"] == "how many?"
@@ -135,16 +135,16 @@ def test_run_sql_receipt_carries_the_users_question_and_the_sql(monkeypatch, fak
 
 def test_run_sql_without_emit_streams_nothing(monkeypatch, fake_conn):
     # A bare sync caller (tests, scripts) is not a streamed turn — no frames, no receipt.
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: _Result())
     called = []
-    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt",
+    monkeypatch.setattr("pramanyx.routers.investigations.write_answer_receipt",
                         lambda **kw: called.append(1) or {})
     ct.run_sql("c1", {"sql": "SELECT 1"})
     assert not called
 
 
 def test_run_sql_failure_streams_no_result_frames(monkeypatch, fake_conn):
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded",
                         lambda *a, **k: _Result(rows=[], row_count=0, error="Binder Error: x"))
     frames: list = []
     out = ct.run_sql("c1", {"sql": "SELECT x"}, emit=lambda t, p: frames.append(t))
@@ -153,12 +153,12 @@ def test_run_sql_failure_streams_no_result_frames(monkeypatch, fake_conn):
 
 
 def test_run_sql_receipt_failure_does_not_fail_the_query(monkeypatch, fake_conn):
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: _Result())
 
     def _boom(**kw):
         raise RuntimeError("ledger down")
 
-    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt", _boom)
+    monkeypatch.setattr("pramanyx.routers.investigations.write_answer_receipt", _boom)
     frames: list = []
     out = ct.run_sql("c1", {"sql": "SELECT 1"}, emit=lambda t, p: frames.append(t))
     assert out["row_count"] == 1
@@ -172,7 +172,7 @@ def test_run_sql_receipt_failure_does_not_fail_the_query(monkeypatch, fake_conn)
 
 def test_a_failed_query_carries_a_repair_instruction(monkeypatch, fake_conn):
     monkeypatch.setattr(
-        "aughor.sql.executor.execute_guarded",
+        "pramanyx.sql.executor.execute_guarded",
         lambda *a, **k: _Result(rows=[], row_count=0,
                                 error='Binder Error: Referenced column "totl" not found'))
     out = ct.run_sql("c1", {"sql": "SELECT SUM(totl) FROM orders"})
@@ -184,7 +184,7 @@ def test_a_failed_query_carries_a_repair_instruction(monkeypatch, fake_conn):
 
 
 def test_a_successful_query_carries_no_repair(monkeypatch, fake_conn):
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: _Result())
     assert "repair" not in ct.run_sql("c1", {"sql": "SELECT 1"})
 
 
@@ -192,7 +192,7 @@ def test_a_guard_block_is_not_retryable(monkeypatch, fake_conn):
     # The statement is DISALLOWED, not mistyped — rewriting cannot help, and a model
     # that keeps retrying a blocked statement burns budget on a wall.
     monkeypatch.setattr(
-        "aughor.sql.executor.execute_guarded",
+        "pramanyx.sql.executor.execute_guarded",
         lambda *a, **k: _Result(rows=[], row_count=0,
                                 error="[BLOCKED] disallowed function(s): READ_CSV"))
     repair = ct.run_sql("c1", {"sql": "SELECT * FROM read_csv('/etc/passwd')"})["repair"]
@@ -237,7 +237,7 @@ def test_answer_question_runs_the_real_core_with_a_noop_emit(monkeypatch):
     included, because a headline without the guard record is the thing this product
     exists not to hand people. Rows deliberately stay behind (the headline is the
     answer; rows spend the window)."""
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     got: dict = {}
 
@@ -269,7 +269,7 @@ def test_answer_question_runs_the_real_core_with_a_noop_emit(monkeypatch):
 def test_answer_question_reports_a_failed_turn_as_a_value(monkeypatch):
     """A deliberate terminal failure (`query_failed`) is a RESULT the model can narrate
     and recover from — outcome plus the error, never a raise."""
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     monkeypatch.setattr(inv, "answer_core", lambda *a, **k: inv._AnswerCoreResult(
         outcome="query_failed", error="Binder Error: no such column"))
@@ -294,11 +294,11 @@ def test_converse_can_choose_answer_question_through_the_loop(monkeypatch, fake_
     """The loop-level proof of the wiring: the model names the tool, the loop finds it
     in the registered set, the arguments parse, and the terminal state survives the
     JSON hop back into the conversation."""
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
-    from aughor.routers import investigations as inv
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
+    from pramanyx.routers import investigations as inv
 
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.setattr(inv, "answer_core", lambda *a, **k: inv._AnswerCoreResult(
         outcome="answered", headline="Total is **412**", sql="SELECT 412",
         columns=["n"], rows=[[412]], row_count=1))
@@ -362,8 +362,8 @@ def test_the_system_prompt_names_the_engine_its_rules_and_the_clock(monkeypatch)
     engine nor the date: on theLook (BigQuery) every `date_trunc('month', x)` and every `::`
     cast it wrote failed. It carries the quick path's writer rules and the clock now — and the
     clock even when the connection cannot be opened."""
-    from aughor.agent.sql_context import today_utc
-    from aughor.db.dialects import writer_rules
+    from pramanyx.agent.sql_context import today_utc
+    from pramanyx.db.dialects import writer_rules
 
     bq = SimpleNamespace(dialect="bigquery", writes_native_sql=True)
     monkeypatch.setattr(ct, "_connection", lambda cid, **kw: bq)
@@ -416,11 +416,11 @@ def test_clarifying_in_prose_is_granted(fake_conn):
 def test_converse_answers_end_to_end_through_the_loop(monkeypatch, fake_conn):
     """The body in one call: prompt + tools + loop, with the steps preserved so a route
     receipt can be built from them."""
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded",
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded",
                         lambda *a, **k: _Result())
     set_responses([
         FauxToolCall(payload={"sql": "SELECT count(*) FROM analytics.orders"}, name="run_sql"),
@@ -446,10 +446,10 @@ def test_a_join_that_over_counts_is_flagged_and_the_compiled_query_is_not(monkey
 
     import duckdb
 
-    from aughor.db.connection import open_connection
-    from aughor.demo.setup import _seed_ecommerce
-    from aughor.ontology.models import OntologyGraph
-    from aughor.semantic.object_query import compile_object_query
+    from pramanyx.db.connection import open_connection
+    from pramanyx.demo.setup import _seed_ecommerce
+    from pramanyx.ontology.models import OntologyGraph
+    from pramanyx.semantic.object_query import compile_object_query
 
     path = tmp_path / "samples.duckdb"
     con = duckdb.connect(str(path))

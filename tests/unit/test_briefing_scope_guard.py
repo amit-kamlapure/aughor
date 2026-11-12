@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.knowledge.briefing import group_held_back
-from aughor.routers.exploration import (
+from pramanyx.knowledge.briefing import group_held_back
+from pramanyx.routers.exploration import (
     SchemaScopeUnavailable,
     _filter_by_schema,
     _filter_findings_by_schema,
@@ -40,7 +40,7 @@ DOMAIN_DATA = {
 def _no_table_set(monkeypatch):
     """Make the schema's table set unresolvable — the DB hiccup that used to fail open."""
     monkeypatch.setattr(
-        "aughor.routers.exploration._schema_table_set", lambda conn_id, schema: None
+        "pramanyx.routers.exploration._schema_table_set", lambda conn_id, schema: None
     )
 
 
@@ -69,7 +69,7 @@ def test_no_schema_requested_is_not_a_failure(monkeypatch):
 def test_resolvable_schema_still_filters_by_qualified_name(monkeypatch):
     """The happy path must keep discriminating same-named tables across schemas."""
     monkeypatch.setattr(
-        "aughor.routers.exploration._schema_table_set", lambda conn_id, schema: {"orders"}
+        "pramanyx.routers.exploration._schema_table_set", lambda conn_id, schema: {"orders"}
     )
     out = _filter_by_schema(DOMAIN_DATA, "workspace", "netflix")
     kept = [i["id"] for i in out["Revenue"]]
@@ -131,7 +131,7 @@ def test_group_held_back_empty_is_empty():
 # structurally undetectable, which is exactly what shipped to the screenshot.
 
 def test_briefing_stamps_scope_key_when_unavailable(monkeypatch):
-    from aughor.routers import exploration as ex
+    from pramanyx.routers import exploration as ex
 
     monkeypatch.setattr(ex, "_domain_insights_for", lambda c, s: {})
     monkeypatch.setattr(ex, "_needs_filter", lambda c, s: False)
@@ -142,7 +142,7 @@ def test_briefing_stamps_scope_key_when_unavailable(monkeypatch):
 
 
 def test_briefing_stamps_scope_key_on_the_generated_brief(monkeypatch):
-    from aughor.routers import exploration as ex
+    from pramanyx.routers import exploration as ex
 
     monkeypatch.setattr(ex, "_domain_insights_for", lambda c, s: {"D": [{"id": "a"}]})
     monkeypatch.setattr(ex, "_needs_filter", lambda c, s: False)
@@ -150,9 +150,9 @@ def test_briefing_stamps_scope_key_on_the_generated_brief(monkeypatch):
     monkeypatch.setattr(ex, "_load_business_profile", lambda c, s: None)
     monkeypatch.setattr(ex, "_connection_col_types", lambda c: {})
     monkeypatch.setattr(ex, "_metric_moves_provider", lambda c, p, s=None: None)
-    monkeypatch.setattr("aughor.knowledge.patterns.get_patterns", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.knowledge.patterns.get_patterns", lambda *a, **k: [])
     monkeypatch.setattr(
-        "aughor.knowledge.briefing.get_briefing",
+        "pramanyx.knowledge.briefing.get_briefing",
         lambda **kw: {"narrative": "n", "headline_theme": "t", "citations": [],
                       "held_back": [], "generated_at": "now"},
     )
@@ -164,7 +164,7 @@ def test_briefing_stamps_scope_key_on_the_generated_brief(monkeypatch):
 
 def test_briefing_scope_key_is_bare_connection_when_no_schema(monkeypatch):
     """Must mirror the client's `narrativeScope` exactly — `<conn>`, not `<conn>:`."""
-    from aughor.routers import exploration as ex
+    from pramanyx.routers import exploration as ex
 
     monkeypatch.setattr(ex, "_domain_insights_for", lambda c, s: {})
     monkeypatch.setattr(ex, "_needs_filter", lambda c, s: False)

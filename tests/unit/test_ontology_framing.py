@@ -15,11 +15,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
-from aughor.ontology.framing import Frame, frame_question, frame_reading, render_frame_block, stem
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.processes import process_fields, process_from_fields, resolve_process
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.framing import Frame, frame_question, frame_reading, render_frame_block, stem
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.processes import process_fields, process_from_fields, resolve_process
 from tests.unit.test_object_bindings import rows, seed
 from tests.unit.test_object_processes import (  # noqa: F401 — `door` is a fixture, used by name
     _DEADLINES,
@@ -102,7 +102,7 @@ def test_the_inflections_of_a_business_word_share_one_stem(family):
 def test_a_name_property_is_never_read_from_a_lone_determiner():
     """theLook (2026-10-01): "customers who placed their first order" framed a breakdown by `first_name`, as "the
     last 12 months" framed one by `last_name` — `_name` dropped as a generic tail left a bare ordinal to match."""
-    from aughor.ontology.models import EntityProperty, OntologyEntity
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity
     props = {p: EntityProperty(name=p, semantic_type="dimension")
              for p in ("first_name", "last_name", "country", "last_campaign_name")}
     graph = OntologyGraph(connection_id="t", schema_fingerprint="f", entities={"User": OntologyEntity(
@@ -305,10 +305,10 @@ def test_a_driver_is_reachable_only_by_measured_to_one_links_within_the_hops(dec
 def test_a_question_that_asks_to_see_the_data_reads_no_driver_as_tested(declared, monkeypatch):
     """Q3 (2026-10-03) asked for monthly revenue, and its frame line ended "Starting from Order (orders); testing
     revenue, gender, status.": a describe answer tests no driver. An investigation still says what it will test."""
-    import aughor.agent.framing as F
+    import pramanyx.agent.framing as F
     monkeypatch.setattr(F, "served_graph", lambda *a, **k: declared)
     monkeypatch.setattr(F, "person_synonyms", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.ontology.framing_misses.record", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.ontology.framing_misses.record", lambda *a, **k: None)
     see = F.resolve_frame("Which product categories are shipped late most often?", "c1", choose=False)
     why = F.resolve_frame("What is causing orders to be shipped late?", "c1", choose=False)
     assert see.start is not None and see.drivers and "Starting from" in see.reading
@@ -482,7 +482,7 @@ def test_a_breakdown_the_frame_compiled_is_run_as_declared_not_as_the_intake_re_
     model re-derived (the Olist miss: a rate over every line, not over the lines that reached the stage). A driver the
     frame reached is now broken down by the declared definition, compiled by the object door."""
     from types import SimpleNamespace
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     ran = []
 
     def execute(conn, phase_id, sql, schema=None):
@@ -524,7 +524,7 @@ def _late_frame(declared):
 
 
 def test_candidate_drivers_are_compiled_beside_the_named_ones(declared):
-    from aughor.ontology import framing as F
+    from pramanyx.ontology import framing as F
     frame = _late_frame(declared)
     assert frame.outcome is not None and frame.outcome.usable and frame.outcome.kind == "promise"
     unnamed = [d for d in frame.drivers if not d.named]
@@ -535,14 +535,14 @@ def test_candidate_drivers_are_compiled_beside_the_named_ones(declared):
 
 
 def test_mutation_the_candidate_cap_is_what_compiles_them(declared, monkeypatch):
-    from aughor.ontology import framing as F
+    from pramanyx.ontology import framing as F
     monkeypatch.setattr(F, "_MAX_COMPILED_CANDIDATES", 0)
     frame = _late_frame(declared)
     assert not [d for d in frame.drivers if not d.named and f"by {d.path}" in frame.compiled]
 
 
 def test_the_frame_reader_carries_candidates_flagged_and_named_first(declared):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     frame = _late_frame(declared)
     entries = I._frame_breakdowns(frame.model_dump(mode="json"))
     flags = [e["named"] for e in entries.values()]
@@ -553,7 +553,7 @@ def test_the_frame_reader_carries_candidates_flagged_and_named_first(declared):
 
 def test_candidate_breakdowns_run_as_declared_under_their_own_cap(declared, monkeypatch):
     from types import SimpleNamespace
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     ran = []
 
     def execute(conn, phase_id, sql, schema=None):
@@ -576,7 +576,7 @@ def test_the_diagnostic_route_node_runs_the_declared_breakdowns_without_a_model(
     """The node before the scan: declared findings, one phase, zero model calls — and nothing at all
     for a run that carries no frame, so unframed phases stay byte-identical."""
     from types import SimpleNamespace
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     ran = []
     monkeypatch.setattr(I, "_execute_safe", lambda conn, pid, sql, schema=None: (ran.append(pid) or
         SimpleNamespace(sql=sql, columns=["x", "rate"], rows=[["a", 0.1]], row_count=1, error=None)))
@@ -596,6 +596,6 @@ def test_the_diagnostic_route_node_runs_the_declared_breakdowns_without_a_model(
 def test_the_graph_routes_the_diagnostic_branch_through_the_node():
     """The scan's own law (it owns no breakdown) is pinned in test_named_breakdown; this pins the wiring."""
     import inspect
-    from aughor.agent import graph as G
+    from pramanyx.agent import graph as G
     src = inspect.getsource(G)
     assert 'graph.add_node("frame_breakdowns"' in src and 'graph.add_edge("frame_breakdowns", _xsec_target)' in src

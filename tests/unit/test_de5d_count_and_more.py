@@ -17,8 +17,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -87,7 +87,7 @@ def test_a_parameterised_run_honours_its_limit_too(conn):
 
 def test_a_connector_cap_below_the_limit_is_still_said_as_the_cap():
     # The word survives for a connector with no bounded read: fewer rows than asked, no budget word.
-    from aughor.routers.query import _cut_by
+    from pramanyx.routers.query import _cut_by
 
     class _R:
         doors = ["validated:duckdb", "safety-checked", "audited"]
@@ -111,9 +111,9 @@ def test_count_all_rows_answers_the_total_with_its_as_of(conn):
 
 
 def test_the_count_goes_through_the_run_door_and_is_audited(conn):
-    from aughor.db.connection import open_connection_for
-    from aughor.security.audit import AuditLogger
-    from aughor.sql.paging import count_sql
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.security.audit import AuditLogger
+    from pramanyx.sql.paging import count_sql
     before = len(AuditLogger.recent(limit=500, connection_id=conn, label="query_workbench"))
     _count(conn, ORDERED)
     after = AuditLogger.recent(limit=500, connection_id=conn, label="query_workbench")
@@ -179,7 +179,7 @@ def test_load_more_refusals_are_typed(conn):
 def test_paging_is_refused_where_each_page_is_billed_as_a_scan(conn, monkeypatch):
     # The study's falsifier, per engine: on an engine whose declaration says a re-run is billed as a scan
     # of the statement's tables, a page costs what the whole result cost, and the route says so.
-    import aughor.db.metadata as M
+    import pramanyx.db.metadata as M
     monkeypatch.setattr(M, "engine_type_of", lambda db: "bigquery")
     page = _more(conn, ORDERED, offset=500, limit=500)
     assert page["code"] == "PAGE_BILLED_AS_SCAN" and page["rows"] == []
@@ -193,7 +193,7 @@ def test_paging_is_refused_where_each_page_is_billed_as_a_scan(conn, monkeypatch
 def test_every_engine_declares_what_a_rerun_costs():
     from typing import get_args
 
-    from aughor.connectors import declarations as D
+    from pramanyx.connectors import declarations as D
     allowed = set(get_args(D.RerunCost))
     for e in D.ENGINES:
         assert e.rerun_cost in allowed, e.type
@@ -215,20 +215,20 @@ def test_every_engine_declares_what_a_rerun_costs():
     ("", None),
 ])
 def test_has_top_level_order_reads_the_outermost_query(sql, expected):
-    from aughor.sql.paging import has_top_level_order
+    from pramanyx.sql.paging import has_top_level_order
     assert has_top_level_order(sql, "duckdb") is expected
 
 
 def test_the_wrappers_are_the_two_statements_and_nothing_else():
-    from aughor.sql.paging import count_sql, page_sql
+    from pramanyx.sql.paging import count_sql, page_sql
     assert count_sql("SELECT 1;") == "SELECT COUNT(*) AS n FROM (SELECT 1) __q"
     assert page_sql(" SELECT 1 ; ", 501, 1000) == "SELECT * FROM (SELECT 1) __q LIMIT 501 OFFSET 1000"
     assert page_sql("SELECT 1", 0, -5) == "SELECT * FROM (SELECT 1) __q LIMIT 1 OFFSET 0"
 
 
 def test_the_bigquery_job_says_what_it_cost_as_door_words():
-    from aughor.connectors.warehouse.bigquery import _say_what_it_cost
-    from aughor.db import doors as D
+    from pramanyx.connectors.warehouse.bigquery import _say_what_it_cost
+    from pramanyx.db import doors as D
 
     class _Job:
         total_bytes_processed = 123_456
@@ -268,6 +268,6 @@ def test_the_distinct_route_refuses_in_the_engines_words(conn):
 
 
 def test_the_rbac_table_knows_the_two_routes():
-    from aughor.rbac.policy import POLICY
+    from pramanyx.rbac.policy import POLICY
     assert POLICY[("POST", "/query/count")] == POLICY[("POST", "/query/run")]
     assert POLICY[("POST", "/query/more")] == POLICY[("POST", "/query/run")]

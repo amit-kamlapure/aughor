@@ -17,7 +17,7 @@ import inspect
 import duckdb
 import pytest
 
-from aughor.db.schema_render import parse_schema_tables, schema_block
+from pramanyx.db.schema_render import parse_schema_tables, schema_block
 
 
 @pytest.fixture()
@@ -29,14 +29,14 @@ def shop(tmp_path):
     con.execute("INSERT INTO orders VALUES (1, 'c1', 10.5), (2, 'c2', 20.0), (3, 'c1', 5.0)")
     con.execute("INSERT INTO customers VALUES ('c1', 'EU'), ('c2', 'US')")
     con.close()
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     db = DuckDBConnection(str(path), connection_id="checks-see-tables")
     yield db
     db.close()
 
 
 def _catalog(db) -> str:
-    from aughor.tools.data_catalog import build_data_catalog
+    from pramanyx.tools.data_catalog import build_data_catalog
     return build_data_catalog(db, ["orders", "customers"])
 
 
@@ -64,7 +64,7 @@ def test_the_house_and_inline_forms_parse_exactly_as_before():
 
 def test_identifier_repair_runs_on_the_catalog(shop):
     """The repair the default path skipped: `customerid` → `customerID`, `amount` → `Amount`."""
-    from aughor.sql.safety import preflight_repair
+    from pramanyx.sql.safety import preflight_repair
     sql = "SELECT customerid, SUM(amount) AS total FROM orders GROUP BY customerid"
 
     repaired, receipt = preflight_repair(shop, sql, schema=_catalog(shop))
@@ -75,7 +75,7 @@ def test_identifier_repair_runs_on_the_catalog(shop):
 
 
 def test_a_repair_that_still_trips_its_check_is_not_adopted():
-    from aughor.routers.investigations import _checks_still_firing
+    from pramanyx.routers.investigations import _checks_still_firing
     cols = {"order_items": ["order_item_id", "unit_price", "order_id"]}
     still_wrong = "SELECT SUM(unit_price * order_item_id) AS revenue FROM order_items"
     fixed = "SELECT SUM(unit_price) AS revenue FROM order_items"
@@ -91,13 +91,13 @@ def test_a_repair_that_still_trips_its_check_is_not_adopted():
 
 def test_the_quick_path_rechecks_before_it_adopts_a_repair():
     """Wiring guard, the idiom of the frame's: a re-check nothing calls is the gap this closes."""
-    from aughor.routers.investigations import _answer_core
+    from pramanyx.routers.investigations import _answer_core
     src = inspect.getsource(_answer_core)
     assert "_checks_still_firing(" in src and '"repair_recheck"' in src
 
 
 def test_describe_table_returns_what_it_promises(monkeypatch):
-    from aughor.agent import converse_tools
+    from pramanyx.agent import converse_tools
     schema = ("TABLE: main.orders (3 rows)\n"
               "  id           INTEGER\n"
               "  status       VARCHAR  -- e.g. 'shipped', 'returned'\n"

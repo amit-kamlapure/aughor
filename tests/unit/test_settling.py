@@ -13,8 +13,8 @@ from typing import Callable
 
 import pytest
 
-from aughor.settling import learn, sampler, settling_answer, store
-from aughor.settling.learn import Observation, settle_lag
+from pramanyx.settling import learn, sampler, settling_answer, store
+from pramanyx.settling.learn import Observation, settle_lag
 
 D0 = date(2026, 9, 1)
 
@@ -183,7 +183,7 @@ def test_a_table_still_moving_at_the_horizon_raises_the_lag_it_is_not_left_out(h
 # ── the sampler ──────────────────────────────────────────────────────────────────
 
 def _fake_profiles(monkeypatch, tables: dict[str, dict]):
-    monkeypatch.setattr("aughor.tools.profile_cache._load",
+    monkeypatch.setattr("pramanyx.tools.profile_cache._load",
                         lambda: {"c1:old": {"tables": {}}, "c1:abc": {"tables": tables}})
 
 
@@ -395,11 +395,11 @@ def test_the_horizon_said_is_the_moving_tables_own_not_a_longer_ones(home):
 def test_the_daily_reading_runs_once_per_utc_day(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(sampler, "_last_sample_day", "")
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda: [{"id": "c1"}, {"id": "c-quiet"}])
     monkeypatch.setattr(sampler, "time_tables",
                         lambda cid: [("orders", "ts", 1)] if cid == "c1" else [])
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid, **kw: (lambda sql: (["d", "n"], [], None)))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", lambda cid, **kw: (lambda sql: (["d", "n"], [], None)))
     monkeypatch.setattr(sampler, "sample_connection",
                         lambda cid, run_sql, today=None: calls.append(cid) or
                         {"sampled": ["orders"], "errors": {}})
@@ -419,7 +419,7 @@ def test_learn_constants_are_the_ones_the_verdict_reports():
 # ── the consumers: a learned lag reaches the briefing, the deep run, the monitor, the chat ──
 
 def test_a_persons_lag_wins_the_learned_lag_beats_the_default_and_is_clamped():
-    from aughor.automations.temporal import DEFAULT_LAG_DAYS, MAX_LAG_DAYS, resolve_lag
+    from pramanyx.automations.temporal import DEFAULT_LAG_DAYS, MAX_LAG_DAYS, resolve_lag
     assert resolve_lag({"observation_lag_days": 8}, learned_lag=3) == 8
     assert resolve_lag({}, learned_lag=6) == 6
     assert resolve_lag({}, learned_lag=None) == DEFAULT_LAG_DAYS
@@ -430,7 +430,7 @@ def test_a_persons_lag_wins_the_learned_lag_beats_the_default_and_is_clamped():
 def test_the_scheduled_grounding_observes_at_the_learned_lag_when_the_step_sets_none():
     from types import SimpleNamespace
 
-    from aughor.automations.temporal import scheduled_grounding
+    from pramanyx.automations.temporal import scheduled_grounding
     auto = SimpleNamespace(id="a1", conditions=[SimpleNamespace(kind="schedule", config={"cron": "0 9 * * *"})])
     now = datetime(2026, 9, 23, 9, 0, tzinfo=timezone.utc)
     learned = scheduled_grounding(auto, {"question": "q"}, now=now, learned_lag=6)
@@ -444,7 +444,7 @@ def test_the_scheduled_grounding_observes_at_the_learned_lag_when_the_step_sets_
 def test_the_deep_run_window_ends_at_the_last_settled_day_not_merely_yesterday():
     from types import SimpleNamespace
 
-    from aughor.agent.investigate import _clamp_intake_to_coverage
+    from pramanyx.agent.investigate import _clamp_intake_to_coverage
 
     def intake():
         return SimpleNamespace(
@@ -475,9 +475,9 @@ def test_the_deep_run_window_ends_at_the_last_settled_day_not_merely_yesterday()
 
 
 def test_the_anomaly_monitor_scores_the_newest_settled_day(monkeypatch):
-    from aughor.monitors import runner
+    from pramanyx.monitors import runner
 
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: 7 if cid == "c1" else None)
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: 7 if cid == "c1" else None)
     today = date(2026, 9, 23)
     pts = [(date(2026, 9, 23) - timedelta(days=i), float(100 - i)) for i in range(12)][::-1]
     kept = runner._drop_unsettled(pts, "c1", today=today)
@@ -489,9 +489,9 @@ def test_the_anomaly_monitor_scores_the_newest_settled_day(monkeypatch):
 
 
 def test_the_conversation_is_told_which_days_are_still_settling(monkeypatch):
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
 
-    monkeypatch.setattr("aughor.settling.store.connection_lag",
+    monkeypatch.setattr("pramanyx.settling.store.connection_lag",
                         lambda cid: {"days": 7, "source": "learned", "still_moving": [], "horizon": 14, "rewrites": []}
                         if cid == "c-lag" else {"days": None, "source": None, "still_moving": [], "horizon": 0, "rewrites": []})
     told = converse_system_prompt("c-lag")
@@ -504,7 +504,7 @@ def test_the_conversation_is_told_which_days_are_still_settling(monkeypatch):
 def test_the_settling_door_serves_the_store_and_takes_a_reading(home, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     client = TestClient(app)
     empty = client.get("/settling/c1")
@@ -513,7 +513,7 @@ def test_the_settling_door_serves_the_store_and_takes_a_reading(home, monkeypatc
                             "lag_source": None, "still_moving": [], "rewrites": [], "metrics": []}
 
     _fake_profiles(monkeypatch, {"orders": {"primary_timestamp": "created_at", "row_count": 100}})
-    monkeypatch.setattr("aughor.db.measure.run_sql_for",
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for",
                         lambda cid, **kw: (lambda sql: (["day", "n"], [("2026-09-22", 1745)], None)))
     taken = client.post("/settling/c1/sample")
     assert taken.status_code == 200 and taken.json()["sampled"] == ["orders"]
@@ -634,11 +634,11 @@ def test_only_this_connections_approved_metrics_count(home, monkeypatch):
     mine = SimpleNamespace(status="approved", connection="c1", time_column="sales.sold_at", tables=["sales", "items"], sql="")
     draft = SimpleNamespace(status="draft", connection="c1", time_column="drafted.at", tables=["drafted"], sql="")
     other = SimpleNamespace(status="approved", connection="c2", time_column="theirs.at", tables=["theirs"], sql="")
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [mine, draft, other])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: [mine, draft, other])
     assert sampler._metric_dates("c1") == {"sales": "sold_at", "items": ""}
     # a table two metrics read keeps the date one of them gives it, whichever comes first
     dated = SimpleNamespace(status="approved", connection="c1", time_column="items.made_at", tables=["items"], sql="")
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [mine, dated])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: [mine, dated])
     assert sampler._metric_dates("c1")["items"] == "made_at"
 
 

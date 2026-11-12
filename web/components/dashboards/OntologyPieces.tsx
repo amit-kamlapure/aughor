@@ -122,9 +122,9 @@ export function usePieces(): PiecesValue {
 }
 
 /** Where a reader's filters for one dashboard are remembered: their browser, and only theirs. */
-const filtersKey = (cockpit: string) => `aughor:cockpit-filters:${cockpit}`;
+const filtersKey = (cockpit: string) => `pramanyx:cockpit-filters:${cockpit}`;
 /** Arc AP-8 — where the values a reader set on one dashboard are remembered: their browser, and only theirs. */
-const valuesKey = (cockpit: string) => `aughor:cockpit-values:${cockpit}`;
+const valuesKey = (cockpit: string) => `pramanyx:cockpit-values:${cockpit}`;
 
 function rememberedValues(cockpit?: string): Record<string, unknown> {
   if (!cockpit) return {};

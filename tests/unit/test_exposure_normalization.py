@@ -15,7 +15,7 @@ stamped onto the finding (backstop), the same two-sided treatment the significan
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import _concentration_note
+from pramanyx.agent.investigate import _concentration_note
 
 # The real rows, from bigquery-public-data.thelook_ecommerce.inventory_items.
 THELOOK_DEPT = (["product_department", "metric_total", "n"],

@@ -24,10 +24,10 @@ from __future__ import annotations
 
 import json
 
-import aughor.agent.spotlight_act as act
-import aughor.agent.spotlight_guide as guide
-import aughor.agent.spotlight_tools as spot
-from aughor.agent.spotlight_text import NAME_CLIP, TEXT_CLIP
+import pramanyx.agent.spotlight_act as act
+import pramanyx.agent.spotlight_guide as guide
+import pramanyx.agent.spotlight_tools as spot
+from pramanyx.agent.spotlight_text import NAME_CLIP, TEXT_CLIP
 
 #: The corpus. Each entry is a payload someone can genuinely plant in a name, a log
 #: line, a question, or a document — instruction overrides, fake system framing,
@@ -50,15 +50,15 @@ def _tool_result_is_bounded(result: dict) -> None:
 
 
 def _pending_count() -> int:
-    from aughor.actions.inbox import list_proposals
+    from pramanyx.actions.inbox import list_proposals
     return len(list_proposals(status="pending"))
 
 
 # ── hostile trace questions ride the ledger into platform_traces ───────────────────
 
 def test_hostile_questions_come_back_clipped_and_stage_nothing():
-    from aughor.obs.session_log import emit
-    from aughor.telemetry import bind_trace
+    from pramanyx.obs.session_log import emit
+    from pramanyx.telemetry import bind_trace
 
     for i, attack in enumerate(ATTACKS):
         with bind_trace(f"redteam-{i}"):
@@ -76,8 +76,8 @@ def test_hostile_questions_come_back_clipped_and_stage_nothing():
 # ── hostile names on real records, quoted as data ─────────────────────────────────
 
 def test_hostile_automation_name_is_clipped_in_the_staged_summary():
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import upsert_automation
 
     hostile = ATTACKS[0] + " " + "B" * 500
     a = upsert_automation(Automation(
@@ -96,7 +96,7 @@ def test_hostile_automation_name_is_clipped_in_the_staged_summary():
 
 
 def test_hostile_agent_name_is_clipped_in_guide_grounding():
-    from aughor.custom_agents.store import create_agent
+    from pramanyx.custom_agents.store import create_agent
 
     hostile = ("Zz " + ATTACKS[1] + " " + ATTACKS[3])[:118]  # store cap is 120
     create_agent(hostile, instructions="A scope and a stance.")
@@ -116,7 +116,7 @@ def test_hostile_automation_reference_is_a_clean_clipped_refusal():
 # ── the closed registries hold ─────────────────────────────────────────────────────
 
 def test_hostile_preference_key_and_value_die_at_the_registry(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "prefs.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "prefs.db"))
     for attack in ATTACKS:
         out = act.set_preference({"key": attack, "value": "dark"})
         assert out["applied"] is False
@@ -139,9 +139,9 @@ def test_hostile_guide_topic_gets_the_honest_unknown_answer():
 # ── hostile reasoning is truncated before an approver reads it ─────────────────────
 
 def test_hostile_reasoning_is_truncated_on_the_staged_record(monkeypatch):
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft",
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft",
                         lambda **kw: [])
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
     out = act.draft_agent("rt-conn", {
         "name": "redteam-agent", "instructions": "A scope and a stance.",
         "reasoning": ATTACKS[4]})
@@ -164,13 +164,13 @@ def test_the_whole_know_roster_stages_nothing_over_hostile_data():
 def _client():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def test_http_door_hostile_args_are_bounded_refusals_never_creations():
     client = _client()
-    from aughor.custom_agents.store import list_agents
+    from pramanyx.custom_agents.store import list_agents
     agents_before = {a.id for a in list_agents()}
     pending_before = _pending_count()
 

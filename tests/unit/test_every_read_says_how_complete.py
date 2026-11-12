@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.semantic import completeness as C
+from pramanyx.semantic import completeness as C
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_ontology_security import SHIPPED, secured  # noqa: F401 — fixtures by name
 
@@ -24,12 +24,12 @@ BY_STATUS = {"object_type": "order", "measures": [{"name": "n", "agg": "count"}]
 
 @pytest.fixture
 def served(graph, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
 
 
 def _as(monkeypatch, who: str) -> None:
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", who)
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", who)
 
 
 def _shipping_customer(db) -> str:  # noqa: F811
@@ -50,7 +50,7 @@ def _ok(r):
 def test_a_query_cut_at_the_connections_cap_says_truncated(served, client, monkeypatch):
     every = _ok(client.post("/objects/query", params=PARAMS, json=BY_STATUS))
     assert every["completeness"]["state"] == "complete" and len(every["rows"]) > 3
-    monkeypatch.setattr("aughor.db.connection.MAX_ROWS", 3)                    # the connection's own cap, lowered
+    monkeypatch.setattr("pramanyx.db.connection.MAX_ROWS", 3)                    # the connection's own cap, lowered
     cut = _ok(client.post("/objects/query", params=PARAMS, json=BY_STATUS))
     said = cut["completeness"]
     assert len(cut["rows"]) == 3 and said["state"] == "truncated" and said["shown"] == 3
@@ -61,7 +61,7 @@ def test_a_query_cut_at_the_connections_cap_says_truncated(served, client, monke
 # ── withheld, said ──────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_row_policy_reads_withheld_at_the_query_and_listing_doors_with_its_words(secured, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ana")
     count = _ok(client.post("/objects/query", params=PARAMS,
                             json={"object_type": "order", "measures": [{"name": "n", "agg": "count"}]}))["completeness"]
@@ -73,7 +73,7 @@ def test_a_row_policy_reads_withheld_at_the_query_and_listing_doors_with_its_wor
 
 
 def test_the_object_page_says_the_property_it_emptied(secured, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ana")
     said = _ok(client.get(f"/objects/order/{ORDER}", params=PARAMS))["completeness"]
     assert said["state"] == "withheld" and said["masked"] == ["total_amount"] and said["shown"] == 1
@@ -82,7 +82,7 @@ def test_the_object_page_says_the_property_it_emptied(secured, client, monkeypat
 
 def test_the_linked_page_masks_what_an_objects_own_page_masks(secured, db, client, monkeypatch):  # noqa: F811
     """OC-7 at the linked page: the mask is the security law's."""
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     customer = _shipping_customer(db)
     _as(monkeypatch, "ana")
     page = _ok(client.get(f"/objects/Customer/{customer}/links/customer_to_order", params={**PARAMS, "limit": 50}))
@@ -96,14 +96,14 @@ def test_the_linked_page_masks_what_an_objects_own_page_masks(secured, db, clien
 
 
 def test_the_linked_page_says_withheld(secured, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ana")
     said = _ok(client.get("/objects/Customer/C00001/links/customer_to_order", params=PARAMS))["completeness"]
     assert said["state"] == "withheld" and said["withheld"] == ["Order"] and said["masked"] == ["total_amount"]
 
 
 def test_titles_say_the_first_of_more(served, client, monkeypatch):
-    monkeypatch.setattr("aughor.semantic.object_instances.MAX_TITLES", 1)
+    monkeypatch.setattr("pramanyx.semantic.object_instances.MAX_TITLES", 1)
     said = _ok(client.post("/objects/titles", params=PARAMS,
                            json={"object_type": "customer", "keys": ["C00001", "C00002"]}))["completeness"]
     assert said["state"] == "truncated" and said["of"] == 2 and said["shown"] <= 1
@@ -121,7 +121,7 @@ def test_a_refusal_says_refused_with_its_reason(served, client):
 # ── the contract, and the one definition ────────────────────────────────────────────────────────────────────────
 
 def test_the_contract_describes_it_for_a_program(graph):  # noqa: F811
-    from aughor.ontology.builder_doors import ontology_contract, typescript
+    from pramanyx.ontology.builder_doors import ontology_contract, typescript
     contract = ontology_contract(graph, "r@1")
     assert contract["completeness"]["properties"]["state"]["enum"] == list(C.STATES)
     ts = typescript(contract)

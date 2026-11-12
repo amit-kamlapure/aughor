@@ -30,7 +30,7 @@ describe("objectHref", () => {
 
 describe("declaredActionsHref", () => {
   it("opens Intelligence at a layer, scoped to the connection", () => {
-    const url = new URL(declaredActionsHref("914df862"), "http://aughor.test");
+    const url = new URL(declaredActionsHref("914df862"), "http://pramanyx.test");
     expect(url.pathname).toBe("/");
     expect(url.searchParams.get("tab")).toBe("intelligence");
     expect(url.searchParams.get("layer")).toBeTruthy();

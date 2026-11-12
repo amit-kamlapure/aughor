@@ -14,24 +14,24 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.evals import store
-from aughor.evals.experiments import Cell
-from aughor.evals.runner import run_experiment
-from aughor.evals.targets import reference_checker, reference_target
-from aughor.kernel.flags import clear_flag, flag_enabled
+from pramanyx.evals import store
+from pramanyx.evals.experiments import Cell
+from pramanyx.evals.runner import run_experiment
+from pramanyx.evals.targets import reference_checker, reference_target
+from pramanyx.kernel.flags import clear_flag, flag_enabled
 
 FLAG = "_synthetic.default_off"   # a synthetic default-off flag (tests/conftest.py `synthetic_flags`) — no product flag is a switch since 2026-10-28
 
 
 @pytest.fixture(autouse=True)
 def _isolated_store(tmp_path, monkeypatch, synthetic_flags):
-    monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
+    monkeypatch.setenv("PRAMANYX_EVALS_DB", str(tmp_path / "evals.db"))
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
-    monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "1")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_EVALS_EXPERIMENTS", "1")
     # The seeder's live LLM calls are not what this file measures. Patch the attribute:
     # `_ENABLED` is resolved at module import, so a setenv here would be a no-op.
-    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
+    monkeypatch.setattr("pramanyx.semantic.autoseed._ENABLED", False)
     yield
     clear_flag(FLAG)
     clear_flag("evals.experiments")
@@ -44,7 +44,7 @@ def db(tmp_path):
     con.execute("CREATE TABLE t(id INT, v INT)")
     con.execute("INSERT INTO t VALUES (1,10),(2,20),(3,30)")
     con.close()
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(str(path), connection_id="e4test")
     yield conn
     conn.close()
@@ -120,7 +120,7 @@ def test_one_failing_cell_does_not_abandon_the_grid(db, suite):
 
 
 def test_a_failed_cell_does_not_leak_its_pins_into_the_next(db, suite):
-    from aughor.llm import provider as P
+    from pramanyx.llm import provider as P
 
     def boom_then_check():
         if P.current_run_model() == "pinned/model":
@@ -145,9 +145,9 @@ def test_a_failed_cell_does_not_leak_its_pins_into_the_next(db, suite):
 def test_refuses_to_run_while_the_fallback_chain_is_live(db, suite, monkeypatch):
     """Aborts the grid rather than recording one global fault as N cell failures — the same
     blast radius as the frozen-semantics guard, because the condition is process-global."""
-    from aughor.evals.experiments import MeasurementIntegrityError
+    from pramanyx.evals.experiments import MeasurementIntegrityError
 
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     with pytest.raises(MeasurementIntegrityError):
         run_experiment(suite, lambda: reference_target(db), _cells(),
                        checker=reference_checker(db))
@@ -156,8 +156,8 @@ def test_refuses_to_run_while_the_fallback_chain_is_live(db, suite, monkeypatch)
 def test_plain_run_suite_still_records_the_override_layer(db, suite):
     """Every run records it, not just experiment runs — a run that executed inside a cell
     and did not say so gets filed under the wrong configuration."""
-    from aughor.evals.experiments import applied
-    from aughor.evals.runner import run_suite
+    from pramanyx.evals.experiments import applied
+    from pramanyx.evals.runner import run_suite
 
     with applied(Cell(label="ad-hoc", flags={FLAG: True})):
         summary = run_suite(suite, reference_target(db), checker=reference_checker(db))
@@ -173,8 +173,8 @@ def test_schedule_refuses_over_budget_BEFORE_a_job_exists(db, suite):
     synchronously at schedule time, so no job id is ever handed back for a doomed run."""
     import asyncio
 
-    from aughor.evals.experiments import MeasurementIntegrityError
-    from aughor.evals.runner import schedule_experiment
+    from pramanyx.evals.experiments import MeasurementIntegrityError
+    from pramanyx.evals.runner import schedule_experiment
 
     with pytest.raises(MeasurementIntegrityError):
         # 2 cells × 1 case × 1 req/case = 2 estimated, against a budget of 1.
@@ -186,10 +186,10 @@ def test_schedule_refuses_over_budget_BEFORE_a_job_exists(db, suite):
 def test_schedule_refuses_while_the_fallback_chain_is_live(db, suite, monkeypatch):
     import asyncio
 
-    from aughor.evals.experiments import MeasurementIntegrityError
-    from aughor.evals.runner import schedule_experiment
+    from pramanyx.evals.experiments import MeasurementIntegrityError
+    from pramanyx.evals.runner import schedule_experiment
 
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     with pytest.raises(MeasurementIntegrityError):
         asyncio.run(schedule_experiment(
             suite, lambda: reference_target(db), _cells(), checker=reference_checker(db)))
@@ -203,8 +203,8 @@ def test_schedule_runs_the_grid_as_a_supervised_job(db, suite):
     land in the store — same result as an inline run, without blocking the caller."""
     import asyncio
 
-    from aughor.evals.runner import schedule_experiment
-    from aughor.kernel.jobs import JobState, kernel
+    from pramanyx.evals.runner import schedule_experiment
+    from pramanyx.kernel.jobs import JobState, kernel
 
     async def go():
         job_id = await schedule_experiment(

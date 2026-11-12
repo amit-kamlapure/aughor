@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from aughor.briefing import ranges
-from aughor.semantic import metric_time as mt
+from pramanyx.briefing import ranges
+from pramanyx.semantic import metric_time as mt
 
 
 def test_a_nan_from_the_warehouse_is_no_figure_and_the_range_still_answers(monkeypatch):
@@ -20,7 +20,7 @@ def test_a_nan_from_the_warehouse_is_no_figure_and_the_range_still_answers(monke
         time_kind, tables, unit = "flow", [], "ratio 0-1"
         time_source, time_confirmed_by = "set by a person", "test"
 
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: [_Rate()])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: [_Rate()])
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "declared", lambda m: True)
     monkeypatch.setattr(mt, "measure_sql", lambda *a, **k: ("SELECT …", ""))

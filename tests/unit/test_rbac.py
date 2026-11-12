@@ -10,7 +10,7 @@ No route enforcement is asserted here — P1 wires none (that's P3).
 """
 from __future__ import annotations
 
-from aughor.rbac import (
+from pramanyx.rbac import (
     ALL_PERMISSIONS,
     ANALYST,
     OWNER,
@@ -22,9 +22,9 @@ from aughor.rbac import (
     resolve_roles,
     role_permissions,
 )
-from aughor.rbac import store
-from aughor.rbac.resolver import default_role
-from aughor.security.authz import Principal
+from pramanyx.rbac import store
+from pramanyx.rbac.resolver import default_role
+from pramanyx.security.authz import Principal
 
 
 # ── The role model ────────────────────────────────────────────────────────────
@@ -141,14 +141,14 @@ def test_permissions_union_across_multiple_roles():
 
 
 def test_default_role_env_override(monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_DEFAULT_ROLE", "analyst")
+    monkeypatch.setenv("PRAMANYX_RBAC_DEFAULT_ROLE", "analyst")
     assert default_role() == ANALYST
     p = Principal(user_id="someone", org_id="org-res4")
     assert resolve_roles(p) == [ANALYST]
 
 
 def test_default_role_unknown_value_falls_back_to_viewer(monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_DEFAULT_ROLE", "godmode")
+    monkeypatch.setenv("PRAMANYX_RBAC_DEFAULT_ROLE", "godmode")
     assert default_role() == VIEWER  # never silently escalates
 
 

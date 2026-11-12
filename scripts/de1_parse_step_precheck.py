@@ -1,7 +1,7 @@
 """DE-1's pre-check (ROADMAP §3.51): what the parse step would refuse, measured
 on real statements before it runs at every door.
 
-The parse step — one read-only statement, parsed in the engine's dialect (`aughor.db.connection._validate`) — ran in
+The parse step — one read-only statement, parsed in the engine's dialect (`pramanyx.db.connection._validate`) — ran in
 the built-in DuckDB and Postgres connections only. DE-1 runs it at every connector's door. The falsifier: on an
 engine where sqlglot refuses more than a handful of REAL statements, the parser is the wrong tool for that dialect.
 This script counts them. Two sources:
@@ -41,7 +41,7 @@ def _dialect_for(connection_id: str, override: str | None) -> str:
     if override:
         return override
     try:
-        from aughor.db.registry import get_dsn
+        from pramanyx.db.registry import get_dsn
         conn_type, _dsn = get_dsn(connection_id)
     except Exception as exc:  # noqa: BLE001 — the registry may not hold it; say so and ask for --dialect
         sys.exit(f"could not resolve the dialect of {connection_id!r} ({exc}); pass --dialect")
@@ -50,7 +50,7 @@ def _dialect_for(connection_id: str, override: str | None) -> str:
 
 def _report(title: str, rows: list[tuple[str, str, bool, str]], dialect: str) -> int:
     """``rows``: (label, sql, ran_clean, error). Prints the counts and every refusal; returns the refused count."""
-    from aughor.db.connection import _METADATA_LABELS, _validate
+    from pramanyx.db.connection import _METADATA_LABELS, _validate
 
     refused: list[tuple[str, str, str, bool]] = []
     clean = 0
@@ -93,7 +93,7 @@ def main() -> int:
 
     if not args.connection:
         ap.error("--connection ID (or --golden)")
-    from aughor.security.audit import AuditLogger
+    from pramanyx.security.audit import AuditLogger
     records = AuditLogger.recent(limit=args.limit, connection_id=args.connection)
     # The audit store's column is `sql_full` (`sql_digest` beside it). This read `sql`, which no row carries, so
     # on the first machine with an audit log it counted 0 of 22,267 statements and reported 0 refused (2026-10-03).

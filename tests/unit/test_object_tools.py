@@ -8,9 +8,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology.models import OntologyGraph
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology.models import OntologyGraph
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 CONN = "objects-tool-t"
@@ -18,8 +18,8 @@ CONN = "objects-tool-t"
 
 @pytest.fixture
 def bound(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    import aughor.routers.ontology as R
+    import pramanyx.db.connection as C
+    import pramanyx.routers.ontology as R
 
     path = tmp_path / "samples.duckdb"
     con = duckdb.connect(str(path))
@@ -33,12 +33,12 @@ def bound(tmp_path, monkeypatch):
 
 
 def test_get_object_is_declared_once_on_the_roster_every_transport_derives_from():
-    from aughor.agent.spotlight_roster import spotlight_roster
+    from pramanyx.agent.spotlight_roster import spotlight_roster
     assert [t.name for t in spotlight_roster("c1")].count("get_object") == 1
 
 
 def test_get_object_opens_an_order_with_its_links_and_a_page_of_the_linked_objects(bound):
-    from aughor.agent.object_tools import get_object_tool
+    from pramanyx.agent.object_tools import get_object_tool
     out = get_object_tool(CONN, {"object_type": "order", "key": "O000123", "link": "order_to_order_item"})
     assert out["found"] is True and (out["object_type"], out["pk"]) == ("order", "O000123")
     assert "O000123" in out["summary"] and "via order_to_order_item" in out["summary"]
@@ -47,7 +47,7 @@ def test_get_object_opens_an_order_with_its_links_and_a_page_of_the_linked_objec
 
 
 def test_get_object_answers_rather_than_raises(bound):
-    from aughor.agent.object_tools import get_object_tool
+    from pramanyx.agent.object_tools import get_object_tool
     assert "error" in get_object_tool(CONN, {})
     missing = get_object_tool(CONN, {"object_type": "order", "key": "O999999"})
     assert missing["found"] is False and missing["summary"].startswith("Not found")

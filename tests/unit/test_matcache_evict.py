@@ -9,7 +9,7 @@ import time
 import duckdb
 import pytest
 
-from aughor.db import matcache
+from pramanyx.db import matcache
 
 
 @pytest.fixture

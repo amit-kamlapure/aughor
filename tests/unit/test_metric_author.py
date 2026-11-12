@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.semantic import metric_author as ma
+from pramanyx.api import app
+from pramanyx.semantic import metric_author as ma
 
 client = TestClient(app)
 
@@ -74,7 +74,7 @@ def test_what_the_model_wrote_is_checked_not_rewritten():
 
 
 def test_write_statement_spends_the_writer_once_and_wraps_only_an_expression_with_a_table(monkeypatch):
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: type("P", (), {"model": "coder-x"})())
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: type("P", (), {"model": "coder-x"})())
     w = _Writer("SELECT SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0) AS return_rate FROM order_items")
     out = ma.write_statement(BRIEF, _Db(), writer=w)
     assert out["sql"].startswith("SELECT SUM(CASE") and out["refused"] == "" and out["note"] == "" and out["model"] == "coder-x"
@@ -104,14 +104,14 @@ def test_the_door_writes_once_binds_a_trace_and_says_why_not(monkeypatch):
             seen["db"] = db
 
         def write(self, question, extra_context=""):
-            from aughor.telemetry import current_trace_id
+            from pramanyx.telemetry import current_trace_id
             seen["trace"] = current_trace_id()
             seen["context"] = extra_context
             return seen["answer"]
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: _Db() if cid == "c1" else (_ for _ in ()).throw(KeyError(cid)))
-    monkeypatch.setattr("aughor.sql.writer.SqlWriter", FakeWriter)
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: type("P", (), {"model": "coder-x"})())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: _Db() if cid == "c1" else (_ for _ in ()).throw(KeyError(cid)))
+    monkeypatch.setattr("pramanyx.sql.writer.SqlWriter", FakeWriter)
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: type("P", (), {"model": "coder-x"})())
     body = {"connection": "c1", "name": "return_rate", "label": "Return rate",
             "definition": "The share of sold lines sent back.", "tables": ["order_items"]}
     seen["answer"] = "SELECT SUM(r) / NULLIF(COUNT(*), 0) AS return_rate FROM order_items"

@@ -12,9 +12,9 @@ import asyncio
 
 import pytest
 
-from aughor.actions import overlay as OVL
-from aughor.actions.inbox import list_proposals
-from aughor.ontology.builder_doors import action_schema, ontology_contract, typescript, validate_params
+from pramanyx.actions import overlay as OVL
+from pramanyx.actions.inbox import list_proposals
+from pramanyx.ontology.builder_doors import action_schema, ontology_contract, typescript, validate_params
 from tests.unit.test_object_actions import CONN, ORDER, _action, _declare, db, graph  # noqa: F401 — fixtures by name
 
 PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
@@ -22,19 +22,19 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
 
 @pytest.fixture
 def doors(graph, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
 
 
 def test_the_contract_says_what_an_object_holds_and_what_a_proposal_carries(graph):  # noqa: F811
     contract = ontology_contract(graph, f"{CONN}/ecommerce@3")
     order = contract["entities"]["Order"]
-    assert order["required"] == ["order_id"] and order["x-aughor"]["key"] == "order_id"
+    assert order["required"] == ["order_id"] and order["x-pramanyx"]["key"] == "order_id"
     assert order["properties"]["total_amount"]["anyOf"][0]["type"] == "number"
     assert order["properties"]["order_date"]["anyOf"] == [{"type": "string", "format": "date"}, {"type": "null"}]
     flag = contract["actions"]["flag_order_for_review"]
     assert flag["properties"]["order"]["pattern"] == "^order:.+$" and set(flag["required"]) == {"order", "reason"}
-    assert flag["x-aughor"] == {"action": "flag_order_for_review", "kind": "annotate", "risk": "low",
+    assert flag["x-pramanyx"] == {"action": "flag_order_for_review", "kind": "annotate", "risk": "low",
                                 "object_type": "order", "creates": "", "sets": ["review_flag"],
                                 "release": f"{CONN}/ecommerce@3", "proposes_only": True}
     ts = typescript(contract)
@@ -70,7 +70,7 @@ def test_an_action_declared_on_Order_asks_for_the_name_a_listing_hands_out(graph
     action = _action(graph).model_copy(deep=True)
     action.object_type = action.params[0].object_type = "Order"
     schema = action_schema(action, "", graph)
-    assert schema["properties"]["order"]["pattern"] == "^order:.+$" and schema["x-aughor"]["object_type"] == "order"
+    assert schema["properties"]["order"]["pattern"] == "^order:.+$" and schema["x-pramanyx"]["object_type"] == "order"
     assert validate_params(schema, {"order": f"order:{ORDER}", "reason": "late"}) is None
 
 
@@ -102,9 +102,9 @@ def test_a_program_lists_objects_and_proposes_an_action_a_person_then_decides(do
     assert (staged.action_id, staged.source, staged.params["reason"]) == ("flag_order_for_review", "builder",
                                                                           "late and unshipped")
     assert OVL.object_edits(CONN) == []                                         # nothing ran: a person decides
-    from aughor.org.context import DEFAULT_ORG_ID
-    from aughor.orgsettings.agent_policy import clear_agent_policy, save_agent_policy
-    program = {"X-Aughor-Agent": "mcp", "X-Aughor-Tool": "propose_flag_order_for_review"}
+    from pramanyx.org.context import DEFAULT_ORG_ID
+    from pramanyx.orgsettings.agent_policy import clear_agent_policy, save_agent_policy
+    program = {"X-Pramanyx-Agent": "mcp", "X-Pramanyx-Tool": "propose_flag_order_for_review"}
     held = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS, headers=program,
                        json={"params": {"order": f"order:{ORDER}", "reason": "late"}})
     assert held.status_code == 403                                          # the default policy, `run`, holds it
@@ -122,7 +122,7 @@ def test_a_program_lists_objects_and_proposes_an_action_a_person_then_decides(do
 
 
 def test_a_proposal_read_under_a_contract_that_moved_is_refused(doors, client, monkeypatch):
-    monkeypatch.setattr("aughor.ontology.release.current_id", lambda conn, schema: f"{CONN}/ecommerce@4")
+    monkeypatch.setattr("pramanyx.ontology.release.current_id", lambda conn, schema: f"{CONN}/ecommerce@4")
     r = client.post("/objects/v1/actions/flag_order_for_review/propose", params=PARAMS,
                     json={"params": {"order": f"order:{ORDER}", "reason": "x"}, "release": f"{CONN}/ecommerce@3"})
     assert r.status_code == 409 and "The contract moved" in r.json()["detail"]
@@ -133,7 +133,7 @@ def test_a_proposal_read_under_a_contract_that_moved_is_refused(doors, client, m
 def test_the_mcp_server_offers_a_propose_tool_per_declared_action_with_its_schema(graph, monkeypatch):  # noqa: F811
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    from aughor.mcp import server as srv
+    from pramanyx.mcp import server as srv
     contract = ontology_contract(graph, f"{CONN}/ecommerce@3")
     proposed: list = []
 
@@ -149,7 +149,7 @@ def test_the_mcp_server_offers_a_propose_tool_per_declared_action_with_its_schem
             return {"effective": {"level": "act"}}
 
     api = _Api()
-    monkeypatch.setenv("AUGHOR_MCP_ONTOLOGY", f"{CONN}/ecommerce")
+    monkeypatch.setenv("PRAMANYX_MCP_ONTOLOGY", f"{CONN}/ecommerce")
     monkeypatch.setattr(srv, "mcp", srv.PolicedFastMCP("t"))
     monkeypatch.setattr(srv, "_client", api)
     monkeypatch.setattr(srv, "_DYNAMIC", {})
@@ -158,7 +158,7 @@ def test_the_mcp_server_offers_a_propose_tool_per_declared_action_with_its_schem
 
     async def run():
         assert await srv.register_ontology_tools(api) == ["propose_flag_order_for_review"]
-        from aughor.mcp.policy import tool_level
+        from pramanyx.mcp.policy import tool_level
         assert tool_level("propose_flag_order_for_review") == "act"
         async with create_connected_server_and_client_session(srv.mcp) as client:
             listed = {t.name: t for t in (await client.list_tools()).tools}
@@ -173,7 +173,7 @@ def test_the_mcp_server_offers_a_propose_tool_per_declared_action_with_its_schem
 
 
 def test_the_route_levels_read_a_listing_and_hold_a_proposal_as_an_act():
-    from aughor.mcp.policy import route_level, tool_level
+    from pramanyx.mcp.policy import route_level, tool_level
     assert route_level("POST", "/objects/v1/list") == "read" and tool_level("list_objects") == "read"
     assert route_level("POST", "/objects/v1/actions/{action_id}/propose") == "act"
 
@@ -214,7 +214,7 @@ metrics:
 
 
 def test_an_ossie_model_is_read_as_proposals_and_nothing_is_declared_until_a_person_accepts(doors, client):
-    from aughor.ontology.ossie import OssieRefused, parse, plan
+    from pramanyx.ontology.ossie import OssieRefused, parse, plan
     with pytest.raises(OssieRefused, match="any 0.2 draft"):
         parse("version: 1.0\nname: x\ndatasets: [{name: a, source: b}]")
     doors.entities["Customer"].description = ""
@@ -233,9 +233,9 @@ def test_an_ossie_model_is_read_as_proposals_and_nothing_is_declared_until_a_per
 
 def test_accepting_declares_each_part_through_its_own_door_as_the_persons_with_the_model_as_provenance(
         doors, client, tmp_path, monkeypatch):
-    from aughor.semantic import metrics as m                # this test WRITES a metric: a registry of its own
+    from pramanyx.semantic import metrics as m                # this test WRITES a metric: a registry of its own
     monkeypatch.setattr(m, "_DEFAULT_PATH", tmp_path / "metrics.json", raising=False)
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
     doors.entities["Customer"].description = ""
     r = client.post("/ontology/v1/import/ossie", params=PARAMS,
                     json={"model": MODEL, "accept": ["dataset:customers", "metric:order_value"]})
@@ -243,10 +243,10 @@ def test_accepting_declares_each_part_through_its_own_door_as_the_persons_with_t
     results = {x["id"]: x for x in r.json()["results"]}
     assert results["dataset:customers"]["ok"] is True, results
     assert results["metric:order_value"]["ok"] is True, results
-    from aughor.ontology import overrides as OV
+    from pramanyx.ontology import overrides as OV
     with OV.viewing("draft"):                                  # declared through its door: waiting to be published
         described = OV.find_override(CONN, "ecommerce", "entity", "Customer")
     assert described is not None and described.fields["description"] == "Someone who has placed at least one order."
-    from aughor.semantic.metrics import definition_at
+    from pramanyx.semantic.metrics import definition_at
     metric = definition_at("order_value", CONN, "ecommerce")
     assert metric is not None and metric.status == "draft" and "SUM(total_amount)" in metric.sql

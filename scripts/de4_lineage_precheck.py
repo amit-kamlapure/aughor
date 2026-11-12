@@ -50,7 +50,7 @@ def seeded_schema() -> dict:
     """The ecommerce fixture's schema as sqlglot wants it: {schema: {table: {column: type}}}."""
     import duckdb
 
-    from aughor.demo.setup import _seed_ecommerce
+    from pramanyx.demo.setup import _seed_ecommerce
 
     path = Path(tempfile.mkdtemp()) / "samples.duckdb"
     con = duckdb.connect(str(path))
@@ -69,7 +69,7 @@ def seeded_schema() -> dict:
 
 
 def measure(statements: list[tuple[str, str]], schema: dict | None, dialect: str) -> dict:
-    from aughor.sql.lineage import column_lineage
+    from pramanyx.sql.lineage import column_lineage
 
     totals = {"statements": 0, "failed": 0, "outputs": 0, "resolved": 0,
               "certain": 0, "likely": 0, "possible": 0, "unresolved": [],
@@ -107,9 +107,9 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.connection:
-        from aughor.db.connection import open_connection_for
-        from aughor.db.schema_render import sqlglot_schema
-        from aughor.security.audit import AuditLogger
+        from pramanyx.db.connection import open_connection_for
+        from pramanyx.db.schema_render import sqlglot_schema
+        from pramanyx.security.audit import AuditLogger
         records = AuditLogger.recent(limit=args.limit, connection_id=args.connection)
         # `sql_full` is the audit store's column; `sql` is carried by no row (see de1_parse_step_precheck.py).
         statements = [(str(r.get("hypothesis_id") or f"q{i + 1}"), str(r["sql_full"]))

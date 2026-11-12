@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.db import single_flight
-from aughor.db.single_flight import inflight_count, single_flight_build
+from pramanyx.db import single_flight
+from pramanyx.db.single_flight import inflight_count, single_flight_build
 
 
 class _Conn:
@@ -234,10 +234,10 @@ def test_the_local_upload_build_does_not_wait_for_itself(
     """The shipped instance: the real decorated override over the real decorated DuckDB
     build. The render and the heavy annotators are stubbed so only the guard is timed,
     and storage is vended under `tmp_path` so no checkout's `data/uploads` is touched."""
-    from aughor.connectors.file.local_upload import LocalUploadConnection
-    from aughor.control_plane import vending
-    from aughor.db import schema_render
-    from aughor.kernel.registries import schema_annotators
+    from pramanyx.connectors.file.local_upload import LocalUploadConnection
+    from pramanyx.control_plane import vending
+    from pramanyx.db import schema_render
+    from pramanyx.kernel.registries import schema_annotators
 
     phases: list = []
 

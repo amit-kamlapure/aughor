@@ -2,7 +2,7 @@
 monitors, alerts, brief-subscription and canvas surfaces, and org-bind the schedulers.
 
 Every one of these resources keys by ``conn_id`` and carries no ``org_id`` of its own,
-so its tenant is its connection's org. With ``AUGHOR_REQUIRE_IDENTITY`` on:
+so its tenant is its connection's org. With ``PRAMANYX_REQUIRE_IDENTITY`` on:
   * a by-id route (monitor/alert/subscription) 403s for the wrong org,
   * a list/read route surfaces only the caller's org,
   * creating one against another org's connection 403s,
@@ -15,66 +15,66 @@ the test is robust to which fires first. Unique org ids per test avoid shared RB
 """
 from __future__ import annotations
 
-from aughor.util.time import now_iso_z
+from pramanyx.util.time import now_iso_z
 
 
 def _mk_conn(org: str, name: str) -> str:
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
     with using_org(org):
-        return registry.add_connection(name, "duckdb", "data/aughor.duckdb")
+        return registry.add_connection(name, "duckdb", "data/pramanyx.duckdb")
 
 
 def _mk_monitor(conn_id: str, name: str = "mon"):
-    from aughor.monitors.models import Monitor
-    from aughor.monitors.store import upsert_monitor
+    from pramanyx.monitors.models import Monitor
+    from pramanyx.monitors.store import upsert_monitor
     return upsert_monitor(Monitor(conn_id=conn_id, name=name))
 
 
 def _mk_alert(conn_id: str, monitor_id: str):
-    from aughor.monitors.models import MonitorAlert
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.models import MonitorAlert
+    from pramanyx.monitors.store import append_alert
     return append_alert(MonitorAlert(monitor_id=monitor_id, conn_id=conn_id, triggered_at=now_iso_z()))
 
 
 def _mk_subscription(conn_id: str, name: str = "sub"):
-    from aughor.briefing.models import BriefSubscription
-    from aughor.briefing.store import save_subscription
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.briefing.store import save_subscription
     return save_subscription(BriefSubscription(conn_id=conn_id, name=name, trigger_id="t-x"))
 
 
 # ── Monitors ─────────────────────────────────────────────────────────────────────
 
 def test_monitor_by_id_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.monitors.store import delete_monitor
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.monitors.store import delete_monitor
 
     cid = _mk_conn("d6mon_a", "mon-a-conn")
     mon = _mk_monitor(cid)
     try:
         # wrong org cannot read the monitor by id
-        assert client.get(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_b", "X-Aughor-User": "amit"}).status_code == 403
+        assert client.get(f"/monitors/{mon.id}", headers={"X-Pramanyx-Org": "d6mon_b", "X-Pramanyx-User": "amit"}).status_code == 403
         # owner can
-        assert client.get(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_a", "X-Aughor-User": "amit"}).status_code == 200
+        assert client.get(f"/monitors/{mon.id}", headers={"X-Pramanyx-Org": "d6mon_a", "X-Pramanyx-User": "amit"}).status_code == 200
         # wrong org cannot delete it; owner can
-        assert client.delete(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_b", "X-Aughor-User": "amit"}).status_code == 403
-        assert client.delete(f"/monitors/{mon.id}", headers={"X-Aughor-Org": "d6mon_a", "X-Aughor-User": "amit"}).status_code == 204
+        assert client.delete(f"/monitors/{mon.id}", headers={"X-Pramanyx-Org": "d6mon_b", "X-Pramanyx-User": "amit"}).status_code == 403
+        assert client.delete(f"/monitors/{mon.id}", headers={"X-Pramanyx-Org": "d6mon_a", "X-Pramanyx-User": "amit"}).status_code == 204
     finally:
         delete_monitor(mon.id)
         registry.delete_connection(cid)
 
 
 def test_monitor_list_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.monitors.store import delete_monitor
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.monitors.store import delete_monitor
 
     cid = _mk_conn("d6mlist_a", "mlist-a-conn")
     mon = _mk_monitor(cid, "mlist-mon")
     try:
-        seen_a = {m["id"] for m in client.get("/monitors", headers={"X-Aughor-Org": "d6mlist_a", "X-Aughor-User": "amit"}).json()}
-        seen_b = {m["id"] for m in client.get("/monitors", headers={"X-Aughor-Org": "d6mlist_b", "X-Aughor-User": "amit"}).json()}
+        seen_a = {m["id"] for m in client.get("/monitors", headers={"X-Pramanyx-Org": "d6mlist_a", "X-Pramanyx-User": "amit"}).json()}
+        seen_b = {m["id"] for m in client.get("/monitors", headers={"X-Pramanyx-Org": "d6mlist_b", "X-Pramanyx-User": "amit"}).json()}
         assert mon.id in seen_a, "org sees its own monitor"
         assert mon.id not in seen_b, "org must NOT see another org's monitor"
     finally:
@@ -83,19 +83,19 @@ def test_monitor_list_is_org_scoped(client, monkeypatch):
 
 
 def test_alert_ack_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.monitors.store import delete_monitor, get_alert
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.monitors.store import delete_monitor, get_alert
 
     cid = _mk_conn("d6alert_a", "alert-a-conn")
     mon = _mk_monitor(cid, "alert-mon")
     alert = _mk_alert(cid, mon.id)
     try:
         # wrong org cannot acknowledge another org's alert
-        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Aughor-Org": "d6alert_b", "X-Aughor-User": "amit"}).status_code == 403
+        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Pramanyx-Org": "d6alert_b", "X-Pramanyx-User": "amit"}).status_code == 403
         assert not get_alert(alert.id).acknowledged, "the ack was blocked, not merely hidden"
         # owner can, and it sticks
-        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Aughor-Org": "d6alert_a", "X-Aughor-User": "amit"}).status_code == 200
+        assert client.post(f"/alerts/{alert.id}/acknowledge", headers={"X-Pramanyx-Org": "d6alert_a", "X-Pramanyx-User": "amit"}).status_code == 200
         assert get_alert(alert.id).acknowledged
     finally:
         delete_monitor(mon.id)
@@ -103,16 +103,16 @@ def test_alert_ack_is_org_scoped(client, monkeypatch):
 
 
 def test_alert_feed_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.monitors.store import delete_monitor
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.monitors.store import delete_monitor
 
     cid = _mk_conn("d6feed_a", "feed-a-conn")
     mon = _mk_monitor(cid, "feed-mon")
     alert = _mk_alert(cid, mon.id)
     try:
-        seen_a = {a["id"] for a in client.get("/alerts", headers={"X-Aughor-Org": "d6feed_a", "X-Aughor-User": "amit"}).json()}
-        seen_b = {a["id"] for a in client.get("/alerts", headers={"X-Aughor-Org": "d6feed_b", "X-Aughor-User": "amit"}).json()}
+        seen_a = {a["id"] for a in client.get("/alerts", headers={"X-Pramanyx-Org": "d6feed_a", "X-Pramanyx-User": "amit"}).json()}
+        seen_b = {a["id"] for a in client.get("/alerts", headers={"X-Pramanyx-Org": "d6feed_b", "X-Pramanyx-User": "amit"}).json()}
         assert alert.id in seen_a
         assert alert.id not in seen_b, "another org's alert must not leak into the feed"
     finally:
@@ -121,8 +121,8 @@ def test_alert_feed_is_org_scoped(client, monkeypatch):
 
 
 def test_create_monitor_on_foreign_connection_403(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
 
     cid = _mk_conn("d6cm_a", "cm-a-conn")  # owned by org A
     try:
@@ -130,7 +130,7 @@ def test_create_monitor_on_foreign_connection_403(client, monkeypatch):
         r = client.post(
             "/monitors",
             json={"conn_id": cid, "name": "sneaky", "custom_sql": "SELECT 1"},
-            headers={"X-Aughor-Org": "d6cm_b", "X-Aughor-User": "amit"},
+            headers={"X-Pramanyx-Org": "d6cm_b", "X-Pramanyx-User": "amit"},
         )
         assert r.status_code == 403
     finally:
@@ -140,30 +140,30 @@ def test_create_monitor_on_foreign_connection_403(client, monkeypatch):
 # ── Brief subscriptions ───────────────────────────────────────────────────────────
 
 def test_brief_by_id_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.briefing.store import delete_subscription
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.briefing.store import delete_subscription
 
     cid = _mk_conn("d6brief_a", "brief-a-conn")
     sub = _mk_subscription(cid)
     try:
-        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Aughor-Org": "d6brief_b", "X-Aughor-User": "amit"}).status_code == 403
-        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Aughor-Org": "d6brief_a", "X-Aughor-User": "amit"}).status_code == 204
+        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Pramanyx-Org": "d6brief_b", "X-Pramanyx-User": "amit"}).status_code == 403
+        assert client.delete(f"/briefs/subscriptions/{sub.id}", headers={"X-Pramanyx-Org": "d6brief_a", "X-Pramanyx-User": "amit"}).status_code == 204
     finally:
         delete_subscription(sub.id)
         registry.delete_connection(cid)
 
 
 def test_brief_list_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.briefing.store import delete_subscription
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.briefing.store import delete_subscription
 
     cid = _mk_conn("d6blist_a", "blist-a-conn")
     sub = _mk_subscription(cid, "blist-sub")
     try:
-        got_a = client.get("/briefs/subscriptions", headers={"X-Aughor-Org": "d6blist_a", "X-Aughor-User": "amit"}).json()["subscriptions"]
-        got_b = client.get("/briefs/subscriptions", headers={"X-Aughor-Org": "d6blist_b", "X-Aughor-User": "amit"}).json()["subscriptions"]
+        got_a = client.get("/briefs/subscriptions", headers={"X-Pramanyx-Org": "d6blist_a", "X-Pramanyx-User": "amit"}).json()["subscriptions"]
+        got_b = client.get("/briefs/subscriptions", headers={"X-Pramanyx-Org": "d6blist_b", "X-Pramanyx-User": "amit"}).json()["subscriptions"]
         assert sub.id in {s["id"] for s in got_a}
         assert sub.id not in {s["id"] for s in got_b}
     finally:
@@ -174,18 +174,18 @@ def test_brief_list_is_org_scoped(client, monkeypatch):
 # ── Saved queries ─────────────────────────────────────────────────────────────────
 
 def test_saved_query_by_id_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.savedquery.store import create_saved_query, delete_saved_query
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.savedquery.store import create_saved_query, delete_saved_query
 
     cid = _mk_conn("d6sq_a", "sq-a-conn")
     q = create_saved_query(cid, "sq-a", "SELECT 1", {})
     try:
-        assert client.get(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_b", "X-Aughor-User": "amit"}).status_code == 403
-        assert client.get(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_a", "X-Aughor-User": "amit"}).status_code == 200
-        assert client.delete(f"/saved-queries/{q.id}", headers={"X-Aughor-Org": "d6sq_b", "X-Aughor-User": "amit"}).status_code == 403
+        assert client.get(f"/saved-queries/{q.id}", headers={"X-Pramanyx-Org": "d6sq_b", "X-Pramanyx-User": "amit"}).status_code == 403
+        assert client.get(f"/saved-queries/{q.id}", headers={"X-Pramanyx-Org": "d6sq_a", "X-Pramanyx-User": "amit"}).status_code == 200
+        assert client.delete(f"/saved-queries/{q.id}", headers={"X-Pramanyx-Org": "d6sq_b", "X-Pramanyx-User": "amit"}).status_code == 403
         # list is org-scoped too
-        seen_b = {s["id"] for s in client.get("/saved-queries", headers={"X-Aughor-Org": "d6sq_b", "X-Aughor-User": "amit"}).json()}
+        seen_b = {s["id"] for s in client.get("/saved-queries", headers={"X-Pramanyx-Org": "d6sq_b", "X-Pramanyx-User": "amit"}).json()}
         assert q.id not in seen_b
     finally:
         delete_saved_query(q.id)
@@ -195,16 +195,16 @@ def test_saved_query_by_id_is_org_scoped(client, monkeypatch):
 # ── Canvases ──────────────────────────────────────────────────────────────────────
 
 def test_canvas_list_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.canvas.store import create_canvas, delete_canvas
-    from aughor.canvas.models import CanvasScope
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.canvas.store import create_canvas, delete_canvas
+    from pramanyx.canvas.models import CanvasScope
 
     cid = _mk_conn("d6canv_a", "canv-a-conn")
     canvas = create_canvas(name="canv-a", scopes=[CanvasScope(connection_id=cid)])
     try:
-        seen_a = {c["id"] for c in client.get("/canvases", headers={"X-Aughor-Org": "d6canv_a", "X-Aughor-User": "amit"}).json()}
-        seen_b = {c["id"] for c in client.get("/canvases", headers={"X-Aughor-Org": "d6canv_b", "X-Aughor-User": "amit"}).json()}
+        seen_a = {c["id"] for c in client.get("/canvases", headers={"X-Pramanyx-Org": "d6canv_a", "X-Pramanyx-User": "amit"}).json()}
+        seen_b = {c["id"] for c in client.get("/canvases", headers={"X-Pramanyx-Org": "d6canv_b", "X-Pramanyx-User": "amit"}).json()}
         assert canvas.id in seen_a
         assert canvas.id not in seen_b, "another org's canvas must not appear in the list"
     finally:
@@ -215,13 +215,13 @@ def test_canvas_list_is_org_scoped(client, monkeypatch):
 # ── Localhost mode: identity off → nothing is filtered or blocked ─────────────────
 
 def test_localhost_mode_unchanged(client, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
-    from aughor.db import registry
-    from aughor.monitors.store import delete_monitor
-    from aughor.org.context import using_org
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
+    from pramanyx.db import registry
+    from pramanyx.monitors.store import delete_monitor
+    from pramanyx.org.context import using_org
 
     with using_org("someorg"):
-        cid = registry.add_connection("localhost-conn", "duckdb", "data/aughor.duckdb")
+        cid = registry.add_connection("localhost-conn", "duckdb", "data/pramanyx.duckdb")
     mon = _mk_monitor(cid, "localhost-mon")
     try:
         # No header, a different org context — identity off means no scoping, no 403.
@@ -238,12 +238,12 @@ def test_localhost_mode_unchanged(client, monkeypatch):
 def test_scheduler_rebinds_connection_org(monkeypatch):
     """A background monitor tick carries no request context; trigger_now must bind the
     connection's org for the run so the emitted alert stamps the right tenant."""
-    from aughor.db import registry
-    from aughor.monitors.store import delete_monitor
-    from aughor.org.context import current_org_id
-    from aughor.monitors import scheduler
-    import aughor.monitors.runner as runner_mod
-    import aughor.db.connection as dbconn
+    from pramanyx.db import registry
+    from pramanyx.monitors.store import delete_monitor
+    from pramanyx.org.context import current_org_id
+    from pramanyx.monitors import scheduler
+    import pramanyx.monitors.runner as runner_mod
+    import pramanyx.db.connection as dbconn
 
     cid = _mk_conn("d6sched", "sched-conn")
     mon = _mk_monitor(cid, "sched-mon")

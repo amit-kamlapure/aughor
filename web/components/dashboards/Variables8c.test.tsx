@@ -106,13 +106,13 @@ describe("a list and yes or no, set by the reader", () => {
     await waitFor(() => expect(listed("user.country").at(-1)).toEqual({ path: "user.country", op: "in", values: ["China", "Brasil"] }));
     fireEvent.click(within(value("late")).getByRole("radio", { name: "No" }));
     await waitFor(() => expect(listed("is_late").at(-1)).toEqual({ path: "is_late", op: "=", value: false }));
-    expect(JSON.parse(localStorage.getItem("aughor:cockpit-values:thelook:sales") ?? "{}")).toEqual({ countries: ["China", "Brasil"], late: false });
+    expect(JSON.parse(localStorage.getItem("pramanyx:cockpit-values:thelook:sales") ?? "{}")).toEqual({ countries: ["China", "Brasil"], late: false });
   });
 });
 
 describe("a list a reader kept", () => {
   it("is theirs only while every item is one the author still offers — else the author's", async () => {
-    localStorage.setItem("aughor:cockpit-values:thelook:sales", JSON.stringify({ countries: ["China", "Peru"] }));
+    localStorage.setItem("pramanyx:cockpit-values:thelook:sales", JSON.stringify({ countries: ["China", "Peru"] }));
     draw();
     await waitFor(() => expect(listed("user.country").at(-1)).toEqual({ path: "user.country", op: "in", values: ["China"] }));
     expect(listed("user.country").some(f => (f?.values ?? []).includes("Peru"))).toBe(false);

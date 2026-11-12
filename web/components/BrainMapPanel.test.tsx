@@ -3,7 +3,7 @@
  * PENDING item 9 — the company-brain map: each store a box with a live count and its door, a
  * store that could not be read shown as a dash with its reason (never a zero), measured links
  * drawn as arrows between the boxes (their sentences on hover), and CB-1's changed facts with
- * what they replaced. Shape: `aughor/hub/brain_map.py`.
+ * what they replaced. Shape: `pramanyx/hub/brain_map.py`.
  */
 import { fireEvent, render, screen, waitFor } from "@/lib/testing";
 import { describe, expect, it, vi } from "vitest";

@@ -2,7 +2,7 @@
 
 THE ONE SPENDING STEP of the measurement, run only on the user's word: each ask goes
 through the real converse loop with the real coder model, so ~30 asks cost roughly
-30–90 model calls. Everything after this is free — `aughor.agent.authoring_measure`
+30–90 model calls. Everything after this is free — `pramanyx.agent.authoring_measure`
 scores the recordings in CI with no model, forever.
 
 Isolation: every store is redirected to a scratch directory (the same
@@ -35,12 +35,12 @@ def _seed(connection_id: str) -> None:
     """The records the corpus's edit/state/brief asks refer to — a scratch deployment
     with nothing on it would turn every one of them into a not-found refusal, which
     measures the fixture, not the drafting."""
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import upsert_automation
-    from aughor.custom_agents.store import create_agent
-    from aughor.notifications.models import ActionTrigger
-    from aughor.notifications.store import save_trigger
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import upsert_automation
+    from pramanyx.custom_agents.store import create_agent
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store import save_trigger
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
 
     save_trigger(ActionTrigger(id="trig-slack", name="Ops Slack", type="slack",
                                url="https://hooks.example/ops", channel="#ops"))
@@ -71,14 +71,14 @@ def _seed(connection_id: str) -> None:
     # the fixture, not of the drafting; with no subscription, the `brief` effect has
     # nothing to deliver. TWO bots on purpose: SP-7's sender rule then keeps the bot an
     # OPEN choice unless the ask names one — the open-choice path stays measurable.
-    from aughor.slackbots.models import SlackBot
-    from aughor.slackbots.store import save_bot
+    from pramanyx.slackbots.models import SlackBot
+    from pramanyx.slackbots.store import save_bot
     save_bot(SlackBot(id="sb_fixture_a", name="Pramanyx", bot_token="xoxb-fixture-a",
                       connection_id=connection_id))
     save_bot(SlackBot(id="sb_fixture_b", name="TheLook Analyst",
                       bot_token="xoxb-fixture-b", connection_id=connection_id))
-    from aughor.briefing.models import BriefSubscription
-    from aughor.briefing.store import save_subscription
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.briefing.store import save_subscription
     save_subscription(BriefSubscription(conn_id=connection_id, name="Weekly briefing",
                                         period="week", trigger_id="trig-slack"))
 
@@ -106,11 +106,11 @@ def main() -> int:
         pass
     # The demo warehouse is scratch as well, so the `fixture` connection this drafts against
     # by default does not exist until it is seeded — into the scratch path, deterministically.
-    from aughor.demo.setup import ensure_fixture_db
+    from pramanyx.demo.setup import ensure_fixture_db
     ensure_fixture_db()
     _seed(args.connection)
-    from aughor.actions.inbox import list_proposals
-    from aughor.agent.converse_tools import converse
+    from pramanyx.actions.inbox import list_proposals
+    from pramanyx.agent.converse_tools import converse
 
     corpus = [json.loads(l) for l in
               (Path(__file__).parent.parent / "evals" / "authoring_asks.jsonl")

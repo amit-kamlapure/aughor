@@ -11,7 +11,7 @@ same day; the decisions in §9 are theirs. §8's honest status for stuck runs wa
 
 - **The check.** `explorer/continuous.py` wakes hourly (the first check an hour after the API starts, so a
   restart resets it). It re-arms a connection only when the schema fingerprint changed, the last COMPLETE
-  run is older than 7 days (`AUGHOR_EXPLORER_REFRESH_DAYS`), or a run its own budget stopped is a day old.
+  run is older than 7 days (`PRAMANYX_EXPLORER_REFRESH_DAYS`), or a run its own budget stopped is a day old.
   The hourly part is the check; the work was meant to be about weekly.
 - **Nothing ran after 2026-09-26** because every connection sat in a state the check never touches:
   theLook, DuckDB and spotify stuck mid-run (an API restart killed the run; the phase still reads as running);
@@ -210,7 +210,7 @@ flowchart TD
 
 The user: "start and finish the principles build end to end." Branch `claude/exploration-principles`.
 
-1. **Layers** — `aughor/ontology/dataset_layers.py`. The six layers and their policies; the signs read at the
+1. **Layers** — `pramanyx/ontology/dataset_layers.py`. The six layers and their policies; the signs read at the
    schema level (every §5 word, whole words on `_ - .` and case boundaries, plus the prefixes and suffixes) and
    at the table level (the affixes, and only the words that never name a business thing — `user_sessions`,
    `order_history` and `jobs` are business tables, so `user`, `history` and `job` say nothing of a table);
@@ -226,12 +226,12 @@ The user: "start and finish the principles build end to end." Branch `claude/exp
    `render_raw_schema` never counts or describes them); the explorer never lists them and never fans out to an
    excluded schema. A person's own reads pass: the SQL editor, the query builder, the Catalog's sample and
    column reads. Turning one off drops the cached schema text at once.
-3. **Maturity** — `aughor/explorer/maturity.py`, from stores only. Structure: how far the structure job got.
+3. **Maturity** — `pramanyx/explorer/maturity.py`, from stores only. Structure: how far the structure job got.
    Questions: the question list's cells asked, or 100% when the last two runs found almost nothing new; "not
    explored — raw" for a layer the platform does not explore. Time: half for approved metrics having dates,
    half for each date grain's newest settled period read. Drawn as three bars and a number in the Catalog
    tree (each schema and table), on each schema's and table's strip, and beside the scope picker.
-4. **The runner** — `aughor/explorer/continuous.py` plans every dataset of every connection on its own
+4. **The runner** — `pramanyx/explorer/continuous.py` plans every dataset of every connection on its own
    (`next_job`, pure): a new dataset; a changed fingerprint (structure, then the gaps it opened); an
    interrupted run (resumed on its own only where the layer asks questions); a run its budget stopped (a day
    later — and a heartbeat's budget kill is now told from a person's stop by the kernel's own stop reason);
@@ -245,7 +245,7 @@ The user: "start and finish the principles build end to end." Branch `claude/exp
    figure that moved 10% or more reopens the questions. Reopens are kept per dataset in
    `explorer/program.py`, apart from the run's own state, which a running explorer writes back whole.
    Approving a metric reopens its dataset.
-5. **Budgets** — `aughor/explorer/budget.py`: the organisation's (Settings ▸ Organization ▸ Exploration) and
+5. **Budgets** — `pramanyx/explorer/budget.py`: the organisation's (Settings ▸ Organization ▸ Exploration) and
    the connection's (Catalog ▸ the connection), per calendar month, in the model tokens the exploration jobs
    recorded; the tighter holds. It governs the platform's own initiative — and, since the third round (§14), a
    person's Start too, which is capped at what is left and asks before running past it.
@@ -267,7 +267,7 @@ The user: "start and finish the principles build end to end." Branch `claude/exp
   the same entity once their layer affixes are taken off (`stg_orders`, `orders_raw`, `fct_orders`,
   `orders`) are shown as copies of each other, and a non-business copy's proposal says whose copy it is —
   "findings come from that copy". "Accept the proposed layers" now sets those table proposals too.
-- **Lineage is a sign** — the dbt manifest the install names (`AUGHOR_DBT_MANIFEST`, the file
+- **Lineage is a sign** — the dbt manifest the install names (`PRAMANYX_DBT_MANIFEST`, the file
   `semantic/dbt.py` already reads descriptions from): a source is Raw, a seed Reference, a snapshot
   Integration, a model takes its folder's layer (staging Raw, intermediate Integration, marts Business).
   It outweighs a name: it is what the warehouse's own builders declared. Views need no sign — the Explorer

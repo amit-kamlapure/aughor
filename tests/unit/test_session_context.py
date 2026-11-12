@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
-from aughor.org.context import (current_session_id, reset_session_id,
+from pramanyx.org.context import (current_session_id, reset_session_id,
                                 set_session_id)
 
 
@@ -33,7 +33,7 @@ def test_set_session_id_none_falls_back_to_empty():
 
 
 def test_stream_with_session_pins_for_the_whole_stream_then_resets():
-    from aughor.routers.investigations import _stream_with_session
+    from pramanyx.routers.investigations import _stream_with_session
 
     seen: list[str] = []
 
@@ -56,7 +56,7 @@ def test_stream_with_session_pins_for_the_whole_stream_then_resets():
 
 
 def test_stream_with_session_empty_is_a_noop():
-    from aughor.routers.investigations import _stream_with_session
+    from pramanyx.routers.investigations import _stream_with_session
 
     seen: list[str] = []
 

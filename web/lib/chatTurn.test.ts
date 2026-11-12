@@ -19,19 +19,19 @@ import { describe, expect, it } from "vitest";
 
 import { readUIMessageStream } from "ai";
 
-import { DECLARED_DATA_PARTS } from "./aughorUIDataTypes";
+import { DECLARED_DATA_PARTS } from "./pramanyxUIDataTypes";
 import {
   FALLBACK_PARTS,
   PROJECTED_PARTS,
   projectThread,
   projectTurn,
   toErrorDetail,
-  type AughorUIMessage,
+  type PramanyxUIMessage,
 } from "./chatTurn";
-import { adaptFrames, type AughorFrame } from "./uiMessageAdapter";
+import { adaptFrames, type PramanyxFrame } from "./uiMessageAdapter";
 
 /** Frames → adapter chunks → the SDK's own accumulator → the final UIMessage. */
-async function messageFrom(frames: AughorFrame[]): Promise<AughorUIMessage> {
+async function messageFrom(frames: PramanyxFrame[]): Promise<PramanyxUIMessage> {
   const { chunks } = adaptFrames(frames);
   const stream = new ReadableStream({
     start(controller) {
@@ -39,8 +39,8 @@ async function messageFrom(frames: AughorFrame[]): Promise<AughorUIMessage> {
       controller.close();
     },
   });
-  let last: AughorUIMessage | undefined;
-  for await (const state of readUIMessageStream<AughorUIMessage>({
+  let last: PramanyxUIMessage | undefined;
+  for await (const state of readUIMessageStream<PramanyxUIMessage>({
     stream,
     onError: () => { /* the error chunk's text is asserted via the data part */ },
     terminateOnError: false,
@@ -51,13 +51,13 @@ async function messageFrom(frames: AughorFrame[]): Promise<AughorUIMessage> {
   return last;
 }
 
-function userMsg(id: string, text: string, mode?: "ask" | "investigate"): AughorUIMessage {
+function userMsg(id: string, text: string, mode?: "ask" | "investigate"): PramanyxUIMessage {
   return {
     id,
     role: "user",
     parts: [{ type: "text", text }],
     ...(mode ? { metadata: { mode } } : {}),
-  } as AughorUIMessage;
+  } as PramanyxUIMessage;
 }
 
 describe("coverage: the declared vocabulary has no unclaimed name", () => {
@@ -77,7 +77,7 @@ describe("coverage: the declared vocabulary has no unclaimed name", () => {
 });
 
 describe("quick-path parity (the reducer's ask-mode fields)", () => {
-  const frames: AughorFrame[] = [
+  const frames: PramanyxFrame[] = [
     { event: "start", data: { investigation_id: "inv-1" } },
     { event: "route", data: { depth: "quick", mode: "direct", tier: "simple", why: "lookup" } },
     { event: "sql", data: { sql: "SELECT region, SUM(x) FROM t GROUP BY 1" } },

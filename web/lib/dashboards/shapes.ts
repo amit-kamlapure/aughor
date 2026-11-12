@@ -1,7 +1,7 @@
 /**
  * Shapes in the starter (Arc AP-5; ROADMAP §3.57; design-mockups/cockpit-builder.html
  * screens 1 and 7). The server says which shapes an object fits and reads what each is laid out from
- * (`aughor/dashboards/shapes.py`); here each shape becomes the dashboard a person keeps as their own first version — a spec
+ * (`pramanyx/dashboards/shapes.py`); here each shape becomes the dashboard a person keeps as their own first version — a spec
  * the rules accept, every piece changeable after:
  *
  *   - a queue: the objects waiting past the promise in a window the author sets, figures that switch the list, a filter

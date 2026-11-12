@@ -1,0 +1,964 @@
+"""Pre-emission insight verification gate — the explorer's last-line trust screen, extracted
+verbatim from explorer/agent.py (a 4k-line god-file) into a cohesive, independently-testable module.
+Behavior is unchanged (pure move).
+
+`verify_insight` is THE gate: a candidate finding is surfaced only if it passes every deterministic
+check — SQL soundness, degenerate/boundary-saturated results, part>whole, vacuous CASE, impossible
+magnitude/ratio, claim-grounding, and (via metric_coherence) the name↔SQL coherence + formula-drift
+guards. The structural guards are its private helpers; the cross-module surface is PUBLIC
+(`verify_insight`, `is_degenerate_result`, `has_fabricated_dimension`, `clamp_novelty`,
+`mislabeled_per_grain`) so importers stay off the private-import ratchet.
+"""
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+from pramanyx.kernel.errors import tolerate
+from pramanyx.explorer.metric_coherence import (
+    drifted_registered_metric,
+    metric_vocab_for,
+    mislabeled_named_metric,
+)
+
+_RATE_CTX_RE = re.compile(
+    r"\b(?:conversion|convert|rate|ratio|share|percent|pct|margin|occupancy|"
+    r"utiliz|attach|win[\s_-]?rate|success[\s_-]?rate|load[\s_-]?factor)\b",
+    re.IGNORECASE,
+)
+
+# A finding whose text says the query returned nothing / failed (used by is_degenerate_result +
+# revalidate). These must not become findings: noise in the Briefing, broken monitors if clicked.
+_NO_DATA_RE = re.compile(
+    r"(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|"
+    r"null values for all|no rows (returned|found|matched)|query (failed|errored)|"
+    r"no matching (rows|records|data)|empty result set)",
+    re.I,
+)
+
+
+def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ranges=None) -> bool:
+    """True when a questions-pass result carries no trustworthy data — so it never becomes a
+    finding (and so never reaches the Briefing). Cases:
+
+      1. the whole result is NULL (empty join/filter matched nothing), OR
+      2. ANY numeric column is NULL across EVERY row, OR ZERO across every row — a metric
+         that never computed because a join/linkage is broken (a `touchpoint_type=channel`
+         join that matches nothing → revenue/ROAS all NULL) or a value was destroyed
+         (`ROUND(weight, 4)` on a ~2e-07 weight → every ROAS = 0.0). RULE: a NULL **or
+         all-zero** metric must not appear in a Briefing — it reads as a confident finding
+         ("$0 ROAS — no revenue captured") when it is really a query bug; the underlying
+         data ($491M revenue) is intact. OR
+      3. a bounded RATE OUT OF its declared range — a 0..1 rate that comes out ≈1.0 in every
+         segment (broken denominator → "100% conversion across all traffic sources") OR
+         ABOVE 1 (a 141% conversion). The AUTHORITY is the profile when available: a finding
+         is matched to its north-star metric and its DECLARED sane range applied — so a
+         conversion (ratio 0-1) at 1.41 is dropped while a ROAS (ratio 0-∞) at 2.3 is kept.
+         Without a profile match it falls back to a keyword rate-signal + boundary check
+         (so a count-of-1 / always-true flag is not mistaken for a saturated rate). OR
+      4. the interpretation text explicitly says "no data".
+
+    A column with MIXED values (some at the boundary, some not) is real signal and
+    survives — only a metric flat NULL / flat zero / out-of-range is dropped."""
+    # The profile's declared range for THIS finding's metric, when we can match it —
+    # the precise authority that tells a bounded conversion from an unbounded ROAS.
+    matched = None
+    if metric_ranges:
+        try:
+            from pramanyx.business_profile.validate import match_metric_range
+            matched = match_metric_range(f"{finding_text}\n{sql}", metric_ranges)
+        except Exception:
+            matched = None
+    m_kind, m_max = (matched if matched else (None, None))
+    rate_ctx = bool(_RATE_CTX_RE.search(f"{sql}\n{finding_text}"))
+    if rows:
+        # Normalise to row-lists (dict rows → values in stable key order).
+        if isinstance(rows[0], dict):
+            keys = list(rows[0].keys())
+            norm = [[r.get(k) for k in keys] for r in rows]
+        else:
+            norm = [list(r) for r in rows]
+        ncols = max((len(r) for r in norm), default=0)
+        for i in range(ncols):
+            col = [r[i] for r in norm if i < len(r)]
+            if not col:
+                continue
+            nonnull = [c for c in col if c is not None and c != "" and c != "NULL"]
+            if not nonnull:
+                return True          # entirely-NULL column → broken/empty linkage
+            try:
+                nums = [float(c) for c in nonnull]
+            except (TypeError, ValueError):
+                continue             # non-numeric (a dimension) — not a dead measure
+            if all(n == 0.0 for n in nums):
+                return True          # a NUMERIC column that is ZERO everywhere → no signal
+            hi = max(nums)
+            # (a) Profile-authoritative range check: the matched metric is a BOUNDED rate
+            # and this column overshoots its ceiling → grain bug (conversion 1.41, 105%).
+            # Applies to a single column too (a per-channel rate need not span ≥2 rows to
+            # be impossible). A matched metric that is not a bounded rate — a ROAS 0..∞, an
+            # NRR typically 0.8..1.4, 0..24 block hours — carries no max and is exempt.
+            if m_max is not None:
+                # Normalise to a 0..1 fraction, TOLERATING the SQL emitting the other scale
+                # than declared — a metric declared 'ratio 0-1' whose query returns 100.0, OR
+                # declared 'percent 0-100' whose query returns 1.0. Both are the broken-
+                # denominator / saturation signature; the old check missed them because the
+                # raw value sat far from the declared ceiling. Works on a single segment too.
+                fracs: list | None = [v / m_max for v in nums]
+                if hi > m_max * 1.5:
+                    alt = 100.0 if m_max == 1.0 else 1.0
+                    if min(nums) >= 0.0 and hi <= alt * 1.5:
+                        fracs = [v / alt for v in nums]   # SQL used the OTHER scale
+                    else:
+                        fracs = None                       # a count-like column, not this rate
+                if fracs is not None:
+                    if any(f > 1.05 for f in fracs):
+                        return True      # above the bound → impossible rate (conversion 1.41)
+                    if all(f >= 0.9995 for f in fracs):
+                        return True      # saturated at the ceiling (100% repeat / 100% approved)
+            # (b) Keyword fallback when no profile match — saturated-at-ceiling only (the
+            # >bound case is unsafe without knowing bounded-vs-unbounded). Skip entirely
+            # when we matched a metric that is not a bounded rate (don't ceiling-drop a
+            # real ROAS=1.0).
+            elif matched is None and rate_ctx and len(norm) >= 2:
+                lo = min(nums)
+                if 0.0 <= lo and hi <= 1.0005 and all(n >= 0.9995 for n in nums):
+                    return True      # 0..1 rate pinned at 1.0 in every segment
+                if 0.0 <= lo and hi <= 100.05 and all(n >= 99.95 for n in nums):
+                    return True      # 0..100% rate pinned at 100 in every segment
+    return bool(finding_text and _NO_DATA_RE.search(finding_text))
+
+
+# Tokens that mark a SUM(... × weight) as the NORMALIZED multi-touch attribution idiom —
+# where the per-order weights sum to 1, so SUM(measure × weight) over a fact⋈attribution
+# join is NOT inflated (the F2 case). Such a SUM is exempt from the chasm DROP.
+_WEIGHT_FACTOR_RE = re.compile(r"sum\s*\([^)]*\b(weight|share|alloc\w*|attribution)\b", re.IGNORECASE)
+# Salient numbers a narration asserts — currency, comma-grouped counts, percentages.
+# A percentage is salient however it is SPELLED. The narrator writes "33.1 percent" as
+# often as "33.1%", and a regex that only knew the symbol scored those claims 0.0 —
+# which silently disabled the numeric-grounding pass in `_align_narrator_findings`,
+# so a finding fell through to positional binding and a card shipped a claim about
+# its neighbour's rows. Bare integers stay OUT: "the last 90 days" is not a claim.
+#: The currency alternative knows the euro and the pound as well as the dollar: on a EUR connection
+#: (LuxExperience, 2026-10-14) "€590.72" was no salient number at all, so a finding written in euros
+#: carried only its percentages into the grounding passes.
+_CLAIM_NUM_RE = re.compile(
+    r"[$€£]\s?\d[\d,]*(?:\.\d+)?"
+    r"|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b"
+    # `\b` belongs to the SPELLED form only: after "%" the next char is usually a space,
+    # and there is no word boundary between two non-word characters — a trailing `\b`
+    # outside the group silently stops "33.1%" from matching at all.
+    r"|\b\d+(?:\.\d+)?\s?(?:%|percent(?:age)?(?:\s*points?)?\b)",
+    re.IGNORECASE,
+)
+
+
+def _safe_float(x):
+    """float(x) or None — expected non-numeric cells are control flow, not an error."""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cached_table_parse(conn) -> dict | None:
+    """The conn's ``{table: [columns]}`` schema parse, computed once per run and cached on
+    the conn — the oracles and the formula-drift guard all read the same parse. Returns
+    None when conn/schema is unavailable (each caller's guard then stays off/unscoped)."""
+    if conn is None:
+        return None
+    try:
+        tc = getattr(conn, "_insight_table_cols", None)
+        if tc is None:
+            from pramanyx.tools.schema import parse_schema_tables
+            tc = parse_schema_tables(conn.get_schema())
+            if hasattr(conn, "__dict__"):
+                conn._insight_table_cols = tc
+        return tc
+    except Exception as _e:
+        tolerate(_e, "emission gate: schema parse unavailable", counter="emission_gate.schema_parse_failed")
+        return None
+
+
+def _uniqueness_oracle_for(conn):
+    """Build (and cache on conn) the cardinality oracle the fan-out chasm guards use to
+    treat a 1:1 dimension as a non-satellite. Returns None if conn/schema unavailable."""
+    tc = _cached_table_parse(conn)
+    if tc is None:
+        return None
+    try:
+        from pramanyx.business_profile.validate import make_uniqueness_oracle
+        return make_uniqueness_oracle(conn, tc)
+    except Exception as _e:
+        tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.oracle_failed")
+        return None
+
+
+def _cardinality_oracle_for(conn):
+    """Build (and cache on conn) the distinct-count probe the group-by-continuous-measure guard
+    uses to tell a continuous measure from a discrete dimension. Reuses the shared cached
+    schema parse. Returns None if conn/schema unavailable (guard stays off)."""
+    tc = _cached_table_parse(conn)
+    if tc is None:
+        return None
+    try:
+        from pramanyx.business_profile.validate import make_cardinality_oracle
+        return make_cardinality_oracle(conn, tc)
+    except Exception as _e:
+        tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.cardinality_oracle_failed")
+        return None
+
+
+def _insight_col_types(conn) -> dict[str, str]:
+    """Column → declared-dtype map for the conn's schema, cached on the conn (mirrors
+    ``_insight_table_cols``) so the emission gate parses the schema once per run, not per
+    candidate. Lets the plausibility check REJECT a non-additive aggregate over a non-numeric
+    column (SUM of a VARCHAR fiscal-year) at the SOURCE — the finding is never stored, not
+    merely stamped implausible for the reader downstream. Fail-open ({})."""
+    if conn is None:
+        return {}
+    try:
+        ct = getattr(conn, "_insight_col_types", None)
+        if ct is None:
+            from pramanyx.tools.schema import col_types_from_schema
+            ct = col_types_from_schema(conn.get_schema())
+            if hasattr(conn, "__dict__"):
+                conn._insight_col_types = ct
+        return ct
+    except Exception as _e:
+        tolerate(_e, "insight-gate: column types unavailable", counter="insight_gate.col_types_failed")
+        return {}
+
+
+_FROM_TABLE_RE = re.compile(r"\bFROM\s+([A-Za-z_][\w.]*|\"[^\"]+\"(?:\.\"[^\"]+\")*)", re.I)
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# How many suspect columns to probe. A degenerate result is already a rare path, but
+# the probe is a live query per column — one bad metric should not fan out into a scan.
+_COSTUME_DIAGNOSIS_MAX_COLS = 3
+
+
+def unparsed_numeric_diagnosis(sql: str, conn=None, col_types=None) -> str | None:
+    """Why an all-NULL metric is NULL: absent data, or PRESENT data that didn't parse?
+
+    An aggregate over a currency column stored as text ('₹1,099') returns NULL for
+    every row and every group. Read without checking the values, that is indexed as
+    "the column is empty" — and the report then recommends fixing an ingestion
+    pipeline that has nothing wrong with it, over data that is 100% populated. The two
+    diagnoses call for opposite work (parse it vs. go find it), so the gate must not
+    guess between them.
+
+    Returns a reader-grade sentence naming the column and the format, or None when the
+    columns really are empty (in which case the caller's generic advisory is right).
+    Best-effort throughout: any failure yields None and today's wording stands.
+    """
+    if conn is None or not (sql or "").strip():
+        return None
+    try:
+        from pramanyx.sql.numeric_text import (
+            costume_kind, costume_probe_sql, interpret_costume,
+        )
+        m = _FROM_TABLE_RE.search(sql)
+        if not m:
+            return None
+        table = m.group(1)
+        types = col_types if col_types is not None else _insight_col_types(conn)
+        if not types:
+            return None
+        # Only text columns the query actually names — a numeric column that is NULL
+        # is genuinely empty, and is not this diagnosis.
+        named = {i for i in _IDENT_RE.findall(sql)}
+        suspects = [
+            c for c in types
+            if c in named and str(types[c]).upper().startswith(("VARCHAR", "TEXT", "STRING", "CHAR"))
+        ][:_COSTUME_DIAGNOSIS_MAX_COLS]
+        for col in suspects:
+            res = conn.execute("_verify_costume",
+                               f"SELECT {costume_probe_sql(col)} FROM {table}", sql_dialect="duckdb", internal=True)
+            if getattr(res, "error", None) or not getattr(res, "rows", None):
+                continue
+            hit = interpret_costume(res.rows[0])
+            if not hit:
+                continue
+            kind = costume_kind(hit["unit"])
+            shown = f" (e.g. '{hit['sample']}')" if hit.get("sample") else ""
+            return (
+                f"`{col}` is populated text, not a number — its values are "
+                f"{kind.replace('_', ' ')}-formatted{shown}, so aggregating it yields NULL "
+                f"for every row. The data is present and needs parsing, not backfilling"
+            )
+    except Exception as _e:
+        tolerate(_e, "trust gate: unparsed-numeric diagnosis",
+                 counter="insight_gate.costume_diagnosis_failed")
+    return None
+
+
+def _insight_sql_unsound(sql: str, conn=None) -> str | None:
+    """Static SQL-trust battery for a CANDIDATE FINDING's query — the same authorities the
+    profile audit applies, now enforced BEFORE an explorer finding can be emitted. Returns a
+    one-line reason the query is untrustworthy, or None. High precision (errs toward keeping):
+
+      • self-ratio tautology (X/X → always 1.0),
+      • parent fan-out (SUM/AVG of a parent table's measure across a join to its child),
+      • chasm fan-out (≥2 many-side satellites of one hub) for SUM/COUNT(*)/AVG — with the
+        cardinality oracle (a 1:1 dimension is not a satellite) AND a carve-out for the
+        normalized SUM(measure × weight) attribution idiom, which is fan-out-safe."""
+    s = (sql or "").strip()
+    if not s:
+        return None
+    try:
+        from pramanyx.sql.fanout import (
+            self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
+            count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
+            avg_of_row_ratios, dimension_ratio_chasm, group_by_continuous_measure,
+            join_key_fanout, group_by_outer_null_side,
+        )
+    except Exception:
+        return None
+
+    taut = self_ratio_tautology(s)
+    if taut:
+        return taut
+
+    idmath = measure_times_key_arithmetic(s)
+    if idmath:
+        return f"id-arithmetic: {idmath[:160]}"
+
+    ratio = avg_of_row_ratios(s)
+    if ratio:
+        return f"avg-of-ratios: {ratio[:160]}"
+
+    # Build the oracle FIRST — it parses + caches conn._insight_table_cols, so the fan-out
+    # guards reuse that schema parse (no second private import of parse_schema_tables).
+    oracle = _uniqueness_oracle_for(conn)
+    table_cols = getattr(conn, "_insight_table_cols", None) or {}
+
+    # SEMANTIC self-ratio: an outer join demoted by GROUP BY-ing on its null side, so a
+    # preserved-side denominator is silently restricted and the rate reads ~1.0. Needs
+    # table_cols to place an unqualified group key (this is the "100% return rate" that
+    # slipped past the syntactic self_ratio_tautology above).
+    nullside = group_by_outer_null_side(s, table_cols)
+    if nullside:
+        return f"null-side group: {nullside[:200]}"
+
+    # Fan-out battery (one guarded block; fail-open via tolerate, never silent):
+    #   • detect_fanout — high-precision multi-satellite/parent detector ("category GMV
+    #     $457k > total GMV $251k"); exempt the normalized SUM(measure × weight) idiom.
+    #   • chasm SUM/COUNT/AVG with the cardinality oracle (a 1:1 dimension isn't a satellite).
+    #   • the SAME chasm battery re-run on each CTE BODY — the outer-scope guards miss a
+    #     chasm HIDDEN inside a CTE (the ROAS bug: channel_revenue AS (SELECT SUM(...) FROM
+    #     order_items JOIN attribution ...)).
+    try:
+        weighted = bool(_WEIGHT_FACTOR_RE.search(s))
+        if not weighted:
+            f = detect_fanout(s, table_cols)
+            if f is not None:
+                return f"fan-out: {f.to_prompt_text()[:160]}"
+            # Backstop for the dimension-join ratio detect_fanout can't see (#159): if the
+            # de-fan rewrite upstream couldn't adopt, drop rather than emit a fanned ratio.
+            fdr = dimension_ratio_chasm(s, table_cols)
+            if fdr is not None:
+                return f"fan-out: {fdr.to_prompt_text()[:160]}"
+        if oracle is not None:
+            if not weighted:
+                r = sum_over_chasm_fanout(s, table_cols, is_unique_on=oracle)
+                if r:
+                    return f"fan-out: {r[:160]}"
+            for fn in (count_star_chasm_fanout, avg_over_chasm_fanout):
+                r = fn(s, table_cols, is_unique_on=oracle)
+                if r:
+                    return f"fan-out: {r[:160]}"
+            # The NON-FK join fan-out the detectors above are structurally blind to: they
+            # recognise a key by NAME (fk_root), so a join on a plain categorical column
+            # ('ON f.platform = d.platform') roots to nothing and passes every one of them
+            # while multiplying the fact. Execution-grounded — the oracle must have PROBED
+            # the joined table and found it non-unique on that key, so it can't fire on a
+            # naming guess. (luxexperience Briefing: €102.87B attributed GMV = the true
+            # total × the collaborations-per-type count.)
+            if not weighted:
+                r = join_key_fanout(s, table_cols, is_unique_on=oracle)
+                if r:
+                    return f"fan-out: {r[:200]}"
+            import sqlglot
+            from sqlglot import exp as _exp
+            for cte in sqlglot.parse_one(s, read="duckdb").find_all(_exp.CTE):
+                body = cte.this.sql(dialect="duckdb")
+                if _WEIGHT_FACTOR_RE.search(body):
+                    continue
+                rc = (sum_over_chasm_fanout(body, table_cols, is_unique_on=oracle)
+                      or count_star_chasm_fanout(body, table_cols, is_unique_on=oracle)
+                      or avg_over_chasm_fanout(body, table_cols, is_unique_on=oracle))
+                if rc:
+                    return f"fan-out in CTE '{cte.alias_or_name}': {rc[:140]}"
+    except Exception as _e:
+        tolerate(_e, "insight-gate: fan-out analysis", counter="insight_gate.fanout_failed")
+
+    # GROUP BY a continuous measure — a scatter (one row per value) mislabelled as a breakdown.
+    # Needs the LIVE distinct-count probe (a measure name alone can't tell revenue from a pre-
+    # binned discount), so it lives here at the emission gate, not in the conn-less display triage.
+    try:
+        card = _cardinality_oracle_for(conn)
+        if card is not None:
+            gb = group_by_continuous_measure(s, table_cols, distinct_count=card)
+            if gb:
+                return gb
+    except Exception as _e:
+        tolerate(_e, "insight-gate: group-by-measure analysis", counter="insight_gate.groupby_measure_failed")
+    return None
+
+
+# A column whose NAME is a count/row-tally is never a grand total nor a money "part" — it is a
+# different measure. Used to stop a constant COUNT column (e.g. `n` = 210 weeks/channel) from being
+# mistaken for the total that a money column "exceeds" (the spurious fan-out flag on a ratio scan).
+_COUNT_COL_RE = re.compile(r'(^|[_\s])(n|cnt|count|num|rows?|records?|freq|samples?|observations?)([_\s]|$)', re.I)
+# Beyond this overshoot the candidate "total" and the "part" are different MEASURES (a count next to
+# money), not a fan-out over-count of the same measure — a real fan-out exceeds the total only modestly.
+_PART_WHOLE_OVERSHOOT_CAP = 1000.0
+
+
+def _part_exceeds_whole(rows, columns=None) -> str | None:
+    """Internal-consistency check: a column that is CONSTANT across the result is a candidate
+    grand total; if another numeric column has a value that EXCEEDS it, the 'parts' are bigger
+    than the 'whole' — the signature of a fan-out total (the 'category GMV $457k > total GMV
+    $251k' bug). Conservative: needs ≥2 rows, both columns at money/count magnitude (≥100), and
+    a clear >5% overshoot — so a constant rate next to a count never trips it.
+
+    Guards against the ratio-scan false positive: a constant COUNT column (`n`) sitting next to a
+    money column is NOT a part/whole pair. Count columns are excluded by name (when `columns` are
+    known) and, as a measure-agnostic backstop, an overshoot of orders of magnitude is ignored
+    (a fan-out exceeds the total modestly; a count-vs-money mismatch exceeds it ~1000×+)."""
+    if not rows or len(rows) < 2:
+        return None
+    norm = [list(r.values()) if isinstance(r, dict) else list(r) for r in rows]
+    ncols = min((len(r) for r in norm), default=0)
+    # Resolve column names from the explicit arg or, failing that, dict-row keys.
+    names = None
+    if columns and len(columns) >= ncols:
+        names = [str(c) for c in columns[:ncols]]
+    elif rows and isinstance(rows[0], dict):
+        names = [str(k) for k in list(rows[0].keys())[:ncols]]
+    count_idx = {i for i, nm in enumerate(names) if _COUNT_COL_RE.search(nm)} if names else set()
+    cols = []
+    for i in range(ncols):
+        parsed = [_safe_float(r[i]) for r in norm]
+        cols.append(parsed if all(v is not None for v in parsed) else None)
+    for i, ci in enumerate(cols):
+        if i in count_idx:
+            continue                      # a count is never a grand total
+        if not ci or len(set(ci)) != 1:
+            continue                      # column i must be CONSTANT (a candidate total)
+        total = ci[0]
+        if abs(total) < 100:
+            continue                      # too small to be a money/count total — skip (rates)
+        for j, cj in enumerate(cols):
+            if j == i or not cj or j in count_idx:
+                continue                  # a count is never a money 'part' of the total
+            mx = max(cj)
+            if abs(total) * 1.05 < mx <= abs(total) * _PART_WHOLE_OVERSHOOT_CAP and mx >= 100:
+                return (f"component exceeds total: a value {mx:.0f} exceeds the constant "
+                        f"total {total:.0f} in the same result — fan-out over-count")
+    return None
+
+
+def _salient_number_pairs(text: str) -> list:
+    """(token, float) for every salient number the narration asserts — currency, comma-grouped
+    counts, percentages. The token is kept for human-readable messages."""
+    out = []
+    for tok in _CLAIM_NUM_RE.findall(text or ""):
+        v = _safe_float(re.sub(r"[$€£,%\s]|percent(?:age)?(?:\s*points?)?", "", tok, flags=re.IGNORECASE))
+        if v is not None:
+            out.append((tok, v))
+    return out
+
+
+def _result_cells(rows) -> list:
+    """Flatten every numeric cell from the result (row cap keeps it cheap on wide results)."""
+    cells = []
+    for r in (rows or [])[:200]:
+        row = r.values() if isinstance(r, dict) else r
+        cells.extend(v for v in (_safe_float(c) for c in row) if v is not None)
+    return cells
+
+
+def _dedup_cells(cells: list, cap: int = 48) -> list:
+    """Deduped, bounded subset for the O(n²) derivation scan."""
+    uniq, seen = [], set()
+    for c in cells:
+        k = round(c, 6)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(c)
+        if len(uniq) >= cap:
+            break
+    return uniq
+
+
+def _number_grounded(v: float, cells: list, uniq: list) -> bool:
+    """A number is grounded if it matches a cell (raw / ±percent-fraction, within 1%) OR is
+    DERIVED from a cell pair — a % change ((b-a)/a·100), a share (b/a·100) or a raw delta (b-a).
+    Crediting derivations stops the check crying wolf on valid arithmetic (e.g. a '+1,506%'
+    growth computed from €986K → €15.84M that appears in no single cell)."""
+    def close(a, b):
+        return b != 0 and abs(a - b) <= abs(b) * 0.01 + 1e-6
+    for c in cells:
+        for cand in (c, c * 100.0, c / 100.0):  # percent ↔ fraction
+            if close(v, cand):
+                return True
+    if v == 0.0:
+        return True
+    for a in uniq:
+        if a == 0:
+            continue
+        for b in uniq:
+            for cand in ((b - a) / a * 100.0, abs(b - a) / abs(a) * 100.0, b / a * 100.0, b - a):
+                if close(v, cand):
+                    return True
+    return False
+
+
+def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
+    """Conservative claim-grounding: every salient number the NARRATION asserts (currency,
+    comma-grouped counts, percentages) should trace to the actual result. Flags ONLY gross
+    fabrication — ≥2 salient numbers asserted and NONE grounded (raw or derived) in the rows.
+    Rounding, abbreviations ($1.3M) and a single derived figure never trip it — false positives
+    here would drop good findings, so the bar is deliberately high."""
+    if not finding_text or not rows:
+        return None
+    pairs = _salient_number_pairs(finding_text)
+    if len(pairs) < 2:
+        return None
+    cells = _result_cells(rows)
+    if not cells:
+        return None
+    uniq = _dedup_cells(cells)
+    if not any(_number_grounded(v, cells, uniq) for _, v in pairs):
+        return (f"claim not grounded: none of the asserted figures "
+                f"{[t for t, _ in pairs][:4]} appear in the query result")
+    return None
+
+
+#: A measure label sitting immediately before a number — "logistics costs totaling 2949292",
+#: "GMV 2949292.0", "revenue of 1.2M". Only the words directly before the figure are captured,
+#: so a label three clauses away is never bound to it.
+_LABELLED_NUM_RE = re.compile(
+    r"([A-Za-z][A-Za-z_ /%-]{2,40}?)\s*"
+    r"(?:of|totalling|totaling|at|is|was|=|:|reached|stands at)?\s*"
+    r"[\(\[]?\s*(\d[\d,]*(?:\.\d+)?)",
+    re.I,
+)
+#: Words that carry no measure identity, so two labels differing only by these are the SAME
+#: label rather than a mislabel ("total revenue" vs "revenue").
+_LABEL_NOISE = frozenset({
+    "the", "a", "an", "of", "in", "at", "to", "with", "and", "for", "its", "their",
+    "total", "totalling", "totaling", "about", "approximately", "around", "over",
+    "under", "roughly", "some", "only", "just", "is", "was", "are", "were", "has", "had",
+})
+
+
+def _label_tokens(label: str) -> frozenset:
+    return frozenset(w for w in re.split(r"[^a-z]+", (label or "").lower()) if w and w not in _LABEL_NOISE)
+
+
+def one_value_two_labels(finding_text: str, rows) -> str | None:
+    """One value asserted under TWO different measure names — a mislabelled binding.
+
+    Seen live on the LuxExperience demo: *"Mytheresa has the lowest logistics cost ratio at
+    0.0381 …, with logistics costs totaling 2949292 of GMV 2949292.0"*. The query selected
+    ``platform, logistics_cost_ratio, gmv_eur`` — there is no logistics-cost total in it at
+    all, so the narrator reused GMV for both. True logistics cost was €112,367; the finding
+    overstated it 26×, and it reached a shipped briefing.
+
+    :func:`_claim_numbers_grounded` cannot catch this: 2,949,292 *is* in the result, so every
+    number is grounded. What is wrong is the NAME it is given, and the tell is that the same
+    figure appears under two labels while occurring only ONCE in the row.
+
+    Deliberately narrow, because a false positive drops a real finding:
+
+    * the value must appear **exactly once** among the result cells — a figure that genuinely
+      occurs twice (a self-join, a repeated dimension) can honestly be described twice;
+    * the two labels must share **no** meaningful token — "net revenue"/"revenue" is one
+      label, "logistics costs"/"GMV" is two;
+    * both labels must be non-empty after noise removal.
+    """
+    if not finding_text or not rows:
+        return None
+    cells = _result_cells(rows)
+    if not cells:
+        return None
+    by_value: dict = {}
+    for label, tok in _LABELLED_NUM_RE.findall(finding_text):
+        v = _safe_float(tok.replace(",", ""))
+        if v is None:
+            continue
+        toks = _label_tokens(label)
+        if toks:
+            by_value.setdefault(round(v, 6), []).append((label.strip(), toks))
+    for value, labelled in by_value.items():
+        if len(labelled) < 2:
+            continue
+        # Only when the result carries this figure ONCE — otherwise two mentions are fine.
+        if sum(1 for c in cells if abs(c - value) <= abs(value) * 0.01 + 1e-6) != 1:
+            continue
+        for i in range(len(labelled)):
+            for j in range(i + 1, len(labelled)):
+                (l1, t1), (l2, t2) = labelled[i], labelled[j]
+                if not (t1 & t2):
+                    return (f"one value, two labels: {value:g} is asserted as both "
+                            f"{l1!r} and {l2!r}, but appears once in the result — "
+                            f"one of the two names is wrong")
+    return None
+
+
+def grounded_fraction(finding_text: str, rows) -> float:
+    """Fraction of the text's salient numbers grounded (raw or derived) in the result cells.
+    Used to break narrator↔query binding ties by NUMERIC evidence: a finding binds to the query
+    whose result actually contains its numbers, so a z-score card can't inherit a PoP finding's
+    numbers just because they share a dimension. 0.0 when there are no numbers or no cells."""
+    pairs = _salient_number_pairs(finding_text)
+    cells = _result_cells(rows)
+    if not pairs or not cells:
+        return 0.0
+    uniq = _dedup_cells(cells)
+    return sum(1 for _, v in pairs if _number_grounded(v, cells, uniq)) / len(pairs)
+
+
+def _cell_match(v: float, cells: list) -> bool:
+    """A number that IS a cell of the result — as written, or its percent↔fraction twin — within 1%."""
+    for c in cells:
+        for cand in (c, c * 100.0, c / 100.0):
+            if cand != 0 and abs(v - cand) <= abs(cand) * 0.01 + 1e-6:
+                return True
+    return False
+
+
+def raw_grounded_fraction(finding_text: str, rows) -> float:
+    """Fraction of the text's salient numbers that are CELLS of the result, with no derivation
+    credit. This is the signal for deciding WHOSE rows a sentence describes: `grounded_fraction`
+    also credits a figure derived from any two cells, and on a wide result that reaches almost
+    any number — on 34ca1559 (2026-10-14) every finding of the decomposition phase scored 1.0
+    against the 85-cell segment grid, the AOV prose written over another query's rows included,
+    so the binding fell through to position and the AOV sentence shipped over the segment rows.
+    A raw cell discriminates (0.83 against the rows that hold them, 0.17 against the others).
+    0.0 when there are no numbers or no cells."""
+    pairs = _salient_number_pairs(finding_text)
+    cells = _result_cells(rows)
+    if not pairs or not cells:
+        return 0.0
+    return sum(1 for _, v in pairs if _cell_match(v, cells)) / len(pairs)
+
+
+def cites_numbers(text: str) -> bool:
+    """Whether the text asserts any salient number (currency, a comma-grouped count, a percentage)."""
+    return bool(_salient_number_pairs(text))
+
+
+#: A number as a FIGURE's value writes it: "€721,754.75", "1,242 vs 1,063", "60.6%", "0.16",
+#: "+$36.7K", "$175,966 → $212,664". Not a run of digits inside a word, a date or a range
+#: ("2026-07-13", "12-month"), and a four-digit year on its own is not a figure.
+_VALUE_NUM_RE = re.compile(r"(?<![\w.\-])[$€£]?\s?(\d[\d,]*(?:\.\d+)?)\s?([kKmMbB])?(?![\w.\-])")
+_MAGNITUDE_SUFFIX = {"k": 1e3, "m": 1e6, "b": 1e9}
+
+
+def figure_numbers(text: str) -> list[tuple[str, float]]:
+    """(token, value) for each number a figure's value states, abbreviations expanded (36.7K → 36,700)."""
+    out: list[tuple[str, float]] = []
+    for m in _VALUE_NUM_RE.finditer(text or ""):
+        raw, suf = m.group(1), (m.group(2) or "").lower()
+        if not suf and re.fullmatch(r"(?:19|20)\d\d", raw):
+            continue
+        v = _safe_float(raw.replace(",", ""))
+        if v is None:
+            continue
+        out.append((m.group(0).strip(), v * _MAGNITUDE_SUFFIX.get(suf, 1.0)))
+    return out
+
+
+def _written_tolerance(token: str, value: float) -> float:
+    """Half the last digit the token writes, in the value's units: "€721.8K" is any value within
+    ±50 of 721,800; "0.01" is anything within ±0.005 — the rounding the author chose, not ours."""
+    m = re.search(r"\d(?:[\d,]*)(?:\.(\d+))?", token)
+    decimals = len(m.group(1)) if m and m.group(1) else 0
+    suf = token.strip()[-1:].lower()
+    return 0.5 * 10 ** (-decimals) * _MAGNITUDE_SUFFIX.get(suf, 1.0)
+
+
+def ungrounded_figure_numbers(value_text: str, results_rows: list) -> tuple[int, list[str]]:
+    """``(numbers stated, the tokens no result grounds)`` for a figure's value.
+
+    A number is grounded when ONE result's rows hold it: as a cell or a derivation of two cells
+    (`_number_grounded`, within 1%), as a column's total (the "Top-10 total revenue" a describe
+    answer sums from its rows), or as a cell or total within the precision the value is written
+    at ("z≈0.01" over a cell of 0.0137). Each result is read on its own, so the pair scan's cap
+    never drops a cell behind a larger result's."""
+    pairs = figure_numbers(value_text)
+    if not pairs:
+        return 0, []
+    missing: list[str] = []
+    for tok, v in pairs:
+        tol = _written_tolerance(tok, v)
+        found = False
+        for rows in results_rows or []:
+            cells = _result_cells(rows)
+            if not cells:
+                continue
+            uniq = _dedup_cells(cells)
+            if _number_grounded(v, cells, uniq):
+                found = True
+                break
+            totals = _column_totals(rows)
+            near = cells + totals
+            if any(abs(v - c) <= tol + 1e-9 or abs(v - c * 100.0) <= tol + 1e-9 for c in near):
+                found = True
+                break
+            if any(abs(v - t) <= abs(t) * 0.01 + 1e-6 for t in totals if t):
+                found = True
+                break
+        if not found:
+            missing.append(tok)
+    return len(pairs), missing
+
+
+def _column_totals(rows) -> list[float]:
+    """The sum of each numeric column over the rows — the total a reader adds up from a table."""
+    totals: dict[int, float] = {}
+    for r in (rows or [])[:200]:
+        row = list(r.values()) if isinstance(r, dict) else list(r)
+        for i, c in enumerate(row):
+            v = _safe_float(c)
+            if v is not None:
+                totals[i] = totals.get(i, 0.0) + v
+    return list(totals.values())
+
+
+# RC4 — implausible ratio/turnover magnitude. A turnover or multiplier is bounded by
+# reality (inventory turns a few × per year; a multiplier rarely exceeds tens). When a
+# finding asserts a turnover/ratio/×-multiplier in the thousands it is virtually always a
+# grain bug (e.g. SUM(units_sold)/AVG(units_on_hand) across all product-months → 96,295)
+# — never a real signal. Deliberately conservative: a high cap and a narrow keyword set so
+# it only fires on genuine grain explosions, never on a legitimate large count or revenue.
+# A number DIRECTLY bound to a ratio word — "turnover of 96,295.6", "turnover (25.0x)",
+# "ratio: 1,200", "turnover is 96295". No other digit may sit between the word and the
+# number, so a nearby revenue figure ("$175.06M" two words away) is never captured — that
+# loose-window false-positive is exactly what wrongly flagged a healthy 25× tier.
+_RATIO_NUM_RE = re.compile(
+    r"\b(?:turnover|multiplier|ratio)\b\s*(?:of|is|at|was|=|:|reached|hit|stands at)?\s*[\(\[]?\s*"
+    r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?",
+    re.I,
+)
+# "<number>x"/"<number>×" multiplier, and "<number> turnover/multiplier".
+_TIMES_MULT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*[x×]\b", re.I)
+_NUM_RATIO_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*\b(?:turnover|multiplier)\b", re.I)
+_IMPLAUSIBLE_RATIO_CAP = 1000.0
+
+
+def _parse_magnitude(num: str, suf: str = "") -> "Optional[float]":
+    """Expand a numeric token ('96,295.6' + 'M') to a float; None if unparseable."""
+    s = (num or "").strip().replace(",", "")
+    try:
+        base = float(s)
+    except ValueError:
+        return None
+    return base * {"k": 1e3, "m": 1e6, "b": 1e9}.get((suf or "").lower(), 1.0)
+
+
+def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_CAP) -> str:
+    """Return a reason when the finding asserts a turnover/ratio/×-multiplier DIRECTLY bound
+    to a number far beyond a sane bound (a grain-bug signature), else ''. Tightly scoped to
+    the number that belongs to the ratio word so a legitimate large revenue/count nearby is
+    never flagged."""
+    t = finding_text or ""
+    if not t:
+        return ""
+    candidates: list[tuple[str, str]] = []
+    for rx in (_RATIO_NUM_RE, _TIMES_MULT_RE, _NUM_RATIO_RE):
+        candidates += [(m.group(1), m.group(2) or "") for m in rx.finditer(t)]
+    for num, suf in candidates:
+        v = _parse_magnitude(num, suf)
+        if v is not None and abs(v) > cap:
+            return (f"implausible turnover/ratio magnitude in finding ({num.strip()}{suf} ≫ {cap:g}) "
+                    "— almost certainly a grain bug, not a real signal")
+    return ""
+
+
+# Named-metric ↔ SQL coherence + relabel/drift guards live in metric_coherence.py (extracted
+# from this god-file). verify_insight (below) and the questions-pass emission sites import them.
+
+def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None, industry: str = "", diagnose_conn=None) -> tuple[bool, str]:
+    """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
+    deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
+    untrusted until verified — so the explorer self-weeds (tautologies, fan-out artifacts,
+    boundary-saturated rates, fabricated numbers) instead of shipping confident nonsense to
+    a Briefing. Supersedes the bare degenerate check at every emission site; fail-open only
+    on internal error (never silently drops a sound finding due to a gate bug).
+
+    ``diagnose_conn`` is a live handle used for ONE purpose: when the result is degenerate,
+    probing the source columns to distinguish absent data from unparsed data. It is
+    separate from ``conn`` on purpose — callers that keep the static battery static (the
+    deep-analysis path passes conn=None to skip the cardinality oracle) still want the honest
+    root cause on the rare path where a metric comes back empty."""
+    try:
+        why = _insight_sql_unsound(sql, conn)
+        if why:
+            return (False, why)
+        if is_degenerate_result(rows, finding_text, sql, metric_ranges):
+            # Prefer the ROOT CAUSE over the symptom when we can establish it live. "No
+            # variation to rank" is true of an all-NULL metric either way, but it reads as
+            # missing data — and a reader acts on that by chasing an ingestion bug. When
+            # the values are actually there and merely unparsed, say so instead.
+            why = unparsed_numeric_diagnosis(sql, diagnose_conn or conn)
+            if why:
+                return (False, why)
+            # Reader-grade wording: this string surfaces verbatim as a trust advisory in the
+            # report body — "degenerate result (flat NULL / zero / boundary-pinned rate)" is
+            # a debug label, not a sentence a reader should have to parse.
+            return (False, "every value in this result is identical, empty, or pinned at a "
+                           "boundary — there is no variation to rank or compare")
+        pw = _part_exceeds_whole(rows, columns=columns)
+        if pw:
+            return (False, pw)
+        vc = _vacuous_case_dimension(sql, rows)
+        if vc:
+            return (False, vc)
+        # Deterministic plausibility, shared with the briefing's triage so there is ONE KB.
+        # Lifted to the EMISSION gate so an impossible/void value never gets stored —
+        # protecting the finding cards and any other consumer, not just the brief. Two things
+        # hard-reject here (both 'implausible'):
+        #   • an impossible magnitude (inventory turnover 3,600× — operating-band KB), and
+        #   • an aggregate↔type mismatch: SUM/AVG/STDDEV over a column whose DECLARED type
+        #     can't support it (SUM of a VARCHAR fiscal-year), passing the conn's column types
+        #     so the coercion artifact is dropped at the source, not just stamped for the reader.
+        # The 'confound' severity is deliberately NOT rejected (an inverse relationship can be a
+        # real finding — "churn falls as engagement rises") and stays a soft demotion at synthesis.
+        try:
+            from pramanyx.knowledge.triage import plausibility as _plausibility
+            _pv = _plausibility(finding_text, sql, _insight_col_types(conn))
+            if _pv.severity == "implausible":
+                return (False, _pv.reason)
+        except Exception as _e:
+            tolerate(_e, "insight-gate: plausibility band check", counter="insight_gate.plausibility_failed")
+        # RC4 backstop — a generic implausible turnover/ratio CLAIM in the finding text that
+        # the structural + operating-band checks above didn't already catch (runs last so the
+        # more-specific reasons — vacuous CASE, operating band — win when they apply).
+        ir = _implausible_ratio_claim(finding_text)
+        if ir:
+            return (False, ir)
+        cg = _claim_numbers_grounded(finding_text, rows)
+        if cg:
+            return (False, cg)
+        ov = one_value_two_labels(finding_text, rows)
+        if ov:
+            return (False, ov)
+        nm = mislabeled_named_metric(finding_text, sql, metric_vocab_for(conn, industry))
+        if nm:
+            return (False, nm)
+        # The drift guard judges only by metrics this connection can COMPUTE — hand it the
+        # shared cached schema parse (None on a schema hiccup, which runs the check
+        # unscoped, as before, rather than skipping it).
+        dr = drifted_registered_metric(finding_text, sql, getattr(conn, "_connection_id", "") or "",
+                                       table_cols=_cached_table_parse(conn))
+        if dr:
+            return (False, dr)
+        return (True, "")
+    except Exception:
+        return (True, "")  # fail-open: a gate bug must not suppress real findings
+
+
+_LITERAL_DIM_RE = re.compile(r"""['"][^'"]*['"]\s+AS\s+(\w+)""", re.IGNORECASE)
+
+
+def has_fabricated_dimension(sql: str) -> bool:
+    """True when a query invents its dimension by aliasing a constant literal and
+    grouping by it — e.g. ``SELECT 'Unknown' AS signup_source ... GROUP BY signup_source``.
+
+    The model writes this when the real column doesn't exist, producing a vacuous
+    single-group "breakdown" the narrator then presents as a real category ("the
+    only channel represented"). High-precision: only fires when the SOLE grouping
+    key is the constant — a real dimension alongside it is a legitimate breakdown.
+    """
+    if not sql:
+        return False
+    low = sql.lower()
+    if "group by" not in low:
+        return False
+    gb = low.split("group by", 1)[1]
+    gb = re.split(r"\b(order\s+by|having|limit|window|qualify)\b", gb, maxsplit=1)[0]
+    keys = [k.strip() for k in gb.split(",") if k.strip()]
+    if len(keys) != 1:
+        return False  # another real dimension is present → legitimate breakdown
+    key = keys[0]
+    if key.startswith("'") or key.startswith('"'):
+        return True  # GROUP BY 'literal'
+    return any(m.group(1).lower() == key for m in _LITERAL_DIM_RE.finditer(sql))
+
+
+# A CASE that buckets rows into string labels: capture each branch's THEN label and the
+# ELSE default. ``.+?`` (non-greedy, DOTALL) tolerates quoted IN-lists inside the WHEN
+# condition (``WHEN x IN ('A','B') THEN 'mass'``) — it stops at the branch's own THEN.
+_CASE_THEN_RE = re.compile(r"\bWHEN\b.+?\bTHEN\s+'([^']+)'", re.IGNORECASE | re.DOTALL)
+_CASE_ELSE_RE = re.compile(r"\bELSE\s+'([^']+)'\s+END\b", re.IGNORECASE)
+
+
+def _vacuous_case_dimension(sql: str, rows) -> str | None:
+    """Reason when a CASE that segments rows into labels collapses ENTIRELY into its ELSE
+    default — i.e. the WHEN literals matched NO rows, so the derived dimension is a single
+    meaningless bucket presented as a real segmentation.
+
+    The canonical bug: ``CASE WHEN brand_name IN ('CeraVe','La Mer',…) THEN 'mass'/'luxury'
+    … ELSE 'unknown'`` on data whose brands are actually ``Brand_000`` — every row falls to
+    'unknown', the cross-tier comparison is vacuous, and a real ``brand_tier`` column was
+    ignored. High-precision: needs ≥2 intended categories AND a result where ONLY the ELSE
+    label appears and NONE of the THEN labels do (an empty ⋂ proves the scheme matched
+    nothing). A query whose CASE produced even one real category never trips it."""
+    if not sql or not rows:
+        return None
+    then_labels = {m.strip().lower() for m in _CASE_THEN_RE.findall(sql) if m.strip()}
+    else_labels = {m.strip().lower() for m in _CASE_ELSE_RE.findall(sql) if m.strip()}
+    if len(then_labels) < 2 or not else_labels:
+        return None   # not a multi-branch labelled categorization with a default
+    present: set[str] = set()
+    for r in rows[:500]:
+        cells = r.values() if isinstance(r, dict) else r
+        for c in cells:
+            if isinstance(c, str) and c.strip():
+                present.add(c.strip().lower())
+    if not present:
+        return None
+    if (else_labels & present) and not (then_labels & present):
+        return (f"vacuous categorization: a CASE bucketed every row into its default "
+                f"'{sorted(else_labels)[0]}' — the intended categories {sorted(then_labels)[:4]} "
+                f"matched no rows (hardcoded literals absent from the data; a real category "
+                f"column was likely ignored)")
+    return None
+
+
+def clamp_novelty(v) -> int:
+    """Novelty is a 1-5 score (see the interpret prompt). The LLM occasionally
+    echoes a data magnitude into it — e.g. revenue 77568 lands in `novelty`, which
+    then pins confidence at 95% (``0.4 + novelty*0.1`` capped) and lets a junk
+    finding own the headline (novelty drives ranking). Clamp to the valid range."""
+    try:
+        return max(1, min(5, int(v)))
+    except (TypeError, ValueError):
+        return 3
+
+
+# Per-grain mislabel (#6): a line-item-grain column averaged and presented as a
+# per-ORDER / per-customer metric. True AOV = SUM(revenue)/COUNT(DISTINCT order);
+# `AVG(oi.line_total) AS aov` averages LINE ITEMS, undercounting (the $467-vs-$1108
+# mislabel). High-precision: keys off a line-grain column name inside AVG() that's
+# then labelled (alias or narration) as an order/customer-level metric.
+_LINE_GRAIN_COL = re.compile(r"line_?(total|amount|item|price|value|subtotal|qty|quantity)|item_(total|amount|price|qty)", re.I)
+_PER_ORDER_LABEL = re.compile(r"\baov\b|average\s+order\s+value|avg_?order_?value|order_?value|per[\s_]order|per[\s_]customer|per[\s_]basket", re.I)
+
+
+def mislabeled_per_grain(sql: str, finding_text: str = "") -> bool:
+    """True when SQL averages a line-item-grain column but the alias or the finding
+    narrates it as a per-order/per-customer value — a semantic mislabel the numeric
+    grounding can't catch (the averaged value is a real cell, just the wrong metric)."""
+    if not sql:
+        return False
+    for m in re.finditer(r"AVG\s*\(([^)]*)\)(?:\s+AS\s+(\w+))?", sql, re.IGNORECASE):
+        arg, alias = m.group(1), (m.group(2) or "")
+        if _LINE_GRAIN_COL.search(arg) and (_PER_ORDER_LABEL.search(alias) or _PER_ORDER_LABEL.search(finding_text)):
+            return True
+    return False

@@ -11,8 +11,8 @@ on:
       - install.ps1
       - install.cmd
       - start.sh
-      - aughor/installer.py
-      - aughor/cli.py
+      - pramanyx/installer.py
+      - pramanyx/cli.py
       - pyproject.toml
       - uv.lock
       - web/package.json
@@ -25,8 +25,8 @@ on:
       - install.ps1
       - install.cmd
       - start.sh
-      - aughor/installer.py
-      - aughor/cli.py
+      - pramanyx/installer.py
+      - pramanyx/cli.py
       - pyproject.toml
       - uv.lock
       - web/package.json
@@ -57,9 +57,9 @@ jobs:
         # one a machine with no Node.js takes — would never run here.
         node: [installed, downloaded]
     env:
-      AUGHOR_NODE_DOWNLOAD: ${{ matrix.node == 'downloaded' && '1' || '' }}
+      PRAMANYX_NODE_DOWNLOAD: ${{ matrix.node == 'downloaded' && '1' || '' }}
       # No monitor, automation or exploration clock in a smoke run.
-      AUGHOR_DISABLE_SCHEDULERS: '1'
+      PRAMANYX_DISABLE_SCHEDULERS: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
@@ -81,35 +81,35 @@ jobs:
         if: runner.os != 'Windows' && matrix.node == 'installed'
         timeout-minutes: 20
         run: |
-          git archive --format=tar.gz --prefix=aughor-main/ -o "$RUNNER_TEMP/aughor-main.tar.gz" HEAD
+          git archive --format=tar.gz --prefix=pramanyx-main/ -o "$RUNNER_TEMP/pramanyx-main.tar.gz" HEAD
           mkdir -p "$RUNNER_TEMP/fresh"
           cd "$RUNNER_TEMP/fresh"
-          AUGHOR_REPO_URL="$RUNNER_TEMP/no-such-repo" \
-          AUGHOR_ARCHIVE_URL="file://$RUNNER_TEMP/aughor-main.tar.gz" \
+          PRAMANYX_REPO_URL="$RUNNER_TEMP/no-such-repo" \
+          PRAMANYX_ARCHIVE_URL="file://$RUNNER_TEMP/pramanyx-main.tar.gz" \
             sh -s -- --no-start < "$GITHUB_WORKSPACE/install.sh"
-          test -f "$HOME/aughor/web/.next/BUILD_ID"
+          test -f "$HOME/pramanyx/web/.next/BUILD_ID"
           # ...and left one command behind that starts Pramanyx's CLI from any folder.
-          "$HOME/.local/bin/aughor" --help
+          "$HOME/.local/bin/pramanyx" --help
 
       - name: Fresh install from an empty folder, as a snapshot (Windows)
         if: runner.os == 'Windows' && matrix.node == 'installed'
         timeout-minutes: 25
         shell: pwsh
         run: |
-          git archive --format=zip --prefix=aughor-main/ -o "$env:RUNNER_TEMP\aughor-main.zip" HEAD
+          git archive --format=zip --prefix=pramanyx-main/ -o "$env:RUNNER_TEMP\pramanyx-main.zip" HEAD
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\fresh" | Out-Null
           Copy-Item install.ps1 "$env:RUNNER_TEMP\install.ps1"
           Set-Location "$env:RUNNER_TEMP\fresh"
-          $env:AUGHOR_REPO_URL = "$env:RUNNER_TEMP\no-such-repo"
-          $env:AUGHOR_ARCHIVE_URL = "file:///$($env:RUNNER_TEMP -replace '\\', '/')/aughor-main.zip"
+          $env:PRAMANYX_REPO_URL = "$env:RUNNER_TEMP\no-such-repo"
+          $env:PRAMANYX_ARCHIVE_URL = "file:///$($env:RUNNER_TEMP -replace '\\', '/')/pramanyx-main.zip"
           # On the runner's D: work drive: the home folder is on C:, the system drive, where this
           # step sat for 15 minutes on its first run. The home-folder default is covered on macOS
           # and Linux.
-          $env:AUGHOR_DIR = "$env:RUNNER_TEMP\fresh\aughor"
+          $env:PRAMANYX_DIR = "$env:RUNNER_TEMP\fresh\pramanyx"
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\install.ps1" --no-start
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "$env:AUGHOR_DIR\web\.next\BUILD_ID")) { exit 1 }
-          & "$HOME\.local\bin\aughor.cmd" --help
+          if (-not (Test-Path "$env:PRAMANYX_DIR\web\.next\BUILD_ID")) { exit 1 }
+          & "$HOME\.local\bin\pramanyx.cmd" --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Start, and both servers answer (macOS, Linux)
@@ -133,7 +133,7 @@ jobs:
               curl -fsS -o /dev/null http://127.0.0.1:3000/; } || ready=no
           fi
           cat up.log
-          tail -n 40 .aughor/logs/*.log || true
+          tail -n 40 .pramanyx/logs/*.log || true
           [ "$ready" = yes ]
 
       - name: Start, and both servers answer (Windows)
@@ -169,7 +169,7 @@ jobs:
             }
           }
           # The API reads its own claim as a live process. Only Windows runs that check's Windows
-          # branch; it used to be os.kill(pid, 0), a Ctrl+C for the whole console (aughor/db/serving.py).
+          # branch; it used to be os.kill(pid, 0), a Ctrl+C for the whole console (pramanyx/db/serving.py).
           if ($ready) {
             try {
               $wal = Invoke-RestMethod http://127.0.0.1:8000/diagnostics/wal-keepalive
@@ -181,7 +181,7 @@ jobs:
           }
           Write-Host "servers answered: $ready; installer exited: $($up.HasExited)"
           Get-Content up.log -ErrorAction SilentlyContinue
-          Get-ChildItem .aughor/logs/*.log -ErrorAction SilentlyContinue | ForEach-Object {
+          Get-ChildItem .pramanyx/logs/*.log -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "--- $($_.Name)"
             Get-Content $_.FullName -Tail 40 -ErrorAction SilentlyContinue
           }

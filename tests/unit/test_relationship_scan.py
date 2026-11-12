@@ -9,16 +9,16 @@ same report coming back.
 """
 import pytest
 
-from aughor.agent.investigate import (_candidate_label, _drop_self_referential_segment,
+from pramanyx.agent.investigate import (_candidate_label, _drop_self_referential_segment,
                                       _finding_earns_place, _relationship_candidates,
                                       _rival_candidates_note,
                                       _hit_row_cap, _intake_relationship_pair,
                                       _is_saturated, _population_note,
                                       _ranking_noise_caveat)
-from aughor.agent.relationship import (bare_column, numeric_expression, plan_relationship,
+from pramanyx.agent.relationship import (bare_column, numeric_expression, plan_relationship,
                                        read_relationship, self_referential_segment,
                                        side_expression, sql_columns)
-from aughor.tools.stats import assess_correlation, assess_group_means
+from pramanyx.tools.stats import assess_correlation, assess_group_means
 
 
 
@@ -26,7 +26,7 @@ def _evidence(phases) -> str:
     """The evidence the writer is handed for these phases — what the report checks read. A
     placeholder string stood here while #36 skipped every figure below 10; it now checks a
     small figure written with decimals, so the fixture's own rows are its evidence."""
-    from aughor.agent import investigate
+    from pramanyx.agent import investigate
     return investigate._phases_evidence(phases)
 
 
@@ -374,7 +374,7 @@ def test_the_note_matches_an_ascending_scan():
 def test_both_interpret_prompts_accept_the_note():
     """The note is a placeholder in both templates now — a KeyError here is the phase
     failing to interpret at all."""
-    from aughor.agent.prompts_investigate import (CROSS_SECTION_INTERPRET_PROMPT,
+    from pramanyx.agent.prompts_investigate import (CROSS_SECTION_INTERPRET_PROMPT,
                                                   CROSS_SECTION_RATIO_INTERPRET_PROMPT)
     for template in (CROSS_SECTION_INTERPRET_PROMPT, CROSS_SECTION_RATIO_INTERPRET_PROMPT):
         out = template.format(question="q", metric_label="m", results_text="rows",
@@ -556,7 +556,7 @@ def _noise_phase():
 def test_the_evidence_block_carries_the_verdict():
     """It carried SQL and rows and nothing else, so the model writing the headline saw
     `Ilam | 3.2 | 5` with every statistic computed for it withheld."""
-    from aughor.agent.investigate import _one_phase_evidence
+    from pramanyx.agent.investigate import _one_phase_evidence
     block = _one_phase_evidence(_noise_phase()[0])
     assert "STATISTICAL VERDICT" in block
     assert "not evidence of a difference" in block
@@ -565,7 +565,7 @@ def test_the_evidence_block_carries_the_verdict():
 
 def test_a_condensed_phase_keeps_its_verdict():
     """The phases that overflow the budget are the ones most likely to be cited loosely."""
-    from aughor.agent.investigate import _condense_phase_evidence
+    from pramanyx.agent.investigate import _condense_phase_evidence
     assert "STATISTICAL VERDICT" in _condense_phase_evidence(_noise_phase()[0])
 
 
@@ -579,7 +579,7 @@ class _Synth:
 
 
 def test_a_noise_level_standout_in_the_headline_is_a_violation():
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Shipping delay is driven by localized state-level bottlenecks",
                    "Order State Ilam records the highest average delay at 3.2 days.")
     violations = run_report_checks(synth, "does location matter?", "evidence", _noise_phase())
@@ -587,7 +587,7 @@ def test_a_noise_level_standout_in_the_headline_is_a_violation():
 
 
 def test_an_honest_report_over_the_same_findings_is_clean():
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Shipping delay is not explained by geography",
                    "No location group is distinguishable from the rest once group size is taken "
                    "into account.")
@@ -595,7 +595,7 @@ def test_an_honest_report_over_the_same_findings_is_clean():
 
 
 def test_a_finding_with_a_real_verdict_never_gates_the_report():
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     phases = _noise_phase()
     phases[0]["findings"][0]["stat_note"] = "one-way ANOVA F(3,900) = 44.1, p = 1e-26"
     synth = _Synth("Ilam is the slowest destination", "Ilam averages 3.2 days.")
@@ -616,7 +616,7 @@ def test_the_narrator_sees_the_verdict_before_it_writes():
     and only stamped onto the finished finding — so a card read "the significantly higher
     delay in Oklahoma suggests a localized performance issue" above a stat_note saying the
     ordering was not evidence of a difference at p = 0.072."""
-    from aughor.agent.investigate import _results_text_with_verdicts
+    from pramanyx.agent.investigate import _results_text_with_verdicts
     r = _QR(_STATE_COLS, [[x[0], x[1], x[2], x[3]] for x in _TOP_STATES] * 2)
     text = _results_text_with_verdicts([r], max_rows=20)
     assert "STATISTICAL VERDICT" in text
@@ -625,7 +625,7 @@ def test_the_narrator_sees_the_verdict_before_it_writes():
 
 
 def test_a_clean_result_gets_no_verdict_banner():
-    from aughor.agent.investigate import _results_text_with_verdicts
+    from pramanyx.agent.investigate import _results_text_with_verdicts
     r = _QR(["mode", "metric_total", "sd", "n"],
             [["Same Day", 0.1, 0.4, 4000], ["Standard", 3.4, 0.6, 4000]])
     assert "STATISTICAL VERDICT" not in _results_text_with_verdicts([r], max_rows=20)
@@ -634,7 +634,7 @@ def test_a_clean_result_gets_no_verdict_banner():
 def test_a_contradicting_interpretation_carries_the_verdict_on_its_note():
     """P5 (2026-10-14): the verdict rides `stat_note` — the badge above the sentence on the page,
     the small line under it in the PDF — and the model's sentence stays the body, unprefixed."""
-    from aughor.agent.investigate import _lead_with_verdict
+    from pramanyx.agent.investigate import _lead_with_verdict
     f = {"interpretation": "The significantly higher delay in Oklahoma suggests a localized "
                            "performance issue.", "is_significant": True}
     _lead_with_verdict(f, "This ordering is not evidence of a difference.")
@@ -646,7 +646,7 @@ def test_a_contradicting_interpretation_carries_the_verdict_on_its_note():
 
 def test_a_descriptive_interpretation_is_left_alone():
     """Saying what the rows contain is not overclaiming."""
-    from aughor.agent.investigate import _lead_with_verdict
+    from pramanyx.agent.investigate import _lead_with_verdict
     f = {"interpretation": "Marion shows the highest average delay of the cities shown, and the "
                            "values are tightly clustered.", "is_significant": False}
     before = f["interpretation"]
@@ -655,7 +655,7 @@ def test_a_descriptive_interpretation_is_left_alone():
 
 
 def test_the_verdict_is_not_stacked_twice():
-    from aughor.agent.investigate import _lead_with_verdict
+    from pramanyx.agent.investigate import _lead_with_verdict
     v = "This ordering is not evidence of a difference: the gaps are inside the spread."
     # a finding that already carries the verdict on its note
     f = {"interpretation": "Oklahoma is significantly higher.", "is_significant": False, "stat_note": v}
@@ -682,7 +682,7 @@ def _significant_phase():
 def test_calling_an_overwhelmingly_significant_test_insignificant_is_a_violation():
     """The right conclusion under a false reason: "variations … are not significant
     (p > 0.05)" over a finding carrying p = 2.376e-155."""
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Shipping delay is uniform across all customer locations",
                    "Variations across cities, states and regions are not significant (p > 0.05).")
     violations = run_report_checks(synth, "q", _evidence(_significant_phase()), _significant_phase())
@@ -690,7 +690,7 @@ def test_calling_an_overwhelmingly_significant_test_insignificant_is_a_violation
 
 
 def test_saying_significant_but_immaterial_is_clean():
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Location does not explain shipping delay",
                    "Customer city is statistically distinguishable but accounts for 1.1% of the "
                    "variation, too little to act on.")
@@ -698,7 +698,7 @@ def test_saying_significant_but_immaterial_is_clean():
 
 
 def test_a_genuinely_null_run_may_say_not_significant():
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     phases = _significant_phase()
     phases[0]["findings"][0]["stat_note"] = "one-way ANOVA F(14,80) = 0.6357, p = 0.8274"
     synth = _Synth("No geographic effect", "The differences are not significant (p > 0.05).")
@@ -726,7 +726,7 @@ def test_a_negated_claim_is_agreement_not_contradiction(text):
     """A substring scan flagged good reasoning as contamination — the failure this repo has
     hit before. The word `significant` under a negation is the narrator saying what the
     verdict says."""
-    from aughor.agent.investigate import _lead_with_verdict, _makes_unnegated_standout_claim
+    from pramanyx.agent.investigate import _lead_with_verdict, _makes_unnegated_standout_claim
     assert _makes_unnegated_standout_claim(text) is False
     f = {"interpretation": text, "is_significant": False}
     _lead_with_verdict(f, "This ordering is not evidence of a difference.")
@@ -739,7 +739,7 @@ def test_a_negated_claim_is_agreement_not_contradiction(text):
     "These states are bottlenecks; the variation is not small.",   # negation elsewhere, claim stands
 ])
 def test_an_affirmative_claim_is_still_caught(text):
-    from aughor.agent.investigate import _makes_unnegated_standout_claim
+    from pramanyx.agent.investigate import _makes_unnegated_standout_claim
     assert _makes_unnegated_standout_claim(text) is True
 
 
@@ -760,7 +760,7 @@ def test_naming_a_label_in_a_stable_range_is_not_a_violation():
     """The live sentence. It names Central Asia as one END of a range it calls stable — a
     description, not a standout claim. The old check matched the word and shipped a
     violation that no retry could clear, knocking a correct report from HIGH to MEDIUM."""
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Shipping delays are consistent across all customer locations",
                    "Average delays remain stable, ranging from 0.56 days in South America to "
                    "0.65 days in Central Asia.")
@@ -768,7 +768,7 @@ def test_naming_a_label_in_a_stable_range_is_not_a_violation():
 
 
 def test_naming_the_same_label_as_a_bottleneck_still_is():
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Central Asia is the regional bottleneck driving shipping delay",
                    "Central Asia is a clear outlier at 0.65 days.")
     violations = run_report_checks(synth, "q", _evidence(_region_noise_phase()), _region_noise_phase())
@@ -777,7 +777,7 @@ def test_naming_the_same_label_as_a_bottleneck_still_is():
 
 def test_the_claim_must_be_in_the_sentence_that_names_the_label():
     """A standout word elsewhere in the summary does not convict a label it never touches."""
-    from aughor.agent.report_checks import run_report_checks
+    from pramanyx.agent.report_checks import run_report_checks
     synth = _Synth("Delays are uniform by region",
                    "Delays range from 0.56 days in South America to 0.65 days in Central Asia. "
                    "Separately, Second Class shipping is the significant driver of lateness.")

@@ -9,7 +9,7 @@ import sqlite3
 
 import pytest
 
-from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+from pramanyx.db.migrations import Migration, add_column_if_missing, run_migrations
 
 
 def _base(tmp_path):
@@ -78,11 +78,11 @@ def test_failure_is_loud_and_leaves_version_at_last_good(tmp_path):
 def test_converted_stores_migrate_cleanly():
     """Every store converted to the framework brings a fresh (isolated) DB to its
     latest version with the migrated columns present — idempotent, no error."""
-    from aughor.metastore import store as ms
-    from aughor.packs import bindings
-    from aughor.security import audit
-    from aughor.feedback import verdicts
-    from aughor.workspace import store as ws
+    from pramanyx.metastore import store as ms
+    from pramanyx.packs import bindings
+    from pramanyx.security import audit
+    from pramanyx.feedback import verdicts
+    from pramanyx.workspace import store as ws
 
     def _prep(connect, ensure):
         c = connect()
@@ -106,9 +106,9 @@ def test_converted_stores_migrate_cleanly():
 
 
 def test_ledger_schema_is_versioned():
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
-    led = Ledger.default()  # AUGHOR_SYSTEM_DB → temp in tests
+    led = Ledger.default()  # PRAMANYX_SYSTEM_DB → temp in tests
     jcols = {r[1] for r in led._conn.execute("PRAGMA table_info(jobs)").fetchall()}
     assert {"metrics", "org_id"} <= jcols
     assert led._conn.execute("PRAGMA user_version").fetchone()[0] >= 3
@@ -120,7 +120,7 @@ def test_ledger_schema_is_versioned():
 def report(monkeypatch):
     """The module, with this process's report emptied for the test — a store held back here must not leave /health
     degraded for the tests after it."""
-    from aughor.db import migrations as m
+    from pramanyx.db import migrations as m
     monkeypatch.setattr(m, "_HELD_BACK", {})
     monkeypatch.setattr(m, "_BACKED_UP", [])
     return m
@@ -242,7 +242,7 @@ def test_a_copy_that_does_not_check_is_removed_and_holds_back(tmp_path, report, 
 
 
 def test_health_names_a_store_held_back(tmp_path, report):
-    from aughor.routers.system import health
+    from pramanyx.routers.system import health
     c = _store_with_rows(tmp_path)
     (tmp_path / "backups").write_text("blocked")
     run_migrations(c, [Migration(2, "a", lambda x: None)], store="held_store")

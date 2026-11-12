@@ -16,7 +16,7 @@ import { PinnedCardBody, type CardState } from "@/components/brief/PinnedCardBod
 
 export const CARD_H = 210;   // uniform tile height → a clean, gap-free scorecard grid
 
-const orderKey = (cid: string) => `aughor:cockpit-order:${cid}`;
+const orderKey = (cid: string) => `pramanyx:cockpit-order:${cid}`;
 function loadOrder(cid: string): string[] {
   try { const raw = localStorage.getItem(orderKey(cid)); const v = raw ? JSON.parse(raw) : []; return Array.isArray(v) ? v : []; }
   catch { return []; }

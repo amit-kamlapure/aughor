@@ -5,9 +5,9 @@ Deep-Analysis audit finding (inv1): the intake declared "Data range inferred fro
 `observation_period` came out empty for the cross-sectional scan. T4-2 runs a deterministic MIN/MAX
 probe at intake, records the real DATA COVERAGE window (surfaced as `observation_period` even for a
 cross-sectional scan), and replaces an observation window that falls outside the real span.
-`_observation_window_is_wrong` is the pure decision. See aughor/agent/investigate.py.
+`_observation_window_is_wrong` is the pure decision. See pramanyx/agent/investigate.py.
 """
-from aughor.agent.investigate import _observation_window_is_wrong
+from pramanyx.agent.investigate import _observation_window_is_wrong
 
 
 def test_empty_window_is_wrong():

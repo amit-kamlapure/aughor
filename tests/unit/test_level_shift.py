@@ -6,9 +6,9 @@ real, statistically-significant −6.4% decline as "within normal variance", the
 dimensional decomposition at Tier 0. Single-point anomaly detection is structurally blind to a
 sustained shift where no individual month is an outlier. `mean_shift_significance` is the correct
 two-sample (Welch) test; `_analyze_time_series` now reports the STRONGER of point-anomaly and
-level-shift so the Tier-0 gate proceeds on a real decline. See aughor/tools/stats.py.
+level-shift so the Tier-0 gate proceeds on a real decline. See pramanyx/tools/stats.py.
 """
-from aughor.tools.stats import mean_shift_significance, _analyze_time_series
+from pramanyx.tools.stats import mean_shift_significance, _analyze_time_series
 
 
 # Real inv3 monthly net revenue: 2023 (higher) then 2024 (lower) — a sustained −6.4% decline.

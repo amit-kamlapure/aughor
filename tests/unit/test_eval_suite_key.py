@@ -5,7 +5,7 @@ found — so a receipt said "DO NOT rename", and the eval suites could not be na
 """
 from __future__ import annotations
 
-from aughor.evals import store
+from pramanyx.evals import store
 
 
 def test_an_unkeyed_suite_is_adopted_under_its_former_name_and_keeps_its_id_and_runs():
@@ -43,7 +43,7 @@ def test_a_person_renames_a_suite_in_place_and_its_runs_stay():
     import pytest
     from fastapi import HTTPException
 
-    from aughor.routers.evals import SuiteRename, rename_suite
+    from pramanyx.routers.evals import SuiteRename, rename_suite
     old = store.create_suite("user-defined agents — data-gated on the answer path (Wave H) [kt5]")
     run_id = store.start_run(old["id"])
     out = rename_suite(old["id"], SuiteRename(name="  User-defined agents — data-gated on the answer path [kt5] "))

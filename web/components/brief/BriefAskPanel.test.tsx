@@ -10,8 +10,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const seen: { body?: Record<string, unknown> } = {};
 
-vi.mock("@/lib/useAughorChat", () => ({
-  useAughorChat: (opts: { body?: Record<string, unknown> }) => {
+vi.mock("@/lib/usePramanyxChat", () => ({
+  usePramanyxChat: (opts: { body?: Record<string, unknown> }) => {
     seen.body = opts.body;
     return { messages: [], sendMessage: vi.fn(), status: "ready", error: undefined };
   },

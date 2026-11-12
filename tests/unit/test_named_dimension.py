@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.investigate import _norm_col, _question_named_dimensions
+from pramanyx.agent.investigate import _norm_col, _question_named_dimensions
 
 _AIRLINE = """\
 TABLE: main.flights  (1981 rows)
@@ -106,7 +106,7 @@ _DIMS = ["main.flights.route_id", "main.flights.market", "main.flights.origin",
 
 
 def test_a_named_dimension_outranks_the_heuristic():
-    from aughor.agent.investigate import _prioritize_dimensions
+    from pramanyx.agent.investigate import _prioritize_dimensions
 
     got = _prioritize_dimensions(_DIMS, pinned=["main.flights.route_id"])
 
@@ -116,7 +116,7 @@ def test_a_named_dimension_outranks_the_heuristic():
 def test_it_survives_a_cap_that_would_otherwise_cut_it():
     """The cap is the mechanism that actually lost it — ordering only matters because
     the list is then truncated."""
-    from aughor.agent.investigate import _prioritize_dimensions
+    from pramanyx.agent.investigate import _prioritize_dimensions
 
     top2 = _prioritize_dimensions(_DIMS, pinned=["main.flights.route_id"])[:2]
 
@@ -126,19 +126,19 @@ def test_it_survives_a_cap_that_would_otherwise_cut_it():
 def test_without_a_pin_the_heuristic_is_untouched():
     """The ranking is right for a scan that has no stated cut to honour; the pin must
     not become a general reordering."""
-    from aughor.agent.investigate import _prioritize_dimensions
+    from pramanyx.agent.investigate import _prioritize_dimensions
     assert _prioritize_dimensions(_DIMS) == _prioritize_dimensions(_DIMS, pinned=[])
 
 
 def test_a_causal_dimension_still_floats_on_a_why_scan():
     """`causal_first` exists so the causal cut survives the same cap. A pin outranks it
     — the question was explicit — but with no pin it must still lead."""
-    from aughor.agent.investigate import _prioritize_dimensions
+    from pramanyx.agent.investigate import _prioritize_dimensions
 
     dims = ["main.orders.region", "main.orders.return_reason"]
     assert _prioritize_dimensions(dims, causal_first=True)[0] == "main.orders.return_reason"
 
 
 def test_the_spec_carries_the_named_dimensions_for_the_scan_to_read():
-    from aughor.agent.prompts_investigate import IntakeOutput
+    from pramanyx.agent.prompts_investigate import IntakeOutput
     assert IntakeOutput.model_fields["named_dimensions"].default_factory() == []

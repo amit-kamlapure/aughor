@@ -35,8 +35,8 @@ import re
 
 import pytest
 
-from aughor.agent import chart_vocab as CV
-from aughor.agent import prompts_investigate as PI
+from pramanyx.agent import chart_vocab as CV
+from pramanyx.agent import prompts_investigate as PI
 
 
 CHART_MODELS = (PI.PhaseQueryPlan, PI.PhaseFindingModel) if hasattr(PI, "PhaseFindingModel") else ()

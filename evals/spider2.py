@@ -41,14 +41,14 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Load .env so the harness uses the CONFIGURED coder model (AUGHOR_CODER_MODEL) —
+# Load .env so the harness uses the CONFIGURED coder model (PRAMANYX_CODER_MODEL) —
 # same lesson as run_golden: a standalone script never imports api.py, so without
 # this the provider silently falls back to its hardcoded default model and the
 # run measures the wrong thing.
 # Skipped when the caller has declared it wants a clean environment: this runs at
 # IMPORT, so a test importing anything from here gets the developer's `.env` in its
 # process — which is how a suite that is green in CI fails on a laptop.
-if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+if not os.environ.get("PRAMANYX_SKIP_DOTENV"):
     try:
         from dotenv import load_dotenv
         load_dotenv(_REPO_ROOT / ".env")
@@ -207,8 +207,8 @@ def generate_sql(question: str, schema: str, document_section: str,
     the SQL. June's 56.3% harness generated SQL-only; this restores that configuration."""
     from pydantic import BaseModel
 
-    from aughor.agent.prompts import CHAT_SQL_SYSTEM
-    from aughor.llm.provider import get_provider
+    from pramanyx.agent.prompts import CHAT_SQL_SYSTEM
+    from pramanyx.llm.provider import get_provider
 
     class SqlOnly(BaseModel):
         sql: str = ""
@@ -253,7 +253,7 @@ def crystallize_resolution(connection_id: str, question: str, outcome, adopted_s
     evidence, crystallize it so the same question class never re-ambiguates on this connection.
     Subject = the question (so future similar questions match); source = probe. Best-effort."""
     try:
-        from aughor.semantic.ambiguity_ledger import (
+        from pramanyx.semantic.ambiguity_ledger import (
             AmbiguityResolution, Reading, save_resolution)
         for dim in outcome.resolved_dims:
             save_resolution(AmbiguityResolution(
@@ -277,9 +277,9 @@ def run_probe_repair(conn, question: str, seed_sql: str, alt_sqls: list[str],
     owns (I3) → evidence-gated minimal repair with the never-go-backwards acceptance gates
     (I7). Returns (sql, trace_info); sql is the seed unchanged unless a repair cleared all gates.
     Design: docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md §2/B1."""
-    from aughor.sql.grain_intent import check_result_grain
-    from aughor.sql.join_guard import check_filter_value_domains
-    from aughor.sql.tables import extract_tables
+    from pramanyx.sql.grain_intent import check_result_grain
+    from pramanyx.sql.join_guard import check_filter_value_domains
+    from pramanyx.sql.tables import extract_tables
     from evals.spider2_probes import ProbeResult, extract_disagreements, resolve, run_probes
 
     others = [s for s in alt_sqls if s and s.strip() != seed_sql.strip()]
@@ -354,7 +354,7 @@ def run_probe_repair(conn, question: str, seed_sql: str, alt_sqls: list[str],
 
     def _repair(seed: str, instruction: str):
         try:
-            from aughor.sql.writer import SqlWriter
+            from pramanyx.sql.writer import SqlWriter
             fixed = SqlWriter(conn, schema_str=schema).fix(seed, instruction, max_retries=1)
             return fixed.sql if fixed.ok and fixed.sql else None
         except Exception:
@@ -390,9 +390,9 @@ def _safe_filter_ok(conn, sql, check_filter_value_domains) -> bool:
 def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = True,
                  bench_projection: bool = False, col_semantics: bool = False,
                  candidates: int = 1, probes: bool = False, ledger: bool = False) -> dict:
-    from aughor.connectors.file.sqlite import SQLiteConnection
-    from aughor.sql.closed_loop import execute_with_repair, rows_to_csv
-    from aughor.sql.safety import preflight_repair
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.sql.closed_loop import execute_with_repair, rows_to_csv
+    from pramanyx.sql.safety import preflight_repair
 
     iid = record["instance_id"]
     trace: dict = {"instance_id": iid, "db": record["db"], "question": record["question"],
@@ -430,7 +430,7 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
         # is amortization, not a single-run EX lever. Gated by --ledger.
         conn_id = record["db"]
         if ledger:
-            from aughor.semantic.ambiguity_ledger import (
+            from pramanyx.semantic.ambiguity_ledger import (
                 build_resolution_block, record_hit, retrieve_resolutions)
             _matches = retrieve_resolutions(record["question"], conn_id)
             _led_block = build_resolution_block(_matches)
@@ -444,7 +444,7 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
         if candidates > 1:
             # Levers 4+5 — strategy-diverse candidates + execution-signature selection
             # (deterministic; no judge LLM). K calls per question — hard-subset use.
-            from aughor.sql.grain_intent import check_result_grain
+            from pramanyx.sql.grain_intent import check_result_grain
             from evals.spider2_candidates import STRATEGIES, run_candidates
 
             def _exec_lite(s: str):
@@ -494,7 +494,7 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
 
         def repair_fn(bad_sql: str, err: str):
             try:
-                from aughor.sql.writer import SqlWriter
+                from pramanyx.sql.writer import SqlWriter
                 fixed = SqlWriter(conn, schema_str=schema).fix(bad_sql, err, max_retries=1)
                 return fixed.sql if fixed.ok and fixed.sql else None
             except Exception:
@@ -506,8 +506,8 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
             # zero-row diagnosis + live filter-domain warnings to the typed fixer; the
             # closed loop adopts a rewrite ONLY if it executes AND returns rows.
             try:
-                from aughor.sql.executor import zero_row_suspicious
-                from aughor.sql.join_guard import check_filter_value_domains
+                from pramanyx.sql.executor import zero_row_suspicious
+                from pramanyx.sql.join_guard import check_filter_value_domains
                 diag = zero_row_suspicious(empty_sql) or ""
                 try:
                     fw = check_filter_value_domains(conn, empty_sql)
@@ -518,7 +518,7 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
                 err = ("The query executed but returned 0 rows. "
                        + (diag or "Re-examine the filter literals against the real stored "
                                   "values, the join path, and the date/year column choice."))
-                from aughor.sql.writer import SqlWriter
+                from pramanyx.sql.writer import SqlWriter
                 fixed = SqlWriter(conn, schema_str=schema).fix(empty_sql, err, max_retries=1)
                 return fixed.sql if fixed.ok and fixed.sql else None
             except Exception:
@@ -535,11 +535,11 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
         # retry executes AND lands closer to the expected grain (never go backwards).
         if loop.ok:
             try:
-                from aughor.sql.grain_intent import check_result_grain
+                from pramanyx.sql.grain_intent import check_result_grain
 
                 def _probe_distinct(col: str):
                     try:
-                        from aughor.sql.tables import extract_tables
+                        from pramanyx.sql.tables import extract_tables
                         for ref in extract_tables(loop.sql, "sqlite"):
                             try:
                                 _c, r, _t = conn.raw_execute(
@@ -558,7 +558,7 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
                     _cols_now, _rows_now = [], []
                 _scope_cols: list = []
                 try:
-                    from aughor.sql.tables import extract_tables
+                    from pramanyx.sql.tables import extract_tables
                     for ref in extract_tables(loop.sql, "sqlite"):
                         _c2, info, _ = conn.raw_execute(f'PRAGMA table_info("{ref.table}")')
                         _scope_cols.extend(r[1] for r in info)
@@ -577,14 +577,14 @@ def run_instance(record: dict, outdir: Path, temperature: float, use_ek: bool = 
                                 len(rows2) if isinstance(rows2, list) else -1,
                                 columns_in_scope=_scope_cols,
                                 count_distinct=_probe_distinct) is None:
-                            from aughor.sql.closed_loop import LoopResult
+                            from pramanyx.sql.closed_loop import LoopResult
                             loop = LoopResult(sql=cand.strip(), ok=True,
                                               row_count=len(rows2) if isinstance(rows2, list) else -1,
                                               rounds=loop.rounds + 1,
                                               receipt={**loop.receipt, "grain_repaired": True})
                             step("grain_repaired", rows=loop.row_count)
             except Exception as _exc:
-                from aughor.kernel.errors import tolerate
+                from pramanyx.kernel.errors import tolerate
                 tolerate(_exc, "grain-of-intent check is best-effort; result ships as-is",
                          counter="spider2.grain_intent")
 
@@ -623,7 +623,7 @@ def score(outdir: Path) -> int:
 
 
 def main() -> int:
-    os.environ.setdefault("AUGHOR_FALLBACK_DISABLED", "1")  # pin the model (eval integrity)
+    os.environ.setdefault("PRAMANYX_FALLBACK_DISABLED", "1")  # pin the model (eval integrity)
     ap = argparse.ArgumentParser()
     ap.add_argument("--subset", default="local", choices=["local"])
     ap.add_argument("--ids", default=None, help="comma-separated instance ids")
@@ -661,7 +661,7 @@ def main() -> int:
     if args.limit:
         records = records[: args.limit]
 
-    from aughor.llm.provider import get_provider
+    from pramanyx.llm.provider import get_provider
     p = get_provider("coder")
     print(f"[spider2] {len(records)} instances | model={p._model} backend={p.backend} "
           f"temp={args.temperature} ek={'off' if args.no_ek else 'on'} "

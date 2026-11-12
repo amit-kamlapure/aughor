@@ -3,7 +3,7 @@
 Embeddings were one hardcoded call to a LOCAL Ollama, which made the whole knowledge plane
 a laptop feature: on a deployment without it nothing indexes and every search returns empty.
 The chat path solved this long ago — keys, base URLs, an org overlay — and `grep embed`
-across `aughor/llm/` found nothing at all.
+across `pramanyx/llm/` found nothing at all.
 
 Two properties matter more than the switch itself:
 
@@ -18,14 +18,14 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.knowledge import indexer
-from aughor.semantic import embedder
+from pramanyx.knowledge import indexer
+from pramanyx.semantic import embedder
 
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    monkeypatch.delenv("AUGHOR_EMBED_BACKEND", raising=False)
-    monkeypatch.delenv("AUGHOR_EMBED_MODEL", raising=False)
+    monkeypatch.delenv("PRAMANYX_EMBED_BACKEND", raising=False)
+    monkeypatch.delenv("PRAMANYX_EMBED_MODEL", raising=False)
     embedder._DIM_CACHE.clear()
 
 
@@ -41,11 +41,11 @@ def test_ollama_is_the_default_and_keeps_its_model():
 def test_an_unknown_backend_is_refused_by_name():
     with pytest.raises(embedder.EmbeddingConfigError, match="unknown embedding backend"):
         import os
-        os.environ["AUGHOR_EMBED_BACKEND"] = "wishful"
+        os.environ["PRAMANYX_EMBED_BACKEND"] = "wishful"
         try:
             embedder.embed_backend()
         finally:
-            os.environ.pop("AUGHOR_EMBED_BACKEND", None)
+            os.environ.pop("PRAMANYX_EMBED_BACKEND", None)
 
 
 # ── no hosted backend ships a model id ───────────────────────────────────────────
@@ -53,18 +53,18 @@ def test_an_unknown_backend_is_refused_by_name():
 def test_a_hosted_backend_without_a_configured_model_refuses(monkeypatch):
     """The standing directive, and the chat ladder already obeys it: a shipped id is this
     repo's opinion about another vendor's catalogue, and those go stale silently."""
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "gemini")
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "gemini")
 
     with pytest.raises(embedder.EmbeddingConfigError) as exc:
         embedder.embed_model()
 
-    assert "AUGHOR_EMBED_MODEL" in str(exc.value)
+    assert "PRAMANYX_EMBED_MODEL" in str(exc.value)
     assert "/llm/models" in str(exc.value), "the refusal must name where to find real ids"
 
 
 def test_a_configured_model_is_used_for_any_backend(monkeypatch):
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "gemini")
-    monkeypatch.setenv("AUGHOR_EMBED_MODEL", "models/some-embedding-model")
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "gemini")
+    monkeypatch.setenv("PRAMANYX_EMBED_MODEL", "models/some-embedding-model")
 
     assert embedder.embed_model() == "models/some-embedding-model"
 
@@ -75,7 +75,7 @@ def test_no_gemini_model_id_is_written_anywhere_in_the_package():
     import re
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[2] / "aughor"
+    root = Path(__file__).resolve().parents[2] / "pramanyx"
     pattern = re.compile(r"models/gemini-[\w.-]*embedding|gemini-embedding-\d")
     offenders = [str(p.relative_to(root)) for p in root.rglob("*.py")
                  if pattern.search(p.read_text(errors="ignore"))]
@@ -88,9 +88,9 @@ def test_no_gemini_model_id_is_written_anywhere_in_the_package():
 def test_a_hosted_backend_resolves_its_key_through_the_provider(monkeypatch):
     """One precedence — org overlay, then config, then env — so a key set once in Settings
     works for chat and for embeddings rather than for one of them."""
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "gemini")
-    monkeypatch.setenv("AUGHOR_EMBED_MODEL", "models/some-embedding-model")
-    monkeypatch.setattr("aughor.llm.provider.endpoint_for",
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "gemini")
+    monkeypatch.setenv("PRAMANYX_EMBED_MODEL", "models/some-embedding-model")
+    monkeypatch.setattr("pramanyx.llm.provider.endpoint_for",
                         lambda b: ("https://example.invalid/v1/", "KEY-FROM-LADDER"))
 
     base_url, key = embedder.endpoint()
@@ -99,9 +99,9 @@ def test_a_hosted_backend_resolves_its_key_through_the_provider(monkeypatch):
 
 
 def test_a_hosted_backend_with_no_key_says_so(monkeypatch):
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "gemini")
-    monkeypatch.setenv("AUGHOR_EMBED_MODEL", "models/some-embedding-model")
-    monkeypatch.setattr("aughor.llm.provider.endpoint_for",
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "gemini")
+    monkeypatch.setenv("PRAMANYX_EMBED_MODEL", "models/some-embedding-model")
+    monkeypatch.setattr("pramanyx.llm.provider.endpoint_for",
                         lambda b: ("https://example.invalid/v1/", ""))
 
     with pytest.raises(embedder.EmbeddingConfigError, match="no API key"):
@@ -140,8 +140,8 @@ def test_indexing_refuses_when_the_width_does_not_match_the_index(monkeypatch):
     """The failure this guard exists for: without it, upsert raises a driver error and
     SEARCH returns an empty list, because `search_documents` swallows exceptions. An empty
     knowledge base that is actually a misconfiguration is the worst of the four."""
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 3072)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 3072)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: 768)
 
     with pytest.raises(indexer.EmbeddingDimensionMismatch) as exc:
         indexer._ensure_collection()
@@ -153,9 +153,9 @@ def test_indexing_refuses_when_the_width_does_not_match_the_index(monkeypatch):
 
 def test_a_matching_width_proceeds(monkeypatch):
     ensured = {}
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 768)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: 768)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection",
                         lambda coll, dim=None: ensured.update(coll=coll, dim=dim))
 
     indexer._ensure_collection()
@@ -166,9 +166,9 @@ def test_a_matching_width_proceeds(monkeypatch):
 def test_a_fresh_index_is_created_at_the_active_width(monkeypatch):
     """No existing collection means no constraint — the new corpus defines the width."""
     ensured = {}
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 3072)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: None)
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 3072)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: None)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection",
                         lambda coll, dim=None: ensured.update(dim=dim))
 
     indexer._ensure_collection()

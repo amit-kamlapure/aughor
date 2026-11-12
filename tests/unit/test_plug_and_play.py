@@ -12,7 +12,7 @@ from __future__ import annotations
 
 def test_plugin_manifest_is_populated():
     """After registration the agent's contributions are legible via the manifest."""
-    from aughor.kernel.registries import manifest
+    from pramanyx.kernel.registries import manifest
     m = manifest()
     # enrichment / intelligence / exploration annotators
     assert set(m["schema_annotators"]) >= {"enrichment", "intelligence", "exploration"}
@@ -26,8 +26,8 @@ def test_plugin_manifest_is_populated():
 def test_platform_renders_schema_without_the_agent():
     """With the schema annotators cleared, get_schema() still returns the raw governed
     schema (structure renders), and it is the agent's annotators that add enrichment."""
-    from aughor.db.connection import open_connection_for
-    from aughor.kernel.registries import schema_annotators as sa
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.kernel.registries import schema_annotators as sa
 
     db = open_connection_for("fixture")
     enriched = db.get_schema()                    # agent registered (conftest fixture)
@@ -45,8 +45,8 @@ def test_platform_renders_schema_without_the_agent():
 def test_platform_purge_runs_platform_only_without_the_agent():
     """With the purge hooks cleared, the connection-delete cascade runs only its
     platform-owned steps — never an agent store — and never raises."""
-    from aughor.db import purge
-    from aughor.kernel.registries import purge_hooks as ph
+    from pramanyx.db import purge
+    from pramanyx.kernel.registries import purge_hooks as ph
 
     saved = (list(ph._CONN), list(ph._SCHEMA), list(ph._INV))
     ph.clear()

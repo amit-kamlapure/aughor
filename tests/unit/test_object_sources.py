@@ -19,14 +19,14 @@ from pathlib import Path
 import duckdb
 import pytest
 
-import aughor.connectors.remote_join as RJ
-from aughor.db import registry
-from aughor.db.connection import open_connection_for
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology import store as ST
-from aughor.ontology.business_rules import describe_rule
-from aughor.ontology.domains import (
+import pramanyx.connectors.remote_join as RJ
+from pramanyx.db import registry
+from pramanyx.db.connection import open_connection_for
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import store as ST
+from pramanyx.ontology.business_rules import describe_rule
+from pramanyx.ontology.domains import (
     DomainRefused,
     bind_source,
     declare_entity,
@@ -39,13 +39,13 @@ from aughor.ontology.domains import (
     resolve_domain,
     set_display_property,
 )
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.processes import describe_process
-from aughor.ontology.sources import binding_source, entity_source, link_crosses
-from aughor.semantic import cross_source as XS
-from aughor.semantic.object_instances import ObjectNotFound, get_object, list_linked, titles
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
-from aughor.util.json_store import KeyedJsonStore
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.processes import describe_process
+from pramanyx.ontology.sources import binding_source, entity_source, link_crosses
+from pramanyx.semantic import cross_source as XS
+from pramanyx.semantic.object_instances import ObjectNotFound, get_object, list_linked, titles
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
+from pramanyx.util.json_store import KeyedJsonStore
 
 REPO = Path(__file__).resolve().parents[2]
 CATALOGUE = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -263,7 +263,7 @@ def test_a_type_is_declared_on_its_own_connection_counted_there_and_borrows_its_
 
 
 def test_a_declaration_on_no_connection_an_unknown_one_or_another_organisations_is_refused(sources, tmp_path):
-    from aughor.org.context import reset_org_id, set_org_id
+    from pramanyx.org.context import reset_org_id, set_org_id
     domain = resolve_domain()
     unnamed = typed("Order", "orders", "order_id", sources["shop"])
     unnamed["backing"].pop("connection_id")
@@ -569,8 +569,8 @@ def test_one_table_name_on_two_connections_is_two_tables_and_on_one_is_a_duplica
 
 
 def test_keys_that_cannot_all_be_read_leave_a_claim_unmeasured_and_unread(sources, monkeypatch):
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.ontology import sources as SRC
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.ontology import sources as SRC
 
     class Partial:
         def execute_bounded(self, label, sql, max_rows, sql_dialect=None, internal=False):
@@ -591,8 +591,8 @@ def test_keys_that_cannot_all_be_read_leave_a_claim_unmeasured_and_unread(source
 
 
 def test_the_answer_across_two_connections_passes_every_gate_a_single_statement_passes(both, sources, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.control_plane.contracts.execution import QueryResult
+    import pramanyx.db.connection as C
+    from pramanyx.control_plane.contracts.execution import QueryResult
     across, _ = both
     seen: dict = {"pre": [], "post": []}
     real_pre, real_post = C.security_pre, C.security_post
@@ -611,7 +611,7 @@ def test_the_answer_across_two_connections_passes_every_gate_a_single_statement_
     assert seen["pre"] == [(sources["shop"], "objects"), (sources["crm"], "objects")]
     assert seen["post"] == [(sources["shop"], "objects", len(rows), [sources["crm"]])]
     # the far connection's audit trail records the answer its rows reached, not only the home connection's
-    from aughor.security.audit import AuditLogger
+    from pramanyx.security.audit import AuditLogger
     assert any(r["verdict"] == "safe" for r in AuditLogger.recent(200, connection_id=sources["crm"], label="objects"))
 
     blocked = QueryResult(hypothesis_id="objects", sql="", columns=[], rows=[], row_count=0, error="[BLOCKED] by policy")
@@ -966,7 +966,7 @@ class ReadAsBigQuery:
 
     def door(self, sql: str, sql_dialect) -> str:
         """The door's dialect step, as every native connector applies it before its first gate (GM-1)."""
-        from aughor.db.dialects import sql_for_engine
+        from pramanyx.db.dialects import sql_for_engine
         return sql_for_engine(self, sql, sql_dialect)
 
     @staticmethod
@@ -1084,15 +1084,15 @@ def test_sources_that_run_sql_as_bigquery_reads_it_are_measured_bound_and_read_i
 
 
 def test_every_measurement_probe_reads_a_source_that_runs_sql_as_bigquery_reads_it(segments):
-    from aughor.ontology.backing import measure_key
-    from aughor.ontology.bindings import describe_with, measure_binding
-    from aughor.ontology.cardinality import measure_side
-    from aughor.ontology.declared import _count_side, measure_declared_link
-    from aughor.ontology.display import measure_display
-    from aughor.ontology.lifecycle import observed_states
-    from aughor.ontology.models import Backing, Binding, EntityProperty, OntologyEntity
-    from aughor.ontology.sources import distinct_keys
-    from aughor.semantic.object_instances import _read
+    from pramanyx.ontology.backing import measure_key
+    from pramanyx.ontology.bindings import describe_with, measure_binding
+    from pramanyx.ontology.cardinality import measure_side
+    from pramanyx.ontology.declared import _count_side, measure_declared_link
+    from pramanyx.ontology.display import measure_display
+    from pramanyx.ontology.lifecycle import observed_states
+    from pramanyx.ontology.models import Backing, Binding, EntityProperty, OntologyEntity
+    from pramanyx.ontology.sources import distinct_keys
+    from pramanyx.semantic.object_instances import _read
 
     source = 'ecommerce."customer segments"'
     columns = {"customer id": EntityProperty(name="customer id", data_type="VARCHAR", semantic_type="key"),
@@ -1412,7 +1412,7 @@ def test_no_door_reaches_an_organisations_ontology_by_naming_its_tree_as_a_conne
 
 
 def test_the_explorer_is_refused_an_organisations_ontology_before_any_model_is_asked(client, sources, monkeypatch):
-    import aughor.llm.provider as provider
+    import pramanyx.llm.provider as provider
 
     def no_model(*_args, **_kwargs):
         raise AssertionError("the explorer asked a model about an organisation's ontology")
@@ -1431,8 +1431,8 @@ def test_the_explorer_is_refused_an_organisations_ontology_before_any_model_is_a
 
 
 def test_a_copied_column_profile_keeps_what_was_measured_and_no_words(sources):
-    from aughor.ontology.bindings import PROFILE_COPIED, profile_record, recorded_profiles
-    from aughor.ontology.models import EntityProperty
+    from pramanyx.ontology.bindings import PROFILE_COPIED, profile_record, recorded_profiles
+    from pramanyx.ontology.models import EntityProperty
     domain = resolve_domain()
     declare_entity(domain, typed("Order", "orders", "order_id", sources["shop"]), open_connection_for)
     conn, name = domain.tree
@@ -1513,8 +1513,8 @@ def test_the_declarative_doors_open_on_a_far_type_over_http(client, sources):
 
 
 def test_a_part_binding_must_read_from_the_parts_own_connection():
-    from aughor.ontology.models import Backing, Binding, OntologyEntity, OntologyGraph
-    from aughor.ontology.parts import absorb_problem, part_binding
+    from pramanyx.ontology.models import Backing, Binding, OntologyEntity, OntologyGraph
+    from pramanyx.ontology.parts import absorb_problem, part_binding
     parent = OntologyEntity(id="Order", display_name="Order", source_tables=["orders"], identity_key="order_id",
                             grain_verified=True,
                             backing=Backing(kind="table", table="orders", primary_key="order_id", connection_id="shop"),
@@ -1534,8 +1534,8 @@ def test_a_part_binding_must_read_from_the_parts_own_connection():
 def test_a_formula_on_a_type_read_from_another_connection_is_refused_never_read_as_a_column(both):
     """PENDING item 27 — a formula is minted into its type's properties by name, and a type read by key from another
     connection was read for that name as a column its table would hold. It holds none; the query is refused, with why."""
-    from aughor.ontology.models import ExpressionProperty
-    from aughor.semantic.object_query import ObjectQueryRefused
+    from pramanyx.ontology.models import ExpressionProperty
+    from pramanyx.semantic.object_query import ObjectQueryRefused
     graph = domain_graph(both[0])
     customer = graph.entities["Customer"]
     customer.expressions["spend_band"] = ExpressionProperty(expression="country || '-x'", verified=True)

@@ -17,9 +17,9 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.dashboards import queries as Q
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
+from pramanyx.dashboards import queries as Q
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
 
 CONN = "queries-t"
 SALES = ("SELECT o.order_date, c.country, o.total_amount, o.customer_id, o.status FROM ecommerce.orders o "
@@ -219,7 +219,7 @@ def test_the_tables_a_query_reads_are_its_own_names_its_ctes_left_out():
 
 
 def test_a_query_over_a_table_a_row_policy_narrows_is_refused_while_policies_hold():
-    from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph, RowPolicy
+    from pramanyx.ontology.models import Backing, OntologyEntity, OntologyGraph, RowPolicy
     order = OntologyEntity(id="Order", display_name="Order", source_tables=["ecommerce.orders"], identity_key="id",
                            grain_verified=True,
                            row_policies=[RowPolicy(group="support", conditions=[{"path": "status", "op": "=", "value": "x"}])])
@@ -268,9 +268,9 @@ def test_a_query_that_runs_past_its_time_is_stopped_and_says_so():
 
 @pytest.fixture
 def client(db, monkeypatch):
-    from aughor.api import app
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
-    monkeypatch.setattr("aughor.dashboards.pieces.served_graph", lambda conn: None)
+    from pramanyx.api import app
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.dashboards.pieces.served_graph", lambda conn: None)
     return TestClient(app)
 
 
@@ -288,7 +288,7 @@ def test_a_preview_says_the_columns_the_first_rows_and_the_card_as_shown(client)
 
 
 def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(client):
-    from aughor.cards.store import list_cards
+    from pramanyx.cards.store import list_cards
     conn = f"q{uuid.uuid4().hex[:6]}"
     r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": "DELETE FROM ecommerce.orders"})
     assert r.status_code == 422 and r.json()["detail"]["refused"]
@@ -300,7 +300,7 @@ def test_what_cannot_run_or_be_shown_is_refused_in_words_and_nothing_is_kept(cli
 
 
 def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(client):
-    from aughor.cards.store import get_card
+    from pramanyx.cards.store import get_card
     conn = f"q{uuid.uuid4().hex[:6]}"
     shown = {"as": "bar", "x": "order_date", "bucket": "month", "series": [{"column": "total_amount", "agg": "sum"}]}
     r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown,
@@ -321,8 +321,8 @@ def test_a_kept_query_is_a_card_of_the_person_s_own_and_a_change_supersedes_it(c
 
 
 def test_a_change_to_a_card_that_is_not_the_person_s_own_is_refused(client):
-    from aughor.cards.models import StoredCard
-    from aughor.cards.store import upsert_card
+    from pramanyx.cards.models import StoredCard
+    from pramanyx.cards.store import upsert_card
     conn = f"q{uuid.uuid4().hex[:6]}"
     theirs = upsert_card(StoredCard(connection_id=conn, scope="connection", scope_ref=conn, title="Pinned", sql="SELECT 1"))
     r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "replaces": theirs.id})
@@ -330,15 +330,15 @@ def test_a_change_to_a_card_that_is_not_the_person_s_own_is_refused(client):
 
 
 def test_writing_sql_on_a_cockpit_follows_the_sql_editor_s_rule():
-    from aughor.rbac.permissions import Permission as P
-    from aughor.rbac.policy import required_permission
+    from pramanyx.rbac.permissions import Permission as P
+    from pramanyx.rbac.policy import required_permission
     assert required_permission("POST", "/query/run") == P.ANALYSIS_RUN
     for path in ("/dashboards/queries", "/dashboards/queries/preview"):
         assert required_permission("POST", path) == P.ANALYSIS_RUN
 
 
 def _policed():
-    from aughor.ontology.models import OntologyEntity, OntologyGraph, RowPolicy
+    from pramanyx.ontology.models import OntologyEntity, OntologyGraph, RowPolicy
     graph = OntologyGraph(connection_id=CONN, schema_name="ecommerce", schema_fingerprint="fp")
     graph.entities = {"Order": OntologyEntity(id="Order", display_name="Order", source_tables=["orders"], identity_key="order_id",
                                               grain_verified=True, row_policies=[RowPolicy(group="support", conditions=[])])}
@@ -349,7 +349,7 @@ def test_the_door_keeps_no_query_over_a_table_a_row_policy_narrows_and_a_kept_on
     conn = f"q{uuid.uuid4().hex[:6]}"
     shown = {"as": "figure", "series": [{"column": "total_amount", "agg": "sum"}]}
     kept = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown}).json()["card"]
-    monkeypatch.setattr("aughor.dashboards.pieces.served_graph", lambda c: _policed())
+    monkeypatch.setattr("pramanyx.dashboards.pieces.served_graph", lambda c: _policed())
     r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": SALES, "shown": shown})
     assert r.status_code == 422 and "Order has a row policy" in r.json()["detail"]["refused"][0]
     run = client.post(f"/cards/{kept['id']}/run").json()

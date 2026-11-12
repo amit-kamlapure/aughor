@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.report_checks import check_currency, run_report_checks
+from pramanyx.agent.report_checks import check_currency, run_report_checks
 
 EVIDENCE_NO_CURRENCY = ("=== Baseline ===\nSQL: SELECT month, SUM(sale_price) AS revenue FROM order_items\n"
                         "month | revenue\n2026-07 | 336383\n2026-08 | 385389")

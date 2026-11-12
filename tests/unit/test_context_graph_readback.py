@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology import context_graph_search as search_mod
-from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
-from aughor.ontology.context_graph_search import (
+from pramanyx.ontology import context_graph_search as search_mod
+from pramanyx.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+from pramanyx.ontology.context_graph_search import (
     lexical_search,
     merge_graphs,
     one_hop,
@@ -85,13 +85,13 @@ def test_search_graph_returns_ranked_without_vector():
 
 def test_readback_empty_when_flag_off():
     """Byte-identical: default off ⇒ empty string, no citations."""
-    from aughor.ontology.context_graph_readback import build_graph_prior
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
     p = build_graph_prior("which orders never reach a terminal state", "c", org_id="o")
     assert p.section == "" and p.cited_node_ids == []
 
 
 def _save(cg, monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(cg)
 
@@ -99,7 +99,7 @@ def _save(cg, monkeypatch, tmp_path):
 def test_readback_surfaces_the_unread_finding(monkeypatch, tmp_path):
     """The point of Wave C: a finding that was write-only now reaches the plan, cited."""
     _save(_graph(), monkeypatch, tmp_path)
-    from aughor.ontology.context_graph_readback import build_graph_prior, last_cited_nodes
+    from pramanyx.ontology.context_graph_readback import build_graph_prior, last_cited_nodes
 
     p = build_graph_prior("which orders never reach a terminal state", "c", org_id="o")
     assert p.fired
@@ -114,9 +114,9 @@ def test_readback_surfaces_the_unread_finding(monkeypatch, tmp_path):
 
 
 def test_readback_empty_when_no_graph_built(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    from aughor.ontology.context_graph_readback import build_graph_prior
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
     assert build_graph_prior("anything", "no-such-conn", org_id="o").section == ""
 
 
@@ -126,7 +126,7 @@ def test_build_corrections_section_appends_graph_block(monkeypatch, tmp_path):
     """The graph block reaches both live paths via build_corrections_section, and is
     independent of the corrections loop (fires with nothing else stored)."""
     _save(_graph(), monkeypatch, tmp_path)
-    from aughor.feedback.priors import build_corrections_section
+    from pramanyx.feedback.priors import build_corrections_section
     section = build_corrections_section("which orders never reach a terminal state", "c", org_id="o")
     assert "CONNECTION GRAPH" in section
     assert "32% of orders never reach a terminal state" in section
@@ -135,9 +135,9 @@ def test_build_corrections_section_appends_graph_block(monkeypatch, tmp_path):
 def test_build_corrections_section_empty_when_nothing_is_stored(monkeypatch, tmp_path):
     """Both loops are always on (flag endgame Wave 5); zero-cost now means DATA-gated:
     no graph, no ledger rows, no corrections ⇒ empty string, not a flag check."""
-    monkeypatch.setattr("aughor.ontology.context_graph_store.load_graph",
+    monkeypatch.setattr("pramanyx.ontology.context_graph_store.load_graph",
                         lambda *a, **k: None)
-    from aughor.feedback.priors import build_corrections_section
+    from pramanyx.feedback.priors import build_corrections_section
     assert build_corrections_section("which orders never reach a terminal state",
                                      "conn-with-nothing-stored", org_id="o") == ""
 
@@ -145,15 +145,15 @@ def test_build_corrections_section_empty_when_nothing_is_stored(monkeypatch, tmp
 def test_a_finding_over_a_withheld_table_never_reaches_the_prompt(monkeypatch, tmp_path):
     """The read-back swept the finding's edge and kept the finding: its text reached the prompt beside a notice that
     said the table was withheld. A node over a withheld table is withheld with it, and counted."""
-    from aughor.govern import tags as T
-    from aughor.govern.tags import ClearanceDecision, Requirement
+    from pramanyx.govern import tags as T
+    from pramanyx.govern.tags import ClearanceDecision, Requirement
 
     req = Requirement(key="tier", value="restricted", clearance="clearance.restricted")
     monkeypatch.setattr(T, "check", lambda s, held, bypass=False: (
         ClearanceDecision(securable=s, allowed=False, requirements=[req], missing=[req]) if s.endswith(".orders")
         else ClearanceDecision(securable=s, allowed=True)))
     _save(_graph(), monkeypatch, tmp_path)
-    from aughor.ontology.context_graph_readback import build_graph_prior
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
 
     p = build_graph_prior("which orders never reach a terminal state", "c", org_id="o")
     assert "32% of orders never reach a terminal state" not in p.section

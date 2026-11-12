@@ -1,11 +1,11 @@
-"""The optional AUGHOR_API_KEY front-door gate (AUDIT_2026-06-27.md #10).
+"""The optional PRAMANYX_API_KEY front-door gate (AUDIT_2026-06-27.md #10).
 OFF by default (no token needed); when set, every non-exempt request must carry
 X-Api-Key. /health stays open for liveness probes."""
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-import aughor.api as api
+import pramanyx.api as api
 
 client = TestClient(api.app)
 

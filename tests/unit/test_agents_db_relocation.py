@@ -11,11 +11,11 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from aughor.custom_agents import store
+from pramanyx.custom_agents import store
 
 
 def _connect_at(monkeypatch, path: Path) -> sqlite3.Connection:
-    monkeypatch.setenv("AUGHOR_AGENTS_DB", str(path))
+    monkeypatch.setenv("PRAMANYX_AGENTS_DB", str(path))
     return store._connect()
 
 
@@ -53,7 +53,7 @@ def test_migration_is_idempotent_on_a_preexisting_columns_db(tmp_path, monkeypat
 
 
 def test_crud_roundtrip_on_migrated_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_AGENTS_DB", str(tmp_path / "crud.db"))
+    monkeypatch.setenv("PRAMANYX_AGENTS_DB", str(tmp_path / "crud.db"))
     a = store.create_agent("Reloc Test", instructions="x", schema_scope="public")
     got = store.get_agent(a.id)
     assert got is not None and got.name == "Reloc Test" and got.schema_scope == "public"
@@ -76,7 +76,7 @@ def test_legacy_root_db_is_relocated_preserving_agents(tmp_path, monkeypatch):
 
     target = tmp_path / "data" / "agents.db"
     # Simulate the real default-path context: no env override, CWD holds the legacy file.
-    monkeypatch.delenv("AUGHOR_AGENTS_DB", raising=False)
+    monkeypatch.delenv("PRAMANYX_AGENTS_DB", raising=False)
     monkeypatch.chdir(tmp_path)                       # so Path("agents.db") == the legacy file
     monkeypatch.setattr(store, "_legacy_checked", False)
 
@@ -92,11 +92,11 @@ def test_legacy_root_db_is_relocated_preserving_agents(tmp_path, monkeypatch):
 
 
 def test_relocation_is_skipped_when_env_override_is_set(tmp_path, monkeypatch):
-    # With AUGHOR_AGENTS_DB set (tests / on-prem), the shim must never read a repo-root file.
+    # With PRAMANYX_AGENTS_DB set (tests / on-prem), the shim must never read a repo-root file.
     legacy = tmp_path / "agents.db"
     sqlite3.connect(str(legacy)).close()             # a legacy file exists...
     target = tmp_path / "data" / "agents.db"
-    monkeypatch.setenv("AUGHOR_AGENTS_DB", str(target))   # ...but an override is set
+    monkeypatch.setenv("PRAMANYX_AGENTS_DB", str(target))   # ...but an override is set
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(store, "_legacy_checked", False)
 

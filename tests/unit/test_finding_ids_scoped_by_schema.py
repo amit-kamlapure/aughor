@@ -12,10 +12,10 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from aughor.explorer import dossier, store
-from aughor.explorer.dossier import receipt_key as K
-from aughor.explorer.agent import SchemaExplorer
-from aughor.kernel.ledger import Ledger
+from pramanyx.explorer import dossier, store
+from pramanyx.explorer.dossier import receipt_key as K
+from pramanyx.explorer.agent import SchemaExplorer
+from pramanyx.kernel.ledger import Ledger
 
 
 def _f(fid: str, words: str, sql: str) -> dict:
@@ -111,7 +111,7 @@ def test_a_pinned_answer_reading_another_schema_is_not_reproduced(monkeypatch):
                                           "SELECT 12 FROM gold_finance.etl_load_log")
     ex._order_keys_projected = lambda sql: False
     ex._emit_insight = lambda *a, **k: emitted.append(a)
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: None)
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: None)
     profile = SimpleNamespace(key_questions=["How many loads failed?"], key_question_sql=[])
     wrote: list = []
 
@@ -124,7 +124,7 @@ def test_a_pinned_answer_reading_another_schema_is_not_reproduced(monkeypatch):
 
 
 def test_removing_a_schema_takes_its_findings_receipts_and_leaves_its_siblings():
-    from aughor.db import purge
+    from pramanyx.db import purge
     led = Ledger.default()
     led.artifact_write("finding", K("lux3", "gold_finance:pinned__0"), {"f": 1}, conn_id="lux3")
     led.artifact_write("finding", K("lux3", "gold_finance:synth__share__1"), {"f": 2}, conn_id="lux3")
@@ -141,7 +141,7 @@ def test_removing_a_schema_takes_its_findings_receipts_and_leaves_its_siblings()
 def test_every_id_the_explorer_mints_goes_through_the_schema():
     import inspect
     import re
-    from aughor.explorer import agent
+    from pramanyx.explorer import agent
     src = inspect.getsource(agent)
     minted = re.findall(r"fresh_finding_id\(self\._state,\s*([^\n]+)", src)
     assert len(minted) >= 2 and all(m.startswith("self._finding_id(") for m in minted), minted

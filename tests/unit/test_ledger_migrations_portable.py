@@ -1,7 +1,7 @@
 """The ledger's migrations must run on BOTH backends — not just the one CI happens to use.
 
 Migration 10 shipped with a back-fill written in `json_extract` / `json_valid`, which are
-SQLite built-ins with no Postgres counterpart. `AUGHOR_DB_URL` moves this store onto shared
+SQLite built-ins with no Postgres counterpart. `PRAMANYX_DB_URL` moves this store onto shared
 Postgres, and that is what the deployment runs, so on the database that matters the
 statement raised, `run_migrations` re-raised, and — because migrations run inside
 `Ledger.__init__` — the store could not be CONSTRUCTED. Every path that needs a ledger was
@@ -28,10 +28,10 @@ import sqlite3
 
 import pytest
 
-from aughor.db import backend as B
-from aughor.kernel.ledger import _MIGRATIONS, _SCHEMA, Ledger, _add_session_event_attribution
+from pramanyx.db import backend as B
+from pramanyx.kernel.ledger import _MIGRATIONS, _SCHEMA, Ledger, _add_session_event_attribution
 
-PG_URL = os.environ.get("AUGHOR_PG_TEST_URL", "postgres://postgres:aughor@localhost:5544/aughor")
+PG_URL = os.environ.get("PRAMANYX_PG_TEST_URL", "postgres://postgres:pramanyx@localhost:5544/pramanyx")
 
 
 def _pg_available() -> bool:
@@ -144,7 +144,7 @@ def test_no_migration_uses_a_sqlite_only_json_function(tmp_path):
     conn.executescript(_SCHEMA)
     rec = _Recorder(conn)
 
-    from aughor.db.migrations import run_migrations
+    from pramanyx.db.migrations import run_migrations
     run_migrations(rec, _MIGRATIONS, store="test")
     _seed(conn)
     _add_session_event_attribution(rec)
@@ -155,13 +155,13 @@ def test_no_migration_uses_a_sqlite_only_json_function(tmp_path):
     offenders = [fn for fn in SQLITE_ONLY_JSON if f"{fn}(" in issued]
     assert not offenders, (
         f"migration SQL uses SQLite-only JSON built-ins {offenders}; this store also runs "
-        f"on Postgres via AUGHOR_DB_URL, where they raise inside Ledger.__init__")
+        f"on Postgres via PRAMANYX_DB_URL, where they raise inside Ledger.__init__")
 
 
 def test_the_backfill_answers_the_documented_truth_table(tmp_path):
     conn = sqlite3.connect(tmp_path / "sqlite.db")
     conn.executescript(_SCHEMA)
-    from aughor.db.migrations import run_migrations
+    from pramanyx.db.migrations import run_migrations
     run_migrations(conn, _MIGRATIONS, store="test")
     _seed(conn)
 
@@ -174,7 +174,7 @@ def test_the_backfill_never_overwrites_a_value_already_set(tmp_path):
     """Re-running must be additive. `role` set by the write path outranks the payload."""
     conn = sqlite3.connect(tmp_path / "keep.db")
     conn.executescript(_SCHEMA)
-    from aughor.db.migrations import run_migrations
+    from pramanyx.db.migrations import run_migrations
     run_migrations(conn, _MIGRATIONS, store="test")
     conn.execute("INSERT INTO session_events (at, trace_id, kind, payload, role, fallback) "
                  "VALUES (?,?,?,?,?,?)",
@@ -205,7 +205,7 @@ def test_the_backfill_gives_the_same_answer_on_both_backends(tmp_path, monkeypat
     """One migration, one answer. Same seed rows, two dialects, compared row for row."""
     lite = sqlite3.connect(tmp_path / "lite.db")
     lite.executescript(_SCHEMA)
-    from aughor.db.migrations import run_migrations
+    from pramanyx.db.migrations import run_migrations
     run_migrations(lite, _MIGRATIONS, store="test")
     _seed(lite)
     _add_session_event_attribution(lite)

@@ -1,6 +1,6 @@
-"""Track B3 — every piece of the platform's state has a class (`aughor/db/state_classes.py`).
+"""Track B3 — every piece of the platform's state has a class (`pramanyx/db/state_classes.py`).
 
-The population is FOUND, never listed by the same hand as the table: every string constant in `aughor/` that ends in
+The population is FOUND, never listed by the same hand as the table: every string constant in `pramanyx/` that ends in
 a store's file name (`"system.db"`, `"data/evals.db"`, `Path(...) / "data" / "rbac.db"`). A hand-kept list would pass
 the day a store is added without a class; this one fails on it.
 """
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from aughor.db import backups
-from aughor.db import state_classes as sc
-from aughor.doctor import OK, WARN, _state_classes
+from pramanyx.db import backups
+from pramanyx.db import state_classes as sc
+from pramanyx.doctor import OK, WARN, _state_classes
 
 REPO = Path(__file__).resolve().parents[2]
 _STORE_RX = re.compile(r"^[\w./-]*?([a-z0-9_]+\.db)$")
@@ -23,7 +23,7 @@ _STORE_RX = re.compile(r"^[\w./-]*?([a-z0-9_]+\.db)$")
 def _constants() -> list[tuple[str, str]]:
     """(value, file) for every string constant in the platform's code."""
     out = []
-    for p in (REPO / "aughor").rglob("*.py"):
+    for p in (REPO / "pramanyx").rglob("*.py"):
         if p.name == "state_classes.py":
             continue
         try:
@@ -55,8 +55,8 @@ def test_the_scan_reaches_the_stores(stores_in_code):
 
 def test_every_store_the_code_names_has_a_class(stores_in_code):
     missing = {name: where for name, where in stores_in_code.items() if sc.classify(name) is None}
-    assert not missing, ("a store with no class — add it to aughor/db/state_classes.py with its class and owner, "
-                         f"then `python -m aughor.db.state_classes > docs/STATE_CLASSES.md`: {missing}")
+    assert not missing, ("a store with no class — add it to pramanyx/db/state_classes.py with its class and owner, "
+                         f"then `python -m pramanyx.db.state_classes > docs/STATE_CLASSES.md`: {missing}")
     behind = {name: where for name, where in stores_in_code.items() if sc.classify(name).cls == sc.LEFT_BEHIND}
     assert not behind, f"classified as left behind, yet the code names it: {behind}"
 
@@ -78,7 +78,7 @@ def test_every_entry_names_the_module_that_writes_it():
     """An owner is a file, and that file names what it owns — so a moved or renamed store makes this fail."""
     wrong = []
     for e in sc.ENTRIES:
-        if e.cls == sc.LEFT_BEHIND or not e.owner.startswith(("aughor/", "scripts/")):
+        if e.cls == sc.LEFT_BEHIND or not e.owner.startswith(("pramanyx/", "scripts/")):
             continue
         owner = REPO / e.owner
         if not owner.is_file():
@@ -91,7 +91,7 @@ def test_every_entry_names_the_module_that_writes_it():
 
 def test_the_doc_is_rendered_from_the_table():
     doc = (REPO / "docs/STATE_CLASSES.md").read_text()
-    assert doc == sc.render_markdown(), "regenerate: python -m aughor.db.state_classes > docs/STATE_CLASSES.md"
+    assert doc == sc.render_markdown(), "regenerate: python -m pramanyx.db.state_classes > docs/STATE_CLASSES.md"
 
 
 def test_it_agrees_with_what_backups_never_copy_or_restore():

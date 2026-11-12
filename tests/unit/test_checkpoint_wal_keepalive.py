@@ -10,7 +10,7 @@ five crashes across two days — 08-22 23:57, 08-23 00:58, 09:25, 18:21, 18:31 �
 identical, all `EXC_BAD_ACCESS / SIGBUS · "FS pagein error: 22"`, all faulting in
 `walFindFrame`, with the fault address inside a 32 KB mapped-file region (a `-shm`).
 
-`aughor/agent/graph.py` says why, in its own comment: the checkpointer is "deliberately
+`pramanyx/agent/graph.py` says why, in its own comment: the checkpointer is "deliberately
 NOT on the connect_store seam" because LangGraph's `SqliteSaver` speaks to the connection
 directly and wrapping it is unproven. That reasoning is sound and is not what these tests
 change. What it missed is that opting out of the SEAM also opted out of the KEEPALIVE —
@@ -54,8 +54,8 @@ def checkpoints(tmp_path, monkeypatch):
     the non-hermetic store access this repo has lost data to twice.
     """
     db = tmp_path / "checkpoints.db"
-    monkeypatch.setenv("AUGHOR_CHECKPOINTS_DB", str(db))
-    from aughor.agent import graph as g
+    monkeypatch.setenv("PRAMANYX_CHECKPOINTS_DB", str(db))
+    from pramanyx.agent import graph as g
     importlib.reload(g)
     # One read to create the file and its WAL; SqliteSaver sets up its schema lazily.
     g.read_checkpoint_values("seed-run")
@@ -63,7 +63,7 @@ def checkpoints(tmp_path, monkeypatch):
 
 
 def _diag(db: Path) -> str:
-    from aughor.db import backend
+    from pramanyx.db import backend
     return (f"registry={len(backend._KEEPALIVE)}/{backend._KEEPALIVE_MAX} "
             f"held={str(db) in backend._KEEPALIVE}")
 
@@ -131,7 +131,7 @@ def test_the_checkpoint_wal_holds_under_concurrent_readers(checkpoints):
 def test_the_checkpoint_store_is_actually_registered(checkpoints):
     """Named separately from the invariant tests so a failure says WHY rather than only
     that an inode moved."""
-    from aughor.db import backend
+    from pramanyx.db import backend
     _g, db = checkpoints
     assert str(db) in backend._KEEPALIVE, (
         "the checkpoint store holds no keepalive. It is off the `connect_store` seam by "
@@ -141,41 +141,41 @@ def test_the_checkpoint_store_is_actually_registered(checkpoints):
 
 # ── the coverage ratchet ────────────────────────────────────────────────────────
 
-#: Every bare `sqlite3.connect(` in `aughor/` must be accounted for. A store that opens
+#: Every bare `sqlite3.connect(` in `pramanyx/` must be accounted for. A store that opens
 #: its own connection is fine; a store that opens its own connection AND holds no
 #: keepalive is the defect this file exists for, and it is invisible until the API dies
 #: with no traceback. Adding a file here means deciding which of the two it is.
 _SEAM_EXEMPT = {
     # Holds its own keepalive explicitly — see the call in `_checkpointer`.
-    "aughor/agent/graph.py",
+    "pramanyx/agent/graph.py",
     # A USER's own SQLite file opened as a data source, not a platform store: its
     # lifetime is the connector's and it is never written by two of our threads.
-    "aughor/connectors/file/sqlite.py",
+    "pramanyx/connectors/file/sqlite.py",
     # One-shot read of a legacy file during migration; the process is not serving.
-    "aughor/custom_agents/store.py",
+    "pramanyx/custom_agents/store.py",
     # The seam itself, and the tuning helper's docstring example.
-    "aughor/db/backend.py",
-    "aughor/db/sqlite_util.py",
+    "pramanyx/db/backend.py",
+    "pramanyx/db/sqlite_util.py",
     # IN-4's one-time state migration. Same shape as `custom_agents/store.py` above: it runs
     # with the API STOPPED (it refuses otherwise, naming the serving pid), reads the source
     # read-only and writes each destination exactly once. A WAL keepalive here would be the
     # opposite of what is wanted — it would hold handles open on the very files being copied.
-    "aughor/db/migrate.py",
+    "pramanyx/db/migrate.py",
     # Arc SV-1's copy before a migration: it opens a file it has just created to receive the
     # backup, and then the copy read-only to check it — each once, closed at once. Neither is
     # a store; a keepalive would hold a handle on a file nothing else ever opens.
-    "aughor/db/migrations.py",
+    "pramanyx/db/migrations.py",
     # Arc SV-2's rolling backups. Inside the serving API it opens each store READ-ONLY, once, for one backup, in the
     # same process whose keepalive already holds the store's WAL — a read-only close never checkpoints or unlinks it
     # (measured: the fingerprint of the file and its `-wal` is unchanged after one). It never registers a keepalive
     # itself: `hold_wal_open` sets WAL mode, which is a write, and a backup writes nothing into what it copies. Its
-    # other connections are to files it has just made (the copy, a staged restore), and `aughor restore` runs only
+    # other connections are to files it has just made (the copy, a staged restore), and `pramanyx restore` runs only
     # with the API stopped.
-    "aughor/db/backups.py",
+    "pramanyx/db/backups.py",
     # `residue_of` (idea 1): after a delete it opens every SQLite file under the data dir
     # READ-ONLY (`mode=ro`), once, to look for the deleted id. It writes nothing and holds
     # nothing; a keepalive would only pin files that belong to other stores.
-    "aughor/db/purge.py",
+    "pramanyx/db/purge.py",
 }
 
 
@@ -186,7 +186,7 @@ def test_no_store_opens_sqlite_without_being_accounted_for():
     kept crashing the API for a further two days, because nothing anywhere asserted that
     opting out of the seam was a decision somebody made rather than a thing that happened.
     """
-    root = Path(__file__).resolve().parents[2] / "aughor"
+    root = Path(__file__).resolve().parents[2] / "pramanyx"
     offenders = []
     for path in sorted(root.rglob("*.py")):
         rel = path.relative_to(root.parent).as_posix()

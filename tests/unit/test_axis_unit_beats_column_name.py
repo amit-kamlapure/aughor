@@ -24,7 +24,7 @@ from pathlib import Path as _Path
 
 import pytest
 
-_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_BUNDLE = _Path(__file__).resolve().parents[2] / "pramanyx" / "export" / "chart_ssr.bundle.mjs"
 _ssr = pytest.mark.skipif(not _shutil.which("node") or not _BUNDLE.exists(),
                           reason="chart SSR needs node + chart_ssr.bundle.mjs")
 
@@ -33,7 +33,7 @@ ROWS = [["Intimates", 36294], ["Jeans", 34602], ["Dresses", 14568]]
 
 
 def _svg(units=None, symbol="$"):
-    from aughor.export.echarts import render_chart_svg
+    from pramanyx.export.echarts import render_chart_svg
     return render_chart_svg(COLS, ROWS, "bar", "COGS by Product Category",
                             units=units, money_symbol=symbol) or ""
 
@@ -79,7 +79,7 @@ def test_the_axis_title_keeps_COGS_as_an_acronym():
 
 def _x_labels(col: str, dates: list[str]) -> list[str]:
     import re
-    from aughor.export.echarts import render_chart_svg
+    from pramanyx.export.echarts import render_chart_svg
     svg = render_chart_svg([col, "n"], [[d, 1300] for d in dates], "line", "t") or ""
     return re.findall(r'>([A-Z][a-z]{2} \d{1,4}|\d{4})<', svg)
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import date
 
-from aughor.briefing import ranges
+from pramanyx.briefing import ranges
 
 
 @contextmanager
@@ -32,7 +32,7 @@ def test_the_cockpit_door_says_the_data_could_not_be_reached_and_names_no_metric
 
 
 def test_the_narrator_and_the_sent_edition_say_it_of_the_data():
-    from aughor.knowledge.period_brief import period_note
+    from pramanyx.knowledge.period_brief import period_note
 
     block = {**ranges.range_block(_spec()), "unreachable": "the connection could not be opened (OperationalError)"}
     note = period_note(block, today=date(2026, 10, 23))

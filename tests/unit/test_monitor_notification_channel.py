@@ -21,17 +21,17 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.monitors.notify as notify
-import aughor.monitors.store as store
-from aughor.monitors.models import Monitor, MonitorAlert
-from aughor.notifications.models import ActionLog, ActionPayload, ActionTrigger
+import pramanyx.monitors.notify as notify
+import pramanyx.monitors.store as store
+from pramanyx.monitors.models import Monitor, MonitorAlert
+from pramanyx.notifications.models import ActionLog, ActionPayload, ActionTrigger
 
 
 @pytest.fixture()
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "monitors.db")
     store._init_schema()
-    monkeypatch.delenv("AUGHOR_WEB_URL", raising=False)
+    monkeypatch.delenv("PRAMANYX_WEB_URL", raising=False)
 
 
 @pytest.fixture()
@@ -48,7 +48,7 @@ def sent(monkeypatch):
             http_status=200, error=None, fired_at="2026-08-14T00:00:00Z",
         )
 
-    import aughor.notifications.executor as executor
+    import pramanyx.notifications.executor as executor
     monkeypatch.setattr(executor, "fire_action", _fake_fire)
     return calls
 
@@ -89,10 +89,10 @@ def test_empty_channel_is_treated_as_in_app(isolated, sent):
 # ── 2. a configured channel actually delivers ─────────────────────────────────
 
 def test_trigger_channel_delivers_with_routable_facts(isolated, sent, monkeypatch):
-    monkeypatch.setenv("AUGHOR_WEB_URL", "https://aughor.example.com")
+    monkeypatch.setenv("PRAMANYX_WEB_URL", "https://pramanyx.example.com")
     trigger = ActionTrigger(id="trg-n8n", name="n8n", type="webhook",
                             url="https://n8n.example.com/webhook/abc")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger",
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger",
                         lambda tid: trigger if tid == "trg-n8n" else None)
 
     alert = _alert(_monitor("trg-n8n"))
@@ -108,17 +108,17 @@ def test_trigger_channel_delivers_with_routable_facts(isolated, sent, monkeypatc
     assert ctx["current_value"] == 8.5 and ctx["threshold"] == 10.0
     assert ctx["conn_id"] == "conn-demo"
     assert ctx["monitor_name"] == "EMEA margin"
-    assert ctx["deep_link"] == "https://aughor.example.com/?tab=monitors&conn=conn-demo"
+    assert ctx["deep_link"] == "https://pramanyx.example.com/?tab=monitors&conn=conn-demo"
     # The prose carries the comparison, not just the bare number — a reader cannot
     # tell whether 8.5 is bad without the threshold beside it.
     assert "8.5" in payload.recommendation and "10" in payload.recommendation
 
 
 def test_deep_link_omitted_rather_than_guessed(isolated, sent, monkeypatch):
-    """Without AUGHOR_WEB_URL the API cannot know its own public origin. A Slack
+    """Without PRAMANYX_WEB_URL the API cannot know its own public origin. A Slack
     message linking to localhost is worse than one with no link."""
     trigger = ActionTrigger(id="t1", name="hook", type="webhook", url="https://x.example.com/h")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: trigger)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: trigger)
     store.append_alert(_alert(_monitor("t1")))
     assert sent[0][1].context["deep_link"] == ""
 
@@ -138,7 +138,7 @@ def test_duplicate_alert_does_not_resend(isolated, sent, monkeypatch):
     """`INSERT OR IGNORE` made a duplicate a no-op row-wise while the fan-out below it
     still ran. Harmless for an event emit; a re-sent webhook is not."""
     trigger = ActionTrigger(id="t1", name="hook", type="webhook", url="https://x.example.com/h")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: trigger)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: trigger)
     alert = _alert(_monitor("t1"))
     store.append_alert(alert)
     store.append_alert(alert)          # same id — a retry, not a new alert
@@ -149,7 +149,7 @@ def test_delivery_key_is_stable_for_one_alert(isolated, sent, monkeypatch):
     """The inner HTTP retry (twice, on a 15s timeout) must be distinguishable from a
     new alert by the receiver. A fresh timestamp cannot do that; the alert id can."""
     trigger = ActionTrigger(id="t1", name="hook", type="webhook", url="https://x.example.com/h")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: trigger)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: trigger)
     alert = _alert(_monitor("t1"))
     store.append_alert(alert)
     assert sent[0][1].delivery_key == f"monitor-alert:{alert.id}"
@@ -158,7 +158,7 @@ def test_delivery_key_is_stable_for_one_alert(isolated, sent, monkeypatch):
 # ── 4. delivery never costs the alert ─────────────────────────────────────────
 
 def test_unknown_trigger_still_persists_the_alert(isolated, sent, monkeypatch, caplog):
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: None)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: None)
     alert = _alert(_monitor("deleted-trigger"))
     store.append_alert(alert)
     assert [a.id for a in store.get_alerts()] == [alert.id]
@@ -171,7 +171,7 @@ def test_dispatch_failure_never_raises(isolated, monkeypatch):
     monitor that failed to fire."""
     def _boom(_tid):
         raise RuntimeError("action store unreachable")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", _boom)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", _boom)
     alert = _alert(_monitor("t1"))
     store.append_alert(alert)          # must not raise
     assert [a.id for a in store.get_alerts()] == [alert.id]
@@ -191,7 +191,7 @@ def test_dispatch_alert_is_a_noop_for_an_unresolvable_monitor(isolated, sent):
 def test_slack_renders_an_alert_as_an_alert(isolated):
     """Reusing the recommendation template would headline a critical alert with
     'Pramanyx recommendation:' and bury the severity."""
-    from aughor.notifications.executor import _build_slack_payload
+    from pramanyx.notifications.executor import _build_slack_payload
     trigger = ActionTrigger(id="t1", name="slack", type="slack",
                             url="https://hooks.slack.com/x", channel="#ops")
     alert = MonitorAlert(monitor_id="m1", monitor_name="EMEA margin", conn_id="conn-demo",
@@ -211,7 +211,7 @@ def test_slack_renders_an_alert_as_an_alert(isolated):
 
 def test_slack_recommendation_rendering_is_unchanged():
     """The pre-existing path must not shift — the same trigger serves both."""
-    from aughor.notifications.executor import _build_slack_payload
+    from pramanyx.notifications.executor import _build_slack_payload
     trigger = ActionTrigger(id="t1", name="slack", type="slack",
                             url="https://hooks.slack.com/x", channel="#ops")
     payload = ActionPayload(investigation_id="inv-12345678", rec_index=0,

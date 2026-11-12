@@ -11,10 +11,10 @@ import json
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.action_design import criteria_filters, preview
-from aughor.ontology.models import KineticAction, OntologyGraph
-from aughor.ontology.overrides import find_override
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.action_design import criteria_filters, preview
+from pramanyx.ontology.models import KineticAction, OntologyGraph
+from pramanyx.ontology.overrides import find_override
 from tests.unit.test_object_bindings import GRAPH
 from tests.unit.test_process_design import CONN, SCHEMA, _Kept, db, one  # noqa: F401 — the warehouse, by name
 
@@ -52,7 +52,7 @@ def live(db, monkeypatch):  # noqa: F811
         if not found.rows:
             raise LookupError(f"no {object_type} {key}")
         return {"object_type": object_type, "key": key, "properties": dict(zip(found.columns, found.rows[0]))}
-    monkeypatch.setattr("aughor.semantic.object_instances.object_resolver", lambda scope, schema="": read)
+    monkeypatch.setattr("pramanyx.semantic.object_instances.object_resolver", lambda scope, schema="": read)
     return read
 
 
@@ -114,13 +114,13 @@ def test_a_call_is_shown_filled_and_never_made(db, graph, live):  # noqa: F811
 
 @pytest.fixture
 def served(db, graph, live, monkeypatch):  # noqa: F811
-    from aughor.routers import ontology as ONT
+    from pramanyx.routers import ontology as ONT
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda conn, schema=None: graph)
     monkeypatch.setattr(ONT, "_resolve_schema", lambda conn, schema=None: SCHEMA)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", lambda conn, schema=None: _Kept(db))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", lambda conn, schema=None: _Kept(db))
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -156,7 +156,7 @@ def test_the_preview_door_never_reads_an_id_already_taken_as_new(served, graph):
 
 
 def test_the_declare_door_refuses_a_condition_that_is_not_an_expression(served, monkeypatch):
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
     r = served.put("/ontology/kinetic-actions/escalate_to_carrier", params={"connection_id": CONN},
                    json={**ESCALATE, "submission_criteria": [{"expr": "order.status in [", "message": "m"}]})
     assert r.status_code == 422 and "is not an expression" in r.json()["detail"]
@@ -164,10 +164,10 @@ def test_the_declare_door_refuses_a_condition_that_is_not_an_expression(served, 
 
 
 def test_a_message_and_an_investigation_are_shown_filled_and_neither_is_sent(db, graph, live, monkeypatch):  # noqa: F811
-    from aughor.notifications.models import ActionTrigger
+    from pramanyx.notifications.models import ActionTrigger
     desk = ActionTrigger(id="t-desk", name="Carrier desk", type="slack", url="https://hooks.slack.example/x")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: desk if tid == "t-desk" else None)
-    monkeypatch.setattr("aughor.notifications.executor.fire_action", lambda *a: pytest.fail("a preview sent a message"))
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: desk if tid == "t-desk" else None)
+    monkeypatch.setattr("pramanyx.notifications.executor.fire_action", lambda *a: pytest.fail("a preview sent a message"))
     both = action(kind="side_effect", edits=[], reversibility="irreversible", side_effects=[
         {"kind": "notify", "config": {"destination": "t-desk", "message": "Order {order}: {reason}"}},
         {"kind": "trigger_investigation", "config": {"question": "Why is {order} late? {reason}"}}])
@@ -178,8 +178,8 @@ def test_a_message_and_an_investigation_are_shown_filled_and_neither_is_sent(db,
 
 
 def test_the_declare_door_refuses_a_destination_not_saved_in_notifications(served, monkeypatch):
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: None)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: None)
     r = served.put("/ontology/kinetic-actions/tell_desk", params={"connection_id": CONN}, json={
         **ESCALATE, "kind": "side_effect", "edits": [], "reversibility": "irreversible",
         "side_effects": [{"kind": "notify", "config": {"destination": "gone", "message": "x"}}]})

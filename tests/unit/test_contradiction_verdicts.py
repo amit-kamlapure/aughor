@@ -7,7 +7,7 @@ prose word-lists only — ordered the model to "resolve this tension". It also m
 """
 from __future__ import annotations
 
-from aughor.agent.orchestrator import _phase_significance_signal, detect_contradictions
+from pramanyx.agent.orchestrator import _phase_significance_signal, detect_contradictions
 
 
 def test_code_marker_on_the_summary_is_the_verdict():

@@ -2,8 +2,8 @@
 
 > Status: **ideation / no code change yet** (2026-06-21). A plan for evolving Pramanyx from
 > "several autonomous processes" into a legible, supervised **agent fleet**. Grounded in the
-> current code (`aughor/kernel`, `aughor/explorer`, `aughor/agent`, `aughor/monitors`,
-> `aughor/knowledge`), not generic advice.
+> current code (`pramanyx/kernel`, `pramanyx/explorer`, `pramanyx/agent`, `pramanyx/monitors`,
+> `pramanyx/knowledge`), not generic advice.
 
 ## TL;DR
 

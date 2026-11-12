@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 
-from aughor.kernel.concurrency import cancel_background, pending_background, spawn
+from pramanyx.kernel.concurrency import cancel_background, pending_background, spawn
 
 
 def test_a_spawned_task_is_referenced_even_when_the_caller_keeps_nothing():

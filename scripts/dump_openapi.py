@@ -5,7 +5,7 @@ codegen-drift gate, so `web/lib/api.gen.ts` can never silently fall behind the
 route surface again (it was missing the /rbac, /jobs, /packs and /verify
 families when the gate was added).
 
-Hermetic: every store honours an env override — `AUGHOR_*_DB` for the SQLite ones
+Hermetic: every store honours an env override — `PRAMANYX_*_DB` for the SQLite ones
 (REC-04) and a path var for the directory/file ones — so we point them all at a
 temp dir BEFORE importing the app. A spec dump must never touch live data/.
 
@@ -31,12 +31,12 @@ import tempfile
 
 
 def _isolate_stores() -> None:
-    tmp = tempfile.mkdtemp(prefix="aughor-openapi-")
-    os.environ.setdefault("AUGHOR_SYSTEM_DB", os.path.join(tmp, "system.db"))
-    os.environ.setdefault("AUGHOR_REGISTRY_DB", os.path.join(tmp, "connections.db"))
+    tmp = tempfile.mkdtemp(prefix="pramanyx-openapi-")
+    os.environ.setdefault("PRAMANYX_SYSTEM_DB", os.path.join(tmp, "system.db"))
+    os.environ.setdefault("PRAMANYX_REGISTRY_DB", os.path.join(tmp, "connections.db"))
     # The registry's sibling file: builtin connection settings, including which builtins a
     # person has hidden.
-    os.environ.setdefault("AUGHOR_CONNECTION_SETTINGS", os.path.join(tmp, "connection_settings.json"))
+    os.environ.setdefault("PRAMANYX_CONNECTION_SETTINGS", os.path.join(tmp, "connection_settings.json"))
     # This helper is also the isolation for LIVE DRIVES (scratch API servers started to
     # verify a change) and for the SP-M recorder, so a store missing here is one the drive
     # writes: a drive that created agents once wrote them into the running deployment's
@@ -57,33 +57,33 @@ def _isolate_stores() -> None:
         "ORG_LLM", "AMBIGUITY_LEDGER", "OVERLAY_LEDGER", "GOVERN_TAGS", "GOVERN_CAPS",
         "QUALITY", "IDENTITY", "OVERVIEW_DRILLS", "POPULARITY", "DASHBOARD", "ACTION_OUTBOX",
     ):
-        os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
+        os.environ.setdefault(f"PRAMANYX_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     # The runtime LLM config (a model chosen in Settings, and its encrypted keys). Isolated
     # with ORG_LLM above, so a drive that needs a model binds it from the environment, never
     # from — or into — the deployment's own choice.
-    os.environ.setdefault("AUGHOR_LLM_CONFIG_PATH", os.path.join(tmp, "llm_config.json"))
+    os.environ.setdefault("PRAMANYX_LLM_CONFIG_PATH", os.path.join(tmp, "llm_config.json"))
     # The demo warehouse. "Explore the demo" writes it when it is absent, so a scratch
     # deployment starts without one; a drive that wants it calls
-    # `aughor.demo.setup.ensure_fixture_db()`, which seeds the deterministic scenario here.
-    os.environ.setdefault("AUGHOR_FIXTURE_DB", os.path.join(tmp, "aughor.duckdb"))
-    # NOT isolated, on purpose: the authored package tree (AUGHOR_PACKS_DIR) and the samples
-    # warehouse (AUGHOR_SAMPLES_DB), which a drive reads from the checkout. The suite isolates
+    # `pramanyx.demo.setup.ensure_fixture_db()`, which seeds the deterministic scenario here.
+    os.environ.setdefault("PRAMANYX_FIXTURE_DB", os.path.join(tmp, "pramanyx.duckdb"))
+    # NOT isolated, on purpose: the authored package tree (PRAMANYX_PACKS_DIR) and the samples
+    # warehouse (PRAMANYX_SAMPLES_DB), which a drive reads from the checkout. The suite isolates
     # both; that test holds the reasons and fails when either stops being true.
-    os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))
-    os.environ.setdefault("AUGHOR_INSTRUCTIONS_FILE", os.path.join(tmp, "instructions.json"))
-    os.environ.setdefault("AUGHOR_CANVAS_INSTRUCTIONS_FILE",
+    os.environ.setdefault("PRAMANYX_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))
+    os.environ.setdefault("PRAMANYX_INSTRUCTIONS_FILE", os.path.join(tmp, "instructions.json"))
+    os.environ.setdefault("PRAMANYX_CANVAS_INSTRUCTIONS_FILE",
                           os.path.join(tmp, "canvas_instructions.json"))
     # Upload storage and the playbook. Neither resolves through `resolve_db_path`, so
     # neither appeared in any isolation list — including the conftest's, until a full
     # suite run wrote both into a fresh checkout's `data/` on 2026-09-11. Registered in
     # both places at once, which is the rule this file's sibling comment below states.
-    os.environ.setdefault("AUGHOR_UPLOAD_DIR", os.path.join(tmp, "uploads"))
-    os.environ.setdefault("AUGHOR_PLAYBOOK_PATH", os.path.join(tmp, "playbook.json"))
+    os.environ.setdefault("PRAMANYX_UPLOAD_DIR", os.path.join(tmp, "uploads"))
+    os.environ.setdefault("PRAMANYX_PLAYBOOK_PATH", os.path.join(tmp, "playbook.json"))
     # IP-2 — the industries chosen at install: a live drive that changes the choice must not narrow the
     # running deployment's.
-    os.environ.setdefault("AUGHOR_INDUSTRIES_FILE", os.path.join(tmp, "industries.json"))
+    os.environ.setdefault("PRAMANYX_INDUSTRIES_FILE", os.path.join(tmp, "industries.json"))
     # The organisation's settings, likewise: a drive that saves them must not change the deployment's.
-    os.environ.setdefault("AUGHOR_ORG_SETTINGS_FILE", os.path.join(tmp, "org_settings.json"))
+    os.environ.setdefault("PRAMANYX_ORG_SETTINGS_FILE", os.path.join(tmp, "org_settings.json"))
     # The metrics catalog and glossary are TRACKED repo files (data/metrics.json,
     # data/glossary.yaml) — the one store family whose pollution lands in git status,
     # not just in a live database. Found the hard way TWICE: a live-drive scratch
@@ -91,58 +91,58 @@ def _isolate_stores() -> None:
     # metrics.json on 2026-09-16 because this list still lacked them.
     # Since the overlay the catalogue is two layers; both are pinned, the seed left absent so a
     # drive still starts from an empty catalogue.
-    os.environ.setdefault("AUGHOR_METRICS_PATH", os.path.join(tmp, "metrics.instance.json"))
-    os.environ.setdefault("AUGHOR_METRICS_SEED_PATH", os.path.join(tmp, "metrics.seed.json"))
-    os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.instance.yaml"))
-    os.environ.setdefault("AUGHOR_GLOSSARY_SEED_PATH", os.path.join(tmp, "glossary.seed.yaml"))
+    os.environ.setdefault("PRAMANYX_METRICS_PATH", os.path.join(tmp, "metrics.instance.json"))
+    os.environ.setdefault("PRAMANYX_METRICS_SEED_PATH", os.path.join(tmp, "metrics.seed.json"))
+    os.environ.setdefault("PRAMANYX_GLOSSARY_PATH", os.path.join(tmp, "glossary.instance.yaml"))
+    os.environ.setdefault("PRAMANYX_GLOSSARY_SEED_PATH", os.path.join(tmp, "glossary.seed.yaml"))
     # …and the vetted-query store beside them, which saving a query writes.
-    os.environ.setdefault("AUGHOR_TRUSTED_QUERIES_PATH", os.path.join(tmp, "trusted_queries.json"))
+    os.environ.setdefault("PRAMANYX_TRUSTED_QUERIES_PATH", os.path.join(tmp, "trusted_queries.json"))
     # File trees and registries outside the directory family below, each written when used:
     # saved synonyms, `skills import`, the per-column config (and its shipped seed layer, left
     # absent like the overrides'), and the documents registry with the uploaded bytes it indexes
     # (a delete rmtree()s the latter).
-    os.environ.setdefault("AUGHOR_VOCABULARY_ROOT", os.path.join(tmp, "vocabulary"))
-    os.environ.setdefault("AUGHOR_IMPORTED_PACKS_DIR", os.path.join(tmp, "packs-imported"))
-    os.environ.setdefault("AUGHOR_COLUMN_CONFIG_ROOT", os.path.join(tmp, "ontology_column_config"))
-    os.environ.setdefault("AUGHOR_COLUMN_CONFIG_SEED_ROOT", os.path.join(tmp, "ontology_column_config_seed"))
-    os.environ.setdefault("AUGHOR_DOCUMENTS_REGISTRY", os.path.join(tmp, "documents.json"))
-    os.environ.setdefault("AUGHOR_DOCUMENTS_DIR", os.path.join(tmp, "documents"))
+    os.environ.setdefault("PRAMANYX_VOCABULARY_ROOT", os.path.join(tmp, "vocabulary"))
+    os.environ.setdefault("PRAMANYX_IMPORTED_PACKS_DIR", os.path.join(tmp, "packs-imported"))
+    os.environ.setdefault("PRAMANYX_COLUMN_CONFIG_ROOT", os.path.join(tmp, "ontology_column_config"))
+    os.environ.setdefault("PRAMANYX_COLUMN_CONFIG_SEED_ROOT", os.path.join(tmp, "ontology_column_config_seed"))
+    os.environ.setdefault("PRAMANYX_DOCUMENTS_REGISTRY", os.path.join(tmp, "documents.json"))
+    os.environ.setdefault("PRAMANYX_DOCUMENTS_DIR", os.path.join(tmp, "documents"))
 
     # The DIRECTORY stores, which this dump never isolated: the docstring above said
-    # "every store honours its AUGHOR_*_DB override", and that sentence was the gap — a
+    # "every store honours its PRAMANYX_*_DB override", and that sentence was the gap — a
     # store keyed on a path had no pin here at all. Latent rather than bleeding (these
     # write when USED, and a spec dump only imports and calls `app.openapi()`), but an
     # unpinned MCP allowlist is the wrong one to leave latent: it is a list of outbound
     # destinations. `tests/conftest.py` isolates exactly this family; the two are siblings
     # and a new store belongs in BOTH.
     #
-    # DS-17 added AUGHOR_AUTOMATIONS_DIR here and VA-9d added AUGHOR_MCPSERVERS_DIR; this
+    # DS-17 added PRAMANYX_AUTOMATIONS_DIR here and VA-9d added PRAMANYX_MCPSERVERS_DIR; this
     # is the union, which is what the merge of the two waves means.
-    for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
-                     "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR", "AUGHOR_INTEGRATIONS_DIR",
-                     "AUGHOR_AGENTS_DIR", "AUGHOR_TEAMSBOTS_DIR",   # AO-5: agent keys, Teams bots
-                     "AUGHOR_AUTOMATIONS_DIR", "AUGHOR_MCPSERVERS_DIR",
+    for _dir_env in ("PRAMANYX_EPISODES_DIR", "PRAMANYX_MEMORY_DIR", "PRAMANYX_ACTIONS_DIR",
+                     "PRAMANYX_SLACKBOTS_DIR", "PRAMANYX_STATE_DIR", "PRAMANYX_INTEGRATIONS_DIR",
+                     "PRAMANYX_AGENTS_DIR", "PRAMANYX_TEAMSBOTS_DIR",   # AO-5: agent keys, Teams bots
+                     "PRAMANYX_AUTOMATIONS_DIR", "PRAMANYX_MCPSERVERS_DIR",
                      # MI-3's snapshot bytes — the directory half of the same store.
-                     "AUGHOR_DATASETS_DIR"):
+                     "PRAMANYX_DATASETS_DIR"):
         os.environ.setdefault(_dir_env, tmp)
     # IN-4 — the data home. A deployment that has run `migrate-state` keeps its marker in
-    # ~/.aughor, and the marker moves the default of every generated store this list does not
+    # ~/.pramanyx, and the marker moves the default of every generated store this list does not
     # name — into the LIVE home. A home with no marker in it keeps every default where it was.
-    os.environ.setdefault("AUGHOR_HOME", os.path.join(tmp, "aughor-home"))
+    os.environ.setdefault("PRAMANYX_HOME", os.path.join(tmp, "pramanyx-home"))
     # A DIRECTORY too, and one that takes an EXCLUSIVE lock in local mode — so an unpinned
     # default here does not merely dirty `data/`, it contends with a running API.
-    os.environ.setdefault("AUGHOR_QDRANT_PATH", os.path.join(tmp, "qdrant"))
+    os.environ.setdefault("PRAMANYX_QDRANT_PATH", os.path.join(tmp, "qdrant"))
     # ON-1b — the ontology's file trees: human overrides (a measure WRITES verdicts back into it), the export beside it,
     # the engine's recommendations, (ON-7b) the explorer's draft record, and (R8) the compiled doc tree. Isolated in
     # tests/conftest.py too.
     # Arc OC-2 adds the draft layer above the overrides (OVERRIDES_DRAFT).
     for _tree in ("OVERRIDES", "OVERRIDES_SEED", "OVERRIDES_DRAFT", "EXPORT", "RECOMMENDATIONS", "DRAFTS", "DOCS"):
-        os.environ.setdefault(f"AUGHOR_ONTOLOGY_{_tree}_DIR", os.path.join(tmp, f"ontology_{_tree.lower()}"))
+        os.environ.setdefault(f"PRAMANYX_ONTOLOGY_{_tree}_DIR", os.path.join(tmp, f"ontology_{_tree.lower()}"))
 
 
 def main() -> None:
     _isolate_stores()
-    from aughor.api import app  # import AFTER isolation
+    from pramanyx.api import app  # import AFTER isolation
 
     spec = app.openapi()
     out = json.dumps(spec, indent=1, sort_keys=True)

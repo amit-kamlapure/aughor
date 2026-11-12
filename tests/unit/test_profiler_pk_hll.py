@@ -4,16 +4,16 @@ A big table with a catalog-stat miss used to skip COUNT(DISTINCT) entirely (too 
 so its single-column primary key went undetected/unverified. build_table_profile now
 verifies uniqueness with a HyperLogLog (approx_count_distinct) on DuckDB — one cheap pass —
 using a RATIO test (a PK's estimate ≈ row_count; a non-unique key's is far smaller), which is
-robust to HLL's magnitude noise. See aughor/tools/profiler.py.
+robust to HLL's magnitude noise. See pramanyx/tools/profiler.py.
 """
 from pathlib import Path
 
 import duckdb
 import pytest
 
-import aughor.tools.profiler as profiler
-from aughor.db.connection import DuckDBConnection
-from aughor.tools.profiler import build_table_profile
+import pramanyx.tools.profiler as profiler
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.tools.profiler import build_table_profile
 
 
 def _conn(ddl: str, insert: str):

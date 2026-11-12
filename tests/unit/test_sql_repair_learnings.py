@@ -1,10 +1,10 @@
 """Platform-generic SQL-repair learnings (not connection/schema specific):
- T1 — negative-knowledge harvest from engine errors (aughor/explorer/agent._extract_dead_refs)
+ T1 — negative-knowledge harvest from engine errors (pramanyx/explorer/agent._extract_dead_refs)
  T2 — repair diagnosis branches for missing-table / unexposed-column / ambiguous / non-inner-join
-      (aughor/sql/writer._make_diagnosis)
+      (pramanyx/sql/writer._make_diagnosis)
 Driven entirely by DuckDB + Postgres error text, so the learning transfers across connections."""
-from aughor.explorer.agent import _extract_dead_refs
-from aughor.sql.writer import _make_diagnosis
+from pramanyx.explorer.agent import _extract_dead_refs
+from pramanyx.sql.writer import _make_diagnosis
 
 
 # ── T1: dead-reference harvest ────────────────────────────────────────────────

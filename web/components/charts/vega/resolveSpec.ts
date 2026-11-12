@@ -24,7 +24,7 @@ import { sanitizeExhibit, type ExhibitSpec } from "@/components/charts/exhibit";
 import { inferChartType, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
 import { applyNames, type SeriesNames } from "@/components/charts/vega/names";
 
-/** The four post-processing ops the edit panel offers, mirroring aughor/tools/postproc.py. */
+/** The four post-processing ops the edit panel offers, mirroring pramanyx/tools/postproc.py. */
 export type TransformOp = "pop" | "contribution" | "rolling" | "cumulative";
 
 export interface TransformSpec {
@@ -39,7 +39,7 @@ export interface TransformSpec {
 
 /**
  * Build the Vega-Lite transform for one post-processing op, plus the name of the column it
- * derives. The names match aughor/tools/postproc.py EXACTLY, so a chart looks identical
+ * derives. The names match pramanyx/tools/postproc.py EXACTLY, so a chart looks identical
  * whether the numbers were computed here or by the API.
  *
  * Why this exists: applying a transform today POSTs the entire result set to

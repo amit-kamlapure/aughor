@@ -14,8 +14,8 @@ import uuid
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import visibility as V
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import visibility as V
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ def test_the_schema_text_no_longer_lists_it_and_is_unchanged_when_nothing_is_off
 
 
 def test_without_tables_takes_out_only_the_named_block():
-    from aughor.db.schema_render import without_tables
+    from pramanyx.db.schema_render import without_tables
     text = ("TABLE: a.x  (3 rows)\n  id  INTEGER\n  name  VARCHAR\n\n"
             "TABLE: a.y  (1 rows)\n  id  INTEGER\n\nDETECTED JOINS\n  a.x.id → a.y.id\n")
     out = without_tables(text, lambda n: n == "a.x")
@@ -92,7 +92,7 @@ def test_without_tables_takes_out_only_the_named_block():
 
 
 def test_the_explorer_never_lists_a_turned_off_table(wh):
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     conn_id, path = wh
     V.declare_exclusion(conn_id, "stage", V.SCHEMA_WIDE, "out_of_domain", declared_by="user:amit")
     db = open_connection("duckdb", path, connection_id=conn_id)
@@ -124,8 +124,8 @@ def test_a_connector_that_renders_its_own_schema_text_hands_it_out_without_them(
 def test_a_cached_result_for_a_turned_off_table_is_never_served():
     """Found live 2026-10-08: the Dashboard measured Uber's three metrics from `ncr_ride_bookings` after it
     was turned off — every statement was answered from the result cache, which sits in front of the door."""
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.db import matcache
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.db import matcache
     conn_id = f"mc-{uuid.uuid4().hex[:8]}"
     sql = "SELECT COUNT(*) FROM uber.rides"
     matcache.put_cache(conn_id, sql, QueryResult(hypothesis_id="h", sql=sql, columns=["n"], rows=[[7]], row_count=1))
@@ -141,7 +141,7 @@ def test_a_metric_reading_a_turned_off_table_says_so_whole_never_that_its_query_
     from datetime import date
     from types import SimpleNamespace
 
-    from aughor.semantic import metric_time as mt
+    from pramanyx.semantic import metric_time as mt
     m = SimpleNamespace(sql="SUM(amount)", tables=["uber.rides"], time_kind="flow", time_column="uber.rides.day",
                         until_column="", outcome_column="", filters=[])
     why = "[EXCLUDED] uber.rides is turned off for analysis — it is excluded (other, by amit). Turn it back on in the Catalog to use it."

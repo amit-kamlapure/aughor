@@ -26,8 +26,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.actions import inbox
-from aughor.ontology.models import ActionParameter, KineticAction
+from pramanyx.actions import inbox
+from pramanyx.ontology.models import ActionParameter, KineticAction
 
 
 def _action(**kw) -> KineticAction:
@@ -44,7 +44,7 @@ def graph_of(monkeypatch):
     def _install(action):
         class _G:
             kinetic_actions = {action.id: action}
-        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+        monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                             lambda cid, schema=None: _G())
     return _install
 
@@ -74,10 +74,10 @@ def test_stage_stamps_a_deadline():
 
 def test_deadline_is_fixed_at_stage_time_not_recomputed(monkeypatch):
     """The terms a human was offered do not move because an operator retuned the default."""
-    monkeypatch.setenv("AUGHOR_PROPOSAL_TTL_HOURS", "100")
+    monkeypatch.setenv("PRAMANYX_PROPOSAL_TTL_HOURS", "100")
     p = inbox.stage_proposal(_proposal(run_id="r2", call_id="c2"))
     stamped = p.expires_at
-    monkeypatch.setenv("AUGHOR_PROPOSAL_TTL_HOURS", "1")
+    monkeypatch.setenv("PRAMANYX_PROPOSAL_TTL_HOURS", "1")
     assert inbox.get_proposal(p.id).expires_at == stamped
 
 
@@ -104,7 +104,7 @@ def test_unparseable_timestamp_fails_closed():
 
 def test_legacy_row_without_a_deadline_falls_back_to_created_at(monkeypatch):
     """Rows staged before RC-3 have expires_at=None and must NOT be immortal."""
-    monkeypatch.setenv("AUGHOR_PROPOSAL_TTL_HOURS", "24")
+    monkeypatch.setenv("PRAMANYX_PROPOSAL_TTL_HOURS", "24")
     assert _proposal(expires_at=None, created_at=_ago(hours=48)).expired
     assert not _proposal(expires_at=None, created_at=_ago(hours=1)).expired
 
@@ -113,7 +113,7 @@ def test_zero_or_junk_ttl_is_ignored(monkeypatch):
     """A TTL of 0 would expire every proposal the instant it is staged — indistinguishable
     from the inbox being broken. The override is refused, not obeyed."""
     for bad in ("0", "-5", "", "abc"):
-        monkeypatch.setenv("AUGHOR_PROPOSAL_TTL_HOURS", bad)
+        monkeypatch.setenv("PRAMANYX_PROPOSAL_TTL_HOURS", bad)
         assert inbox.ttl_hours() == 168.0, f"TTL override {bad!r} should be ignored"
 
 
@@ -127,7 +127,7 @@ def test_expired_accept_is_refused_and_never_dispatches(monkeypatch, graph_of):
     p = inbox.stage_proposal(_proposal(run_id="r3", call_id="c3", expires_at=_ago(hours=1)))
 
     dispatched: list = []
-    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action",
+    monkeypatch.setattr("pramanyx.actions.executor.execute_kinetic_action",
                         lambda *a, **k: dispatched.append(a) or None)
 
     result, grant = inbox.accept_proposal(p.id, actor="analyst@example.com")
@@ -144,7 +144,7 @@ def test_expired_is_terminal_and_cannot_be_accepted_later(monkeypatch, graph_of)
     graph_of(_action())   # see above — makes the no-dispatch assertion mean something
     p = inbox.stage_proposal(_proposal(run_id="r4", call_id="c4", expires_at=_ago(hours=1)))
     dispatched: list = []
-    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action",
+    monkeypatch.setattr("pramanyx.actions.executor.execute_kinetic_action",
                         lambda *a, **k: dispatched.append(a) or None)
 
     inbox.accept_proposal(p.id, actor="first")
@@ -171,10 +171,10 @@ def test_a_fresh_proposal_reaches_the_dispatcher(monkeypatch, graph_of):
 
     def _fake(*a, **k):
         dispatched.append(a)
-        from aughor.actions.executor import KineticResult
+        from pramanyx.actions.executor import KineticResult
         return KineticResult("executed", True, "refund")
 
-    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action", _fake)
+    monkeypatch.setattr("pramanyx.actions.executor.execute_kinetic_action", _fake)
     result, _ = inbox.accept_proposal(p.id, actor="analyst")
 
     assert dispatched, "a fresh proposal MUST reach the dispatcher"

@@ -9,7 +9,7 @@ named, recurring failure with a fix.
 
 The numbering follows the taxonomy in `scientific-critical-thinking/references/statistical_pitfalls.md`
 (K-Dense-AI/scientific-agent-skills, MIT), kept so the numbers stay comparable with the
-literature. Only the rows aughor actually acts on appear here — a pitfall with no enforcement
+literature. Only the rows pramanyx actually acts on appear here — a pitfall with no enforcement
 and no prompt line would be decoration.
 
 **Contract:** the enforced rows must match `report_checks.PITFALLS` exactly.
@@ -35,7 +35,7 @@ and no prompt line would be decoration.
 | 14 | explained variance is not importance | the counterweight to #3: a 1% effect can matter (height explains ~5% of NBA salary). A threshold cannot decide this; a domain pack could. |
 | 16 | ecological fallacy | a group-level relationship read as an individual-level one. Detectable only with the unit of observation declared. |
 | 17b | Simpson's paradox | a live risk for every dimension scan; needs the confounder named before it can be tested. |
-| 33 | trying transformations until one works | aughor does not currently re-plan on a null result, so the exposure is low — revisit if it starts to. |
+| 33 | trying transformations until one works | pramanyx does not currently re-plan on a null result, so the exposure is low — revisit if it starts to. |
 
 ## Using a number
 

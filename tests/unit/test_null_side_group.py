@@ -10,9 +10,9 @@ jewelry_watches are the LOWEST-return categories). self_ratio_tautology cannot s
 the two aggregates are different expressions the join geometry forces to be equal.
 
 A hit DROPS the finding at the explorer emission gate, so the guard must be
-high-precision — hence the false-positive battery below. See aughor/sql/fanout.py.
+high-precision — hence the false-positive battery below. See pramanyx/sql/fanout.py.
 """
-from aughor.sql.fanout import group_by_outer_null_side as guard
+from pramanyx.sql.fanout import group_by_outer_null_side as guard
 
 # table-name → columns; `category` is on returns + products, NOT orders (the real schema).
 TC = {

@@ -8,10 +8,10 @@ frontend with `Encountered two children with the same key, sq-Q3`.
 
 `_canonicalize_subq_ids` reindexes the planned chain to a contiguous, unique Q1..Qn
 (remapping depends_on); `_unique_subq_id` protects the runtime-promoted insert path.
-See aughor/agent/explore.py.
+See pramanyx/agent/explore.py.
 """
-from aughor.agent.explore import _canonicalize_subq_ids, _unique_subq_id
-from aughor.agent.state import SubQuestion
+from pramanyx.agent.explore import _canonicalize_subq_ids, _unique_subq_id
+from pramanyx.agent.state import SubQuestion
 
 
 def _sq(id, purpose="relationship", depends_on=None):

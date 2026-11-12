@@ -19,7 +19,7 @@
  * ── PRECISION: two contexts, one rule each ──────────────────────────────────
  *
  * PROSE (a headline, a finding, a synthesis, a figure lifted out of one) — the
- * platform policy, mirrored from `aughor/util/format.py`:
+ * platform policy, mirrored from `pramanyx/util/format.py`:
  *      |v| >= 1 → 2dp        |v| < 1 → 6dp        whole → no decimal point
  * Applied by `normalizeNumberPrecision`. Prose is quoted verbatim from grounded
  * text, so this is a CORRECTION of someone else's string, never our own output.
@@ -55,7 +55,7 @@ import { effectiveDateFormat, effectiveTimezone } from "./orgSettings";
  * The frontend's old `isNum` read `\bINT\b`, which does not match `INT64`: there is no
  * word boundary between `T` and `6`. Every BigQuery-shaped column in this product —
  * which is how the Catalog screen serves theLook — fell through to "not a number". The
- * backend hit this exact bug and fixed it in `aughor/tools/profiler.py::_NUMERIC_TYPES`
+ * backend hit this exact bug and fixed it in `pramanyx/tools/profiler.py::_NUMERIC_TYPES`
  * ("no measure could ever exist there"); this is the same vocabulary, on this side of
  * the wire, and `lib/columnType.test.ts` holds the two in step.
  */
@@ -234,7 +234,7 @@ export function pct(ratio: number | null | undefined, digits = 0): string {
 }
 
 // A decimal run long enough to be float noise rather than intended precision. MIRRORS
-// `_LONG_DECIMAL_RE` in aughor/util/format.py — keep the two in step.
+// `_LONG_DECIMAL_RE` in pramanyx/util/format.py — keep the two in step.
 const LONG_DECIMAL_RE = /-?\d+\.\d{4,}/g;
 // Scientific notation that leaked out of a float64 into prose: `7.49e+06` reached a
 // Briefing tile as its headline figure (docs/UI_UX_STUDY_2026-09-25.md §2.6).
@@ -254,7 +254,7 @@ const group = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
  *
  * Three rewrites, none of which changes a value: scientific notation is expanded; over-long
  * decimal runs collapse to the platform's precision (|v| ≥ 1 → 2dp, |v| < 1 → 6dp, whole
- * results drop the point — the backend's policy in aughor/util/format.py); and a bare
+ * results drop the point — the backend's policy in pramanyx/util/format.py); and a bare
  * magnitude of five digits or more gains thousands grouping (2026-09-25, the Briefing tiles
  * that read `180925` and `1820497.55`). Already-grouped numbers, currency symbols, years,
  * dates and short numbers are untouched. Idempotent; safe on null/empty.
@@ -793,7 +793,7 @@ export function formatNumberAs(v: unknown, fmt: NumberFormat, symbol = "$"): str
 /** A number column that names a thing rather than measures one — an id, a key, a year, a code: its digits are never
  *  grouped by default ("48,377" is not an order, "2,024" not a year). The user, 2026-11-10: separators, "not on ids". */
 /** The SQL results' formats: the shared list with "Grouped" — the results' default for a measure — after None. Not a
- *  sheet's format: the sheet's server holds its own list (`aughor/sheets/kinds.py`), equal to `NUMBER_FORMATS`. */
+ *  sheet's format: the sheet's server holds its own list (`pramanyx/sheets/kinds.py`), equal to `NUMBER_FORMATS`. */
 export const RESULT_NUMBER_FORMATS: readonly { id: NumberFormat; label: string; example: number }[] = [
   NUMBER_FORMATS[0], { id: "grouped", label: "Grouped", example: 1240.35 }, ...NUMBER_FORMATS.slice(1),
 ];

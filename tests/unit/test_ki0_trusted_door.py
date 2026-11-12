@@ -6,7 +6,7 @@ failing seed is demonstrably NOT in that block; provenance is on every row. Plus
 fail-closed store semantics everything else leans on: only `approved` reaches
 `retrieve_trusted`, and a pre-KI-0 record (no status key) is grandfathered approved.
 
-Hermetic: the store rides a per-test AUGHOR_TRUSTED_QUERIES_PATH; the connection is a
+Hermetic: the store rides a per-test PRAMANYX_TRUSTED_QUERIES_PATH; the connection is a
 real read-only DuckDB file behind a patched `open_connection_for`.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 client = TestClient(app)
 
@@ -29,7 +29,7 @@ GOOD_SQL = "SELECT region, SUM(amount) AS revenue FROM sales GROUP BY region"
 @pytest.fixture()
 def tq_store(tmp_path, monkeypatch):
     path = tmp_path / "trusted_queries.json"
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(path))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(path))
     return path
 
 
@@ -42,7 +42,7 @@ def demo_conn(tmp_path, monkeypatch):
               "('emea', 100), ('emea', 50), ('apac', 70)) AS t(region, amount)")
     c.close()
 
-    from aughor.db import connection as conn_mod
+    from pramanyx.db import connection as conn_mod
 
     def _open(conn_id, *args, **kwargs):
         if conn_id != CONN:
@@ -57,7 +57,7 @@ def demo_conn(tmp_path, monkeypatch):
 
 
 def test_legacy_row_without_status_loads_approved(tq_store):
-    from aughor.semantic.trusted_queries import list_trusted, retrieve_trusted
+    from pramanyx.semantic.trusted_queries import list_trusted, retrieve_trusted
 
     tq_store.write_text(json.dumps([{
         "id": "tq_legacy", "connection_id": CONN,
@@ -71,7 +71,7 @@ def test_legacy_row_without_status_loads_approved(tq_store):
 
 
 def test_only_approved_rows_reach_the_prompt(tq_store):
-    from aughor.semantic.trusted_queries import (
+    from pramanyx.semantic.trusted_queries import (
         TrustedQuery, list_trusted, retrieve_trusted, save_trusted)
 
     for status in ("draft", "proposed", "deprecated"):
@@ -92,7 +92,7 @@ def test_only_approved_rows_reach_the_prompt(tq_store):
 
 
 def test_verify_executes_and_passes_good_sql(demo_conn):
-    from aughor.semantic.trusted_verify import verify
+    from pramanyx.semantic.trusted_verify import verify
 
     report = verify(CONN, "SELECT region, SUM(amount) FROM sales GROUP BY region")
     assert report["passed"] is True
@@ -101,14 +101,14 @@ def test_verify_executes_and_passes_good_sql(demo_conn):
 
 
 def test_verify_blocks_mutations_before_any_execution(demo_conn):
-    from aughor.semantic.trusted_verify import verify
+    from pramanyx.semantic.trusted_verify import verify
 
     report = verify(CONN, "DELETE FROM sales")
     assert report["passed"] is False
     assert report["blockers"] and report["battery"] is None
     assert "not executed" in report["execution"]["error"]
     # Nothing ran: the table still holds its three rows.
-    from aughor.db.connection import open_connection_for
+    from pramanyx.db.connection import open_connection_for
     db = open_connection_for(CONN)
     try:
         r = db.execute("__probe__", "SELECT COUNT(*) FROM sales")
@@ -118,7 +118,7 @@ def test_verify_blocks_mutations_before_any_execution(demo_conn):
 
 
 def test_verify_fails_on_execution_error(demo_conn):
-    from aughor.semantic.trusted_verify import verify
+    from pramanyx.semantic.trusted_verify import verify
 
     report = verify(CONN, "SELECT nope FROM no_such_table")
     assert report["passed"] is False
@@ -135,11 +135,11 @@ def _seed(sql=GOOD_SQL, question=QUESTION, **over):
 
 
 def test_seed_approve_and_the_prompt_block(tq_store, demo_conn, monkeypatch):
-    from aughor.semantic.trusted_queries import build_trusted_block, retrieve_trusted
+    from pramanyx.semantic.trusted_queries import build_trusted_block, retrieve_trusted
 
     # Who seeds and who approves are the people the requests act for — here the install's login,
     # set per act — never the `actor` a body carries.
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana@example.com")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana@example.com")
     r = _seed(actor="someone-typed")
     assert r.status_code == 201, r.text
     row = r.json()["trusted_query"]
@@ -150,7 +150,7 @@ def test_seed_approve_and_the_prompt_block(tq_store, demo_conn, monkeypatch):
     assert retrieve_trusted(QUESTION, CONN) == []
 
     # The SECOND recorded act: approval. This is what makes it prompt-authoritative.
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "lead@example.com")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "lead@example.com")
     t = client.post(f"/learning/trusted/{row['id']}/transition",
                     json={"action": "approve", "actor": "someone-typed"})
     assert t.status_code == 200, t.text
@@ -163,7 +163,7 @@ def test_seed_approve_and_the_prompt_block(tq_store, demo_conn, monkeypatch):
     assert GOOD_SQL in build_trusted_block(matches)
 
     # The lifecycle left an audit trail under the categorized kind.
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     events = Ledger.default().events(kind="trusted_query.governance", limit=50)
     actions = {e["payload"]["action"] for e in events
                if e.get("payload", {}).get("trusted_query") == row["id"]}
@@ -171,7 +171,7 @@ def test_seed_approve_and_the_prompt_block(tq_store, demo_conn, monkeypatch):
 
 
 def test_failing_seed_is_a_draft_and_never_in_the_block(tq_store, demo_conn):
-    from aughor.semantic.trusted_queries import retrieve_trusted
+    from pramanyx.semantic.trusted_queries import retrieve_trusted
 
     r = _seed(sql="DELETE FROM sales", question="purge all sales rows now")
     assert r.status_code == 201
@@ -226,7 +226,7 @@ def test_unknown_connection_is_404_and_no_actor_need_be_sent(tq_store, demo_conn
         "actor": "ana@example.com"})
     assert r.status_code == 404
     # A blank actor used to be refused because the client had to name one; the server names it now.
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana-op")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana-op")
     r2 = _seed(actor="   ")
     assert r2.status_code == 201, r2.text
     assert r2.json()["trusted_query"]["proposed_by"] == "ana-op"
@@ -238,7 +238,7 @@ def test_delete_is_audited_and_404s_when_gone(tq_store, demo_conn):
     assert d.status_code == 200 and d.json() == {"deleted": row["id"]}
     assert client.delete(f"/learning/trusted/{row['id']}").status_code == 404
 
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     events = Ledger.default().events(kind="trusted_query.governance", limit=50)
     assert any(e.get("payload", {}).get("action") == "delete"
                and e["payload"].get("trusted_query") == row["id"] for e in events)
@@ -256,13 +256,13 @@ def test_inspection_endpoint_lists_every_status(tq_store, demo_conn):
 
 
 def test_trusted_governance_kind_is_categorized_and_sunk():
-    from aughor.govern.audit_categories import _SINKS, category_for
+    from pramanyx.govern.audit_categories import _SINKS, category_for
 
     assert category_for("trusted_query.governance") == "governance_change"
     # `feed` walks _SINKS, not KIND_CATEGORY — assert the other mandatory half by
     # driving it: an emitted event comes back out of the feed.
-    from aughor.govern.audit_categories import feed
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.govern.audit_categories import feed
+    from pramanyx.kernel.ledger import Ledger
     Ledger.default().emit("trusted_query.governance", {
         "trusted_query": "tq_feedcheck", "action": "approve", "actor": "t",
         "from": "proposed", "to": "approved", "version": 1, "at": "2026-09-05T00:00:00"})

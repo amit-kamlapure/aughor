@@ -43,7 +43,7 @@ no scorer, and no capability gate:
 
 Two gifts fall out of that table:
 
-- **Zero LLM judges exist anywhere in `aughor/`.** Every scorer is deterministic. That is exactly the
+- **Zero LLM judges exist anywhere in `pramanyx/`.** Every scorer is deterministic. That is exactly the
   foundation an evaluator library needs, and it matches our guards thesis rather than fighting it.
 - **`eval.suite` is declared, sold as Enterprise (`licensing/capabilities.py:49`), and gates nothing** —
   zero `gate(Capability.EVAL_SUITE)` call sites. A free, pre-sold slot.
@@ -108,7 +108,7 @@ model, latency, retries and the silent Anthropic fallback all vanish into aggreg
    model mid-run** (`provider.py:446-462`, currently a WARNING log only).
 5. **Storage** — `Migration(5, …)` in `kernel/ledger.py` beside `_create_task_history` (`:121`), with
    `session_event_insert` / `session_events` mirroring `:521-578`. Then add `"session_events"` to
-   `AughorOpsConnection._OPS_TABLES` (`db/connection.py:899`) so it is **instantly NL2SQL-queryable** —
+   `PramanyxOpsConnection._OPS_TABLES` (`db/connection.py:899`) so it is **instantly NL2SQL-queryable** —
    the same one-line move `task_history` already proved.
 6. **Retention from day one.** Neither `events` nor `task_history` has any prune/TTL/VACUUM today and
    both grow unbounded. A session log multiplies row volume; ship the policy with the table.
@@ -155,7 +155,7 @@ hand-projects six of them into six differently-shaped JSON lists — the exact n
 
 **Scope**
 
-- New **`aughor/evals/`** package (product code; distinct from the repo-root bench `evals/` — keep the
+- New **`pramanyx/evals/`** package (product code; distinct from the repo-root bench `evals/` — keep the
   import paths visibly different and say so in the module docstring).
 - `Evaluator` Protocol with `name` / `severity` / `requires` / `deterministic`, plus `EvalCase`,
   `EvalObservation`, `EvalScore` — modelled on `capability/pipeline.py`, and reusing
@@ -207,7 +207,7 @@ that endpoint is refactored onto it. If it cannot, the adapters are wrong and th
 
 **Scope**
 
-- **Store** following `verify/verdicts.py` exactly: `resolve_db_path("AUGHOR_EVALS_DB", data/evals.db)`,
+- **Store** following `verify/verdicts.py` exactly: `resolve_db_path("PRAMANYX_EVALS_DB", data/evals.db)`,
   `org_id` from `current_org_id()` on every row **and every WHERE**, `Migration` list, clamped limits.
   (Note `evals/ratchet.py`'s `data/eval_baseline.db` has **no org column**, so it cannot back a
   product surface — but its `summarize` / `compare_to_baseline` / `persist_run` / `set_baseline` logic
@@ -257,7 +257,7 @@ worker threads via `ContextThreadPoolExecutor` and is already used in production
   spine calls never pass it (`investigate.py:3220/3251/3349/3382/3809/3823/3904/4029`). Add a contextvar
   consulted in `_complete_on`/`_stream_on`, and **pass temperature through the Anthropic kwargs**, which
   drop it entirely today (`:517-521`).
-- **`AUGHOR_FALLBACK_DISABLED=1` mandatory** for any measured run — the silent fallback swaps the model
+- **`PRAMANYX_FALLBACK_DISABLED=1` mandatory** for any measured run — the silent fallback swaps the model
   mid-run. `run_golden.py:538` already defends this way; make it a runner precondition, not a convention.
 - **Fixture pinning**: `samples/scenario.py::seed_scenario_db` is byte-reproducible (`random.Random(42)`,
   no global RNG) and `scenario_summary` returns closed-form ground truth usable as assertion constants.
@@ -269,10 +269,10 @@ worker threads via `ContextThreadPoolExecutor` and is already used in production
   connection polluted by exploration/ontology drift. This is the #1 measurement confound and the
   existing best practice; it belongs in the product runner.
 
-**Constraint to design around:** `AUGHOR_LLM_MAX_CONCURRENCY` defaults to **4** and the semaphore is
+**Constraint to design around:** `PRAMANYX_LLM_MAX_CONCURRENCY` defaults to **4** and the semaphore is
 process-wide, keyed by base URL, held for the whole streaming call. Intra-run fan-out competes with
 cross-run parallelism for the same 4 slots. N×K grids need either a raised cap or subprocess isolation
-(the `model_bakeoff.py:236` precedent, which also gives per-cell `AUGHOR_SYSTEM_DB` isolation).
+(the `model_bakeoff.py:236` precedent, which also gives per-cell `PRAMANYX_SYSTEM_DB` isolation).
 
 **Flag** `evals.experiments` (default off) · **Tests** ~25 · **Decision gate:** run the identical cell
 three times and confirm the flag/model overrides actually took effect *per run* (assert on the recorded
@@ -281,7 +281,7 @@ silently no-ops looks exactly like "the variant didn't help."
 
 ### E4a — the override plane · ✅ BUILT 2026-07-24
 
-`aughor/evals/experiments.py` (`Cell` · `applied()` · `assert_measurable()` · `resolved_config()` ·
+`pramanyx/evals/experiments.py` (`Cell` · `applied()` · `assert_measurable()` · `resolved_config()` ·
 `grid()`) + `runner.run_experiment()` + the contextvar layers in `kernel/flags.py` and
 `llm/provider.py`. **44 tests.** Decision gate MET: a three-cell grid was run end-to-end through the
 real runner and each cell's overrides were observed *at target-build time* and read back off the
@@ -309,7 +309,7 @@ Four design notes worth carrying into E4b:
 
 ### E4b — the fidelity harness (J3) · ✅ BUILT 2026-07-24
 
-`aughor/evals/fidelity.py` (`Axis` · `Floor` · `Delta` · `noise_floor` · `compare` ·
+`pramanyx/evals/fidelity.py` (`Axis` · `Floor` · `Delta` · `noise_floor` · `compare` ·
 `harmonic_composite` · `assess` → `FidelityReport`) + `replicates` and fixture provenance on
 `run_experiment` + `experiments.assert_frozen_semantics`. **31 more tests (75 in E4 so far).**
 
@@ -335,7 +335,7 @@ Four design notes worth carrying into E4b:
 
 ### E4c — brittleness + the request budget · ✅ BUILT 2026-07-24
 
-`aughor/evals/perturb.py` (`Perturbation` · `DEFAULT_PERTURBATIONS` · `brittleness` ·
+`pramanyx/evals/perturb.py` (`Perturbation` · `DEFAULT_PERTURBATIONS` · `brittleness` ·
 `suite_robustness`) + `RunSummary.robustness` as a first-class axis + `estimate_requests` /
 `assert_within_budget`. **30 tests (105 across E4).**
 
@@ -370,11 +370,11 @@ Four design notes worth carrying into E4b:
 
 The arc doc called for it, citing `model_bakeoff.py`. Both of its reasons have expired:
 
-1. **Its stated rationale was model pinning** — "the provider resolves `AUGHOR_CODER_MODEL` at
+1. **Its stated rationale was model pinning** — "the provider resolves `PRAMANYX_CODER_MODEL` at
    binding time and caches per process — env-per-subprocess is the only clean isolation".
    E4a's `set_run_model` contextvar makes per-run model pinning work in-process, so the
    isolation buys nothing that is not already had.
-2. **It would bypass a rate limiter, not a bottleneck.** `AUGHOR_LLM_MAX_CONCURRENCY=4` is a
+2. **It would bypass a rate limiter, not a bottleneck.** `PRAMANYX_LLM_MAX_CONCURRENCY=4` is a
    per-endpoint semaphore protecting against the provider's cap, and the free tier is
    **20 RPM**. N processes × 4 slots multiplies concurrency past that ceiling, so the "fix"
    converts a slow grid into a 429-dominated one — the #200 spiral, re-created on purpose.
@@ -384,7 +384,7 @@ The real constraint on an N×K grid is the request *budget*, not slot contention
 measure the RPM ceiling first rather than assuming the semaphore is the limit.
 
 **✅ DONE (2026-07-25):** the one-time **proxy-inversion audit** of existing metrics
-(`aughor/evals/proxy_audit.py` + `fidelity.assess(demote=…)` + `docs/EVALS_PROXY_INVERSION_AUDIT.md`
+(`pramanyx/evals/proxy_audit.py` + `fidelity.assess(demote=…)` + `docs/EVALS_PROXY_INVERSION_AUDIT.md`
 — classify `accuracy` as ground truth, `pass_rate`/`robustness` as proxies; demote a proxy caught
 improving while `accuracy` worsens, so a proxy-only win cannot inflate the composite), and
 **running grids from a scheduler** (`runner.schedule_experiment` — submits the grid to the job

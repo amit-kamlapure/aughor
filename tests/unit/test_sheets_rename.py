@@ -15,21 +15,21 @@ ORDERS = "order_id,customer_id,price\no1,c1,10.00\no2,c2,20.00\no3,c9,30.00\n"
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
-    from aughor.cards import store as card_store
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
+    from pramanyx.cards import store as card_store
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     monkeypatch.setattr(card_store, "_DB_PATH", tmp_path / "cards.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _make(env, name, text, file=""):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / f"{file or name}.csv"
     path.write_text(text)
     return service.create_from_file(files.stage(path, path.name), name=name, by="user:ana")
@@ -40,7 +40,7 @@ def client(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import cards, dashboards, sheets
+    from pramanyx.routers import cards, dashboards, sheets
     app = FastAPI()
     app.include_router(sheets.router)
     app.include_router(cards.router)
@@ -81,7 +81,7 @@ def test_a_new_sheet_of_the_old_name_takes_its_own_table_and_no_card_with_it(env
 
 
 def test_a_rename_keeps_the_rows_the_edits_and_what_reads_it(env, client):
-    from aughor.sheets import combine, model, projection, service
+    from pramanyx.sheets import combine, model, projection, service
     customers, orders = _make(env, "Customers", CUSTOMERS), _make(env, "Orders", ORDERS)
     combine.link_keep(model.get(orders.id), "customer_id", customers.id, "customer_id", bring=["customer_city"], by="user:ana")
     service.set_cells(model.get(customers.id), [{"row": 1, "column": "customer_city", "value": "edited", "version": 0}], by="user:ana")
@@ -146,8 +146,8 @@ def test_the_csv_is_named_as_the_sheet_is(env, client):
 
 def test_the_schema_says_which_sheet_a_table_is_only_when_its_name_no_longer_does(env, client):
     """A model reads a sheet by its table: a sheet asked for by its new name has to be findable, and only then is it said."""
-    from aughor.db.connection import open_connection_for
-    from aughor.sheets import model, service
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.sheets import model, service
     renamed = _make(env, "Customers", CUSTOMERS)
     _make(env, "Orders", ORDERS)
     assert _make(env, "Orders", ORDERS, file="twin").table == "orders_2"       # still says what it is
@@ -164,8 +164,8 @@ def test_the_schema_says_which_sheet_a_table_is_only_when_its_name_no_longer_doe
 @pytest.mark.parametrize("name", ["Clients", "Clients (2024)", "Clients (id int, city text)", "TABLE: other (x int)",
                                   "Clients [draft]", "Clients [id INTEGER, city TEXT]"])
 def test_the_name_on_a_table_line_is_never_taken_for_a_table_or_a_column(env, client, name):
-    from aughor.db.connection import open_connection_for
-    from aughor.tools.schema import build_rich_schema, parse_schema_tables
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.tools.schema import build_rich_schema, parse_schema_tables
     sheet = _make(env, "Customers", CUSTOMERS)
     read = lambda: open_connection_for("sheets").get_schema()                      # noqa: E731
     tables, rich = parse_schema_tables(read()), build_rich_schema(read())
@@ -178,10 +178,10 @@ def test_the_name_on_a_table_line_is_never_taken_for_a_table_or_a_column(env, cl
 
 def test_a_dashboard_from_a_file_reads_on_through_a_rename(env, client):
     """Its filters name the table, its Add a row the sheet, and a card the table: all three go on working."""
-    from aughor.cards.store import get_card
-    from aughor.dashboards import versions
-    from aughor.dashboards.home import Home
-    from aughor.sheets import dashboard_draft
+    from pramanyx.cards.store import get_card
+    from pramanyx.dashboards import versions
+    from pramanyx.dashboards.home import Home
+    from pramanyx.sheets import dashboard_draft
     sheet = _make(env, "Customers", CUSTOMERS)
     got, problems = dashboard_draft._read_proposal(sheet, {"title": "From the file", "filters": [{"column": "customer_city"}], "cards": [
         {"key": "rows", "title": "The rows", "as": "table", "sql": f"SELECT * FROM {sheet.table}"}]})

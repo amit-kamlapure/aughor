@@ -6,15 +6,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.hub import links as L
-from aughor.ontology.agent_notes import accept_note, object_notes_for, propose_note
+from pramanyx.hub import links as L
+from pramanyx.ontology.agent_notes import accept_note, object_notes_for, propose_note
 
 _PROMISE = "promise:order_to_delivery.dispatch"
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -83,8 +83,8 @@ def test_the_adapter_wraps_arrival_notes_for_the_ranker(client, monkeypatch):
     client.post("/arrivals/slack", json={
         "channel": "C8", "thread_ts": "1712.008",
         "text": "south region depots flooded in week 36", "author": "Ola"})
-    from aughor.hub.adapters import conversation_note_pieces
-    from aughor.hub.ranker import rank
+    from pramanyx.hub.adapters import conversation_note_pieces
+    from pramanyx.hub.ranker import rank
     pieces = conversation_note_pieces("hb5conn")
     assert pieces and pieces[-1].provenance.authority == "said"
     ranked = rank(pieces)

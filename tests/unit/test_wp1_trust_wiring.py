@@ -18,11 +18,11 @@ from types import SimpleNamespace
 
 import duckdb
 
-from aughor.db.connection import (
+from pramanyx.db.connection import (
     DatabaseConnection,
     DuckDBConnection,
 )
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 
 def _conn():
@@ -101,7 +101,7 @@ def test_base_connector_posture_is_unknown_not_assumed():
 # ── 1a: live caveats reach the ADA trust_caveat ───────────────────────────────
 
 def test_live_caveats_reach_trust_caveat():
-    from aughor.agent.investigate import _assemble_phase_findings
+    from pramanyx.agent.investigate import _assemble_phase_findings
 
     q = SimpleNamespace(title="metric by region", chart_type="bar",
                         sql="SELECT region, SUM(x) AS x FROM t GROUP BY region")
@@ -118,7 +118,7 @@ def test_live_caveats_reach_trust_caveat():
 
 
 def test_no_caveats_leaves_trust_caveat_untouched():
-    from aughor.agent.investigate import _assemble_phase_findings
+    from pramanyx.agent.investigate import _assemble_phase_findings
 
     q = SimpleNamespace(title="metric by region", chart_type="bar",
                         sql="SELECT region, SUM(x) AS x FROM t GROUP BY region")

@@ -3,9 +3,9 @@
  * value and its period delta in one place, so the two are never formatted two ways on one card.
  *
  * What the metric's unit/range text MEANS is not decided here: the API ships it as the metric's
- * `stated_range`, read by `aughor/business_profile/validate.py::stated_range` — the same reader the
+ * `stated_range`, read by `pramanyx/business_profile/validate.py::stated_range` — the same reader the
  * value audit holds the metric to, and the same one the Briefing's move phrasing asks
- * (`aughor/knowledge/metric_moves.py`). This file turns that reading into a string.
+ * (`pramanyx/knowledge/metric_moves.py`). This file turns that reading into a string.
  *
  * Pure (no React, no fetch), and measured over every range the industry packages ship in
  * `metricFormat.test.ts`.

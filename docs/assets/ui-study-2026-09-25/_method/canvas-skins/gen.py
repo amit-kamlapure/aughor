@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates the 'Aughor Two Skins' canvas: one layout, two token sets.
+"""Generates the 'Pramanyx Two Skins' canvas: one layout, two token sets.
 
 Dark: cool navy greys (900→500, blue for everything clickable, visible
 borders, cards on a darker ground). Light: a gridded skin (white grid, grey chrome,
@@ -1004,7 +1004,7 @@ BOARDS = {
     'Agent-Setup-Light.dc.html': {'x': 7600, 'y': 1300, 'w': 1440, 'h': 1180, 'title': '11 · The agent\'s Setup tab — light', 'is_interactive': True},
 }
 NOTES = {
-    'title': {'x': 0, 'y': -300, 'text': 'Aughor — two skins, one layout: dark · light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 9040},
+    'title': {'x': 0, 'y': -300, 'text': 'Pramanyx — two skins, one layout: dark · light (mockup, 2026-09-25)', 'kind': 'title1', 'maxW': 9040},
     'shared': {'x': 0, 'y': 1370, 'w': 700, 'fill': 'blue',
                'text': 'One layout, two skins. Every screen is the same region stack in both themes — topbar 48 · rail 248 · header 44 · context bar or toolbar 36 · layer tabs 36 · body · inspector 400 on the Briefing, a details rail 360 on the agent\'s page — and the two files differ only by their token set plus four skin rules: gridlines vs hairlines, sheet tabs vs underlined tabs, cell fills vs pills, a green outline vs a blue edge for the selection. Rows are 34 px, controls 28 px, body text 14 px.'},
     'new': {'x': 760, 'y': 1370, 'w': 680, 'fill': 'green',
@@ -1033,7 +1033,7 @@ if os.path.exists(base_path):
         index['notes'][nid] = dict(index['notes'].get(nid, {}), **note)
 else:
     index = {
-        'v': 3, 'createdOnFiles': {'v': 1, 'at': now}, 'title': 'Aughor Two Skins', 'launch': {'view': 'canvas'}, 'pages': [],
+        'v': 3, 'createdOnFiles': {'v': 1, 'at': now}, 'title': 'Pramanyx Two Skins', 'launch': {'view': 'canvas'}, 'pages': [],
         'boards': BOARDS, 'order': list(BOARDS), 'notes': NOTES, 'designSystems': [],
     }
 with open(os.path.join(OUT, 'canvas.json'), 'w') as f:

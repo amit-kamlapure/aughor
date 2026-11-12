@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from aughor.agent import grounding as G
-from aughor.ontology import overrides as OV
-from aughor.ontology import store as ST
-from aughor.ontology.models import OntologyGraph
-from aughor.util.json_store import KeyedJsonStore
+from pramanyx.agent import grounding as G
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import store as ST
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.util.json_store import KeyedJsonStore
 
 REPO = Path(__file__).resolve().parents[2]
 CONN = "frame-quick-t"
@@ -43,7 +43,7 @@ def test_a_question_that_reaches_a_declared_definition_is_framed_for_the_quick_a
 
 
 def test_an_ambiguous_question_lists_every_definition_it_fits_and_asks_no_model(monkeypatch):
-    import aughor.agent.framing as AF
+    import pramanyx.agent.framing as AF
 
     def no_model(*_args, **_kwargs):
         raise AssertionError("the quick answer asked a model to choose a definition")
@@ -63,7 +63,7 @@ def test_the_grounding_receipt_carries_the_frame_the_answer_is_given():
 
 def test_the_quick_answer_path_prepends_the_frame():
     """Wiring guard, the instructions block's idiom: a producer nothing consumes is the gap this closes."""
-    from aughor.routers.investigations import _answer_core
+    from pramanyx.routers.investigations import _answer_core
     src = inspect.getsource(_answer_core)
     assert "_grounding_frame(question, connection_id" in src and "prompt = _frame_sec + prompt" in src
 

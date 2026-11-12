@@ -17,8 +17,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -96,7 +96,7 @@ def test_a_column_with_no_join_answers_an_empty_list_not_a_guess(shop):
 # ── 2 · the rows, through the door, with the value bound ──────────────────────────────────────────
 
 def test_related_rows_open_through_a_declared_key_with_the_value_bound(shop):
-    from aughor.security.audit import AuditLogger
+    from pramanyx.security.audit import AuditLogger
     before = len(AuditLogger.recent(limit=500, connection_id=shop, label="query_workbench"))
     body = _open(shop, table="orders", column="buyer", value=QUOTED, other_table="customers", other_column="id")
     assert body["error"] is None and body["code"] is None and body["format"] == "typed"
@@ -140,9 +140,9 @@ def test_rows_are_never_opened_on_a_guess(shop):
 # ── 3 · the ontology's edge leads, with its overlap and cardinality ────────────────────────────────
 
 def test_the_ontology_edge_leads_with_overlap_and_cardinality_both_ways(shop, tmp_path, monkeypatch):
-    from aughor.ontology import store as ST
-    from aughor.ontology.models import OntologyGraph, OntologyRelationship
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.ontology import store as ST
+    from pramanyx.ontology.models import OntologyGraph, OntologyRelationship
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     rel = OntologyRelationship(
         id="Order_RELATES_TO_Customer", from_entity="Order", to_entity="Customer", cardinality="N:1",
@@ -177,7 +177,7 @@ def test_the_ontology_edge_leads_with_overlap_and_cardinality_both_ways(shop, tm
     ("inferred", 0.0, True, "rejected", "0% value overlap — the columns share a name and not their values"),
 ])
 def test_each_verdict_has_its_sentence_and_only_two_open_rows(match, overlap, rejected, verdict, sentence):
-    from aughor.sql.related import OPENABLE, sentence_for, verdict_for
+    from pramanyx.sql.related import OPENABLE, sentence_for, verdict_for
     v = verdict_for(match, overlap, rejected=rejected)
     assert v == verdict
     assert sentence_for(match, overlap, v, None) == sentence
@@ -186,7 +186,7 @@ def test_each_verdict_has_its_sentence_and_only_two_open_rows(match, overlap, re
 
 
 def test_the_statement_quotes_for_the_engine_and_binds_the_value():
-    from aughor.sql.related import related_label, related_sql
+    from pramanyx.sql.related import related_label, related_sql
 
     class _Duck:
         dialect = "duckdb"
@@ -203,5 +203,5 @@ def test_the_statement_quotes_for_the_engine_and_binds_the_value():
 
 
 def test_the_rbac_table_knows_the_route():
-    from aughor.rbac.policy import POLICY
+    from pramanyx.rbac.policy import POLICY
     assert POLICY[("POST", "/query/related")] == POLICY[("POST", "/query/run")]

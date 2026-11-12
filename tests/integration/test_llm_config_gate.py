@@ -10,7 +10,7 @@ from __future__ import annotations
 
 
 def test_post_llm_config_is_gated_for_lower_tier(monkeypatch, client):
-    monkeypatch.setenv("AUGHOR_TIER", "free")
+    monkeypatch.setenv("PRAMANYX_TIER", "free")
     r = client.post("/llm/config", json={"backend": "ollama"})
     assert r.status_code == 402
     detail = r.json()["detail"]
@@ -18,15 +18,15 @@ def test_post_llm_config_is_gated_for_lower_tier(monkeypatch, client):
 
 
 def test_get_llm_config_is_not_gated(monkeypatch, client):
-    monkeypatch.setenv("AUGHOR_TIER", "free")
+    monkeypatch.setenv("PRAMANYX_TIER", "free")
     r = client.get("/llm/config")
     assert r.status_code == 200
 
 
 def test_post_llm_config_allowed_for_enterprise(monkeypatch, client):
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")
     # Don't actually mutate on-disk provider config — stub the merge.
-    from aughor.routers import llm as llm_router
+    from pramanyx.routers import llm as llm_router
     monkeypatch.setattr(llm_router._provider, "set_config", lambda patch: {"ok": True, "echo": patch})
     r = client.post("/llm/config", json={"backend": "ollama"})
     assert r.status_code == 200

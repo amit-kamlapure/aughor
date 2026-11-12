@@ -2,7 +2,7 @@
 warehouse's auto-generated glossary (phantom columns / hallucinated enum values). The
 glossary is keyed by bare schema.table, so autoseed re-seeds an auto entry whose stored
 columns no longer match the live table."""
-from aughor.semantic.autoseed import _block_columns, _columns_drifted
+from pramanyx.semantic.autoseed import _block_columns, _columns_drifted
 
 BLOCK = """TABLE: analytics.orders  (4620 rows)
   -- one row per order
@@ -55,7 +55,7 @@ def _duck():
 
 
 def test_false_grain_claim_is_rewritten_to_the_data():
-    from aughor.semantic.autoseed import verify_grain_claim
+    from pramanyx.semantic.autoseed import verify_grain_claim
     out = verify_grain_claim("one row per returned order_id", "returns", {"order_id", "item"}, _duck())
     assert "NOT one row per order_id" in out
     assert "4 rows over 3 distinct order_id" in out
@@ -64,19 +64,19 @@ def test_false_grain_claim_is_rewritten_to_the_data():
 
 
 def test_true_grain_claim_is_kept_verbatim():
-    from aughor.semantic.autoseed import verify_grain_claim
+    from pramanyx.semantic.autoseed import verify_grain_claim
     assert verify_grain_claim("one row per customer_id", "customers", {"customer_id", "name"}, _duck()) == "one row per customer_id"
 
 
 def test_grain_noun_resolves_to_its_id_column():
-    from aughor.semantic.autoseed import verify_grain_claim
+    from pramanyx.semantic.autoseed import verify_grain_claim
     # "one row per order" — the noun is not a column, order_id is
     out = verify_grain_claim("One row per order", "returns", {"order_id", "item"}, _duck())
     assert "NOT one row per order_id" in out
 
 
 def test_unverifiable_claims_pass_through():
-    from aughor.semantic.autoseed import verify_grain_claim
+    from pramanyx.semantic.autoseed import verify_grain_claim
     con = _duck()
     # no conn · no key named · key not a column · a table the query cannot reach
     assert verify_grain_claim("one row per order_id", "returns", {"order_id"}, None) == "one row per order_id"
@@ -90,7 +90,7 @@ def test_composite_and_identified_by_grains_are_judged_correctly():
     # on one swept word ("per ticket per flight" → refused on flight_id). A composite
     # claim is left alone; an "identified by X" claim is judged on X, not the noun.
     import duckdb
-    from aughor.semantic.autoseed import verify_grain_claim
+    from pramanyx.semantic.autoseed import verify_grain_claim
     con = duckdb.connect()
     con.execute("CREATE TABLE baggage AS SELECT * FROM (VALUES "
                 "('t1','f1'),('t2','f1'),('t3','f2')) t(ticket_id, flight_id)")
@@ -110,7 +110,7 @@ def test_phantom_identified_by_column_falls_back_to_the_noun():
     # a TPC-H column name that does not exist on the table. The phantom key must not
     # launder the false claim: judge "order" → order_id (9,994 rows over 5,009).
     import duckdb
-    from aughor.semantic.autoseed import verify_grain_claim
+    from pramanyx.semantic.autoseed import verify_grain_claim
     con = duckdb.connect()
     con.execute("CREATE TABLE orders AS SELECT * FROM (VALUES "
                 "(1,'o1'),(2,'o1'),(3,'o2')) t(row_id, order_id)")

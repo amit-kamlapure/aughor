@@ -1,14 +1,14 @@
 """Migrate the platform's SQLite stores into one Postgres — the cutover script.
 
 Phase 3 of docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md. The serving code already runs
-on Postgres behind ``AUGHOR_DB_URL`` (schema-per-store, dialect translated at the
+on Postgres behind ``PRAMANYX_DB_URL`` (schema-per-store, dialect translated at the
 seam); what a deployment lacks is its DATA. This script moves it:
 
 1. **Every platform ``data/*.db`` file** → its ``store_{stem}`` schema: the DDL is
    read from ``sqlite_master`` and run through the SAME ``backend.translate()`` the
    serving path uses — so a migrated table is byte-identical in shape to what the
    store would have created itself — then rows bulk-copy, and ``PRAGMA
-   user_version`` carries into ``_aughor_meta`` so migrations do not re-apply.
+   user_version`` carries into ``_pramanyx_meta`` so migrations do not re-apply.
 2. **The JSON family stores** (exploration_*/business_profile_* legacy files) import
    through their own ``get_entry`` path against the Postgres-backed ledger — the
    migration IS the store's legacy-import path, pointed at the target.
@@ -26,7 +26,7 @@ a half-written target must never be silently merged into. Verifies itself: per-t
 row counts source vs target, and exits non-zero on any mismatch.
 
 Usage:
-    AUGHOR_DB_URL=postgres://… uv run python scripts/migrate_sqlite_to_postgres.py [--wipe] [--data-dir data]
+    PRAMANYX_DB_URL=postgres://… uv run python scripts/migrate_sqlite_to_postgres.py [--wipe] [--data-dir data]
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ SKIP_FILES = {
 
 
 def _pg(url: str, schema: str):
-    from aughor.db.backend import PgConnection
+    from pramanyx.db.backend import PgConnection
     return PgConnection(url, schema=schema)
 
 
@@ -115,7 +115,7 @@ def migrate_db_file(db_file: Path, url: str, *, wipe: bool) -> tuple[int, int, l
                     (id_col,))
             cur.close()
 
-        # user_version → _aughor_meta, so store migrations do not re-apply on PG.
+        # user_version → _pramanyx_meta, so store migrations do not re-apply on PG.
         uv = src.execute("PRAGMA user_version").fetchone()[0]
         if uv:
             dst.execute(f"PRAGMA user_version = {int(uv)}")
@@ -131,8 +131,8 @@ def import_json_families(data_dir: Path) -> dict[str, int]:
     """Legacy per-key JSON files → the Postgres-backed family stores, through the
     stores' OWN import path (get_entry), so key naming cannot drift from serving."""
     counts: dict[str, int] = {}
-    from aughor.business_profile import store as profile_store
-    from aughor.explorer import store as explorer_store
+    from pramanyx.business_profile import store as profile_store
+    from pramanyx.explorer import store as explorer_store
 
     for prefix, family, label in (
         ("exploration_", explorer_store._family, "exploration"),
@@ -156,9 +156,9 @@ def main() -> int:
                     help="drop and recreate each target schema before copying")
     args = ap.parse_args()
 
-    url = os.environ.get("AUGHOR_DB_URL", "")
+    url = os.environ.get("PRAMANYX_DB_URL", "")
     if not (url.startswith("postgres://") or url.startswith("postgresql://")):
-        print("AUGHOR_DB_URL must name the target postgres:// database", file=sys.stderr)
+        print("PRAMANYX_DB_URL must name the target postgres:// database", file=sys.stderr)
         return 2
 
     total_tables = total_rows = 0

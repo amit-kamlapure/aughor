@@ -1,8 +1,8 @@
-"""P5 declarative modes (aughor.agent.modes) — file-driven routing + fallback."""
+"""P5 declarative modes (pramanyx.agent.modes) — file-driven routing + fallback."""
 from __future__ import annotations
 
 
-from aughor.agent.modes import registry
+from pramanyx.agent.modes import registry
 
 
 class _Dec:
@@ -23,14 +23,14 @@ def test_shipped_manifests_load_and_scope():
 
 
 def test_override_is_noop_when_disabled(monkeypatch):
-    monkeypatch.delenv("AUGHOR_DECLARATIVE_MODES", raising=False)
+    monkeypatch.delenv("PRAMANYX_DECLARATIVE_MODES", raising=False)
     q = "does discount affect revenue?"
     mode, _ = registry.apply_route_overrides(q, "explore", _Dec("explore"))
     assert mode == "explore"  # unchanged when the flag is off
 
 
 def test_driver_question_overrides_explore_to_investigate(monkeypatch):
-    monkeypatch.setenv("AUGHOR_DECLARATIVE_MODES", "1")
+    monkeypatch.setenv("PRAMANYX_DECLARATIVE_MODES", "1")
     q = "does discount level affect revenue across regions?"
     mode, dec = registry.apply_route_overrides(q, "explore", _Dec("explore"))
     assert mode == "investigate"
@@ -38,7 +38,7 @@ def test_driver_question_overrides_explore_to_investigate(monkeypatch):
 
 
 def test_route_from_condition_respected(monkeypatch):
-    monkeypatch.setenv("AUGHOR_DECLARATIVE_MODES", "1")
+    monkeypatch.setenv("PRAMANYX_DECLARATIVE_MODES", "1")
     # investigate's driver keywords are route_from:[explore] — a 'direct' question
     # must NOT be pulled into investigate by them.
     mode, _ = registry.apply_route_overrides("does discount affect revenue?", "direct", _Dec("direct"))
@@ -46,7 +46,7 @@ def test_route_from_condition_respected(monkeypatch):
 
 
 def test_non_matching_question_unchanged(monkeypatch):
-    monkeypatch.setenv("AUGHOR_DECLARATIVE_MODES", "1")
+    monkeypatch.setenv("PRAMANYX_DECLARATIVE_MODES", "1")
     mode, _ = registry.apply_route_overrides("give me an overview of customers", "explore", _Dec("explore"))
     assert mode == "explore"
 
@@ -57,7 +57,7 @@ def test_new_keyword_added_via_file_changes_routing(tmp_path, monkeypatch):
         "name: investigate\nroute_from: [explore]\nroute_keywords:\n  - 'teardown'\n")
     monkeypatch.setattr(registry, "_MANIFEST_DIR", tmp_path)
     registry.load_manifests.cache_clear()
-    monkeypatch.setenv("AUGHOR_DECLARATIVE_MODES", "1")
+    monkeypatch.setenv("PRAMANYX_DECLARATIVE_MODES", "1")
     try:
         mode, _ = registry.apply_route_overrides("give me a teardown of the funnel", "explore", _Dec("explore"))
         assert mode == "investigate"   # the file-defined keyword now routes
@@ -70,7 +70,7 @@ def test_bad_regex_in_manifest_does_not_break_routing(tmp_path, monkeypatch):
         "name: investigate\nroute_from: [explore]\nroute_keywords:\n  - '('\n")  # invalid regex
     monkeypatch.setattr(registry, "_MANIFEST_DIR", tmp_path)
     registry.load_manifests.cache_clear()
-    monkeypatch.setenv("AUGHOR_DECLARATIVE_MODES", "1")
+    monkeypatch.setenv("PRAMANYX_DECLARATIVE_MODES", "1")
     try:
         mode, _ = registry.apply_route_overrides("anything", "explore", _Dec("explore"))
         assert mode == "explore"   # bad pattern skipped, routing survives

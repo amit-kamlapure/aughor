@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import uuid
 
-from aughor.semantic import metric_gates as G
-from aughor.semantic.metrics import MetricDefinition, save_metric
+from pramanyx.semantic import metric_gates as G
+from pramanyx.semantic.metrics import MetricDefinition, save_metric
 from tests.unit.test_metric_twins import client, con  # noqa: F401 — fixtures by name
 
 CONSTANT = "SELECT 1.0 * COUNT(*) / NULLIF(COUNT(*), 0) AS share FROM order_items"
@@ -55,7 +55,7 @@ def test_a_figure_that_moves_is_approved_and_one_that_cannot_be_read_is_not_refu
 
 
 def test_a_return_rate_outside_the_recipes_sane_range_is_refused_with_the_band_and_its_basis(client, monkeypatch):  # noqa: F811
-    from aughor.business_profile import metric_kb
+    from pramanyx.business_profile import metric_kb
     monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "return_rate", RETURNS, label="Return rate")    # every third line returned: about 0.33
@@ -69,7 +69,7 @@ def test_a_return_rate_outside_the_recipes_sane_range_is_refused_with_the_band_a
 
 
 def test_the_adopt_door_skips_a_figure_that_never_moves_with_the_same_words(client, monkeypatch):  # noqa: F811
-    from aughor import govern
+    from pramanyx import govern
     monkeypatch.setattr(govern, "guard", lambda *a, **k: None)
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "constant_share", CONSTANT)
@@ -104,7 +104,7 @@ def test_a_band_is_read_at_its_scale_and_as_a_percent_of_it():
 def test_the_binding_gate_names_an_id_bound_to_a_date_and_a_presence_test_on_a_column_never_empty():
     """LuxExperience's binding, as it stood: `cart.converted_order_id` → `events.event_date`, and
     `order_item.returned_at` → `returns.return_date`, a date every row of returns carries."""
-    from aughor.packs.loader import load_pack
+    from pramanyx.packs.loader import load_pack
     pack = load_pack("packs/retail")
     bound = {"order_item": {"table": "returns", "columns": {"returned_at": "return_date"}},
              "cart": {"table": "events", "columns": {"converted_order_id": "event_date"}}}
@@ -130,7 +130,7 @@ def test_a_metric_that_only_carries_a_recipes_alias_is_not_held_to_its_band(clie
     """Live 2026-10-26: LuxExperience's Item Return Rate (~31% a month, luxury fashion) met retail's return-rate recipe
     through the alias "item return rate"; its 0–30% band would have refused a real figure. An alias names; it does not
     make two metrics one."""
-    from aughor.business_profile import metric_kb
+    from pramanyx.business_profile import metric_kb
     monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
     conn = f"c{uuid.uuid4().hex[:6]}"
     _proposed(conn, "item_return_rate", RETURNS, label="Item Return Rate")      # about 0.33, as return_rate above

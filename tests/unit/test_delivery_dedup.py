@@ -23,8 +23,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.automations.engine import run_automation
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.engine import run_automation
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
 _SEQ = [0]
@@ -49,7 +49,7 @@ def _automation(**kw) -> Automation:
 @pytest.fixture(autouse=True)
 def _isolated_claims(tmp_path, monkeypatch):
     """The claim store is durable by design; keep the suite off the real ledger."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     led = Ledger(str(tmp_path / "claims.db"))
     monkeypatch.setattr(Ledger, "default", staticmethod(lambda: led))
     return led
@@ -127,7 +127,7 @@ def test_a_real_failure_is_still_retried():
 # ── 3. the receiver's half ───────────────────────────────────────────────────
 
 def _payload(delivery_key: str, triggered_at: str) -> dict:
-    from aughor.notifications.models import ActionPayload
+    from pramanyx.notifications.models import ActionPayload
     return ActionPayload(
         investigation_id="automation:auto-dedup-test", rec_index=0,
         recommendation="r", metric_name="", headline="h",

@@ -1,0 +1,113 @@
+"""Entry point: ``python -m pramanyx.mcp [--http] [--host H] [--port P]``.
+
+Default transport is stdio — the form Claude Desktop / Claude Code / Cursor launch. The
+``--http`` form serves streamable-HTTP for HTTP MCP clients (on 127.0.0.1:8765 by default,
+deliberately not the API's :8000). It needs ``PRAMANYX_MCP_TOKEN`` (DE-2a): every HTTP
+client presents it as ``Authorization: Bearer …``, because the tools behind it call the API
+with this process's own key and principal.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import sys
+
+from pramanyx.mcp.server import (ontology_scopes, enable_live_tools, mcp, register_agent_tools,
+                               register_automation_tools, register_grounding_tool, register_ontology_tools,
+                               register_spotlight_tools, serve_http)
+
+_TOKEN_HELP = (
+    "[pramanyx.mcp] --http needs PRAMANYX_MCP_TOKEN. Every HTTP client presents it as "
+    "`Authorization: Bearer <token>`; without one, anyone who reaches the port calls the API as this "
+    "process. Make one with:  python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        prog="pramanyx.mcp", description="Pramanyx governed-intelligence MCP server"
+    )
+    ap.add_argument(
+        "--http", action="store_true",
+        help="Serve over streamable-HTTP instead of stdio (for HTTP MCP clients).",
+    )
+    ap.add_argument("--host", default="127.0.0.1", help="HTTP host (with --http).")
+    ap.add_argument("--port", type=int, default=8765, help="HTTP port (with --http; default 8765).")
+    ap.add_argument(
+        "--no-automations", action="store_true",
+        help="Skip registering this deployment's exposed automations as tools (DS-14).",
+    )
+    ap.add_argument(
+        "--no-spotlight", action="store_true",
+        help="Skip registering the Spotlight platform roster as tools (SP-5).",
+    )
+    ap.add_argument(
+        "--no-agents", action="store_true",
+        help="Skip registering this deployment's custom agents as tools (AO-5a).",
+    )
+    args = ap.parse_args()
+
+    # DS-14 — the eighteen static tools are this VERSION's; the automations are this
+    # DEPLOYMENT's, so they are read once here, before the transport starts serving.
+    #
+    # Before rather than during: a client asks for the tool list immediately after
+    # connecting, and a tool registered after that answer is a tool the client will not
+    # see until it reconnects. Keeping the whole registration ahead of `run()` means the
+    # first `tools/list` is already complete and honest.
+    #
+    # Never fatal. `register_automation_tools` swallows its own failures and returns what
+    # it managed; a server that refused to start because the API was down would withhold
+    # the very tools you would use to find out why.
+    if not args.no_automations:
+        added = asyncio.run(register_automation_tools())
+        if added:
+            print(f"[pramanyx.mcp] exposed {len(added)} automation(s) as tools: "
+                  f"{', '.join(added)}", file=sys.stderr)
+
+    # SP-5 — the Spotlight roster is the arc's ONE declaration, served to every
+    # transport; this transport registers from the API's listing under the same
+    # never-fatal posture as the automations above.
+    if not args.no_spotlight:
+        added_sp = asyncio.run(register_spotlight_tools())
+        if added_sp:
+            print(f"[pramanyx.mcp] exposed the Spotlight roster ({len(added_sp)} tools)",
+                  file=sys.stderr)
+
+    # AO-5a — every enabled custom agent as a tool, under the same never-fatal posture.
+    if not getattr(args, "no_agents", False):
+        added_ag = asyncio.run(register_agent_tools())
+        if added_ag:
+            print(f"[pramanyx.mcp] exposed {len(added_ag)} custom agent(s) as tools: "
+                  f"{', '.join(added_ag)}", file=sys.stderr)
+        # Arc FA, FA-7 — the agents' grounding read, while the install has a custom agent.
+        if asyncio.run(register_grounding_tool()):
+            print("[pramanyx.mcp] exposed the grounding read as ground_agent", file=sys.stderr)
+
+    # Arc OC-8 — one propose tool per declared action of the scopes PRAMANYX_MCP_ONTOLOGY names, never fatal.
+    if ontology_scopes():
+        added_on = asyncio.run(register_ontology_tools())
+        if added_on:
+            print(f"[pramanyx.mcp] exposed {len(added_on)} declared action(s) as propose tools: "
+                  f"{', '.join(added_on)}", file=sys.stderr)
+
+    # The list stays live for a connected client — the rosters asked for above, and only those.
+    enable_live_tools(*[s for s, skip in (("automations", args.no_automations),
+                                          ("spotlight", args.no_spotlight),
+                                          ("agents", getattr(args, "no_agents", False)),
+                                          ("grounding", getattr(args, "no_agents", False)),
+                                          ("ontology", not ontology_scopes())) if not skip])
+
+    if args.http:
+        # DE-2a — a door on the HTTP transport, and the transport security built for the host actually served
+        # (FastMCP fixed a loopback-only allowlist at import, so `--host 0.0.0.0` answered a remote client 421).
+        token = os.environ.get("PRAMANYX_MCP_TOKEN", "").strip()
+        if not token:
+            sys.exit(_TOKEN_HELP)
+        serve_http(args.host, args.port, token)
+    else:
+        mcp.run()  # stdio — the default transport for Claude Desktop/Code/Cursor
+
+
+if __name__ == "__main__":
+    main()

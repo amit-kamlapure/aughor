@@ -2,7 +2,7 @@
 
 The population is DISCOVERED, never hand-listed: every call to a message transport —
 ``fire_action`` (the Action Hub: Slack webhooks, Jira, webhooks) and ``post_as_bot`` (the
-Slack bot) — found anywhere under ``aughor/`` by walking the syntax tree. A call site passes
+Slack bot) — found anywhere under ``pramanyx/`` by walking the syntax tree. A call site passes
 when the function that makes it also asks the gate in its own body (``gate_departure``, or
 the engine's ``_gate_departure``), or when ``UNGATED_BY_DESIGN`` names it with a reason. A
 send added next month that forgets the gate fails here, and an exemption whose call site is
@@ -17,7 +17,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from aughor.govern.departure import UNGATED_BY_DESIGN
+from pramanyx.govern.departure import UNGATED_BY_DESIGN
 
 ROOT = Path(__file__).resolve().parents[2]
 TRANSPORTS = {"fire_action", "post_as_bot"}
@@ -47,9 +47,9 @@ class _OwnCalls(ast.NodeVisitor):
 
 
 def _call_sites() -> dict[str, bool]:
-    """``{"aughor/x.py::function": asks_the_gate}`` for every function that calls a transport."""
+    """``{"pramanyx/x.py::function": asks_the_gate}`` for every function that calls a transport."""
     sites: dict[str, bool] = {}
-    for path in sorted((ROOT / "aughor").rglob("*.py")):
+    for path in sorted((ROOT / "pramanyx").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
         for node in ast.walk(tree):
@@ -67,7 +67,7 @@ def test_every_transport_call_asks_the_gate_or_is_excused_by_name():
                      if not gated and site not in UNGATED_BY_DESIGN)
     assert not ungated, (
         "these functions send a message out of the platform without asking the departure "
-        "gate (aughor/govern/departure.py) in the same function: " + ", ".join(ungated)
+        "gate (pramanyx/govern/departure.py) in the same function: " + ", ".join(ungated)
         + " — gate the send, or add the site to UNGATED_BY_DESIGN with the reason a "
           "person (not the gate) is the check there")
 
@@ -87,11 +87,11 @@ def test_the_scan_is_not_vacuous():
     sites = _call_sites()
     assert len(sites) >= 10, sites
     gated = {s for s, g in sites.items() if g}
-    for expected in ("aughor/automations/engine.py::_dispatch_slack_post",
-                     "aughor/automations/engine.py::_dispatch_notify",
-                     "aughor/monitors/notify.py::dispatch_alert",
-                     "aughor/briefing/delivery.py::deliver_subscription",
-                     "aughor/obs/agent_alert_runner.py::deliver",
-                     "aughor/routers/actions.py::send_finding_to_trigger",
-                     "aughor/routers/actions.py::execute_recommendation_action"):
+    for expected in ("pramanyx/automations/engine.py::_dispatch_slack_post",
+                     "pramanyx/automations/engine.py::_dispatch_notify",
+                     "pramanyx/monitors/notify.py::dispatch_alert",
+                     "pramanyx/briefing/delivery.py::deliver_subscription",
+                     "pramanyx/obs/agent_alert_runner.py::deliver",
+                     "pramanyx/routers/actions.py::send_finding_to_trigger",
+                     "pramanyx/routers/actions.py::execute_recommendation_action"):
         assert expected in gated, f"{expected} no longer asks the gate"

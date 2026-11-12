@@ -14,16 +14,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent import report_checks as rc
-from aughor.agent.investigate import _degenerate_seed_verdict, _trim_to_boundary
-from aughor.agent.prompts_investigate import (
+from pramanyx.agent import report_checks as rc
+from pramanyx.agent.investigate import _degenerate_seed_verdict, _trim_to_boundary
+from pramanyx.agent.prompts_investigate import (
     ADA_SYNTHESIZE_PROMPT,
     BASELINE_GUARDRAILS,
     SYNTHESIS_CORE_RULES,
     synthesis_system_prompt,
 )
-from aughor.playbook.models import PlaybookEntry
-from aughor.playbook.retriever import filter_by_approach
+from pramanyx.playbook.models import PlaybookEntry
+from pramanyx.playbook.retriever import filter_by_approach
 
 
 # ── the ratchet: static prompt text only shrinks ─────────────────────────────────
@@ -44,7 +44,7 @@ def test_static_prompt_text_stays_dieted():
 
 
 def test_system_prompt_tiers_the_guardrails(monkeypatch):
-    import aughor.llm.profile as profile
+    import pramanyx.llm.profile as profile
 
     monkeypatch.setattr(profile, "profile_for",
                         lambda role="narrator", **k: SimpleNamespace(capable=True))

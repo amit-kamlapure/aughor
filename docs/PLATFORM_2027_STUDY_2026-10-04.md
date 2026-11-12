@@ -12,7 +12,7 @@ and the decisions it recorded, with each new count re-measured against the code 
 
 *Method. The platform was reconstructed from the code and the ledgers before anything was proposed:
 `ROADMAP.md` §0–§1, §4, §7–§8; `PENDING.md` as ticked on 2026-10-04; `IDEAS.md`; `docs/GLOSSARY.md`;
-and two read-only sweeps of `aughor/` and `web/` (no database was opened, no model was called, the
+and two read-only sweeps of `pramanyx/` and `web/` (no database was opened, no model was called, the
 running API was not touched). Every count below is quoted from one of those with its date. A count
 is a measurement with a timestamp; re-measure before building on one.*
 
@@ -63,7 +63,7 @@ what every data platform and every model vendor will ship by 2027.
 |---|---|---|
 | Ask and answer | one door, guards, receipts | 74 ask turns lifetime on 2026-09-23; 111 logged asks on 2026-10-04 |
 | Recommendation → outcome | works end to end; review date asked since CB-2 | "nobody has ever recorded an outcome" (`PENDING.md`, loose ends) |
-| Governed actions | declare → approve → execute → audit, standing grants, an earned-autonomy ladder | one declared action on the install (roadmap §1, 2026-09-10); none ships in any pack or the demo; the approval gate does nothing unless `AUGHOR_ACTION_APPROVAL` is set |
+| Governed actions | declare → approve → execute → audit, standing grants, an earned-autonomy ladder | one declared action on the install (roadmap §1, 2026-09-10); none ships in any pack or the demo; the approval gate does nothing unless `PRAMANYX_ACTION_APPROVAL` is set |
 | Human labels | verdict doors in web, Slack reactions, Departures | 5 labelled decisions of the ~150 a gate needs (Arc JD, A6) |
 | Training data | exporters, tiers, gates | SFT 0 of 1,000 · preference pairs 0 of 150 · golden 5 of 150 (Arc TJ) |
 | Causal challenge | skeptic step, typed record | 169 of 309 stored deep reports stated a cause; none had a recorded challenge before 2026-10-04 |
@@ -415,7 +415,7 @@ brain" problem the Brain map was built to expose.
 | Memory | **a view**: the ledger read through time, plus three indexes | section N |
 
 **One envelope.** Everything that asserts carries the same envelope. It already exists in the hub
-(`aughor/hub/provenance.py`: the authority ladder, the scope ladder, `observed_at`, `valid_until`,
+(`pramanyx/hub/provenance.py`: the authority ladder, the scope ladder, `observed_at`, `valid_until`,
 `author`); the context graph's own `Provenance` is the thinner second carrier that `IDEAS.md` 16 named.
 The proposal is to finish that merge, not to design a third.
 
@@ -709,9 +709,9 @@ exactly that.
 **The decision ledger is the missing half of the books.** The pieces around it exist. A recommendation
 sits in the Inbox; an approval sits in a resolve-once queue with its reasoning and proposer; on
 acceptance a baseline is measured, a review is set thirty days out and an hourly job re-measures it
-(`aughor/playbook/outcomes.py`, a flat JSON file). The platform even keeps a proper decision record —
+(`pramanyx/playbook/outcomes.py`, a flat JSON file). The platform even keeps a proper decision record —
 context, the options, the one chosen, the outcome — but only for the *machine's* own choices
-(`aughor/learning/decisions.py`). What it does not hold is the organisation's decision: what was being
+(`pramanyx/learning/decisions.py`). What it does not hold is the organisation's decision: what was being
 chosen between, what was expected, who dissented, which beliefs it stood on. And the review question it
 does generate is shown in the Inbox and written to a log; it is never sent to anyone.
 
@@ -773,7 +773,7 @@ or open source (section F). What is owned is the ladder, the licence, the backte
 part that says how far to trust the answer. And method 4 is fed by section K: every reviewed decision is
 one more past case. That is the link that makes the two systems one. Its seed is already in the code: a
 proposed cause becomes a confirmed causal edge only when a recommendation is marked verified
-(`aughor/lifecycle/causal.py`), and the deep analysis reads those edges. No recommendation has ever been
+(`pramanyx/lifecycle/causal.py`), and the deep analysis reads those edges. No recommendation has ever been
 marked, so the graph has had nothing to grow from.
 
 **A scenario with no decision attached is a toy.** Scenarios live inside a decision, a mission or an
@@ -817,9 +817,9 @@ verification or an unexplained miss, and the demotion is itself a ledger entry. 
 action never passes L3.
 
 **What already exists.** More than the levels suggest. A standing grant is built
-(`aughor/actions/grants.py`): a person pre-authorises one action for one exact target value, the grant
+(`pramanyx/actions/grants.py`): a person pre-authorises one action for one exact target value, the grant
 bypasses approval and never the action's criteria, and every use cites it. An earned ladder is built too
-(`aughor/memory/trust.py`): a connection climbs L0–L3 on its count of clean, grounded runs — and its
+(`pramanyx/memory/trust.py`): a connection climbs L0–L3 on its count of clean, grounded runs — and its
 only consumer today is whether a learned skill is drafted. The two have never met. The proposal is to
 join them: key the ladder by action kind and scope instead of by connection, feed it verified executions
 and outcomes instead of clean runs, and let it widen or withdraw standing grants. One default has to
@@ -911,7 +911,7 @@ none from a model's phrasing of its own confidence:
 model's stated confidence found it right 61% of the time at a stated confidence of about 1.0 (CP-2,
 2026-10-04). A model's own estimate of its certainty is not a number to print. Today an answer's
 HIGH · MEDIUM · LOW is the model's, capped by one skeptic call, and the evidence ledger writes 0.8 for a
-significant result and 0.5 otherwise (`aughor/evidence/linker.py`). Neither has been compared with what
+significant result and 0.5 otherwise (`pramanyx/evidence/linker.py`). Neither has been compared with what
 happened. Confidence on a claim should be the hit rate of its reference class — this kind of claim, this
 method, this source — with its *n*; where *n* is small it says so.
 
@@ -1089,7 +1089,7 @@ held on the installs that bound it).
 | **Ledger API** — post a claim with its warrant; read claims as recorded on a date; subscribe to restatements | outside agents, other tools | the pieces exist behind 66 routers; no published contract |
 | **MCP server** | any vendor's agent, under a service principal and the agent policy | built: 18 tools plus live ones; no raw-SQL tool, by design |
 | **Events out** | a restated claim, a broken promise, a decision due, an outcome scored — as webhooks | automations can do this; there is no stable event catalogue |
-| **Pack kit** — validate, bind against a sample warehouse, run the compile test, measure, publish | pack authors | `aughor packs list · check · measure · promote · demote` exist; packs cannot be uploaded and there is no authoring guide |
+| **Pack kit** — validate, bind against a sample warehouse, run the compile test, measure, publish | pack authors | `pramanyx packs list · check · measure · promote · demote` exist; packs cannot be uploaded and there is no authoring guide |
 | **Action kit** — declare parameters, risk, verification and undo over an integration call or an MCP tool | integrators | declared actions exist; adding an integration operation means editing source |
 | **Evaluation kit** — golden questions, falsifiers, a backtest for a scenario method | pack and method authors | suites exist; not packaged |
 | **Method interface** — register a forecaster, estimator or simulator with its backtest | model builders | missing |
@@ -1372,7 +1372,7 @@ switcher and the live activity strip.
 queries), the Health scorecard and a run list. What needs a person is spread over the Inbox
 (recommendations), Agent Ops ▸ Attention, a "Needs you" section on the Agent Ops overview, the Approvals
 lens of Security & Audit, and the Briefing's lead. Briefing triage already holds items back and records
-why (`aughor/knowledge/triage.py`); nothing shows the held list.
+why (`pramanyx/knowledge/triage.py`); nothing shows the held list.
 
 | | |
 |---|---|
@@ -1424,9 +1424,9 @@ verdicts are saved (`hypotheses_json`) and nothing reads them back; the skeptic 
 
 *Today:* the Inbox holds recommendations with accept · reject and an Execute through the gated path;
 approvals sit in a resolve-once queue with proposer and reasoning; on acceptance a baseline is measured
-and a review set thirty days out (`aughor/playbook/outcomes.py`, a flat JSON file); the review question
+and a review set thirty days out (`pramanyx/playbook/outcomes.py`, a flat JSON file); the review question
 is shown in the Inbox and logged, never sent; a proper decision record exists only for the machine's
-own choices (`aughor/learning/decisions.py`); five decisions have a human label.
+own choices (`pramanyx/learning/decisions.py`); five decisions have a human label.
 
 | | |
 |---|---|
@@ -1441,9 +1441,9 @@ own choices (`aughor/learning/decisions.py`); five decisions have a human label.
 **6 · Scenario**
 
 *Today:* nothing. There is no forecaster, and the departure gate's law 5 says a forecast never departs
-(`aughor/govern/departure.py`). Metric statements and formulas give method 1 its arithmetic; declared
+(`pramanyx/govern/departure.py`). Metric statements and formulas give method 1 its arithmetic; declared
 processes and promises with measured stage durations give method 5 its structure; the causal edges that
-would feed method 4 exist (`aughor/lifecycle/causal.py`) and have never been fed, because no
+would feed method 4 exist (`pramanyx/lifecycle/causal.py`) and have never been fed, because no
 recommendation has been marked verified.
 
 | | |
@@ -1459,7 +1459,7 @@ recommendation has been marked verified.
 **7 · Mission**
 
 *Today:* nothing. The nearest things are the north-star metrics a model infers per connection
-(`aughor/business_profile/`), organisation settings written by people, monitors, declared promises and
+(`pramanyx/business_profile/`), organisation settings written by people, monitors, declared promises and
 a person's cockpits — each a thing a mission would watch, none a mission.
 
 | | |
@@ -1527,9 +1527,9 @@ kind have been right, who else was told, whether it has changed since, or offer 
 **11 · Action centre**
 
 *Today:* Intelligence ▸ Actions lists declared actions and overlay edits; the Approvals lens of Security
-& Audit holds the resolve-once queue; standing grants exist (`aughor/actions/grants.py`) and an earned
-ladder exists (`aughor/memory/trust.py`) and neither has a screen nor has met the other; one action is
-declared on the install; the approval gate is off unless `AUGHOR_ACTION_APPROVAL` is set.
+& Audit holds the resolve-once queue; standing grants exist (`pramanyx/actions/grants.py`) and an earned
+ladder exists (`pramanyx/memory/trust.py`) and neither has a screen nor has met the other; one action is
+declared on the install; the approval gate is off unless `PRAMANYX_ACTION_APPROVAL` is set.
 
 | | |
 |---|---|
@@ -1548,7 +1548,7 @@ policy in one sentence), Access (roles), Appearance, Models, System; Security & 
 (security · activity · approvals); the gate map is a census file (`docs/SQL_DOORS.json`, 191 door
 calls) held by a ratchet test, and Spotlight can name the doors an answer passed; groups are recorded
 and not enforced; row policies are an empty dict in source; identity is off unless
-`AUGHOR_REQUIRE_IDENTITY=1` is set at start.
+`PRAMANYX_REQUIRE_IDENTITY=1` is set at start.
 
 | | |
 |---|---|
@@ -1562,7 +1562,7 @@ and not enforced; row policies are an empty dict in source; identity is off unle
 
 **13 · Developer**
 
-*Today:* an MCP server with 18 tools plus live ones, policy-trimmed; `aughor packs list · check ·
+*Today:* an MCP server with 18 tools plus live ones, policy-trimmed; `pramanyx packs list · check ·
 measure · promote · demote`; the Integrations layer; 66 routers and about 695 routes behind a typed
 client only the web app uses; a key-minting route under RBAC since Arc AO; no pack upload, no plugin
 loading, no authoring guide, no published contract.
@@ -1633,8 +1633,8 @@ exists, so the phase's movement can be read against it.
 
 | | |
 |---|---|
-| Capabilities | the freeze of section C written into `ROADMAP.md` as a decided list, each kill with what survives; roadmap §0 restated — the moat is the warrant and the record, the ontology is the map; the approval gate on by default (`AUGHOR_ACTION_APPROVAL`, read straight from the environment in `aughor/govern/actions.py`, becomes a kill switch, and the old name is kept as an alias rather than stranded — the rule `AGENTS.md` sets for renames); roadmap §1's stale lines corrected (five triggers → seven, twelve effects → thirteen, "neither is a trigger" → both are); the baseline numbers of section A re-measured and dated |
-| Architecture | nothing new. Identity on (`AUGHOR_REQUIRE_IDENTITY=1`), the kernel ledger on Postgres (it already runs there — `aughor/kernel/ledger.py` keeps portable SQL for it), one scheduler leader, API workers stateless; a snapshot of `data/` before and `git ls-files data/` after, as `AGENTS.md` requires |
+| Capabilities | the freeze of section C written into `ROADMAP.md` as a decided list, each kill with what survives; roadmap §0 restated — the moat is the warrant and the record, the ontology is the map; the approval gate on by default (`PRAMANYX_ACTION_APPROVAL`, read straight from the environment in `pramanyx/govern/actions.py`, becomes a kill switch, and the old name is kept as an alias rather than stranded — the rule `AGENTS.md` sets for renames); roadmap §1's stale lines corrected (five triggers → seven, twelve effects → thirteen, "neither is a trigger" → both are); the baseline numbers of section A re-measured and dated |
+| Architecture | nothing new. Identity on (`PRAMANYX_REQUIRE_IDENTITY=1`), the kernel ledger on Postgres (it already runs there — `pramanyx/kernel/ledger.py` keeps portable SQL for it), one scheduler leader, API workers stateless; a snapshot of `data/` before and `git ls-files data/` after, as `AGENTS.md` requires |
 | Product | an install where five or more named people own different metrics, processes and promises, with owners linked to principals (CB-3's panel); Slack live; the Day Briefing delivered seven mornings (BR-5's owed receipt) |
 | Dependencies | the user's decision on the install — this is the call section F named; a Postgres; the IdP receipt still open since VA-10 |
 | Risks | the install is treated as a login wall around a demo (Arc MT's refusal was right about that and stays); the freeze is read as deletion — it is not, working code stays; the kill list is argued item by item instead of adopted or refused as a list |
@@ -1685,7 +1685,7 @@ exists, so the phase's movement can be read against it.
 
 | | |
 |---|---|
-| Capabilities | **verification and undo on every declaration** — an action with no verification statement cannot be declared; **the earned ladder joined to standing grants**: keyed by action kind and scope, fed by verified executions and outcomes inside expectation, widening and withdrawing grants (`aughor/memory/trust.py` and `aughor/actions/grants.py`, which have never met); **automatic demotion** on a failed verification or an unexplained miss, as a ledger entry; the L0–L5 table of section M; L4 and L5 reopen §4.8 — only here, only on the condition that phase 3's outcomes exist, and §4.7 stays closed |
+| Capabilities | **verification and undo on every declaration** — an action with no verification statement cannot be declared; **the earned ladder joined to standing grants**: keyed by action kind and scope, fed by verified executions and outcomes inside expectation, widening and withdrawing grants (`pramanyx/memory/trust.py` and `pramanyx/actions/grants.py`, which have never met); **automatic demotion** on a failed verification or an unexplained miss, as a ledger entry; the L0–L5 table of section M; L4 and L5 reopen §4.8 — only here, only on the condition that phase 3's outcomes exist, and §4.7 stays closed |
 | Architecture | Action as a ledger kind with its grant cited; the outbound gateway and the single MCP call door stay the one write path; the verification read runs through the ordinary query door; the undo is a declared compensating action with a window |
 | Product | the Action centre (screen 11) with the authority table; the approval queue absorbed into it; the Operate duty appears in Operations' duty rows |
 | Dependencies | phase 3's recorded outcomes; the approval gate on by default from phase 0; the user's decision to reopen §4.8 on that condition |
@@ -1698,7 +1698,7 @@ exists, so the phase's movement can be read against it.
 
 | | |
 |---|---|
-| Capabilities | **the mission** (section J) as a ledger kind written by people, with its budget and authority ceiling; triage's first term ("bears on a mission") gets its input; **the mission report** on its cadence, the objective against baseline first; **Corrections** as a first-class view with its four records; **scenario method 4** fed from the install's own reviewed decisions, so the confirmed-cause graph (`aughor/lifecycle/causal.py`) grows for the first time; procedures carry a success rate learned from outcomes, not from use |
+| Capabilities | **the mission** (section J) as a ledger kind written by people, with its budget and authority ceiling; triage's first term ("bears on a mission") gets its input; **the mission report** on its cadence, the objective against baseline first; **Corrections** as a first-class view with its four records; **scenario method 4** fed from the install's own reviewed decisions, so the confirmed-cause graph (`pramanyx/lifecycle/causal.py`) grows for the first time; procedures carry a success rate learned from outcomes, not from use |
 | Architecture | Mission as a ledger kind; the budget charged by triage and the gateway; the report composed from fields; method 4 reads Outcome entries and nothing else |
 | Product | the Mission page (screen 7); Missions as a destination, absorbing monitors, promises and cockpits as what a mission watches; Record's Corrections view (screen 9); the Briefing's mission line |
 | Dependencies | phase 3's outcomes (for method 4 and the report), phase 4's ceiling (for a mission's authority), phase 2's triage (for bearing) |
@@ -2033,7 +2033,7 @@ different ways, and a few receipts owed sit inside ticked lines — 117 placemen
 
 | Phase | Pending lines |
 |---|---|
-| **0 · Remove the wrong assumptions** | delete the parked object-query tool (top item 30, ⚑); the chooser-confidence switch — run it once, keep or delete (Arc MI); the prompt blocks §6 item 15(d) said to cut back (Arc ON, ⚑ a paid ablation); `aughor migrate-state` run for real (Arc IN, ⚑); `ontology_overrides/` into the data folder (Arc IN); group permissions enforced (Arc HB — identity on); cross-user questions (Arc SP — identity on); Slack approvals tied to the approver (Arc SP — identity on); the proposal approver recorded by screen name (Arc CT — identity on); an automation using another user's account, logged not blocked (VA — identity on); SSO against a real identity provider and the Google account's connect-use-revoke (VA, ⚑); theLook's Day subscription and `briefing.ranges` on — the seven mornings (Arc BR, ⚑); the promise-breach chain run live end to end (Arc HB) — this is the flywheel's first turn; cap hits, guardrail events and budget overruns on the governance feed (Arc MI, ⚑) — one audit sink; the stale roadmap lines (the file's last section) |
+| **0 · Remove the wrong assumptions** | delete the parked object-query tool (top item 30, ⚑); the chooser-confidence switch — run it once, keep or delete (Arc MI); the prompt blocks §6 item 15(d) said to cut back (Arc ON, ⚑ a paid ablation); `pramanyx migrate-state` run for real (Arc IN, ⚑); `ontology_overrides/` into the data folder (Arc IN); group permissions enforced (Arc HB — identity on); cross-user questions (Arc SP — identity on); Slack approvals tied to the approver (Arc SP — identity on); the proposal approver recorded by screen name (Arc CT — identity on); an automation using another user's account, logged not blocked (VA — identity on); SSO against a real identity provider and the Google account's connect-use-revoke (VA, ⚑); theLook's Day subscription and `briefing.ranges` on — the seven mornings (Arc BR, ⚑); the promise-breach chain run live end to end (Arc HB) — this is the flywheel's first turn; cap hits, guardrail events and budget overruns on the governance feed (Arc MI, ⚑) — one audit sink; the stale roadmap lines (the file's last section) |
 | **1 · The intelligence kernel** | TJ-2's open bullets — exporters reading the one record, the guard table's second meaning, the explorer's step log; TJ-3's step credit and NULL confidence, and ⚑ the audit sitting of 50–100 bronze rows; BR-2's live receipt on theLook (⚑); BR-7's cell, metric and covered days on a finding, and the live exploration run (⚑); the cross-connection hop and object pages that read one connection (Arc ON); links to query-backed types (Arc ON — the other half of that line is built, below); A3 the metric-definition report screen, tried live; A5 questions kept word for word with no expiry — section N's retention rule; accepting a Slack send from the inbox files a thread like an automatic send (Arc HB) — "who else was told" needs every send recorded; the hosted judge checked live (Arc JD) — the canary's job; the data-profiles block's clean rerun (top item 19) and table popularity measured once (Arc SP) — facts for the model, not prose; the consistency and federation screens' flags (Arc PX) |
 | **2 · Agentic inquiry** | CP-3 route on the label (top item 4) — held by its own falsifier until the corpus is repaired; a screen over the misses door (top item 28); a question worded differently, recognised by a synonym a person adds (Arc ON); the links and probation queues given a screen (Arc HB) — Operations; a person accepting, live, a suggestion the platform raised on its own, and the red-team drives (Arc SP) — the phase's exit metric; approval cards with a real cost per run (Arc SP); answer buttons on a deep-link registry (Arc SP) — section U's rule 5; idea 9, the attention budget; idea 14, the UI that does not look generated — section U's rules; the active tab marked by weight alone (Arc CT) — superseded by the navigation rework; the needs-human badge (Arc UI) — Now's badge |
 | **3 · Decision and simulation** | the outcome loop nobody has ever answered (loose ends) — the review question delivered; idea 13, judge a recommendation against its trend |
@@ -2060,7 +2060,7 @@ arc (top item 31) — each stays refused with its reason, and the study agrees w
 
 **Lines found stale while placing them.** Arc ON's "nothing can declare a measure that must not be summed
 across periods" — the compiler holds `take: last` and refuses a sum across moments since top item 27
-(`aughor/semantic/object_query.py`); only the links-to-query-backed-types half is open. Arc CB's "the
+(`pramanyx/semantic/object_query.py`); only the links-to-query-backed-types half is open. Arc CB's "the
 coverage share reads unknown for both BigQuery connections because the profiler has nothing cached" —
 top item 19 measured theLook's cache populated on 2026-10-04 (7 tables, 75 columns); the second
 connection is unmeasured. Arc AO's hygiene line already strikes two of its own four clauses.

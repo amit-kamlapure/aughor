@@ -13,8 +13,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import aughor.routers.investigations as inv
-from aughor.agent.ask_router import decide_ask_route
+import pramanyx.routers.investigations as inv
+from pramanyx.agent.ask_router import decide_ask_route
 
 
 @dataclass
@@ -231,7 +231,7 @@ def ask_client(monkeypatch):
     # the eligible quick turn and neither marker is emitted.
     # The converse side has its own coverage below (test_ask_converse_serves_the_quick_turn)
     # and in test_converse_route_ineligible.py.
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: False)
 
     async def fake_chat(*a, **k):
         yield inv._sse("quick_marker", {})
@@ -245,7 +245,7 @@ def ask_client(monkeypatch):
     # Keep the borderline routing tiebreak hermetic — no live LLM call for these
     # endpoint tests (the decision matrix is covered by the pure-function tests above).
     monkeypatch.setattr(
-        "aughor.agent.ask_router._default_classifier",
+        "pramanyx.agent.ask_router._default_classifier",
         lambda q: ("direct", _Decision(confidence=1.0, reasoning="stub")),
     )
     app = FastAPI()
@@ -254,7 +254,7 @@ def ask_client(monkeypatch):
 
 
 def _set_cap(monkeypatch, value: bool):
-    monkeypatch.setattr("aughor.licensing.has_capability", lambda *a, **k: value)
+    monkeypatch.setattr("pramanyx.licensing.has_capability", lambda *a, **k: value)
 
 
 def test_ask_simple_question_routes_to_quick_body(ask_client, monkeypatch):
@@ -280,7 +280,7 @@ def test_ask_converse_serves_the_quick_turn(ask_client, monkeypatch):
     Converse swaps the BODY, it does not take over the door, so a change to the depth verdict
     would still be caught by the tests above.
     """
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: True)
 
     async def fake_converse(*a, **k):
         yield inv._sse("converse_marker", {})
@@ -310,9 +310,9 @@ def test_ask_causal_question_routes_to_deep_body(ask_client, monkeypatch):
 def test_ask_with_clarify_reading_crystallizes_to_the_ledger(ask_client, monkeypatch):
     """I4 end-to-end through the real router: a turn that ANSWERS a clarify (carries the chosen
     reading) writes a user-source resolution to the Ambiguity Ledger before answering."""
-    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
+    from pramanyx.semantic.ambiguity_ledger import list_resolutions, purge_connections
     _set_cap(monkeypatch, True)
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")   # the ledger write is gated with the read
+    monkeypatch.setenv("PRAMANYX_CLOSED_LOOP", "1")   # the ledger write is gated with the read
     purge_connections(["i4_conn"])
     r = ask_client.post("/ask", json={
         "question": "top products — by revenue", "connection_id": "i4_conn",
@@ -326,9 +326,9 @@ def test_ask_with_clarify_reading_crystallizes_to_the_ledger(ask_client, monkeyp
 
 
 def test_ask_without_clarify_reading_writes_nothing(ask_client, monkeypatch):
-    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
+    from pramanyx.semantic.ambiguity_ledger import list_resolutions, purge_connections
     _set_cap(monkeypatch, True)
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    monkeypatch.setenv("PRAMANYX_CLOSED_LOOP", "1")
     purge_connections(["i4_none"])
     ask_client.post("/ask", json={"question": "What is total revenue?", "connection_id": "i4_none"})
     assert list_resolutions("i4_none") == []
@@ -344,7 +344,7 @@ def test_ask_deep_route_degrades_to_quick_for_free_tier(ask_client, monkeypatch)
 
 
 def test_ask_disabled_flag_returns_404(ask_client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_UNIFIED_ASK", "0")
+    monkeypatch.setenv("PRAMANYX_UNIFIED_ASK", "0")
     r = ask_client.post("/ask", json={"question": "anything", "connection_id": "c1"})
     assert r.status_code == 404
 

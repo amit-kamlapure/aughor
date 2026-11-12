@@ -13,8 +13,8 @@ import asyncio
 
 import pytest
 
-from aughor.explorer import store as expl_store
-from aughor.routers import exploration as X
+from pramanyx.explorer import store as expl_store
+from pramanyx.routers import exploration as X
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def test_a_restart_resumes_a_datasets_run_by_its_own_key(stuck, monkeypatch):
     dataset's own run stayed mid-phase for good. The job now carries its dataset."""
     from types import SimpleNamespace
 
-    import aughor.api as api
+    import pramanyx.api as api
     calls = []
 
     async def spawn(conn_id, **kw):
@@ -71,8 +71,8 @@ def test_a_restart_resumes_a_datasets_run_by_its_own_key(stuck, monkeypatch):
     async def no_investigations():
         return None
 
-    monkeypatch.setattr("aughor.routers._shared.spawn_explorer", spawn)
-    monkeypatch.setattr("aughor.kernel.jobs.kernel", lambda: SimpleNamespace(boot_recovery=lambda: [
+    monkeypatch.setattr("pramanyx.routers._shared.spawn_explorer", spawn)
+    monkeypatch.setattr("pramanyx.kernel.jobs.kernel", lambda: SimpleNamespace(boot_recovery=lambda: [
         {"conn_id": "wh", "canvas_id": None, "payload": {"schema_name": "sales"}},
         {"conn_id": "wh", "canvas_id": None, "payload": {"schema_name": "ops"}}]))
     monkeypatch.setattr(api, "_recover_orphaned_investigations", no_investigations)

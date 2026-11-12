@@ -1,4 +1,4 @@
-"""Phase 1 of the 2027 study, P1-2 — the writers into the Record (`aughor/record/writers.py`).
+"""Phase 1 of the 2027 study, P1-2 — the writers into the Record (`pramanyx/record/writers.py`).
 
 What these hold: every receipted answer that concluded something with a query behind it books an
 OBSERVATION warranted by its receipt; one that concluded nothing, or ran no query, books none; a
@@ -17,13 +17,13 @@ from datetime import datetime, timezone
 import duckdb
 import pytest
 
-import aughor.evidence.store as ev_store
-from aughor.evidence.linker import extract_claims_from_ada_phases, extract_claims_from_report
-from aughor.evidence.models import EvidenceClaim
-from aughor.kernel.ledger import DEEP_REPORT_KIND, Ledger
-from aughor.record import claims as C
-from aughor.record import writers as W
-from aughor.routers import investigations as inv
+import pramanyx.evidence.store as ev_store
+from pramanyx.evidence.linker import extract_claims_from_ada_phases, extract_claims_from_report
+from pramanyx.evidence.models import EvidenceClaim
+from pramanyx.kernel.ledger import DEEP_REPORT_KIND, Ledger
+from pramanyx.record import claims as C
+from pramanyx.record import writers as W
+from pramanyx.routers import investigations as inv
 
 
 @pytest.fixture
@@ -184,9 +184,9 @@ def test_an_answer_with_no_observation_restates_nothing_and_an_unchanged_one_is_
 def test_the_recheck_end_to_end_restates_the_record_and_the_entry_names_it(monkeypatch):
     """The real spine: a chat turn saved, its observation booked, the source gaining late rows, the
     daily re-check finding them — and the Record restated with the entry on the answer saying so."""
-    from aughor.answer import recheck
-    from aughor.db.history import get_chat_answer, save_chat_turn
-    import aughor.settling.store as settling
+    from pramanyx.answer import recheck
+    from pramanyx.db.history import get_chat_answer, save_chat_turn
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 3)
     con = duckdb.connect()
     con.execute("""CREATE TABLE orders AS SELECT DATE '2026-09-15' + (i % 6)::INT
@@ -315,7 +315,7 @@ def test_the_explorer_writer_books_a_measured_finding_and_leaves_an_unchanged_on
 
 
 def test_a_finding_the_revalidation_or_a_person_withdraws_is_restated_withdrawn_with_the_measured_version_kept():
-    from aughor.explorer import store as S
+    from pramanyx.explorer import store as S
     conn, fid = _conn(), "Returns__rate__2"
     finding = {"id": fid, "finding": "Returns ran at 4.1% last month", "sql": "SELECT 1", "generated_at": "2026-10-01"}
     cid = W.book_explorer_finding(finding=finding, sql="SELECT 1", connection_id=conn, receipt_id=_finding_artifact(conn, fid, "x", "SELECT 1"), schema_name="s")

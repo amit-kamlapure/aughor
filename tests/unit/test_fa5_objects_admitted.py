@@ -11,11 +11,11 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.automations import admitted as A
-from aughor.automations.dataflow import FanRefused, fan_items, withheld_list
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome, ForEach
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
+from pramanyx.automations import admitted as A
+from pramanyx.automations.dataflow import FanRefused, fan_items, withheld_list
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome, ForEach
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
 from tests.unit.test_object_bindings import seed
 from tests.unit.test_object_processes import _DEADLINES, FULFILMENT, declare, declare_rule, fresh_graph
 
@@ -108,10 +108,10 @@ def not_pending(path, n: int) -> list[str]:
 
 def test_a_chain_without_the_trigger_runs_exactly_as_before(graph, monkeypatch):
     """The engine's only new work is a commit that returns at once when no condition is this kind."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     monkeypatch.setattr(A, "_graph_for", lambda *_a: pytest.fail("the ontology was read"))
     for touched in ("add_admitted", "get_admitted_keys", "record_admitted", "drop_admitted"):
-        monkeypatch.setattr(f"aughor.automations.store.{touched}", lambda *_a, **_k: pytest.fail("keys were touched"))
+        monkeypatch.setattr(f"pramanyx.automations.store.{touched}", lambda *_a, **_k: pytest.fail("keys were touched"))
     seen: list = []
 
     def dispatch(effect, automation):
@@ -129,7 +129,7 @@ def test_a_chain_without_the_trigger_runs_exactly_as_before(graph, monkeypatch):
 # ── the user's call 1: the first check records, a later one fires ───────────────────────────────────────────────────
 
 def test_the_first_check_records_who_is_already_in_and_says_so_without_firing(graph, warehouse):
-    from aughor.automations.store import get_admitted_keys
+    from pramanyx.automations.store import get_admitted_keys
     auto = watch()
     fired, detail, payload = check(auto)
     want = pending(warehouse)
@@ -157,7 +157,7 @@ def test_an_object_that_enters_afterwards_fires_once_with_its_key(graph, warehou
 
 
 def test_through_the_engine_each_admitted_key_is_one_step_and_the_next_tick_is_quiet(graph, warehouse):
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     sent: list = []
 
     def dispatch(effect, automation):
@@ -180,7 +180,7 @@ def test_through_the_engine_each_admitted_key_is_one_step_and_the_next_tick_is_q
 
 def test_an_arrival_held_back_by_another_condition_is_not_swallowed(graph, warehouse):
     """`all` with a false second condition: the arrival is seen, not fired, and stays new until a tick fires."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     auto = watch()
     auto = auto.model_copy(update={"conditions": auto.conditions + [
         Condition(kind="webhook", config={})], "condition_logic": "all"})
@@ -207,8 +207,8 @@ def test_more_than_fifty_arrivals_are_withheld_and_their_count_said(graph, wareh
 
 
 def test_a_for_each_over_a_withheld_list_is_refused_with_its_sentence_never_run_as_empty(graph, warehouse):
-    from aughor.automations.dataflow import FAN_EMPTY_SKIP
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.dataflow import FAN_EMPTY_SKIP
+    from pramanyx.automations.engine import run_automation
     sent: list = []
     per_key = Effect(kind="notify", config={"trigger_id": "t1", "message": {"$from": "item.value"}},
                      for_each=ForEach(source={"$from": "trigger.admitted"}))
@@ -233,7 +233,7 @@ def test_the_dataflow_refuses_a_withheld_list_and_still_runs_a_real_one():
 
 
 def test_objects_that_left_are_dropped_and_counted_and_one_that_returns_is_new_again(graph, warehouse):
-    from aughor.automations.store import get_admitted_keys
+    from pramanyx.automations.store import get_admitted_keys
     auto = watch()
     check(auto)
     leaving = sorted(pending(warehouse))[:3]
@@ -248,7 +248,7 @@ def test_objects_that_left_are_dropped_and_counted_and_one_that_returns_is_new_a
 
 
 def test_above_the_cap_the_check_says_too_many_to_track_and_records_nothing(graph, warehouse, monkeypatch):
-    from aughor.automations.store import get_admitted_keys, get_probe_baseline
+    from pramanyx.automations.store import get_admitted_keys, get_probe_baseline
     monkeypatch.setattr(A, "MAX_TRACKED", 100)
     auto = watch()
     fired, detail, payload = check(auto)
@@ -262,8 +262,8 @@ def test_above_the_cap_the_check_says_too_many_to_track_and_records_nothing(grap
 
 @pytest.fixture
 def secured(graph, monkeypatch):
-    from aughor.ontology.models import RowPolicy
-    from aughor.rbac.groups import add_member, upsert_group
+    from pramanyx.ontology.models import RowPolicy
+    from pramanyx.rbac.groups import add_member, upsert_group
     upsert_group("default", "cards", "Cards")
     add_member("default", "cards", "user:ana")
     graph.entities["Order"].row_policies = [
@@ -272,8 +272,8 @@ def secured(graph, monkeypatch):
 
 
 def test_the_owner_s_row_policy_holds_and_what_it_withholds_is_said(secured, warehouse, monkeypatch):
-    from aughor.automations.store import get_admitted_keys
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ben")       # the install's operator is someone else — never read as
+    from pramanyx.automations.store import get_admitted_keys
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ben")       # the install's operator is someone else — never read as
     auto = watch(declared_by="user:ana")
     fired, detail, _ = check(auto)
     ana = {r[0] for r in sql(warehouse, "SELECT order_id FROM ecommerce.orders "
@@ -300,7 +300,7 @@ def test_a_reader_in_no_group_lists_none_and_is_told_which_groups_would(secured,
 
 
 def test_an_automation_that_records_no_one_is_listed_as_the_operator_and_says_so(graph, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "operator-o")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "operator-o")
     _, detail, _ = check(watch(declared_by=""))
     assert "listed as user:operator-o, this install's operator — the automation records no one who saved it" in detail
 
@@ -308,7 +308,7 @@ def test_an_automation_that_records_no_one_is_listed_as_the_operator_and_says_so
 def test_a_changed_row_policy_records_afresh_instead_of_firing_for_what_became_visible(secured, warehouse):
     auto = watch(declared_by="user:ana")
     check(auto)
-    from aughor.ontology.models import RowPolicy
+    from pramanyx.ontology.models import RowPolicy
     secured.entities["Order"].row_policies = [
         RowPolicy(group="cards", conditions=[{"path": "payment_method", "op": "in", "values": ["card", "paypal"]}])]
     fired, detail, payload = check(auto)
@@ -348,7 +348,7 @@ def test_an_overdue_segment_is_defined_by_its_promise_not_by_the_moment_it_was_m
 
 
 def test_taking_the_trigger_off_takes_its_record_and_deleting_takes_the_rest(graph):
-    from aughor.automations.store import (delete_automation, get_admitted_keys, get_probe_baseline,
+    from pramanyx.automations.store import (delete_automation, get_admitted_keys, get_probe_baseline,
                                           upsert_automation)
     auto = upsert_automation(watch())
     check(auto)
@@ -365,9 +365,9 @@ def test_taking_the_trigger_off_takes_its_record_and_deleting_takes_the_rest(gra
 # ── the doors ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_withdrawing_a_watched_rule_segment_process_or_entity_is_refused(graph, warehouse):
-    from aughor.ontology.compatibility import classify
-    from aughor.ontology.dependents import dependents_of, refusal
-    from aughor.ontology.models import Segment
+    from pramanyx.ontology.compatibility import classify
+    from pramanyx.ontology.dependents import dependents_of, refusal
+    from pramanyx.ontology.models import Segment
     db = _open(warehouse)
     try:
         declare(graph, db, FULFILMENT)
@@ -402,7 +402,7 @@ def test_the_save_door_refuses_a_segment_it_cannot_list(graph, client):
 
 
 def test_the_palette_offers_it_ready_only_where_a_segment_can_be_watched(monkeypatch):
-    from aughor.automations.palette import NEEDS_SETUP, READY, entries
+    from pramanyx.automations.palette import NEEDS_SETUP, READY, entries
     monkeypatch.setattr(A, "watchable_segments", lambda conn_id: 1)
     row = next(r for r in entries("c1") if r["kind"] == "objects_admitted")
     assert (row["group"], row["label"], row["availability"]) == ("trigger", "Objects admitted", READY)
@@ -414,8 +414,8 @@ def test_the_palette_offers_it_ready_only_where_a_segment_can_be_watched(monkeyp
 def test_the_client_offers_the_same_words_and_the_canvas_names_the_trigger():
     from pathlib import Path
 
-    from aughor.automations.graph import condition_label
-    from aughor.automations.palette import ENTRIES
+    from pramanyx.automations.graph import condition_label
+    from pramanyx.automations.palette import ENTRIES
     web = Path(__file__).resolve().parents[2] / "web"
     rows = (web / "components" / "automations" / "AutomationRows.tsx").read_text()
     entry = next(e for e in ENTRIES if e.kind == "objects_admitted")

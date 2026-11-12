@@ -68,7 +68,7 @@ def main() -> None:
     print(f"deep: zero recommendations:           {d_empty_recs:5}  {pct(d_empty_recs, deep_n)}")
     print(f"deep: confidence LOW:                 {d_low:5}  {pct(d_low, deep_n)}")
     try:
-        from aughor.obs import session_log
+        from pramanyx.obs import session_log
         rm = session_log.route_mix()
         print(f"converse-served turns (lifetime):     {rm.get('converse_turns', 0):5}")
     except Exception:

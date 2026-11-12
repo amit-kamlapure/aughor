@@ -13,8 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.briefing import ranges
-from aughor.settling.answer import answer_from, answer_of_block, settling_answer
+from pramanyx.briefing import ranges
+from pramanyx.settling.answer import answer_from, answer_of_block, settling_answer
 
 REWRITES = {"days": 29, "source": "beyond_horizon", "still_moving": ["items", "sales"], "horizon": 28, "rewrites": ["items", "sales"]}
 MIXED = {"days": 29, "source": "beyond_horizon", "still_moving": ["items", "sales"], "horizon": 28, "rewrites": ["items"]}
@@ -28,7 +28,7 @@ TODAY = date(2026, 11, 4)
 def source(monkeypatch):
     """Every reader goes through `store.connection_lag`, so this is the one place a source's reading comes from."""
     def set_reading(lag):
-        monkeypatch.setattr("aughor.settling.store.connection_lag", lambda cid: lag)
+        monkeypatch.setattr("pramanyx.settling.store.connection_lag", lambda cid: lag)
     return set_reading
 
 
@@ -131,19 +131,19 @@ def test_a_block_carries_the_same_answer_and_one_kept_from_before_reads_from_wha
 def test_an_unreadable_store_claims_nothing(monkeypatch):
     def boom(cid):
         raise OSError("gone")
-    monkeypatch.setattr("aughor.settling.store.connection_lag", boom)
+    monkeypatch.setattr("pramanyx.settling.store.connection_lag", boom)
     assert settling_answer("c1").kind == "unknown" and settling_answer("").kind == "unknown"
 
 
 def test_the_answer_names_no_connection():
-    text = Path("aughor/settling/answer.py").read_text().lower()
+    text = Path("pramanyx/settling/answer.py").read_text().lower()
     assert not any(name in text for name in ("thelook", "luxexperience", "8233e4fd", "dcc63d83"))
 
 
 # ── a dashboard tile ─────────────────────────────────────────────────────────────────────
 
 def test_a_range_is_provisional_while_a_table_it_reads_has_not_been_seen_to_stop():
-    from aughor.dashboards.host import FINAL, PROVISIONAL, status_of
+    from pramanyx.dashboards.host import FINAL, PROVISIONAL, status_of
     old = SimpleNamespace(preset="custom", under_way=False, as_of=TODAY, lag_days=1, last_day=TODAY - timedelta(days=60),
                           still_moving=("items",))
     assert status_of(old) == PROVISIONAL                                     # the connection's own read
@@ -194,7 +194,7 @@ def test_what_a_range_did_not_read_leaves_with_it():
 
 
 def test_what_an_edition_did_not_read_leaves_with_it():
-    from aughor.briefing.compose.write import sheet_lines
+    from pramanyx.briefing.compose.write import sheet_lines
     out = dict(sheet_lines({"not_read": [{"label": "Revenue against its usual range", "reason": "it is not read against usual"},
                                          {"label": "a guide's note", "reason": ""}]}))
     assert out.get("not_read") == ["Revenue against its usual range: it is not read against usual"]
@@ -202,7 +202,7 @@ def test_what_an_edition_did_not_read_leaves_with_it():
 
 
 def test_a_send_is_headed_by_what_is_true_of_its_source():
-    from aughor.briefing.delivery import _SHEET_TITLES, render_period_markdown
+    from pramanyx.briefing.delivery import _SHEET_TITLES, render_period_markdown
     md = render_period_markdown(ranges.range_block(_spec(REWRITES)), [], 0)
     assert "rewrites its history at each refresh" in md and "settling as late rows arrive" not in md
     md = render_period_markdown(ranges.range_block(_spec(SETTLES, preset="last_week")), [], 0)
@@ -212,7 +212,7 @@ def test_a_send_is_headed_by_what_is_true_of_its_source():
 
 
 def test_the_narrator_is_told_of_a_source_that_rewrites():
-    from aughor.knowledge.period_brief import period_note
+    from pramanyx.knowledge.period_brief import period_note
     note = period_note(ranges.range_block(_spec(REWRITES)), TODAY)
     assert "rewrites its history at each refresh" in note and "do not call any figure from it final" in note
     assert "do not read a difference against an earlier period as a move" in note
@@ -222,7 +222,7 @@ def test_the_narrator_is_told_of_a_source_that_rewrites():
 
 
 def test_a_block_read_back_into_a_conversation_says_the_same():
-    from aughor.knowledge.brief_context import _period_lines
+    from pramanyx.knowledge.brief_context import _period_lines
     said = " ".join(_period_lines({"covers": "August", "lag_days": 29, "lag_source": "beyond_horizon", "still_moving": ["items"], "rewrites": ["items"]}))
     assert "rewrites its history" in said and "may still change" not in said and "not settled" not in said
     said = " ".join(_period_lines({"covers": "August", "lag_days": 3, "lag_source": "learned"}))
@@ -230,17 +230,17 @@ def test_a_block_read_back_into_a_conversation_says_the_same():
 
 
 def test_the_desk_says_a_source_that_rewrites_as_one():
-    from aughor.briefing import desk
+    from pramanyx.briefing import desk
     out = desk.gaps([], [], {"lag_days": 29, "key": "k", "lag_source": "beyond_horizon", "still_moving": ["items"], "rewrites": ["items"]})
     assert out[0]["title"] == "Figures are read 29 days behind" and "rewrites its history" in out[0]["text"]
 
 
 def test_the_guide_writer_is_not_told_a_floor_is_a_settling_lag(source, monkeypatch):
-    from aughor.briefing import guide
-    monkeypatch.setattr("aughor.briefing.ranges.data_edge", lambda *a, **k: {"tables": {}})
-    monkeypatch.setattr("aughor.briefing.ranges.governed_metrics", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.business_profile.infer.gather_context", lambda *a, **k: ("", []))
-    monkeypatch.setattr("aughor.business_profile.store.load_raw", lambda *a, **k: {})
+    from pramanyx.briefing import guide
+    monkeypatch.setattr("pramanyx.briefing.ranges.data_edge", lambda *a, **k: {"tables": {}})
+    monkeypatch.setattr("pramanyx.briefing.ranges.governed_metrics", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.business_profile.infer.gather_context", lambda *a, **k: ("", []))
+    monkeypatch.setattr("pramanyx.business_profile.store.load_raw", lambda *a, **k: {})
     source(REWRITES)
     told = guide._context("c1", None, today=TODAY)
     assert "READ BEHIND: 29 days" in told and "SETTLING LAG" not in told and "rewrites its history" in told
@@ -253,14 +253,14 @@ def test_the_guide_writer_is_not_told_a_floor_is_a_settling_lag(source, monkeypa
 
 @pytest.mark.parametrize("lag", [REWRITES, MOVING])
 def test_the_conversation_is_not_told_a_floor_is_a_learned_lag(source, lag):
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
     source(lag)
     told = converse_system_prompt("c1")
     assert answer_from(lag).for_agents() in told and "learned from observation" not in told
 
 
 def test_an_intake_window_says_why_it_was_cut_in_the_answers_words():
-    from aughor.agent.investigate import _clamp_intake_to_coverage
+    from pramanyx.agent.investigate import _clamp_intake_to_coverage
     intake = SimpleNamespace(observation_start="2026-09-10", observation_end="2026-09-23", observation_label="Last two weeks",
                              comparison_start="2026-08-27", comparison_end="2026-09-09", comparison_label="Prior two weeks",
                              cross_sectional=False, intake_notes="")
@@ -270,7 +270,7 @@ def test_an_intake_window_says_why_it_was_cut_in_the_answers_words():
 
 
 def test_a_scheduled_run_is_told_whatever_lag_its_step_reads_at():
-    from aughor.automations.temporal import scheduled_grounding
+    from pramanyx.automations.temporal import scheduled_grounding
     auto = SimpleNamespace(id="a1", conditions=[SimpleNamespace(kind="schedule", config={"cron": "0 7 * * *"})])
     told = answer_from(REWRITES).for_agents()
     assert told in scheduled_grounding(auto, {}, learned_lag=29, never_settles=told)
@@ -282,14 +282,14 @@ def test_a_scheduled_run_is_told_whatever_lag_its_step_reads_at():
 
 @pytest.mark.parametrize("kind", ["moving", "rewrites"])
 def test_a_change_on_a_source_never_seen_to_settle_is_neither_late_rows_nor_a_restatement(kind):
-    from aughor.answer.recheck import classify
+    from pramanyx.answer.recheck import classify
     changes = [{"day": "2026-09-20"}, {"day": "2026-01-01"}]
     assert classify(changes, date(2026, 9, 21), 29, kind) == kind and {c["cause"] for c in changes} == {kind}
 
 
 @pytest.mark.parametrize("cause, told", [("rewrites", False), ("moving", True), ("late_rows", True)])
 def test_a_source_redrawn_at_each_refresh_does_not_tell_anyone_each_time_it_was(monkeypatch, cause, told):
-    from aughor.answer import recheck
+    from pramanyx.answer import recheck
     sent, recorded = [], []
     monkeypatch.setattr(recheck, "measure_answer", lambda answer, **kw: {"status": "changed", "cause": cause, "changes": [{}]})
     monkeypatch.setattr(recheck, "tell", lambda answer, entry: sent.append(entry) or {"status": "sent"})
@@ -300,7 +300,7 @@ def test_a_source_redrawn_at_each_refresh_does_not_tell_anyone_each_time_it_was(
 
 @pytest.mark.parametrize("lag, cause", [(REWRITES, "rewrites"), (MOVING, "moving"), (SETTLES, "restated")])
 def test_a_recheck_records_what_is_true_of_its_source(source, lag, cause):
-    from aughor.answer import recheck
+    from pramanyx.answer import recheck
     source(lag)
     answer = {"connection_id": "c1", "created_at": "2026-10-20T00:00:00Z",
               "report": {"sql": "SELECT day, n FROM items", "columns": ["day", "n"], "rows": [["2026-09-20", 100]]}}
@@ -310,7 +310,7 @@ def test_a_recheck_records_what_is_true_of_its_source(source, lag, cause):
 
 
 def test_a_recheck_of_an_answer_on_a_settled_table_is_not_blamed_on_its_sibling(source):
-    from aughor.answer import recheck
+    from pramanyx.answer import recheck
     source({**REWRITES, "still_moving": ["events"], "rewrites": ["events"]})
     answer = {"connection_id": "c1", "created_at": "2026-10-20T00:00:00Z",
               "report": {"sql": "SELECT day, n FROM items", "columns": ["day", "n"], "rows": [["2026-09-20", 100]]}}
@@ -319,7 +319,7 @@ def test_a_recheck_of_an_answer_on_a_settled_table_is_not_blamed_on_its_sibling(
 
 
 def test_rows_that_vanished_on_a_redrawn_source_have_the_same_cause_and_tell_nobody(source, monkeypatch):
-    from aughor.answer import recheck
+    from pramanyx.answer import recheck
     source(REWRITES)
     sent = []
     monkeypatch.setattr(recheck, "tell", lambda answer, entry: sent.append(entry) or {"status": "sent"})
@@ -333,14 +333,14 @@ def test_rows_that_vanished_on_a_redrawn_source_have_the_same_cause_and_tell_nob
 def test_a_metric_card_on_a_table_still_moving_is_not_at_equal_age(monkeypatch):
     import contextlib
 
-    from aughor.routers import cards
-    from aughor.semantic import metric_time as mt
+    from pramanyx.routers import cards
+    from pramanyx.semantic import metric_time as mt
 
     @contextlib.contextmanager
     def runner(conn_id):
         yield (lambda sql: ([], [], None)), "duckdb"
 
-    monkeypatch.setattr("aughor.knowledge.period_brief.connection_runner", runner)
+    monkeypatch.setattr("pramanyx.knowledge.period_brief.connection_runner", runner)
     monkeypatch.setattr(mt, "declared", lambda m: True)
     monkeypatch.setattr(mt, "run_measure", lambda *a, **k: ([{"window": "current", "value": 7}, {"window": "previous", "value": 5}], ""))
     card = SimpleNamespace(connection_id="c1", refresh=SimpleNamespace(model_dump=lambda: {}))
@@ -353,11 +353,11 @@ def test_a_metric_card_on_a_table_still_moving_is_not_at_equal_age(monkeypatch):
 
 
 def test_no_segment_is_asked_to_explain_a_figure_not_read_as_a_move(monkeypatch):
-    from aughor.briefing import recipes
+    from pramanyx.briefing import recipes
     seen = []
     metrics = [SimpleNamespace(name=n, status="approved", connection="c1") for n in ("revenue", "cost")]
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: metrics)
-    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda cid: {})
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: metrics)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.merged_profile_entry", lambda cid: {})
     monkeypatch.setattr(recipes, "what_moved", lambda ms, *a, **k: seen.extend(m.name for m in ms) or {"moves": [], "thin": []})
     got = {"measured": [FIGURE, READ], "period": ranges.range_block(_spec(REWRITES))}
     recipes.apply("c1", _spec(REWRITES), got, run_sql=lambda sql: ([], [], None), dialect="duckdb", domain_data={}, currency="USD", block=got["period"])
@@ -367,7 +367,7 @@ def test_no_segment_is_asked_to_explain_a_figure_not_read_as_a_move(monkeypatch)
 # ── a metric's move and a watch ──────────────────────────────────────────────────────────
 
 def test_a_chart_reading_a_table_still_moving_reports_no_move():
-    from aughor.knowledge.metric_moves import compute_metric_moves
+    from pramanyx.knowledge.metric_moves import compute_metric_moves
     trend = (["month", "gross_margin_pct"], [["Jan", 50.0], ["Mar", 49.0], ["May", 47.0], ["Sep", 49.0], ["Nov", 43.0], ["Dec", 34.0]])
     metrics = [SimpleNamespace(name="Margin", chart_sql="SELECT month, m FROM analytics.items", unit_or_range="%", definition="d")]
     run_sql = lambda sql: (*trend, None)  # noqa: E731
@@ -377,7 +377,7 @@ def test_a_chart_reading_a_table_still_moving_reports_no_move():
 
 
 def test_the_key_movements_door_passes_the_tables_of_a_source_never_seen_to_settle(source):
-    from aughor.routers.exploration import _still_moving
+    from pramanyx.routers.exploration import _still_moving
     source(MIXED)
     assert _still_moving("c1") == ("items", "sales")           # the table only moving too, not only the rewriting one
     source(SETTLES)
@@ -386,8 +386,8 @@ def test_the_key_movements_door_passes_the_tables_of_a_source_never_seen_to_sett
 
 @pytest.mark.parametrize("lag, says", [(REWRITES, True), (MOVING, True), (SETTLES, False), (UNKNOWN, False)])
 def test_a_watch_keeps_firing_and_its_alert_says_what_is_true_of_its_source(source, monkeypatch, lag, says):
-    from aughor.monitors import runner
-    from aughor.monitors.models import Monitor
+    from pramanyx.monitors import runner
+    from pramanyx.monitors.models import Monitor
     monkeypatch.setattr(runner, "_last_alert_value", lambda mid: None)
     monkeypatch.setattr(runner, "_guard_caveats", lambda m, db: None)
     source(lag)
@@ -399,8 +399,8 @@ def test_a_watch_keeps_firing_and_its_alert_says_what_is_true_of_its_source(sour
 
 
 def test_a_watch_on_a_table_that_settled_does_not_carry_its_siblings_caveat(source, monkeypatch):
-    from aughor.monitors import runner
-    from aughor.monitors.models import Monitor
+    from pramanyx.monitors import runner
+    from pramanyx.monitors.models import Monitor
     monkeypatch.setattr(runner, "_last_alert_value", lambda mid: None)
     monkeypatch.setattr(runner, "_guard_caveats", lambda m, db: None)
     source(MOVING)
@@ -419,7 +419,7 @@ def test_a_watch_on_a_table_that_settled_does_not_carry_its_siblings_caveat(sour
 
 
 def test_a_review_of_a_missed_day_recognises_both_words_for_too_new():
-    from aughor.monitors.missed import MissReview, is_miss
+    from pramanyx.monitors.missed import MissReview, is_miss
     for verdict in ("Revenue read 160. That day is too new to score.", "Revenue read 160. That day is still settling."):
         assert is_miss(MissReview(connection_id="c", metric="r", day="2026-09-20", value=160.0, verdict=verdict)) is False
 
@@ -427,7 +427,7 @@ def test_a_review_of_a_missed_day_recognises_both_words_for_too_new():
 # ── a date that waits for it ─────────────────────────────────────────────────────────────
 
 def test_a_decision_is_not_reviewed_on_a_settling_lag_it_does_not_have(source):
-    from aughor.record.decisions import propose_review_on
+    from pramanyx.record.decisions import propose_review_on
     source(REWRITES)
     _on, why = propose_review_on("c1")
     assert "has not been seen to settle" in why and "learned settling lag" not in why
@@ -437,7 +437,7 @@ def test_a_decision_is_not_reviewed_on_a_settling_lag_it_does_not_have(source):
 
 
 def test_an_inquiry_does_not_wait_for_days_to_settle_on_a_source_that_will_not():
-    from aughor.record.inquiry import _settled_by
+    from pramanyx.record.inquiry import _settled_by
     gap = "September is still settling: 21 of 30 days"
     assert _settled_by(gap, 29, answer_from(REWRITES)) == "nothing will: this source rewrites its history at each refresh"
     assert _settled_by(gap, 15, answer_from(MOVING)).startswith("reading it again may not: items was still changing")
@@ -446,7 +446,7 @@ def test_an_inquiry_does_not_wait_for_days_to_settle_on_a_source_that_will_not()
 
 
 def test_the_inquiry_a_moved_floor_opens_does_not_ask_about_a_settling_lag(monkeypatch):
-    from aughor.record import inquiry, signals
+    from pramanyx.record import inquiry, signals
     asked = []
     monkeypatch.setattr(inquiry, "open_inquiry", lambda question, **kw: asked.append(question) or SimpleNamespace(id="q1"))
     monkeypatch.setattr(signals, "_emit", lambda *a, **k: None)
@@ -455,7 +455,7 @@ def test_the_inquiry_a_moved_floor_opens_does_not_ask_about_a_settling_lag(monke
 
 
 def test_a_moved_floor_is_not_called_a_settling_lag():
-    from aughor.record.signals import settling_signal
+    from pramanyx.record.signals import settling_signal
     sig = settling_signal(MOVING, {**MOVING, "days": 29})
     assert "how far behind this source is read moved from 15 to 29 days" in sig["text"] and "settling lag" not in sig["text"]
     assert "the settling lag moved from 3 to 7 days" in settling_signal(SETTLES, {**SETTLES, "days": 7})["text"]

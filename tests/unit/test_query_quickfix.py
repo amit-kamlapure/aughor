@@ -19,8 +19,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -51,7 +51,7 @@ def fake_llm(monkeypatch):
             return response_model(fixed_sql=self.fixed, explanation=self.why)
 
     holder = {"p": _P()}
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: holder["p"])
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: holder["p"])
     return holder, calls, _P
 
 
@@ -60,7 +60,7 @@ def fake_llm(monkeypatch):
 def test_proposes_a_fix_without_executing_anything(conn, fake_llm, monkeypatch):
     """The load-bearing guarantee. Any execute on this path is a bug, so the connector's
     execute methods are booby-trapped for the duration of the call."""
-    import aughor.db.connection as dbconn
+    import pramanyx.db.connection as dbconn
     real_open = dbconn.open_connection_for
 
     def _no_exec_open(cid):
@@ -72,7 +72,7 @@ def test_proposes_a_fix_without_executing_anything(conn, fake_llm, monkeypatch):
                                     raising=False)
         return db
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", _no_exec_open)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", _no_exec_open)
     r = client.post("/query/quickfix", json={
         "conn_id": conn, "sql": "SELECT regionn FROM orders",
         "error": 'Referenced column "regionn" not found'})
@@ -150,7 +150,7 @@ def test_a_provider_outage_is_502_not_500(conn, monkeypatch):
     class _Down:
         def complete(self, **kw):
             raise RuntimeError("no provider configured")
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: _Down())
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: _Down())
     r = client.post("/query/quickfix", json={
         "conn_id": conn, "sql": "SELECT regionn FROM orders", "error": "x"})
     assert r.status_code == 502

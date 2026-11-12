@@ -3,8 +3,8 @@ step connects to a prior), not a notability listicle. All deterministic — no L
 from __future__ import annotations
 
 
-from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
-from aughor.ontology.graph_tour import build_tour
+from pramanyx.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+from pramanyx.ontology.graph_tour import build_tour
 
 
 def _star(org: str = "o") -> ContextGraph:
@@ -81,11 +81,11 @@ def test_empty_graph_is_an_empty_tour():
 # ── endpoint ─────────────────────────────────────────────────────────────────
 
 def test_tour_endpoint_serves_the_ordered_curriculum(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_star(org="default"))
 
-    from aughor.routers.ontology import get_context_graph_tour
+    from pramanyx.routers.ontology import get_context_graph_tour
     payload = get_context_graph_tour("c", "main", False)  # narrate=False → no LLM
     assert payload["steps"][0]["node_id"] == "table:Sale"
     assert payload["narrated"] is False

@@ -13,14 +13,14 @@ import types
 import pytest
 from pydantic import ValidationError
 
-from aughor.ontology.models import (
+from pramanyx.ontology.models import (
     OntologyEntity,
     OntologyGraph,
     OntologyMetric,
     OntologyRelationship,
 )
-from aughor.ontology import context_graph as cg_mod
-from aughor.ontology.context_graph import (
+from pramanyx.ontology import context_graph as cg_mod
+from pramanyx.ontology.context_graph import (
     ContextGraph,
     GraphEdge,
     Provenance,
@@ -191,11 +191,11 @@ def test_glossary_source_is_unwrapped_from_the_store_envelope(monkeypatch):
     So this asserts the BOUNDARY against the producer's real shape: the fixture below
     is the envelope `load_merged_glossary` actually returns.
     """
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
 
     envelope = {"tables": {"orders": {"columns": {
         "revenue": {"description": "gross booking value, pre-refund"}}}}}
-    monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
+    monkeypatch.setattr("pramanyx.semantic.glossary.load_merged_glossary",
                         lambda *a, **k: envelope)
 
     unwrapped = build_mod._load_glossary()
@@ -253,7 +253,7 @@ _L1_FINDING = {"id": "rcpt1", "text": "Refund rate spiked 4.2pp in the EU region
 @pytest.fixture()
 def _graph_store(tmp_path, monkeypatch):
     """Redirect the committed-artifact root and seed one built graph for `c1`."""
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_build())
     return store
@@ -262,7 +262,7 @@ def _graph_store(tmp_path, monkeypatch):
 def test_note_finding_lands_the_node_and_its_grounded_in_edge(_graph_store):
     """The L1 gate, at the unit: an answer becomes a `finding` node + `grounded_in`
     edge on the COMMITTED artifact, with no full rebuild and no manual step."""
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
 
     assert build_mod.note_finding("c1", _L1_FINDING, org_id="org1") is True
 
@@ -279,7 +279,7 @@ def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store):
     """The incremental path and the rebuild path must not drift into two shapes —
     which is why both go through `_project_findings` rather than each building a node.
     """
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
     dated = dict(_L1_FINDING, generated_at="2026-09-01T00:00:00+00:00")   # CB-1: a dated receipt
     build_mod.note_finding("c1", dated, org_id="org1")
     incremental = _graph_store.load_graph("org1", "c1", "main").nodes["finding:rcpt1"]
@@ -296,8 +296,8 @@ def test_note_finding_matches_what_a_full_rebuild_would_project(_graph_store):
 def test_note_finding_declines_rather_than_guessing_the_schema(tmp_path, monkeypatch):
     """Two graphs and no schema named ⇒ decline. Writing the finding onto whichever
     schema sorted first would attach it to data it never read."""
-    from aughor.ontology import context_graph_store as store
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_build as build_mod
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     for schema in ("main", "other"):
         g = _build()
@@ -312,8 +312,8 @@ def test_note_finding_declines_rather_than_guessing_the_schema(tmp_path, monkeyp
 def test_note_finding_on_an_unbuilt_connection_is_not_an_error(tmp_path, monkeypatch):
     """No graph yet ⇒ False, not a raise: the finding is still in the Ledger and the
     next full build projects it from `load_investigation_findings`."""
-    from aughor.ontology import context_graph_store as store
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_build as build_mod
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     assert build_mod.note_finding("never_built", _L1_FINDING, org_id="org1") is False
 
@@ -322,7 +322,7 @@ def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeyp
     """Investigations were structurally invisible to the graph: `load_findings` reads
     the EXPLORER store, while an answer writes an `ada_report`/`chat_answer` receipt.
     This is the source that closes that gap."""
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
 
     class _FakeLedger:
         def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
@@ -334,7 +334,7 @@ def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeyp
                 {"id": "a2", "kind": "chat_answer", "created_at": "2026-07-26",
                  "payload": {"question": "how many?", "tables": ["returns"]}},
             ]
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         staticmethod(lambda: _FakeLedger()))
 
     found = build_mod.load_investigation_findings("c1", "org1")
@@ -346,7 +346,7 @@ def test_answer_receipts_become_findings_with_evidence_ledger_provenance(monkeyp
 
 def test_receipt_truncation_is_counted_never_silent(monkeypatch):
     """A bounded projection must say how much it dropped (the no-silent-caps rule)."""
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
     monkeypatch.setattr(build_mod, "MAX_RECEIPT_FINDINGS", 2)
     over = [{"id": f"a{i}", "kind": "ada_report", "created_at": "2026-07-26",
              "payload": {"headline": f"finding {i}", "tables": []}} for i in range(5)]
@@ -354,10 +354,10 @@ def test_receipt_truncation_is_counted_never_silent(monkeypatch):
     class _FakeLedger:
         def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
             return over[:limit]
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         staticmethod(lambda: _FakeLedger()))
     bumped: dict = {}
-    monkeypatch.setattr("aughor.stats.bump",
+    monkeypatch.setattr("pramanyx.stats.bump",
                         lambda c, n=1: bumped.__setitem__(c, bumped.get(c, 0) + n))
 
     assert len(build_mod.load_investigation_findings("c1", "org1")) == 2
@@ -398,7 +398,7 @@ def test_a_citation_to_an_absent_finding_is_not_a_dangling_edge():
 def test_regenerating_a_brief_supersedes_rather_than_accumulates():
     """One node per brief SCOPE. A refresh must not leave a node per generation."""
     g = _build(findings=[_L1_FINDING], briefs=[_L1_BRIEF])
-    from aughor.ontology.context_graph import add_briefs
+    from pramanyx.ontology.context_graph import add_briefs
     add_briefs(g, [{**_L1_BRIEF, "text": "Rewritten.", "theme": "New Theme"}])
 
     assert len([n for n in g.nodes.values() if n.kind == "brief"]) == 1
@@ -406,7 +406,7 @@ def test_regenerating_a_brief_supersedes_rather_than_accumulates():
 
 
 def test_note_brief_lands_on_the_committed_artifact(_graph_store):
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
     build_mod.note_finding("c1", _L1_FINDING, org_id="org1")
 
     assert build_mod.note_brief("c1", _L1_BRIEF, org_id="org1") is True
@@ -419,14 +419,14 @@ def test_note_brief_lands_on_the_committed_artifact(_graph_store):
 def test_only_the_connection_scoped_brief_is_projected(monkeypatch):
     """A canvas brief is keyed `canvas:<id>`, which does not name a connection —
     attributing it would ground a brief in data it may never have read."""
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
     seen: list[str] = []
 
     def _peek(scope_key):
         seen.append(scope_key)
         return {"narrative": "n", "headline_theme": "t",
                 "citations": [{"insight_id": "rcpt1"}]}
-    monkeypatch.setattr("aughor.knowledge.briefing.peek_briefing", _peek)
+    monkeypatch.setattr("pramanyx.knowledge.briefing.peek_briefing", _peek)
 
     out = build_mod.load_briefs("c1")
     assert seen == ["c1"]                      # asked only for the connection scope
@@ -440,10 +440,10 @@ def test_exploration_completion_forces_a_rebuild(monkeypatch):
     An exploration is the one event that moves both halves at once (new findings AND
     possibly the schema), so completion rebuilds — and it must FORCE, because the
     change classifier compares schema fingerprints and cannot see a new finding."""
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     calls: list[dict] = []
     monkeypatch.setattr(
-        "aughor.ontology.graph_freshness.refresh_context_graph",
+        "pramanyx.ontology.graph_freshness.refresh_context_graph",
         lambda conn, *a, **kw: calls.append({"conn": conn, **kw}) or None)
 
     ex = object.__new__(SchemaExplorer)
@@ -456,9 +456,9 @@ def test_exploration_completion_forces_a_rebuild(monkeypatch):
 def test_a_failed_rebuild_never_fails_the_exploration(monkeypatch):
     """An exploration that finished must not be reported as failed because a
     projection didn't land."""
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     monkeypatch.setattr(
-        "aughor.ontology.graph_freshness.refresh_context_graph",
+        "pramanyx.ontology.graph_freshness.refresh_context_graph",
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("disk full")))
 
     ex = object.__new__(SchemaExplorer)
@@ -469,7 +469,7 @@ def test_a_failed_rebuild_never_fails_the_exploration(monkeypatch):
 # ── the committed-artifact store ──────────────────────────────────────────────
 
 def test_store_roundtrip_and_version_bump(tmp_path, monkeypatch):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
 
     g = _build()
@@ -489,7 +489,7 @@ def test_store_roundtrip_and_version_bump(tmp_path, monkeypatch):
 
 
 def test_store_missing_returns_none(tmp_path, monkeypatch):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     assert store.load_graph("org1", "nope", "main") is None
 
@@ -498,7 +498,7 @@ def test_store_missing_returns_none(tmp_path, monkeypatch):
 
 def test_build_returns_none_when_flag_off():
     """Default off ⇒ the projection is never invoked and nothing is written."""
-    from aughor.ontology.context_graph_build import build_context_graph
+    from pramanyx.ontology.context_graph_build import build_context_graph
     # graph.build is default-off; no override set here.
     assert build_context_graph("any-conn") is None
 

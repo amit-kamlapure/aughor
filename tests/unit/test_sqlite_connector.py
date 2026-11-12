@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.connectors.file.sqlite import SQLiteConnection, _dsn_to_path
-from aughor.db.connection import open_connection
+from pramanyx.connectors.file.sqlite import SQLiteConnection, _dsn_to_path
+from pramanyx.db.connection import open_connection
 
 
 def _make_db(tmp_path: Path) -> str:
@@ -165,7 +165,7 @@ def test_is_healthy(tmp_path):
 # ── registry wiring ──────────────────────────────────────────────────────────────
 
 def test_registry_exposes_sqlite():
-    from aughor.connectors.registry import REGISTRY, FORM_FIELDS, DSN_PREVIEWS, build_connector
+    from pramanyx.connectors.registry import REGISTRY, FORM_FIELDS, DSN_PREVIEWS, build_connector
     assert "sqlite" in REGISTRY.supported_types()
     assert "sqlite" in FORM_FIELDS
     assert "sqlite" in DSN_PREVIEWS

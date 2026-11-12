@@ -14,10 +14,10 @@ import uuid
 
 import pytest
 
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.quality import expectations as X
-from aughor.quality.results import count_failing, latest_for_tables
-from aughor.quality.rules import RuleError
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.quality import expectations as X
+from pramanyx.quality.results import count_failing, latest_for_tables
+from pramanyx.quality.rules import RuleError
 from tests.unit.test_object_actions import db  # noqa: F401 — the samples warehouse, by name
 
 
@@ -79,7 +79,7 @@ def test_each_verdict_is_measured_and_recorded_where_the_readers_read(db):  # no
     latest = {r.rule_name: r for r in latest_for_tables(conn, ["ecommerce.orders"])}
     assert set(latest) == set(verdicts)
     assert count_failing(conn) >= 1
-    from aughor.quality.caveats import caveats_for_answer
+    from pramanyx.quality.caveats import caveats_for_answer
     said = " ".join(caveats_for_answer(conn, ["orders"]))
     assert "shipped only" in said or "status" in said, said
 
@@ -114,7 +114,7 @@ def test_a_drift_is_read_against_the_last_reading(db):  # noqa: F811
     assert first.passed and "baseline" in first.detail
     second = X.measure(db, rule, connection_id=conn).results[0]
     assert second.passed and "0% change" in second.detail
-    from aughor.quality.results import Result, record
+    from pramanyx.quality.results import Result, record
     record(Result(connection_id=conn, table_name="orders", producer="check", rule_name="row count",
                   rule_fingerprint=rule[0].fingerprint, observed=second.observed * 3, passed=True))
     third = X.measure(db, rule, connection_id=conn).results[0]
@@ -130,8 +130,8 @@ def _automation(conn: str, effects) -> Automation:
 
 def test_the_step_measures_and_publishes_what_it_found(db, monkeypatch):  # noqa: F811
     from tests.unit.test_object_actions import _Borrowed
-    from aughor.automations.engine import _dispatch_expectations
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))
+    from pramanyx.automations.engine import _dispatch_expectations
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn: _Borrowed(db))
     conn = _conn()
     effect = Effect(kind="expectations", config={"expectations": [
         _x(name="order ids", kind="not_null", column="order_id"),
@@ -144,8 +144,8 @@ def test_the_step_measures_and_publishes_what_it_found(db, monkeypatch):  # noqa
 
 def test_a_step_where_nothing_could_be_measured_fails_rather_than_reads_healthy(db, monkeypatch):  # noqa: F811
     from tests.unit.test_object_actions import _Borrowed
-    from aughor.automations.engine import _dispatch_expectations
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))
+    from pramanyx.automations.engine import _dispatch_expectations
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn: _Borrowed(db))
     effect = Effect(kind="expectations", config={"expectations": [_x(name="ghost", kind="not_null", column="nope")]})
     out = _dispatch_expectations(effect, _automation(_conn(), [effect]))
     assert out.status == "failed" and "no expectation was measured" in out.message

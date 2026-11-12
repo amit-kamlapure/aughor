@@ -18,19 +18,19 @@ import inspect
 
 import pytest
 
-from aughor.explorer.agent import SchemaExplorer
+from pramanyx.explorer.agent import SchemaExplorer
 
 
 class TestKbContextHelper:
     def test_returns_the_retrieved_block(self, monkeypatch):
-        import aughor.semantic.kb_retriever as kb
+        import pramanyx.semantic.kb_retriever as kb
         monkeypatch.setattr(kb, "retrieve_for_planning", lambda q, top_k=3: "PATTERNS: pre-aggregate")
         out = SchemaExplorer._kb_context("why is return rate high")
         assert "pre-aggregate" in out
         assert out.endswith("\n\n"), "must be separable from the block it is prepended to"
 
     def test_empty_query_never_hits_the_retriever(self, monkeypatch):
-        import aughor.semantic.kb_retriever as kb
+        import pramanyx.semantic.kb_retriever as kb
 
         def _boom(*a, **k):
             raise AssertionError("must not retrieve on an empty query")
@@ -40,13 +40,13 @@ class TestKbContextHelper:
         assert SchemaExplorer._kb_context("   ") == ""
 
     def test_no_hits_yields_empty_string(self, monkeypatch):
-        import aughor.semantic.kb_retriever as kb
+        import pramanyx.semantic.kb_retriever as kb
         monkeypatch.setattr(kb, "retrieve_for_planning", lambda q, top_k=3: "")
         assert SchemaExplorer._kb_context("anything") == ""
 
     def test_retriever_failure_never_breaks_generation(self, monkeypatch):
         """Fail-open: a background agent must lose the KB, not the run."""
-        import aughor.semantic.kb_retriever as kb
+        import pramanyx.semantic.kb_retriever as kb
 
         def _boom(*a, **k):
             raise RuntimeError("qdrant unreachable")
@@ -56,7 +56,7 @@ class TestKbContextHelper:
 
     def test_query_is_bounded(self, monkeypatch):
         """An unbounded key would push a whole findings dump into the embedding call."""
-        import aughor.semantic.kb_retriever as kb
+        import pramanyx.semantic.kb_retriever as kb
         seen: list[str] = []
         monkeypatch.setattr(kb, "retrieve_for_planning",
                             lambda q, top_k=3: seen.append(q) or "X")
@@ -69,7 +69,7 @@ class TestEveryGenerationPathConsultsTheKb:
     silently stops consulting the KB is invisible at runtime — the output just gets worse — so
     the wiring is pinned in source."""
 
-    SRC = inspect.getsource(__import__("aughor.explorer.agent", fromlist=["x"]))
+    SRC = inspect.getsource(__import__("pramanyx.explorer.agent", fromlist=["x"]))
 
     def test_pinned_questions_retrieve_per_question(self):
         # _pin_context is built ONCE for all pinned questions, so retrieval must happen inside
@@ -117,7 +117,7 @@ class TestKbPathResolution:
     """The KB ships WITH the repo, so it must work on a fresh clone with no configuration.
 
     It didn't: the default was "", making `build_kb_index()` a silent no-op unless an operator
-    knew to set AUGHOR_KB_PATH — and this install had drifted onto a path in a DIFFERENT repo
+    knew to set PRAMANYX_KB_PATH — and this install had drifted onto a path in a DIFFERENT repo
     that no longer existed. Retrieval kept working only because the Qdrant collection outlived
     its source directory, and 5 of the 63 KB files had therefore never been indexed at all.
     A store whose source is unreachable fails silently: it keeps answering, just never improves.
@@ -126,8 +126,8 @@ class TestKbPathResolution:
     def test_by_default_the_kb_is_what_the_packages_carry(self):
         """IP-1 — no override means the knowledge packages, never nothing: every file the resolver
         lists exists, and the index builder would read them."""
-        from aughor.packs.knowledge import kb_files
-        from aughor.semantic import kb_retriever
+        from pramanyx.packs.knowledge import kb_files
+        from pramanyx.semantic import kb_retriever
         assert kb_retriever.KB_PATH == "", "an override is set — this test measures the default"
         files = kb_files()
         assert files and all(f.path.is_file() for f in files), (
@@ -136,7 +136,7 @@ class TestKbPathResolution:
     def test_the_package_kb_actually_loads_entries(self):
         """Guards the resolver AND the parse: packages that exist but yield zero entries are the
         same silent no-op."""
-        from aughor.semantic.kb_loader import load_package_kb_entries
+        from pramanyx.semantic.kb_loader import load_package_kb_entries
         entries = load_package_kb_entries()
         assert len(entries) > 200, f"only {len(entries)} KB entries loadable from the packages"
 
@@ -144,11 +144,11 @@ class TestKbPathResolution:
         """Operators must keep the escape hatch — the default is a fallback, not a hard-code."""
         import importlib
 
-        monkeypatch.setenv("AUGHOR_KB_PATH", str(tmp_path))
-        from aughor.semantic import kb_retriever
+        monkeypatch.setenv("PRAMANYX_KB_PATH", str(tmp_path))
+        from pramanyx.semantic import kb_retriever
         reloaded = importlib.reload(kb_retriever)
         try:
             assert reloaded.KB_PATH == str(tmp_path)
         finally:
-            monkeypatch.delenv("AUGHOR_KB_PATH", raising=False)
+            monkeypatch.delenv("PRAMANYX_KB_PATH", raising=False)
             importlib.reload(kb_retriever)   # restore module state for the rest of the session

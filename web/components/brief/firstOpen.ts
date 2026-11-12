@@ -4,7 +4,7 @@
  * every later open (a layer switch, Reload, Regenerate, a page refresh) they are waiting on the
  * content, not the order, so it paints at once.
  */
-const KEY = "aughor.briefing.entered";
+const KEY = "pramanyx.briefing.entered";
 
 type SessionStore = Pick<Storage, "getItem" | "setItem">;
 

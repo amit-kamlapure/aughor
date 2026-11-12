@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.overrides import OntologyOverride, OverrideWriteFailed
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.overrides import OntologyOverride, OverrideWriteFailed
 
 
 @pytest.fixture()
@@ -43,8 +43,8 @@ def test_a_withdrawal_that_does_not_land_raises(unwritable):
 
 def test_a_door_answers_not_saved_instead_of_200(unwritable, monkeypatch):
     """The API's handler turns the raise into what a person can act on, not 'internal_error'."""
-    from aughor.api import app
-    monkeypatch.setattr("aughor.ontology.overrides.save_override",
+    from pramanyx.api import app
+    monkeypatch.setattr("pramanyx.ontology.overrides.save_override",
                         lambda conn, schema, ov: (_ for _ in ()).throw(
                             OverrideWriteFailed("saved", ov.target_kind, ov.target_id, OSError(28, "No space left on device"))))
 
@@ -64,9 +64,9 @@ def test_a_door_answers_not_saved_instead_of_200(unwritable, monkeypatch):
 
 
 def test_an_unreadable_saved_graph_is_counted_not_silent(monkeypatch):
-    from aughor.ontology import store as ST
+    from pramanyx.ontology import store as ST
     seen: list[str] = []
-    monkeypatch.setattr("aughor.kernel.errors.tolerate",
+    monkeypatch.setattr("pramanyx.kernel.errors.tolerate",
                         lambda exc, reason, **kw: seen.append(kw.get("counter", "")))
     assert ST._graph_from({"graph": {"entities": "not a mapping"}}, "c1") is None
     assert seen == ["ontology.saved_graph_unreadable"]

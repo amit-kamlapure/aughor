@@ -16,7 +16,7 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 client = TestClient(app)
 
@@ -26,14 +26,14 @@ CONN = "ki1conn"
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
     """Point every store the lane fans out to at this test's own files."""
-    monkeypatch.setenv("AUGHOR_INTAKE_DB", str(tmp_path / "intake.db"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    monkeypatch.setenv("PRAMANYX_INTAKE_DB", str(tmp_path / "intake.db"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
     # Who imports and who accepts is the person signed in (2026-10-07), never the `actor` a body names.
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana@example.com")
-    import aughor.semantic.connection_kb as kb
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana@example.com")
+    import pramanyx.semantic.connection_kb as kb
     monkeypatch.setattr(kb, "_DATA_DIR", tmp_path / "kb")
     monkeypatch.setattr(kb, "_index_entry", lambda e: None)
     monkeypatch.setattr(kb, "_delete_from_index", lambda c, i: None)
@@ -48,7 +48,7 @@ def demo_conn(tmp_path, monkeypatch):
     c.execute("CREATE TABLE orders AS SELECT * FROM (VALUES "
               "('north', 10), ('south', 20)) AS t(region, amount)")
     c.close()
-    from aughor.db import connection as conn_mod
+    from pramanyx.db import connection as conn_mod
 
     def _open(conn_id, *args, **kwargs):
         if conn_id != CONN:
@@ -117,9 +117,9 @@ def test_malformed_rows_are_refused_not_staged(stores, demo_conn):
 
 def test_plan_verdicts_against_live_stores(stores, demo_conn):
     # Pre-seed the stores so the plan has something to diff against.
-    from aughor.semantic.metrics import MetricDefinition, save_metric
-    from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
-    from aughor.evals.promote_trusted import trusted_id
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.trusted_queries import TrustedQuery, save_trusted
+    from pramanyx.evals.promote_trusted import trusted_id
 
     save_metric(MetricDefinition(name="net_revenue", label="Net Revenue",
                                  sql="SUM(net)", connection="*",
@@ -167,14 +167,14 @@ def test_accept_fans_out_through_each_stores_governance(stores, demo_conn):
     assert res.json()["errors"] == 0
 
     # Metric: in the metrics WORKFLOW, proposed — never approved by an import.
-    from aughor.semantic.metrics import get_metric
+    from pramanyx.semantic.metrics import get_metric
     m = get_metric("net_revenue", connection_id=CONN)
     assert m is not None and m.status == "proposed"
     assert m.proposed_by == "ana@example.com"
 
     # Trusted query: through KI-0's door — verified, proposed, NOT in the prompt.
-    from aughor.semantic.trusted_queries import get_trusted, retrieve_trusted
-    from aughor.evals.promote_trusted import trusted_id
+    from pramanyx.semantic.trusted_queries import get_trusted, retrieve_trusted
+    from pramanyx.evals.promote_trusted import trusted_id
     row = get_trusted(trusted_id(CONN, "revenue by region"))
     assert row is not None and row.status == "proposed"
     assert row.verification.get("passed") is True
@@ -182,17 +182,17 @@ def test_accept_fans_out_through_each_stores_governance(stores, demo_conn):
     assert retrieve_trusted("revenue by region", CONN) == []
 
     # Synonym: the vocabulary writer finally has a consumer.
-    from aughor.ontology.vocabulary import synonyms_for
+    from pramanyx.ontology.vocabulary import synonyms_for
     assert any(s.synonym == "sales value" for s in synonyms_for(CONN))
 
     # Glossary: table + column descriptions landed.
-    from aughor.semantic.glossary import load_glossary
+    from pramanyx.semantic.glossary import load_glossary
     entry = (load_glossary() or {})["tables"]["orders"]
     assert entry["description"].startswith("One row per order")
     assert entry["columns"]["amount"]["description"] == "Line total, EUR."
 
     # Rule: a connection-KB entry; the dismissed join wrote NOTHING.
-    from aughor.semantic.connection_kb import load_entries
+    from pramanyx.semantic.connection_kb import load_entries
     kinds = {e.kind for e in load_entries(CONN)}
     assert "rule" in kinds and "join" not in kinds
 
@@ -234,7 +234,7 @@ def test_failed_apply_keeps_the_candidate_pending(stores, demo_conn):
                                                           "sql": "   "}}})
     assert res.status_code == 200
     assert res.json()["errors"] == 1
-    from aughor.intake import store
+    from pramanyx.intake import store
     cand = store.get_candidate(metric_cand["id"], org_id="default")
     assert cand["status"] == "pending"   # not lost — editable and retryable
 
@@ -249,7 +249,7 @@ def test_provenance_walks_object_to_bundle_hash_and_source(stores, demo_conn):
     client.post(f"/intake/bundles/{bundle_id}/resolve",
                 json={"actor": "ana@example.com", "accept": [tq_cand["id"]]})
 
-    from aughor.intake import store
+    from pramanyx.intake import store
     applied = store.get_candidate(tq_cand["id"], org_id="default")
     assert applied["target_ref"].startswith("trusted_query:tq_")
 
@@ -268,7 +268,7 @@ def test_export_reimports_as_all_identical(stores, demo_conn):
     client.post(f"/intake/bundles/{bundle_id}/resolve",
                 json={"actor": "ana@example.com",
                       "accept": [c["id"] for c in r.json()["candidates"]]})
-    from aughor.evals.promote_trusted import trusted_id
+    from pramanyx.evals.promote_trusted import trusted_id
     tq_id = trusted_id(CONN, "revenue by region")
     t = client.post(f"/learning/trusted/{tq_id}/transition",
                     json={"action": "approve", "actor": "lead@example.com"})
@@ -289,8 +289,8 @@ def test_export_reimports_as_all_identical(stores, demo_conn):
 
 
 def test_intake_governance_kind_is_categorized_and_sunk():
-    from aughor.govern.audit_categories import category_for, feed
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.govern.audit_categories import category_for, feed
+    from pramanyx.kernel.ledger import Ledger
 
     assert category_for("intake.governance") == "governance_change"
     Ledger.default().emit("intake.governance", {

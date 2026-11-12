@@ -63,8 +63,8 @@ def _stream_events(client, conn_id, question, *, timeout=60):
 def _stub_providers(monkeypatch):
     """Stub get_provider for every role. The coder returns 2 rows (so the insight is
     worth narrating); the narrator streams _PARTIALS then returns the final object."""
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer, _PostAnswer
 
     class FakeCoder:
         def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):

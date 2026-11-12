@@ -2,7 +2,7 @@
 
 2026-11-10 · parity baseline for the platform-wide UI redesign. The rule: **"Do not remove features as a cost of redesign."** Every `- [ ]` line below must still be reachable after the redesign; tick it when you have checked it on the redesigned page.
 
-Read from code only, on branch `claude/seven-destinations` (nothing was run, no API was called). Each line is `- [ ] <item> — <what it does> (path:line)`. Paths are under `web/` unless they start with `aughor/`. `web/app/page.tsx` was being edited by another session while this was read, so its line numbers may drift by a few lines.
+Read from code only, on branch `claude/seven-destinations` (nothing was run, no API was called). Each line is `- [ ] <item> — <what it does> (path:line)`. Paths are under `web/` unless they start with `pramanyx/`. `web/app/page.tsx` was being edited by another session while this was read, so its line numbers may drift by a few lines.
 
 Marks used on API calls: **WRITES** = changes stored state; **SPENDS** = runs a model or a warehouse query. A mark on a control means "on click"; a mark under **Loads on open** means the page does it without being asked.
 
@@ -29,8 +29,8 @@ Marks used on API calls: **WRITES** = changes stored state; **SPENDS** = runs a 
 
 ## What the pages do on open that WRITES or SPENDS (read before redesigning loading)
 
-- **SQL Editor — `POST /query/validate` runs live warehouse probes on open.** The editor's guard linter fires as soon as a restored tab holding SQL mounts, and again on each edit or parameter change (join and filter value-domain probes), to colour the "Guards clean / Checked — N notes" chip (components/query/editor/diagnostics.ts:184-205; aughor/routers/query.py:1382-1387).
-- **SQL Editor — Visual mode is mounted even when SQL mode is the landing mode**, so every open also calls `GET /metrics` and `GET /connections/{id}/measure-grains`, which opens the warehouse and probes measure columns when no ontology grains and no cache exist (components/QueryBuilder.tsx:1118, :1171-1177; aughor/routers/query.py:1971-1999).
+- **SQL Editor — `POST /query/validate` runs live warehouse probes on open.** The editor's guard linter fires as soon as a restored tab holding SQL mounts, and again on each edit or parameter change (join and filter value-domain probes), to colour the "Guards clean / Checked — N notes" chip (components/query/editor/diagnostics.ts:184-205; pramanyx/routers/query.py:1382-1387).
+- **SQL Editor — Visual mode is mounted even when SQL mode is the landing mode**, so every open also calls `GET /metrics` and `GET /connections/{id}/measure-grains`, which opens the warehouse and probes measure columns when no ontology grains and no cache exist (components/QueryBuilder.tsx:1118, :1171-1177; pramanyx/routers/query.py:1971-1999).
 - **SQL Editor — a query handed over to Visual mode runs at once** on arrival (components/QueryBuilder.tsx:1454-1486).
 - **Dashboards — opening a dashboard runs `POST /cards/{id}/run` once per placed card**, again on every period change and under each "Preview as" group; each run executes the card's SQL and records the result as the card's latest value (writes too). Ontology pieces run `POST /objects/query` / `/objects/list`; big metric tiles read a trend (all warehouse).
 - **Dashboards — the Metrics tab is the default landing tab**: it measures every approved metric (`POST …/briefing/measures`) then reads one trend per metric.
@@ -128,10 +128,10 @@ Data destination, rail row "SQL Editor" → Data workspace layer `query` (`?tab=
 - [ ] Versions — "Save this query to start a version history.", "Loading versions", "No versions yet — one is recorded each time you save a change."; restore failure toast; "Restored, but reloading the editor failed — reopen the query." (components/query/VersionRail.tsx:115-136, :110; QueryWorkbench.tsx:602)
 
 **Loads on open**
-- [ ] `GET /connections/{id}/schema/rich` (useRichSchema) — opens the warehouse connection for schema metadata (server-cached); one read feeds completion, the rail and the builder (components/query/QueryWorkbench.tsx:86; lib/schema-context.tsx; aughor/routers/connections.py:557)
+- [ ] `GET /connections/{id}/schema/rich` (useRichSchema) — opens the warehouse connection for schema metadata (server-cached); one read feeds completion, the rail and the builder (components/query/QueryWorkbench.tsx:86; lib/schema-context.tsx; pramanyx/routers/connections.py:557)
 - [ ] `GET /catalog/tree?workspace=` — SQL mode only, the workspace-wide rail (components/query/QueryWorkbench.tsx:327-330)
 - [ ] `GET /saved-queries?connection_id=` — on mount and per connection switch, again whenever the Saved menu opens (components/query/SavedQueryBar.tsx:97-118, :219)
-- [ ] Visual mode is mounted even when SQL is the landing mode, so opening the SQL Editor also calls `GET /metrics` and `GET /connections/{id}/measure-grains` — the latter **may SPEND (warehouse probe)**: with no ontology grains and no cache it opens the connection and probes measure columns (components/QueryBuilder.tsx:1118, :1171-1177; aughor/routers/query.py:1971-1999)
+- [ ] Visual mode is mounted even when SQL is the landing mode, so opening the SQL Editor also calls `GET /metrics` and `GET /connections/{id}/measure-grains` — the latter **may SPEND (warehouse probe)**: with no ontology grains and no cache it opens the connection and probes measure columns (components/QueryBuilder.tsx:1118, :1171-1177; pramanyx/routers/query.py:1971-1999)
 - [ ] Version rail — `GET /saved-queries/{id}/versions` and `…/versions/{n}/diff` only once a saved query is open (components/query/VersionRail.tsx:49-72)
 - [ ] localStorage reads (no network): split widths (components/ResizableSplit.tsx)
 
@@ -320,7 +320,7 @@ Shown when a connection has no tabs, the last tab was closed, or every restored 
 
 **Loads on open**
 - [ ] Tabs from localStorage (no network) (components/query/modes/SqlMode.tsx:318-344)
-- [ ] **SPENDS (warehouse):** the linter's tier 2, `POST /query/validate`, fires as soon as a restored tab holding SQL mounts, and again on each edit (≥300 ms idle) or parameter change — the guard battery runs LIVE probes (join and filter value-domain) against the warehouse to colour the verdict chip and gutter (components/query/editor/diagnostics.ts:184-205; aughor/routers/query.py:1382-1387)
+- [ ] **SPENDS (warehouse):** the linter's tier 2, `POST /query/validate`, fires as soon as a restored tab holding SQL mounts, and again on each edit (≥300 ms idle) or parameter change — the guard battery runs LIVE probes (join and filter value-domain) against the warehouse to colour the verdict chip and gutter (components/query/editor/diagnostics.ts:184-205; pramanyx/routers/query.py:1382-1387)
 - [ ] Tier-1 syntax parse and statement split — in a web worker, no network (components/query/editor/diagnostics.ts:165; modes/SqlMode.tsx:271-277)
 - [ ] `GET /security/audit?label=query_workbench&limit=40&connection_id=` — the history rail, mounted even while collapsed; re-read after every run (components/query/HistoryRail.tsx:48-56; modes/SqlMode.tsx:1016-1025)
 - [ ] Per result: `GET /monitors?conn=` to count this statement's schedules (Schedule popover is always mounted) (components/query/SchedulePopover.tsx:68-84)
@@ -429,7 +429,7 @@ Intelligence workspace, layer `dashboards` (`?tab=dashboards`, or `?tab=intellig
 **Controls**
 - [ ] Dashboard picker strip (TabStrip "Your dashboards") — first tab "Metrics", then heading "Your dashboards" + one tab per live dashboard, then heading "Apps shared with you" + one tab per shared App ("title · publisher") (dashboards/BriefingDashboards.tsx:1313-1321)
 - [ ] "+ New dashboard" — trailing button on the strip; opens the New dashboard dialog (dashboards/BriefingDashboards.tsx:1322)
-- [ ] Choosing a strip tab — opens that dashboard to be read; remembered per connection in localStorage `aughor:cockpit:<conn>` (dashboards/BriefingDashboards.tsx:882-888, :112-118)
+- [ ] Choosing a strip tab — opens that dashboard to be read; remembered per connection in localStorage `pramanyx:cockpit:<conn>` (dashboards/BriefingDashboards.tsx:882-888, :112-118)
 - [ ] Period picker (select "Dashboard period") — As written / Current day / Current week / Current month / Current year / Last week / Last month / Last year / Custom range… ; default Last month; hidden when every card is standing (dashboards/PeriodPicker.tsx:21-29; BriefingDashboards.tsx:1367-1369)
 - [ ] Custom range — "First day" / "Last day" date inputs + "Show" (dashboards/PeriodPicker.tsx:85-93)
 - [ ] "History" / "Hide history" toggle — shows the version list inline (dashboards/BriefingDashboards.tsx:1372-1378)
@@ -509,7 +509,7 @@ Intelligence workspace, layer `dashboards` (`?tab=dashboards`, or `?tab=intellig
 
 **URL params / deep links**
 - [ ] Reads/writes `?tab=dashboards` (and `?layer=dashboards` with `tab=intelligence`); `cockpit` aliases (web/app/page.tsx:943, :1011-1012)
-- [ ] Writes none of its own for the chosen dashboard — the choice lives in localStorage `aughor:cockpit:<conn>` (dashboards/BriefingDashboards.tsx:112-118)
+- [ ] Writes none of its own for the chosen dashboard — the choice lives in localStorage `pramanyx:cockpit:<conn>` (dashboards/BriefingDashboards.tsx:112-118)
 - [ ] `requestTab("dashboards", { conn })` — a file dashboard opens on the Sheets connection (dashboards/BriefingDashboards.tsx:373)
 - [ ] Out-links: Question piece → `requestTab("chat", { run })` (Data Canvas) (dashboards/QuestionPiece.tsx:123, :191)
 
@@ -534,7 +534,7 @@ Intelligence workspace, layer `dashboards` (`?tab=dashboards`, or `?tab=intellig
 - [ ] `GET /dashboards?connection_id=` — the person's dashboards (listDashboards) (dashboards/BriefingDashboards.tsx:808; web/lib/api.ts:3338)
 - [ ] `GET /dashboards/shared` — Apps shared with the person (dashboards/BriefingDashboards.tsx:821; web/lib/api.ts:3542)
 - [ ] `GET /dashboards/{id}?preset|start|end` — the chosen dashboard for the period (dashboards/BriefingDashboards.tsx:832)
-- [ ] **WRITES + SPENDS (warehouse)** `POST /cards/{id}/run?…&compare=true` — once PER PLACED CARD on every open and every period change; runs the card's SQL through the guards and records a single-cell result as the card's latest value (dashboards/BriefingDashboards.tsx:834-839; web/lib/api.ts:3116; aughor/routers/cards.py:359-364)
+- [ ] **WRITES + SPENDS (warehouse)** `POST /cards/{id}/run?…&compare=true` — once PER PLACED CARD on every open and every period change; runs the card's SQL through the guards and records a single-cell result as the card's latest value (dashboards/BriefingDashboards.tsx:834-839; web/lib/api.ts:3116; pramanyx/routers/cards.py:359-364)
 - [ ] **WRITES + SPENDS (warehouse)** same `POST /cards/{id}/run` with values/filters for each query card that reads dashboard values or a file's filters (dashboards/ComposedDashboard.tsx:748-772)
 - [ ] **SPENDS (warehouse)** `POST /objects/query` and `POST /objects/list` — every ontology piece (filters' facet counts, tables, figures, breakdowns, charts, lists, maps, timelines) (dashboards/OntologyPieces.tsx:331, :983; web/lib/objects.ts:504, :557)
 - [ ] `POST …/metric trend` (readMetricTrend) for a bigger metric figure tile — **SPENDS (warehouse)** (dashboards/DashboardTile.tsx:265; web/lib/api.ts:8606)
@@ -856,7 +856,7 @@ Reached from the rail row "Spreadsheets" (`?tab=spreadsheets`, web/app/page.tsx:
 - [ ] Withheld sheet rows stated with their reason, not hidden (SheetsHome.tsx:200-212)
 
 **Loads on open**
-- [ ] `GET /sheets` (listSheets) — sheets, withheld sheets, Workspace uploads, `me`; read-only (SheetsHome.tsx:48-55; lib/sheets.ts:355-357; aughor/routers/sheets.py:112-120)
+- [ ] `GET /sheets` (listSheets) — sheets, withheld sheets, Workspace uploads, `me`; read-only (SheetsHome.tsx:48-55; lib/sheets.ts:355-357; pramanyx/routers/sheets.py:112-120)
 
 **Top rows today:** one bar — "Spreadsheets" title · "Workspace" chip · sheet/row/not-shared counts · "Find a sheet" box at the right (SheetsHome.tsx:91-103). The four "Start a sheet" tiles sit below it in the scrolling body.
 
@@ -969,7 +969,7 @@ Reached from the rail row "Spreadsheets" (`?tab=spreadsheets`, web/app/page.tsx:
 
 **Popover — Fill a model-written column (FillPop)** (opened from a column menu's "Fill with the model…")
 - [ ] Header "Fill <column> · written by a model — <instruction>" (SheetView.tsx:1028)
-- [ ] The plan in words — rows (≤200), model calls (25 rows a call), cost or "price not set" (SheetView.tsx:1038; aughor/routers/sheets.py:401-404)
+- [ ] The plan in words — rows (≤200), model calls (25 rows a call), cost or "price not set" (SheetView.tsx:1038; pramanyx/routers/sheets.py:401-404)
 - [ ] Disclaimer "Each value is a model's reading, not a fact: no total, group, rule or card counts from it. A fill is one change; undo takes it back whole." (SheetView.tsx:1039-1044)
 - [ ] "Fill N rows" / "Filling…" — disabled when no model is set (SheetView.tsx:1045-1049)
 - [ ] Result: "Filled N rows with K model calls; the model found nothing to write for X; Y were not filled — a call failed." (SheetView.tsx:1031-1037)
@@ -988,7 +988,7 @@ All popovers: a "Close" button at the foot; close on outside click / Escape (She
 - [ ] Model-written columns: violet "written by a model" chip; empty cell reads "not filled" (SheetGrid.tsx:132, 344-348)
 - [ ] Column that read a removed sheet: amber "sheet removed" chip with why (SheetGrid.tsx:144-148, 341)
 - [ ] "proposed" chip on a column the assistant proposed (SheetGrid.tsx:343)
-- [ ] Default widths by kind; widths and frozen count kept per sheet in this browser (`aughor.sheets.widths.<id>`, `aughor.sheets.frozen.<id>`) (SheetGrid.tsx:47-49; SheetView.tsx:58-84)
+- [ ] Default widths by kind; widths and frozen count kept per sheet in this browser (`pramanyx.sheets.widths.<id>`, `pramanyx.sheets.frozen.<id>`) (SheetGrid.tsx:47-49; SheetView.tsx:58-84)
 
 #### 3.2e Flat grid (SheetGrid)
 
@@ -1105,7 +1105,7 @@ All popovers: a "Close" button at the foot; close on outside click / Escape (She
 - [ ] `GET /sheets/{id}/rows?offset&limit=200…` per block in sight (flat grid); or `GET /groups`, `/board`, `/calendar` for those layouts — queries over the sheet store, read-only, no warehouse (useRowBlocks.ts:58-60; lib/sheets.ts:448-468)
 - [ ] `GET /sheets/{id}/ontology` (readOnOntology) — for the bar's ontology button; computes per-column filled/distinct counts over the sheet (SheetOntology.tsx:38-39; lib/sheets.ts:370-371)
 - [ ] On opening a column menu: `GET /sheets/{id}/columns/{col}/values` (ColumnMenu.tsx:119-134; lib/sheets.ts:485)
-- [ ] On opening Fill: `POST /sheets/{id}/columns/{col}/fill/preview` — a POST that only plans; "No model is called" (SheetView.tsx:1015-1020; aughor/routers/sheets.py:401-404)
+- [ ] On opening Fill: `POST /sheets/{id}/columns/{col}/fill/preview` — a POST that only plans; "No model is called" (SheetView.tsx:1015-1020; pramanyx/routers/sheets.py:401-404)
 - [ ] **SPENDS** on "Fill N rows" (not on open): `POST …/fill` runs model calls and **WRITES** the column (SheetView.tsx:1021-1025)
 - [ ] **WRITES** on any edit/paste/clear/move/format/add row/column/view/rule (not on open): `PATCH /cells`, `POST /rows`, `PATCH|DELETE /columns/{id}`, `PUT|DELETE /views`, `PUT|DELETE /rules`, `PATCH /{id}`, `POST /undo|/redo` (lib/sheets.ts:528-615)
 
@@ -1293,7 +1293,7 @@ Opened by the toolbar's "History" (every change), a cell bar's "History" (one ce
 **Loads on open**
 - [ ] `GET /sheets/{id}/grounding[?view=]` — read-only (SheetChat.tsx:72-74; lib/sheets.ts:624-626)
 - [ ] **SPENDS** on Ask (not on open): chat turn on the Sheets connection, depth "quick" (model + query) (SheetChat.tsx:55-60, 81-85)
-- [ ] **SPENDS** on a change asked for: `POST /sheets/{id}/propose` calls a model (SheetChat.tsx:87-93; aughor/routers/sheets.py:980-984)
+- [ ] **SPENDS** on a change asked for: `POST /sheets/{id}/propose` calls a model (SheetChat.tsx:87-93; pramanyx/routers/sheets.py:980-984)
 - [ ] **WRITES + SPENDS** on a dropped file: `POST /sheets/files` stages it, `POST /sheets/proposals/new` (model when tool-capable) (SheetChat.tsx:95-101)
 - [ ] **WRITES** on Apply (`POST /proposals/{id}/apply`) and Undo all (`POST /undo`)
 
@@ -1349,7 +1349,7 @@ Opened by the toolbar's "History" (every change), a cell bar's "History" (one ce
 - [ ] Error line (red) — e.g. a refused import (NewSheetDialog.tsx:276)
 
 **New sheet dialog — Loads on open**
-- [ ] **WRITES** when opened from an uploaded file's "Make a sheet": `POST /sheets/files/uploaded` copies the file into staging and reads it, immediately on open (NewSheetDialog.tsx:86-91; aughor/routers/sheets.py:159-168)
+- [ ] **WRITES** when opened from an uploaded file's "Make a sheet": `POST /sheets/files/uploaded` copies the file into staging and reads it, immediately on open (NewSheetDialog.tsx:86-91; pramanyx/routers/sheets.py:159-168)
 - [ ] Switching to "From a query": `GET` connections (NewSheetDialog.tsx:93-96)
 - [ ] Choosing a file: **WRITES** `POST /sheets/files` (staged) (NewSheetDialog.tsx:98-104)
 - [ ] Create: **WRITES** `POST /sheets`; "From a query" also **runs the SQL on the warehouse once** (NewSheetDialog.tsx:106-125; lib/sheets.ts:405-414)
@@ -1387,7 +1387,7 @@ Opened by the toolbar's "History" (every change), a cell bar's "History" (one ce
 - [ ] "Every column could be the key." (SheetOntology.tsx:99)
 - [ ] Place error (red) (SheetOntology.tsx:189)
 
-**Loads on open** — `GET /sheets/{id}/ontology` (on the sheet's open, for the button) (SheetOntology.tsx:38-39). **WRITES** on Place: `POST /sheets/{id}/ontology` (a draft; needs ontology-edit) (lib/sheets.ts:374-376; aughor/routers/sheets.py:830).
+**Loads on open** — `GET /sheets/{id}/ontology` (on the sheet's open, for the button) (SheetOntology.tsx:38-39). **WRITES** on Place: `POST /sheets/{id}/ontology` (a draft; needs ontology-edit) (lib/sheets.ts:374-376; pramanyx/routers/sheets.py:830).
 
 **Top rows today:** n/a (dialog from the sheet bar).
 
@@ -1409,7 +1409,7 @@ Opened by the toolbar's "History" (every change), a cell bar's "History" (one ce
 - [ ] "Reading the sheet — each card is run once before it is offered…" (SheetDashboard.tsx:97)
 - [ ] Error (red) (SheetDashboard.tsx:134)
 
-**Loads on open** — **RUNS QUERIES on open**: `GET /sheets/{id}/dashboard[?view=]` runs each offered card once on the sheet (Sheets connection, not a warehouse; no model); nothing kept (SheetDashboard.tsx:59-68; aughor/routers/sheets.py:716-720). **WRITES** on Make: one dashboard query card per pick + the dashboard (SheetDashboard.tsx:70-91).
+**Loads on open** — **RUNS QUERIES on open**: `GET /sheets/{id}/dashboard[?view=]` runs each offered card once on the sheet (Sheets connection, not a warehouse; no model); nothing kept (SheetDashboard.tsx:59-68; pramanyx/routers/sheets.py:716-720). **WRITES** on Make: one dashboard query card per pick + the dashboard (SheetDashboard.tsx:70-91).
 
 **Top rows today:** n/a (dialog from the sheet bar).
 
@@ -1440,5 +1440,5 @@ Opened by the toolbar's "History" (every change), a cell bar's "History" (one ce
 
 ### 3.14 Gaps noticed while reading (not features, recorded for the redesign)
 - `removeRows` (`POST /sheets/{id}/rows/remove`) exists in lib/sheets.ts:543-544 but no sheet control calls it — there is no "delete row" in the UI today.
-- `GET /sheets/{id}/check` and `GET /sheets/{id}/cells/{row}/{col}` routes have no caller in web/components/sheets (aughor/routers/sheets.py:313, 594).
+- `GET /sheets/{id}/check` and `GET /sheets/{id}/cells/{row}/{col}` routes have no caller in web/components/sheets (pramanyx/routers/sheets.py:313, 594).
 - The sheet-side "dashboard from a sentence" (`/dashboard/draft`, `/dashboard/explore`, both SPEND) is driven from the Dashboards builder (components/dashboards/FromFile.tsx), not from this page.

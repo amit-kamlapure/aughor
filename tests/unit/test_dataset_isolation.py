@@ -4,7 +4,7 @@ datasets (separate schemas). Origin: a `workspace` connection held a bakehouse C
 `bakehouse.sales_customers ⋈ ecommerce.orders` — a hallucinated cross-dataset join that
 binder-errored and produced a "no data" finding. See scope.crosses_datasets.
 """
-from aughor.explorer.scope import (
+from pramanyx.explorer.scope import (
     dataset_of as _dataset_of,
     tables_in_sql as _tables_in_sql,
     crosses_datasets as _crosses_datasets,

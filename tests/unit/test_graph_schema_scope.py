@@ -10,7 +10,7 @@ import pytest
 
 
 def _graph(schema: str, table: str):
-    from aughor.ontology.context_graph import ContextGraph, GraphNode, Provenance
+    from pramanyx.ontology.context_graph import ContextGraph, GraphNode, Provenance
     cg = ContextGraph(org_id="default", connection_id="lux", schema_name=schema)
     cg.add_node(GraphNode(id=f"table:{table}", kind="table", label=table, provenance=Provenance(source="ontology.entity")))
     return cg
@@ -18,7 +18,7 @@ def _graph(schema: str, table: str):
 
 @pytest.fixture
 def two_schemas(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_graph("gold_finance", "Ledger"))
     store.save_graph(_graph("luxexperience", "Order"))
@@ -33,7 +33,7 @@ def test_a_named_schema_reads_its_own_graph_and_the_connection_reads_them_merged
 
 
 def test_the_graph_route_answers_for_the_schema_it_was_asked_about(two_schemas):
-    from aughor.routers.ontology import get_context_graph
+    from pramanyx.routers.ontology import get_context_graph
     out = get_context_graph("lux", "luxexperience")
     assert set(out["nodes"]) == {"table:Order"}
 
@@ -41,8 +41,8 @@ def test_the_graph_route_answers_for_the_schema_it_was_asked_about(two_schemas):
 def test_rebuild_runs_the_forced_refresh_and_says_when_nothing_was_rebuilt(monkeypatch):
     from fastapi import HTTPException
 
-    from aughor.ontology import graph_freshness as gf
-    from aughor.routers.ontology import rebuild_context_graph
+    from pramanyx.ontology import graph_freshness as gf
+    from pramanyx.routers.ontology import rebuild_context_graph
 
     asked: list[tuple] = []
 

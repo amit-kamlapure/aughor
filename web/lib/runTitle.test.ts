@@ -1,6 +1,6 @@
 /**
  * PX-1 — the run-title deriver. The grounding blocks are byte-for-byte what
- * `aughor/automations/temporal.py` emits (observation_note / previous_report_note);
+ * `pramanyx/automations/temporal.py` emits (observation_note / previous_report_note);
  * these fixtures are copied from there, and a failure here after a backend edit is
  * the tripwire that says "update both together".
  */

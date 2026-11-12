@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.models import RowPolicy, Sensitivity
-from aughor.semantic import object_find as F
+from pramanyx.ontology.models import RowPolicy, Sensitivity
+from pramanyx.semantic import object_find as F
 from tests.unit.test_object_actions import CONN, db, graph  # noqa: F401 — fixtures by name
 
 PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
@@ -19,7 +19,7 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
 
 @pytest.fixture
 def served(graph, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
 
 
@@ -71,7 +71,7 @@ def test_too_few_letters_is_refused_with_why(served, client):
 
 @pytest.fixture
 def policed(served, monkeypatch):
-    from aughor.rbac.groups import add_member, upsert_group
+    from pramanyx.rbac.groups import add_member, upsert_group
     for group, members in (("germany", ["user:ana"]), ("finance", ["user:ben"])):
         upsert_group("default", group, group.capitalize())
         for m in members:
@@ -88,7 +88,7 @@ def _customers(out) -> list[str]:
 
 def test_a_row_policy_narrows_what_a_reader_finds_and_says_so(policed, client, monkeypatch, db):  # noqa: F811
     # The seeded shop: every customer in DE is a Young, and every Davis lives elsewhere.
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     young = _find(client, "young")
     keys = ", ".join(f"'{k}'" for k in _customers(young))
     countries = {r[0] for r in db.execute("t", f"SELECT DISTINCT country FROM customers WHERE customer_id IN ({keys})").rows}
@@ -97,24 +97,24 @@ def test_a_row_policy_narrows_what_a_reader_finds_and_says_so(policed, client, m
     assert _customers(davis) == [] and davis["searched"] == 2          # searched, and none of hers matched
     assert davis["withheld"] == ["Customer"]
     assert "only the Customer objects user:ana may see" in davis["withheld_said"][0]   # said, never "no such customer"
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ben")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ben")
     assert _customers(_find(client, "davis"))
 
 
 def test_a_masked_name_is_not_searched_and_says_why(policed, client, monkeypatch):
     policed.entities["Customer"].sensitive = {"full_name": Sensitivity(level="confidential", visible_to=["finance"])}
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     out = _find(client, "alice")
     assert not [h for h in out["hits"] if h["type"] == "customer"]
     why = next(s["why"] for s in out["skipped"] if s["entity"] == "customer")
     assert why.startswith("its name is masked for you") and "finance may read it" in why
     assert out["masked"] == ["Customer.full_name"] and out["said"] == "searched 1 of 5 entities"
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ben")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ben")
     assert [h for h in _find(client, "alice")["hits"] if h["type"] == "customer"]
 
 
 def test_the_answer_says_withheld_as_the_object_doors_do(policed, client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     said = _find(client, "davis")["completeness"]
     assert said["state"] == "withheld" and said["withheld"] == ["Customer"]
     assert "only the Customer objects user:ana may see" in said["said"]

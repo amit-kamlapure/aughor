@@ -13,8 +13,8 @@ import pytest
 @pytest.fixture
 def trees(tmp_path, monkeypatch):
     """Every ontology tree under tmp, each at the root its own module resolves — and a shipped seed beside them."""
-    from aughor.knowledge import indexer
-    from aughor.ontology import context_graph_store, drafts, overrides, recommendations
+    from pramanyx.knowledge import indexer
+    from pramanyx.ontology import context_graph_store, drafts, overrides, recommendations
 
     roots = {name: tmp_path / name for name in ("overrides", "overrides_draft", "drafts", "recommendations",
                                                 "docs", "column_config", "context_graph", "seed")}
@@ -23,8 +23,8 @@ def trees(tmp_path, monkeypatch):
     monkeypatch.setattr(overrides, "_SEED_ROOT", roots["seed"])
     monkeypatch.setattr(drafts, "_ROOT", roots["drafts"])
     monkeypatch.setattr(recommendations, "_ROOT", roots["recommendations"])
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_DOCS_DIR", str(roots["docs"]))
-    monkeypatch.setenv("AUGHOR_COLUMN_CONFIG_ROOT", str(roots["column_config"]))
+    monkeypatch.setenv("PRAMANYX_ONTOLOGY_DOCS_DIR", str(roots["docs"]))
+    monkeypatch.setenv("PRAMANYX_COLUMN_CONFIG_ROOT", str(roots["column_config"]))
     monkeypatch.setattr(context_graph_store, "_ROOT", roots["context_graph"])
     unregistered: list[str] = []
     monkeypatch.setattr(indexer, "delete_document", lambda doc_id: unregistered.append(doc_id) or True)
@@ -53,7 +53,7 @@ def _left(roots, conn: str) -> dict[str, list[str]]:
 
 
 def test_a_removed_dataset_takes_its_ontology_trees_and_its_documentation_and_nothing_else(trees):
-    from aughor.ontology.removal import purge
+    from pramanyx.ontology.removal import purge
 
     roots, unregistered = trees
     got = purge("workspace", "luxexperience")
@@ -68,7 +68,7 @@ def test_a_removed_dataset_takes_its_ontology_trees_and_its_documentation_and_no
 
 
 def test_a_removed_connection_takes_every_tree_it_has(trees):
-    from aughor.ontology.removal import purge
+    from pramanyx.ontology.removal import purge
 
     roots, unregistered = trees
     got = purge("workspace")
@@ -83,9 +83,9 @@ def test_a_removed_connection_takes_every_tree_it_has(trees):
 
 @pytest.fixture
 def metrics(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    monkeypatch.setenv("AUGHOR_METRICS_SEED_PATH", str(tmp_path / "seed_metrics.json"))
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_SEED_PATH", str(tmp_path / "seed_metrics.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
 
     def add(name, conn, sql, schema=None):
         save_metric(MetricDefinition(name=name, connection=conn, label=name, sql=sql, tables=[], schema_name=schema))
@@ -99,12 +99,12 @@ def metrics(tmp_path, monkeypatch):
 
 
 def _names(conn):
-    from aughor.semantic.metrics import list_metrics
+    from pramanyx.semantic.metrics import list_metrics
     return sorted(m.name for m in list_metrics() if m.connection == conn)
 
 
 def test_a_removed_dataset_takes_its_metrics_the_connection_keeps_its_own(metrics):
-    from aughor.semantic.metrics import purge_scope
+    from pramanyx.semantic.metrics import purge_scope
 
     assert purge_scope("workspace", "luxexperience") == 2
     assert _names("workspace") == ["everywhere", "revenue"]
@@ -112,7 +112,7 @@ def test_a_removed_dataset_takes_its_metrics_the_connection_keeps_its_own(metric
 
 
 def test_a_removed_connection_takes_every_metric_it_owns_and_no_one_elses(metrics):
-    from aughor.semantic.metrics import purge_scope
+    from pramanyx.semantic.metrics import purge_scope
 
     assert purge_scope("workspace") == 4
     assert _names("workspace") == []
@@ -122,7 +122,7 @@ def test_a_removed_connection_takes_every_metric_it_owns_and_no_one_elses(metric
 
 def test_the_purges_run_on_every_removal(trees, metrics):
     """Registered where every removal runs them: a connection delete and a schema delete."""
-    from aughor.kernel.registries import purge_hooks
+    from pramanyx.kernel.registries import purge_hooks
 
     names = purge_hooks.registered_hook_names()
     assert {"ontology_trees", "metrics"} <= set(names["conn"])
@@ -135,10 +135,10 @@ def test_a_removed_dataset_is_cleared_through_its_door_and_a_listed_one_is_not(m
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor import govern
-    from aughor.db import purge, registry
-    from aughor.routers import catalog
-    from aughor.routers import connections as R
+    from pramanyx import govern
+    from pramanyx.db import purge, registry
+    from pramanyx.routers import catalog
+    from pramanyx.routers import connections as R
 
     app = FastAPI()
     app.include_router(R.router)
@@ -172,8 +172,8 @@ def _write_yaml(path, data):
 def test_the_organisations_declarations_that_stood_only_on_removed_connections_go_and_their_links(trees, monkeypatch):
     """2026-10-11: the organisation's Order, Customer and the link between them were bound only to two removed
     LuxExperience connections. A declaration still tied to a connection that exists stays."""
-    from aughor.db import registry
-    from aughor.ontology.removal import purge
+    from pramanyx.db import registry
+    from pramanyx.ontology.removal import purge
 
     roots, _ = trees
     monkeypatch.setattr(registry, "is_registered", lambda c: c == "live1")
@@ -197,7 +197,7 @@ def test_a_file_the_repository_ships_is_never_removed_with_a_dataset(tmp_path, m
     configs and a legacy override — modifying the checkout. Shipped content stays; the rest of the tree goes."""
     import subprocess
 
-    from aughor.ontology import removal
+    from pramanyx.ontology import removal
 
     repo = tmp_path / "repo"
     tree = repo / "data" / "ontology_column_config" / "workspace" / "default"
@@ -211,7 +211,7 @@ def test_a_file_the_repository_ships_is_never_removed_with_a_dataset(tmp_path, m
     (tree / "nested" / "x.yaml").write_text("this install's")
     monkeypatch.setattr(removal, "_trees", lambda: [repo / "data" / "ontology_column_config"])
     monkeypatch.setattr(removal, "_context_graph_root", lambda: tmp_path / "none")
-    monkeypatch.setattr("aughor.knowledge.indexer.delete_document", lambda doc_id: False)
+    monkeypatch.setattr("pramanyx.knowledge.indexer.delete_document", lambda doc_id: False)
 
     got = removal.purge("workspace", "default")
     assert got["kept_shipped"] == 1 and got["ontology_trees"] == 1

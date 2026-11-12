@@ -71,8 +71,8 @@ class _Gen(BaseModel):
 
 def _real_generate(ctx: str) -> str:
     """Pramanyx's real SQL model (the `coder` role + the chat system prompt) over the schema."""
-    from aughor.llm.provider import get_provider
-    from aughor.agent.prompts import CHAT_SQL_SYSTEM
+    from pramanyx.llm.provider import get_provider
+    from pramanyx.agent.prompts import CHAT_SQL_SYSTEM
     llm = get_provider("coder")
     prompt = (f"SCHEMA:\n{_SCHEMA}\n\nQUESTION: {ctx}\n\n"
               "Write ONE DuckDB SQL query that answers the question. Return only the column(s) the "

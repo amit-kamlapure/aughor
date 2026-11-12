@@ -9,13 +9,13 @@ claims forward onto the surviving resolver (`resolve_contracts` /
 equivalence tests retired with their oracle — equivalence to a deleted path is not
 a property of the live system.
 
-See aughor/semantic/canonical.py + aughor/semantic/contracts.py.
+See pramanyx/semantic/canonical.py + pramanyx/semantic/contracts.py.
 """
 from types import SimpleNamespace
 
 
 def _real_md(name, sql, **kw):
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     return MetricDefinition(name=name, label=kw.get("label", name), sql=sql,
                             unit=kw.get("unit"), caveats=kw.get("caveats"),
                             tables=kw.get("tables", []), additivity=kw.get("additivity"),
@@ -23,7 +23,7 @@ def _real_md(name, sql, **kw):
 
 
 def _real_om(mid, sql, verified=False, **kw):
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.ontology.models import OntologyMetric
     return OntologyMetric(id=mid, display_name=kw.get("display_name", mid), entity=kw.get("entity", "e"),
                           formula_sql=sql, unit=kw.get("unit", ""), tables=kw.get("tables", []),
                           verified=verified)
@@ -34,13 +34,13 @@ def _real_onto(*metrics):
 
 
 def _no_profile(monkeypatch):
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("pramanyx.business_profile.store.load", lambda c, s=None: None)
 
 
 # ── precedence + dedup (the "one formula" guarantee) ──────────────────────────
 
 def test_catalog_outranks_ontology(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     catalog = [_real_md("revenue", "SUM(price*qty)")]
     onto = _real_onto(_real_om("revenue", "SUM(invoices.revenue_net)", verified=True))
@@ -50,7 +50,7 @@ def test_catalog_outranks_ontology(monkeypatch):
 
 
 def test_dedup_by_normalized_key(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     catalog = [_real_md("Net Revenue", "SUM(net)")]
     onto = _real_onto(_real_om("net_revenue", "SUM(gross)", verified=True))
@@ -60,7 +60,7 @@ def test_dedup_by_normalized_key(monkeypatch):
 
 
 def test_ontology_verified_flag_drives_source_and_injectability(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     onto = _real_onto(
         _real_om("aov", "SUM(amount)/COUNT(DISTINCT order_id)", verified=True),
@@ -79,7 +79,7 @@ def test_ontology_verified_flag_drives_source_and_injectability(monkeypatch):
 # ── render policy ─────────────────────────────────────────────────────────────
 
 def test_render_excludes_unverified_by_default(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     onto = _real_onto(_real_om("churn", "1 - retention", verified=False))
     res = C.resolve_contracts("conn", None, catalog=[], ontology=onto)
@@ -89,7 +89,7 @@ def test_render_excludes_unverified_by_default(monkeypatch):
 
 
 def test_render_lists_verified_with_exact_formula(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     catalog = [_real_md("revenue", "SUM(price*qty)", unit="$")]
     res = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)
@@ -99,7 +99,7 @@ def test_render_lists_verified_with_exact_formula(monkeypatch):
 
 
 def test_empty_and_missing_sql_are_noop_safe(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     assert C.resolve_contracts("conn", None, catalog=[_real_md("ghost", "")], ontology=None) == []
     assert C.resolve_contracts("", None, catalog=[], ontology=None) == []
@@ -108,7 +108,7 @@ def test_empty_and_missing_sql_are_noop_safe(monkeypatch):
 
 def test_contracts_carry_rich_fields_the_legacy_shape_dropped(monkeypatch):
     """The point of the migration: thresholds/additivity survive resolution."""
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     catalog = [_real_md("mrr", "SUM(amount)", additivity="additive", target_value=100000.0)]
     c = C.resolve_contracts("conn", None, catalog=catalog, ontology=None)[0]
@@ -118,7 +118,7 @@ def test_contracts_carry_rich_fields_the_legacy_shape_dropped(monkeypatch):
 # ── unified_metric_grounding — ONE block both NL2SQL paths inject ─────────────
 
 def test_unified_grounding_surfaces_north_star(monkeypatch):
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
 
     class _NSM:
         name = "Gross Margin Rate"
@@ -129,16 +129,16 @@ def test_unified_grounding_surfaces_north_star(monkeypatch):
     class _Prof:
         north_star_metrics = [_NSM()]
 
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: _Prof())
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.business_profile.store.load", lambda c, s=None: _Prof())
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda *a, **k: [])
     out = C.unified_metric_grounding("conn", "schema", schema_text="TABLE: t\n  margin\n  price")
     assert "Gross Margin Rate" in out
     assert "SUM(margin)" in out  # the governed value_sql is present (chat previously never saw it)
 
 
 def test_unified_grounding_noop_safe_without_connection(monkeypatch):
-    from aughor.semantic import canonical as C
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
+    from pramanyx.semantic import canonical as C
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda *a, **k: [])
     assert C.unified_metric_grounding("", None, schema_text="") == ""
 
 
@@ -148,8 +148,8 @@ def test_planning_metrics_are_contract_backed_views(monkeypatch):
     """The compiler reads `.name`/`.verified`/`.sql`/`.tables`/`.unit` off each metric.
     They must arrive via `_ContractMetricView` over the one SemanticContract — the
     shape the deleted CanonicalMetric list carried, now with a single source of truth."""
-    from aughor.semantic import canonical as C
-    from aughor.semantic.canonical import _ContractMetricView
+    from pramanyx.semantic import canonical as C
+    from pramanyx.semantic.canonical import _ContractMetricView
     _no_profile(monkeypatch)
     catalog = [_real_md("revenue", "SUM(price*qty)", unit="$")]
     onto = _real_onto(_real_om("aov", "SUM(a)/COUNT(*)", verified=True),
@@ -167,7 +167,7 @@ def test_planning_view_verified_maps_to_injectable_not_raw_verified(monkeypatch)
     `SemanticContract.verified` execution bit. A DRAFT catalog metric is
     injectable=True yet verified=False (never executed) — mapping to the wrong
     field would wrongly drop it from planning."""
-    from aughor.semantic import canonical as C
+    from pramanyx.semantic import canonical as C
     _no_profile(monkeypatch)
     catalog = [_real_md("revenue", "SUM(price*qty)")]     # status defaults to "draft"
     view = C.resolve_planning_metrics("conn", None, catalog=catalog, ontology=None)[0]

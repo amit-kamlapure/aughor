@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import types
 
-import aughor.agent.investigate as I
+import pramanyx.agent.investigate as I
 
 
 def _synth(confidence="HIGH", gaps=None, just=""):

@@ -15,15 +15,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-from aughor.govern import attention as A
-from aughor.govern import departure_store as ds
-from aughor.govern.departure import HELD_BUDGET, PERSON, Measurement, gate_departure
-from aughor.routers import attention as R
+from pramanyx.govern import attention as A
+from pramanyx.govern import departure_store as ds
+from pramanyx.govern.departure import HELD_BUDGET, PERSON, Measurement, gate_departure
+from pramanyx.routers import attention as R
 
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
 
 
 def _gate(text, **kw):
@@ -34,7 +34,7 @@ def _gate(text, **kw):
 
 
 def _measured(*values):
-    from aughor.util.time import now_iso_z
+    from pramanyx.util.time import now_iso_z
     return Measurement(source="stub analysis", values=[float(v) for v in values], measured_at=now_iso_z())
 
 
@@ -77,7 +77,7 @@ def test_a_persons_own_send_is_exempt_and_an_accuracy_hold_is_not_charged():
     person = _gate("Here is the number I promised.", origin=PERSON)
     assert person.state == "departed" and person.guards["attention"] == "exempt"
     # a message the trust law holds is held by the trust law, not the budget, and spends no slot
-    from aughor.govern.departure import TRUST_BANNER
+    from pramanyx.govern.departure import TRUST_BANNER
     held = _gate(f"{TRUST_BANNER} on this figure. Revenue rose 9.1%.", measurement=_measured(9.1))
     assert held.state == "held" and held.guards["attention"] == "not_applicable"
     assert A.used_this_week("#ops") == 0
@@ -93,7 +93,7 @@ def test_a_monitor_alert_brings_its_size_term_and_the_repeat_guard_feeds_novelty
     v = _gate("Refund rate is above its band.", kind="monitor_alert", triage={"size": 0.24}, target=place)
     assert "size 0.24" in v.checks["triage"] and "waiting 1.00" in v.checks["triage"]
     # the repeat guard's own words feed novelty: the same shape with moved numbers is half as novel
-    from aughor.govern import departure as gate
+    from pramanyx.govern import departure as gate
     moved = gate._Check(gate.PASSED, "the same message moved 9% since 2026-10-01 10:00")
     judged = gate._attention(gate.DEPARTED, gate.UNATTENDED, "analysis", place, "", moved, None)
     assert judged.outcome == gate.PASSED and "novelty 0.50" in judged.detail["triage"]
@@ -113,7 +113,7 @@ def test_slots_are_set_through_the_door_and_the_week_starts_on_monday():
 
 
 def test_the_remedy_and_the_law_exist_for_the_new_guard():
-    from aughor.govern import departure_remedies as dr
+    from pramanyx.govern import departure_remedies as dr
     told = dr.explain_guard("attention")
     assert told is not None and told["label"] == "attention budget" and "slots" in told["meaning"]
     assert "attention" in dr.laws() and "unattended interruptions" in dr.laws()["attention"]["sentence"]

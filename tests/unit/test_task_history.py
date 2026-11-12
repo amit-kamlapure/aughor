@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.telemetry as tel
-from aughor.kernel.concurrency import ContextThreadPoolExecutor
-from aughor.kernel.ledger import Ledger
+import pramanyx.telemetry as tel
+from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ def test_parallel_waves_link_to_submitting_span(on):
 # ── obs.task_history recovery/analytics API ───────────────────────────────────
 
 def test_recover_run_and_sql(on):
-    from aughor.obs import task_history as th
+    from pramanyx.obs import task_history as th
     with tel.span("trace-api", "plan_queries", {"iteration": 0}):
         with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 1"}):
             pass
@@ -155,7 +155,7 @@ def test_recover_run_and_sql(on):
 
 
 def test_recent_runs_and_slow_tasks(on):
-    from aughor.obs import task_history as th
+    from pramanyx.obs import task_history as th
     with tel.span("trace-r1", "explore", None):
         with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 10"}):
             pass

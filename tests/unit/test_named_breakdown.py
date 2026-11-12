@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import investigate as I
+from pramanyx.agent import investigate as I
 
 _INTAKE = {
     "named_dimensions": ["main.flights.route_id"],
@@ -183,7 +183,7 @@ class TestTheRoute:
         so assert the wiring, not just the router."""
         import inspect
 
-        from aughor.agent import graph as G
+        from pramanyx.agent import graph as G
         src = inspect.getsource(G._compile)
         assert '"deep_breakdown": "deep_breakdown"' in src, "route target missing from an edge map"
         assert src.count('"deep_breakdown": "deep_breakdown"') == 2, (

@@ -9,7 +9,7 @@ isolated fragments); kept on its own record — in two test
 runs the SQL writer seeing every table of a small schema never wrote a worse query, and
 twice answered where the pruned schema could not.
 """
-from aughor.tools.schema_linker import link_schema
+from pramanyx.tools.schema_linker import link_schema
 
 # A question that matches `orders` only — past the budget, zero-signal tables are dropped
 # (keep set requires score > 0), so pruning is deterministic.

@@ -8,7 +8,7 @@ from types import SimpleNamespace as N
 
 import pytest
 
-from aughor.briefing import reading_order as RO
+from pramanyx.briefing import reading_order as RO
 
 PACKS = Path(__file__).resolve().parents[2] / "packs"
 
@@ -114,11 +114,11 @@ def test_every_shipped_industry_order_names_a_known_kind():
 
 def test_the_cap_keeps_the_headline_end(monkeypatch):
     """The measured table and the predictions cap ONE list: the reading-ordered one."""
-    from aughor.briefing import ranges as R
+    from pramanyx.briefing import ranges as R
 
     approved = [N(name=f"cost_{i}", label="", status="approved", connection="c1") for i in range(R.MAX_METRICS)]
     approved.append(N(name="revenue", label="Revenue", status="approved", connection="c1"))
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **k: approved)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None, **k: approved)
     monkeypatch.setattr(RO, "industry_reading", lambda conn_id: ([], []))
     got = R.governed_metrics("c1")
     assert got[0].name == "revenue" and len(got[:R.MAX_METRICS]) == R.MAX_METRICS

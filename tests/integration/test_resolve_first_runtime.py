@@ -42,8 +42,8 @@ def _stub_coder(monkeypatch, called):
     # calling the process-global get_provider during this test's monkeypatch
     # window would trip a bare "was the coder called at all" flag — a proven
     # full-suite-order flake, not a product regression.
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer
     real = prov.get_provider
 
     class FakeCoder:

@@ -51,27 +51,27 @@ Two user-facing doors, chosen by the frontend before the question is understood:
 | | Insight | Deep Analysis / ADA |
 |---|---|---|
 | Endpoint | `POST /chat` | `POST /investigate` |
-| Streamer | `_stream_chat()` ([investigations.py:812](../aughor/routers/investigations.py)) | `_stream_investigation()` ([investigations.py:1747](../aughor/routers/investigations.py)) |
+| Streamer | `_stream_chat()` ([investigations.py:812](../pramanyx/routers/investigations.py)) | `_stream_investigation()` ([investigations.py:1747](../pramanyx/routers/investigations.py)) |
 | Shape | single NL→SQL→answer, one chart | LangGraph multi-phase investigation (intake→baseline→decompose→dimensional→synthesis) |
 | Control | `mode: "ask"` in [`ChatPanel.tsx`](../web/components/ChatPanel.tsx) | `mode: "investigate"` + `deep: bool` escalation flag |
 
 The router that *should* live at the door instead lives inside the agent:
 
-- **`assess_complexity(question)`** ([complexity.py:84](../aughor/agent/complexity.py)) — deterministic
+- **`assess_complexity(question)`** ([complexity.py:84](../pramanyx/agent/complexity.py)) — deterministic
   difficulty (`simple|moderate|complex`), a 0–1 score, and an **`ambiguous`** flag. Pure, unit-tested.
-- **`classify_question(question)`** ([nodes.py:80](../aughor/agent/nodes.py)) — returns
+- **`classify_question(question)`** ([nodes.py:80](../pramanyx/agent/nodes.py)) — returns
   `RouteDecision{mode ∈ direct|investigate|explore|final_text, confidence, reasoning}`
-  ([state.py:25](../aughor/agent/state.py)). Prompt ([prompts.py:1](../aughor/agent/prompts.py)) is
+  ([state.py:25](../pramanyx/agent/state.py)). Prompt ([prompts.py:1](../pramanyx/agent/prompts.py)) is
   explicit: *“complexity does not determine the mode, intent does.”*
 - **`assess_complexity` already cost-tiers the routing decision** (simple→`fast` model) while keeping
   the answer on the frontier `coder` model — but it does **not** yet choose execution depth.
 - **The ADA phase gates** (`route_after_baseline/decompose/dimensional`, declared by
-  [`orchestrator.py`](../aughor/agent/orchestrator.py)) already escalate/skip phases at runtime —
+  [`orchestrator.py`](../pramanyx/agent/orchestrator.py)) already escalate/skip phases at runtime —
   the in-investigation analogue of what we want across the whole path.
 
 Both paths already share the safety + grounding spine (the 2026-06-25 cross-pollination work):
-`preflight_repair` ([sql/safety.py:31](../aughor/sql/safety.py)) and `build_data_understanding`
-([semantic/data_understanding.py:34](../aughor/semantic/data_understanding.py)). **This is what makes
+`preflight_repair` ([sql/safety.py:31](../pramanyx/sql/safety.py)) and `build_data_understanding`
+([semantic/data_understanding.py:34](../pramanyx/semantic/data_understanding.py)). **This is what makes
 the merge safe** — the two bodies can be dispatched behind one router without diverging on metric
 definition, grain, or SQL safety.
 
@@ -124,7 +124,7 @@ and the R4 ablation ([`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06
 The agent decides, but it is never a black box. Every turn emits a new **`route` SSE event** before
 the answer, carrying what the router already computes into run state today
 (`route_complexity_tier`, `route_confidence`, `route_ambiguous`, `RouteDecision.reasoning` —
-[nodes.py:141](../aughor/agent/nodes.py)):
+[nodes.py:141](../pramanyx/agent/nodes.py)):
 
 ```
 event: route
@@ -186,14 +186,14 @@ The answer shape is chosen from `RouteDecision` × the **actual** result, not th
 
 | Signal | Output |
 |---|---|
-| `final_text` / definitional + strong KB | headline-only prose, no SQL (path already exists, [nodes.py:194](../aughor/agent/nodes.py)) |
+| `final_text` / definitional + strong KB | headline-only prose, no SQL (path already exists, [nodes.py:194](../pramanyx/agent/nodes.py)) |
 | `direct`, scalar result | KPI scorecard / single-number card |
 | `direct`, ranked/grouped result | `ResultChartCard` (auto chart + table + pivot) |
 | `investigate` / `explore` | multi-finding investigation report (verdict, key findings, what-is-not-the-cause, risks) |
 
 Implementation is a **render-selector decoupled from the endpoint** — today the renderer is implied
 by *which endpoint answered*; after the merge it is keyed on the verdict and the result shape. The
-SOMA "answer-shape / projection-minimality" rules ([prompts.py:57](../aughor/agent/prompts.py)) already
+SOMA "answer-shape / projection-minimality" rules ([prompts.py:57](../pramanyx/agent/prompts.py)) already
 push the SQL toward the implied output columns; this extends that discipline from columns to layout.
 
 ---
@@ -213,7 +213,7 @@ exist but carry little structured state.
   *objects created by prior queries*). Read-first: we carry CTE *text*, not materialized tables.
 - **Prior findings** — so “why is that one different?” anchors on a specific result row, reusing the
   existing `origin_finding` anchoring the dossier/ pull-thread flows already built
-  ([nodes/investigate](../aughor/agent/investigate.py)).
+  ([nodes/investigate](../pramanyx/agent/investigate.py)).
 - **Clarification answers** — folded in (§4), so the session gets *less* ambiguous over time — the
   ITS-Law framing: interaction is a *scaling axis*, every grounded turn invests toward the ideal answer.
 
@@ -226,7 +226,7 @@ harness (multi-turn episodes).
 
 | Move | Where | Lift |
 |---|---|---|
-| `POST /ask` entry; `/chat` + `/investigate` become thin back-compat shims | [investigations.py:2296,2381](../aughor/routers/investigations.py) | small |
+| `POST /ask` entry; `/chat` + `/investigate` become thin back-compat shims | [investigations.py:2296,2381](../pramanyx/routers/investigations.py) | small |
 | Run `assess_complexity` + `classify_question` at `/ask` before dispatch | new dispatcher wrapping the two `_stream_*` bodies | small–med |
 | Verdict → depth dispatch (reuse existing bodies verbatim at first) | the dispatcher | medium |
 | `route` SSE event + depth banner + one-click re-run (`depth=` hint) | SSE layer + [`ChatPanel.tsx`](../web/components/ChatPanel.tsx) | small–med |
@@ -244,13 +244,13 @@ router. The merged front door works *before* any of the hard parts (memory, clar
 ## 8. Gated sequence (build → wire → test → **leverage**, measure-first)
 
 - **Phase 0 — unify the door. ✅ SHIPPED (2026-06-30).** `POST /ask` + a **deterministic-first**
-  router (`aughor/agent/ask_router.py::decide_ask_route`) that dispatches to the existing `_stream_chat`
+  router (`pramanyx/agent/ask_router.py::decide_ask_route`) that dispatches to the existing `_stream_chat`
   (quick) or `_investigation_job_streamed` (deep) bodies **unchanged**, emitting a `route` SSE receipt
   first. The obvious cases (clear lookup → quick; causal/complex → deep) never call a model; only
   borderline questions consult `classify_question`. **License-safe** — a deep route degrades to quick
   (with a transparent reason) when the connection lacks `DEEP_ANALYSIS`, never bypassing the gate. The
   legacy `deep`/`insight_id` flags still drive the escalation + dossier drill through the one door.
-  Behind `AUGHOR_UNIFIED_ASK` (default on); `/chat` + `/investigate` untouched for back-compat. 23 unit
+  Behind `PRAMANYX_UNIFIED_ASK` (default on); `/chat` + `/investigate` untouched for back-compat. 23 unit
   tests (decision matrix + endpoint dispatch + degrade); full unit suite green (1976). *The frontend
   still uses the toggle — switching it to `/ask` is Phase 1.*
 - **Phase 1 — auto + transparency UI. ✅ SHIPPED (2026-06-30).** The composer defaults to a new **Auto**
@@ -277,10 +277,10 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   NOT *value/term* ambiguity ("urgent" → which status?), so it does NOT fire there (`complexity_should_ask`
   → 0% ask).** → Phase 3 must gate on SOMA candidate-disagreement materiality, not the `ambiguous` flag
   alone. (This is exactly why the harness is built first: it names the biggest gap before we build.)
-- **Phase 3 — ask-vs-guess clarification (§4). ✅ SHIPPED (2026-06-30).** `aughor/agent/clarify.py`:
+- **Phase 3 — ask-vs-guess clarification (§4). ✅ SHIPPED (2026-06-30).** `pramanyx/agent/clarify.py`:
   `assess_clarification(question)` — deterministic **two-source** detection (under-specification via the
   complexity `ambiguous` flag + value/term ambiguity via a subjective-qualifier detector with an FP gate
-  that stays quiet on grounded questions). Wired into `_stream_ask` (behind `AUGHOR_ASK_CLARIFY`): a
+  that stays quiet on grounded questions). Wired into `_stream_ask` (behind `PRAMANYX_ASK_CLARIFY`): a
   fresh auto turn that is materially ambiguous emits a **`clarify` SSE event** (one targeted question +
   reason + best-effort options) instead of guessing; budget is one ask/turn; explicit overrides /
   drills / `skip_clarify` bypass it. Frontend: a **clarify card** (`web/components/ChatPanel.tsx`:
@@ -306,11 +306,11 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   - **⇒ 3b SOMA candidate-disagreement is GREENLIT.** The full measure-before-trust chain is satisfied:
     the deterministic detector can't see structural ambiguity (0/6), and on divergent cases the model's
     default is wrong (0/3) while asking fixes it (3/3).
-  - **✅ SHIPPED (2026-06-30):** `aughor/agent/soma.py` — `is_structural_suspect` (cheap gate),
+  - **✅ SHIPPED (2026-06-30):** `pramanyx/agent/soma.py` — `is_structural_suspect` (cheap gate),
     `generate_candidate_readings` (the model lists distinct labelled interpretations), and
     `assess_structural_ambiguity` (execute each, group by result signature, ask **only when ≥2 groups
     materially diverge**; the labels become grounded option chips). Wired as a pre-flight in
-    `_stream_chat` (reuses the open connection, fail-open), behind `AUGHOR_SOMA_CLARIFY` (default off —
+    `_stream_chat` (reuses the open connection, fail-open), behind `PRAMANYX_SOMA_CLARIFY` (default off —
     LLM machinery + N executions). The core is pure (injected generate/execute) — 7 tests. **Live-verified
     with the real model:** "what is our top product?" → 3 distinct readings (*by total revenue / by units
     sold / by order count*), execution confirmed all three diverge → `clarify` with those exact grounded
@@ -319,7 +319,7 @@ router. The merged front door works *before* any of the hard parts (memory, clar
     the default was already right costs one extra turn, not a wrong answer). Value-term option chips stay
     text-box — term→column mapping is semantic (LLM/gated), wrong chips worse than none.*
 - **Phase 4 — conversational session state (§6). ✅ CORE SHIPPED (2026-06-30).** The chat path already
-  injected the last 3 quick turns' SQL; Phase 4 makes follow-ups *reliable*: `aughor/agent/followup.py`
+  injected the last 3 quick turns' SQL; Phase 4 makes follow-ups *reliable*: `pramanyx/agent/followup.py`
   `is_followup(question)` deterministically detects a continuation ("now break that down", "filter that
   to Q4", "the top one") and stays quiet on fresh questions; `build_history_section(history, followup=)`
   (extracted + testable) now also carries a **result digest** (`ChatHistoryTurn.key_rows`, the prior
@@ -337,7 +337,7 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   — the restore flow (`/chat-sessions/{id}/turns` → `restore()`) already rehydrates quick turns with their
   rows, so reload context survives; only deep-turn reload, explicit resolved-binding state, and CTE
   carry-over are open, and none is worth the complexity now.*
-- **Phase 5 — progressive escalation / ITS. ✅ SHIPPED (2026-06-30).** `aughor/agent/escalate.py`
+- **Phase 5 — progressive escalation / ITS. ✅ SHIPPED (2026-06-30).** `pramanyx/agent/escalate.py`
   `assess_escalation(question, columns, rows, error)` — deterministic, low-FP: a quick answer that
   **errored**, returned **no rows on an analytical question** (the 'Womenswear' wrong-filter shape), or
   answered a causal **"why" with a single figure** emits an `escalate` SSE event. **Auto + transparency:**

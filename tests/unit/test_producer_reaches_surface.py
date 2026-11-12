@@ -41,8 +41,8 @@ import tokenize
 
 import pytest
 
-DOC = "aughor/export/document.py"
-RENDERERS = ("aughor/export/pdf.py", "aughor/export/slides.py")
+DOC = "pramanyx/export/document.py"
+RENDERERS = ("pramanyx/export/pdf.py", "pramanyx/export/slides.py")
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 

@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.slackbots import store
-from aughor.slackbots.manifest import BOT_SCOPES, render_manifest
-from aughor.slackbots.models import (SlackBot, decrypt_secrets, encrypt_secrets,
+from pramanyx.slackbots import store
+from pramanyx.slackbots.manifest import BOT_SCOPES, render_manifest
+from pramanyx.slackbots.models import (SlackBot, decrypt_secrets, encrypt_secrets,
                                      merge_secrets)
 
 
@@ -38,7 +38,7 @@ def _bot(**kw) -> SlackBot:
 @pytest.fixture
 def slack_ok(monkeypatch):
     """Stub `auth.test` — verification is a Slack round trip, and no test may make one."""
-    monkeypatch.setattr("aughor.slackbots.verify.auth_test",
+    monkeypatch.setattr("pramanyx.slackbots.verify.auth_test",
                         lambda token: (True, {"team_id": "T1", "user_id": "U-BOT",
                                               "app_id": "A1", "team": "acme"}))
 
@@ -171,7 +171,7 @@ def test_create_verifies_the_token_and_captures_what_slack_says(client, slack_ok
 
 
 def test_create_refuses_a_credential_slack_rejects(client, monkeypatch):
-    monkeypatch.setattr("aughor.slackbots.verify.auth_test",
+    monkeypatch.setattr("pramanyx.slackbots.verify.auth_test",
                         lambda token: (False, {"error": "invalid_auth"}))
     r = client.post("/slack-bots", json={"name": "b", "bot_token": "xoxb-bad",
                                          "app_token": "xapp-x", "signing_secret": "s"})
@@ -215,11 +215,11 @@ def test_manifest_route_carries_the_paste_steps(client):
     assert any("JSON" in s for s in body["instructions"]), "the YAML tab is the known trap"
 
 
-@pytest.mark.parametrize("sent", [None, "Pramanyx", "Aughor"])
+@pytest.mark.parametrize("sent", [None, "Pramanyx"])
 def test_a_default_name_gives_way_to_the_agents_own(client, sent):
-    """A name nobody typed — absent, today's default, or the earlier product name an older
-    client still sends as its fallback — becomes the bound agent's name; a typed one stays."""
-    from aughor.custom_agents.store import create_agent
+    """A name nobody typed — absent, or the default the web client sends as its fallback —
+    becomes the bound agent's name; a typed one stays."""
+    from pramanyx.custom_agents.store import create_agent
     agent = create_agent("Churn Analyst", instructions="x", purpose="Churn questions")
     params = {"agent_id": agent.id, **({"name": sent} if sent else {})}
     r = client.get("/slack-bots/manifest", params=params)
@@ -236,7 +236,7 @@ def test_unknown_bot_is_404(client):
 def _automation(effect):
     """A minimally valid Automation carrying `effect` — conn_id and a non-empty effects
     list are both required at construction."""
-    from aughor.automations.models import Automation, Condition
+    from pramanyx.automations.models import Automation, Condition
     return Automation(
         name="Monday briefing", conn_id="conn-a",
         conditions=[Condition(kind="schedule", config={"cron": "0 9 * * 1"})],
@@ -249,7 +249,7 @@ def _automation(effect):
 def test_slack_post_effect_requires_its_target_at_construction():
     """Rejected at parse, never at 03:00. An automation missing its channel would
     otherwise sit in the DB looking schedulable."""
-    from aughor.automations.models import Effect
+    from pramanyx.automations.models import Effect
     with pytest.raises(ValueError):
         Effect(kind="slack_post", config={"bot_id": "sb_1"})       # no channel
     with pytest.raises(ValueError):
@@ -266,8 +266,8 @@ def test_a_cron_posts_as_the_bot_and_the_thread_is_repliable(monkeypatch):
     lands in, and the id the transport already uses as the Pramanyx session_id) is carried
     back rather than dropped.
     """
-    from aughor.automations.engine import _dispatch_slack_post
-    from aughor.automations.models import Effect
+    from pramanyx.automations.engine import _dispatch_slack_post
+    from pramanyx.automations.models import Effect
 
     bot = store.save_bot(_bot(name="salesbot", bot_token="xoxb-live-token"))
     seen = {}
@@ -276,7 +276,7 @@ def test_a_cron_posts_as_the_bot_and_the_thread_is_repliable(monkeypatch):
         seen.update(token=token, channel=channel, text=text)
         return True, {"ts": "1788000000.000100", "channel": channel}
 
-    monkeypatch.setattr("aughor.slackbots.post.post_as_bot", _fake_post)
+    monkeypatch.setattr("pramanyx.slackbots.post.post_as_bot", _fake_post)
 
     effect = Effect(kind="slack_post",
                     config={"bot_id": bot.id, "channel": "C123", "message": "revenue is up"})
@@ -295,11 +295,11 @@ def test_a_cron_posts_as_the_bot_and_the_thread_is_repliable(monkeypatch):
 def test_posting_through_a_disabled_bot_is_refused(monkeypatch):
     """`enabled` is the platform's off switch; a scheduled post that ignored it would
     make that switch a lie."""
-    from aughor.automations.engine import _dispatch_slack_post
-    from aughor.automations.models import Effect
+    from pramanyx.automations.engine import _dispatch_slack_post
+    from pramanyx.automations.models import Effect
 
     bot = store.save_bot(_bot(enabled=False))
-    monkeypatch.setattr("aughor.slackbots.post.post_as_bot",
+    monkeypatch.setattr("pramanyx.slackbots.post.post_as_bot",
                         lambda *a, **k: pytest.fail("a disabled bot must not post"))
     effect = Effect(kind="slack_post", config={"bot_id": bot.id, "channel": "C1"})
     out = _dispatch_slack_post(effect, _automation(effect))
@@ -307,8 +307,8 @@ def test_posting_through_a_disabled_bot_is_refused(monkeypatch):
 
 
 def test_an_unknown_bot_is_a_verdict_not_a_crash():
-    from aughor.automations.engine import _dispatch_slack_post
-    from aughor.automations.models import Effect
+    from pramanyx.automations.engine import _dispatch_slack_post
+    from pramanyx.automations.models import Effect
     effect = Effect(kind="slack_post", config={"bot_id": "sb_gone", "channel": "C1"})
     out = _dispatch_slack_post(effect, _automation(effect))
     assert out.status == "dispatch_error" and "sb_gone" in out.message
@@ -317,11 +317,11 @@ def test_an_unknown_bot_is_a_verdict_not_a_crash():
 def test_a_timed_out_post_is_uncertain_not_failed(monkeypatch):
     """It may have arrived. 'failed' would license a retry, and a retried
     maybe-delivered message is the duplicate the delivery layer exists to prevent."""
-    from aughor.automations.engine import _dispatch_slack_post
-    from aughor.automations.models import Effect
+    from pramanyx.automations.engine import _dispatch_slack_post
+    from pramanyx.automations.models import Effect
 
     bot = store.save_bot(_bot())
-    monkeypatch.setattr("aughor.slackbots.post.post_as_bot",
+    monkeypatch.setattr("pramanyx.slackbots.post.post_as_bot",
                         lambda *a, **k: (False, {"error": "timeout", "uncertain": True}))
     effect = Effect(kind="slack_post", config={"bot_id": bot.id, "channel": "C1"})
     out = _dispatch_slack_post(effect, _automation(effect))
@@ -331,7 +331,7 @@ def test_a_timed_out_post_is_uncertain_not_failed(monkeypatch):
 def test_slack_post_is_reachable_from_the_engine_dispatch_table():
     """The seam: registered in models AND wired in the engine. Both ends can exist while
     the feature does not."""
-    from aughor.automations.engine import _DISPATCHERS
+    from pramanyx.automations.engine import _DISPATCHERS
     assert "slack_post" in _DISPATCHERS
 
 
@@ -361,7 +361,7 @@ def test_owner_scoping_includes_the_orgs_unowned_bots():
 def test_an_owner_is_the_same_subject_the_identity_plane_resolves():
     """RC-4 maps `slack:U…` → a platform user; this stores that same user. One identity
     scheme, so 'my Slack' differs from yours without inventing a second."""
-    from aughor.identity import attribution_key, store as ident_store
+    from pramanyx.identity import attribution_key, store as ident_store
     ident_store.put_link("slack", "U0OWNER", "amit@example.com")
     bot = store.save_bot(_bot(owner="amit@example.com"))
     assert attribution_key("slack:U0OWNER") == bot.owner
@@ -373,18 +373,18 @@ def test_the_runtime_route_refuses_when_the_deployment_authenticates_nobody(clie
     """Proved against a live instance with an unauthenticated `curl`: the policy table
     said ADMIN_MANAGE_ORG and the docstring said "admin-gated", but `enforce_rbac`
     returns early without an enterprise licence and `_require_auth`'s key door only
-    engages when `AUGHOR_API_KEY` is set. A default self-hosted install served `xoxb-`
+    engages when `PRAMANYX_API_KEY` is set. A default self-hosted install served `xoxb-`
     and `xapp-` tokens in plaintext to anyone who could reach the port."""
     r = client.get("/slack-bots/runtime")
     assert r.status_code == 503
     detail = r.json()["detail"]
-    assert "AUGHOR_API_KEY" in detail            # says how to fix it
+    assert "PRAMANYX_API_KEY" in detail            # says how to fix it
     assert "Posting from automations is unaffected" in detail   # and what still works
 
 
 def test_a_supervisor_key_issued_from_the_app_opens_the_route(client, slack_ok):
     """The remedy has to be reachable from inside the product. The first version of this
-    gate answered "export AUGHOR_API_KEY and restart", which locks every other client out
+    gate answered "export PRAMANYX_API_KEY and restart", which locks every other client out
     of the API to protect one route and cannot be done from the app at all — the user's
     objection, and a fair one."""
     client.post("/slack-bots", json={"name": "socket-bot", "bot_token": "xoxb-t",
@@ -392,18 +392,18 @@ def test_a_supervisor_key_issued_from_the_app_opens_the_route(client, slack_ok):
     assert client.get("/slack-bots/supervisor-key").json()["issued"] is False
 
     key = client.post("/slack-bots/supervisor-key").json()
-    assert key["env_line"] == f"AUGHOR_RUNTIME_KEY={key['key']}"
+    assert key["env_line"] == f"PRAMANYX_RUNTIME_KEY={key['key']}"
     assert client.get("/slack-bots/supervisor-key").json()["issued"] is True
     # Status never discloses it — issued once, re-issued rather than recovered.
     assert key["key"] not in client.get("/slack-bots/supervisor-key").text
 
     assert client.get("/slack-bots/runtime").status_code == 503
-    ok = client.get("/slack-bots/runtime", headers={"X-Aughor-Runtime-Key": key["key"]})
+    ok = client.get("/slack-bots/runtime", headers={"X-Pramanyx-Runtime-Key": key["key"]})
     assert ok.status_code == 200
     mine = next(b for b in ok.json()["bots"] if b["name"] == "socket-bot")
     assert mine["bot_token"] == "xoxb-t"          # raw, which is the route's whole point
 
-    wrong = client.get("/slack-bots/runtime", headers={"X-Aughor-Runtime-Key": "guess"})
+    wrong = client.get("/slack-bots/runtime", headers={"X-Pramanyx-Runtime-Key": "guess"})
     assert wrong.status_code == 503
 
 
@@ -412,22 +412,22 @@ def test_issuing_again_rotates_and_retires_the_old_key_after_a_grace(client, sla
     the supervisor that holds it is not dark between "Regenerate" and its restart —
     measured before: every bot off within one reconcile. After the window it is retired."""
     from datetime import timedelta
-    from aughor.slackbots import store
+    from pramanyx.slackbots import store
     first = client.post("/slack-bots/supervisor-key").json()["key"]
     second = client.post("/slack-bots/supervisor-key").json()
     assert first != second["key"]
     assert second["previous_valid_until"] and second["previous_valid_for_s"] == store.KEY_GRACE_S
     assert client.get("/slack-bots/runtime",
-                      headers={"X-Aughor-Runtime-Key": first}).status_code == 200
+                      headers={"X-Pramanyx-Runtime-Key": first}).status_code == 200
     assert client.get("/slack-bots/runtime",
-                      headers={"X-Aughor-Runtime-Key": second["key"]}).status_code == 200
+                      headers={"X-Pramanyx-Runtime-Key": second["key"]}).status_code == 200
     real_now = store._utcnow()
     monkeypatch.setattr(store, "_utcnow",
                         lambda: real_now + timedelta(seconds=store.KEY_GRACE_S + 1))
     assert client.get("/slack-bots/runtime",
-                      headers={"X-Aughor-Runtime-Key": first}).status_code == 503
+                      headers={"X-Pramanyx-Runtime-Key": first}).status_code == 503
     assert client.get("/slack-bots/runtime",
-                      headers={"X-Aughor-Runtime-Key": second["key"]}).status_code == 200
+                      headers={"X-Pramanyx-Runtime-Key": second["key"]}).status_code == 200
 
 
 def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, slack_ok,
@@ -438,7 +438,7 @@ def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, sla
     # already taken by the fixture, whose token is a different string.
     client.post("/slack-bots", json={"name": "front-door-bot", "bot_token": "xoxb-t",
                                      "app_token": "xapp-t", "signing_secret": "sig"})
-    monkeypatch.setattr("aughor.api._API_KEY", "a-real-key")   # what api_key_configured() reads
+    monkeypatch.setattr("pramanyx.api._API_KEY", "a-real-key")   # what api_key_configured() reads
 
     # And the caller must now present it — the SAME key satisfies the gate and the
     # front door, which is the whole reason the gate reads `_require_auth`'s value
@@ -464,10 +464,10 @@ def test_an_identified_caller_from_another_org_cannot_read_the_tokens(client, sl
     The supervisor is the DEPLOYMENT's process, not an organisation's, so the route is opened by the
     deployment's own credentials — the supervisor key issued from the app, or the operator's shared
     key — and never by who a person is."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
-    acme = {"X-Aughor-Org": "acme-a1", "X-Aughor-User": "amit"}
-    rival = {"X-Aughor-Org": "rival-a1", "X-Aughor-User": "mallory"}
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")
+    acme = {"X-Pramanyx-Org": "acme-a1", "X-Pramanyx-User": "amit"}
+    rival = {"X-Pramanyx-Org": "rival-a1", "X-Pramanyx-User": "mallory"}
     made = client.post("/slack-bots", headers=acme,
                        json={"name": "acme-socket", "bot_token": "xoxb-acme", "app_token": "xapp-acme",
                              "signing_secret": "sig"})
@@ -482,6 +482,6 @@ def test_an_identified_caller_from_another_org_cannot_read_the_tokens(client, sl
 
     # The supervisor key still opens it — the route keeps its one job.
     key = client.post("/slack-bots/supervisor-key", headers=acme).json()["key"]
-    ok = client.get("/slack-bots/runtime", headers={**acme, "X-Aughor-Runtime-Key": key})
+    ok = client.get("/slack-bots/runtime", headers={**acme, "X-Pramanyx-Runtime-Key": key})
     assert ok.status_code == 200
     assert next(b for b in ok.json()["bots"] if b["name"] == "acme-socket")["bot_token"] == "xoxb-acme"

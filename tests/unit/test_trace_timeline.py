@@ -7,7 +7,7 @@ overstated dead time by 75 seconds on a real trace).
 """
 from __future__ import annotations
 
-from aughor.obs.trace_tree import build_timeline, flow_edges
+from pramanyx.obs.trace_tree import build_timeline, flow_edges
 
 
 def _ev(seq, kind, at, **kw):
@@ -255,8 +255,8 @@ def test_a_delegation_hop_carries_who_ran_it():
     tl = build_timeline([_span(
         1, T.format(0), "hop", duration_ms=500,
         payload={"span_kind": "delegation",
-                 "aughor.delegation.path": "analyst",
-                 "aughor.delegation.depth": 1,
+                 "pramanyx.delegation.path": "analyst",
+                 "pramanyx.delegation.depth": 1,
                  "delegate_agent_id": "analyst",
                  "delegate_agent_name": "Analyst"})])
     node = tl["nodes"][0]
@@ -278,8 +278,8 @@ def test_a_hop_whose_identity_only_arrived_on_the_result_still_gets_it():
         _span(1, T.format(0), "hop", payload={"span_kind": "delegation"}),
         _span(2, T.format(1), "hop", kind="tool_call_result", duration_ms=400, ok=True,
               payload={"span_kind": "delegation",
-                       "aughor.delegation.path": "a/b",
-                       "aughor.delegation.depth": 2,
+                       "pramanyx.delegation.path": "a/b",
+                       "pramanyx.delegation.depth": 2,
                        "delegate_agent_id": "b", "delegate_agent_name": "B"}),
     ])
     assert tl["nodes"][0]["delegation"]["path"] == "a/b"

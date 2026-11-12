@@ -1,6 +1,6 @@
 """The autonomous Explorer executes model-written SQL through the SHARED guard battery.
 
-`test_sql_guard_coverage.py` enforces that this module *imports* `aughor.sql.executor`. That is a
+`test_sql_guard_coverage.py` enforces that this module *imports* `pramanyx.sql.executor`. That is a
 structural ratchet and would be satisfied by an unused import. This proves the BEHAVIOUR: a `_run`
 carrying model-written SQL actually reaches `execute_guarded`, an internal deterministic probe
 does NOT, and a preflight rewrite propagates back so a stored finding cites the query that really
@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import aughor.sql.executor as executor_mod
-from aughor.explorer.agent import SchemaExplorer
+import pramanyx.sql.executor as executor_mod
+from pramanyx.explorer.agent import SchemaExplorer
 
 SCHEMA = ("TABLE: orders (100 rows)\n"
           "  order_id  VARCHAR\n  amount  DECIMAL(18,2)\n")
@@ -83,7 +83,7 @@ def test_a_statement_written_for_an_approved_metric_carries_its_declared_filter(
     """
     ex, _ = _explorer(monkeypatch)
     ex.connection_id = "c-declared"
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics",
                         lambda connection_id=None, **kw: [_approved_revenue()])
     seen: list[dict] = []
 
@@ -107,7 +107,7 @@ def test_the_declared_filter_reaches_the_statement_the_finding_keeps(monkeypatch
     over the metric's rows."""
     ex, _ = _explorer(monkeypatch)
     ex.connection_id = "c-declared"
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics",
                         lambda connection_id=None, **kw: [_approved_revenue()])
     ran: list[str] = []
 
@@ -205,7 +205,7 @@ def test_every_model_sql_call_site_passes_a_schema(call_site):
     review, and exactly the drift that left this agent unguarded for months."""
     import inspect
 
-    from aughor.explorer import agent as mod
+    from pramanyx.explorer import agent as mod
     src = inspect.getsource(mod)
     marker = {
         "pinned":       'think=f"[pinned] {q[:60]}", schema=sql_writer.schema',
@@ -222,9 +222,9 @@ class TestRetryQueryIsGuarded:
     between the patch and the data."""
 
     def test_retry_query_routes_through_the_shared_battery(self, monkeypatch):
-        import aughor.routers.exploration as ex
-        import aughor.sql.executor as executor_mod
-        import aughor.sql.writer as wmod
+        import pramanyx.routers.exploration as ex
+        import pramanyx.sql.executor as executor_mod
+        import pramanyx.sql.writer as wmod
         seen: list[dict] = []
 
         class _Conn:
@@ -263,9 +263,9 @@ class TestRetryQueryIsGuarded:
     def test_the_response_reports_the_sql_that_actually_ran(self, monkeypatch):
         """The client shows `corrected_sql` as the fix to keep. If preflight rewrites the query,
         returning the PRE-rewrite text hands the user SQL that did not produce the rows beside it."""
-        import aughor.routers.exploration as ex
-        import aughor.sql.executor as executor_mod
-        import aughor.sql.writer as wmod
+        import pramanyx.routers.exploration as ex
+        import pramanyx.sql.executor as executor_mod
+        import pramanyx.sql.writer as wmod
         REWRITTEN = "SELECT SUM(x) FROM (SELECT DISTINCT id, x FROM t) d"
 
         class _Conn:
@@ -300,7 +300,7 @@ class TestRetryQueryIsGuarded:
         not an omission someone 'fixes' later."""
         import inspect
 
-        import aughor.routers.exploration as ex
+        import pramanyx.routers.exploration as ex
         src = inspect.getsource(ex)
         assert 'db.execute("__ground__"' in src, "grounding must stay a verbatim replay"
         assert "DELIBERATELY unguarded" in src, "the exception must carry its reason in-place"

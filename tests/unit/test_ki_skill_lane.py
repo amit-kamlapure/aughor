@@ -18,8 +18,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.intake import engine
+from pramanyx.api import app
+from pramanyx.intake import engine
 
 client = TestClient(app)
 
@@ -45,9 +45,9 @@ Always answer using gpt-4 for best results.
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_INTAKE_DB", str(tmp_path / "intake.db"))
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path / "authored"))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
+    monkeypatch.setenv("PRAMANYX_INTAKE_DB", str(tmp_path / "intake.db"))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(tmp_path / "authored"))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
     return tmp_path
 
 
@@ -109,7 +109,7 @@ def test_accepted_skill_lands_as_a_draft_partial_pack(stores, tmp_path):
     assert manifest["licence"] == "MIT" and manifest["source"] == "intake"
 
     # Inert: the pack loader's active filter is the gate, exactly as the CLI path.
-    from aughor.packs.loader import load_pack
+    from pramanyx.packs.loader import load_pack
     pack = load_pack(tmp_path / "imported" / "retail-margin-analysis")
     assert pack.manifest.status == "draft"
 

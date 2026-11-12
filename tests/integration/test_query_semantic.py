@@ -10,8 +10,8 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.semops import operators as ops
-from aughor.semops.operators import (
+from pramanyx.semops import operators as ops
+from pramanyx.semops.operators import (
     _Aggregation,
     _ExtractBatch,
     _ExtractedRow,

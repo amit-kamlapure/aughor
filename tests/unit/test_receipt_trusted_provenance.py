@@ -16,7 +16,7 @@ So the caveat rides through verbatim.
 """
 from __future__ import annotations
 
-from aughor.trust.receipt import _guards_from_lineage
+from pramanyx.trust.receipt import _guards_from_lineage
 
 EVAL_WARRANT = ("Verified by eval suite 70efbc7c53d5: passed in all 11 runs. "
                 "Consistency-verified (reproduces this connection's prior answer), "
@@ -120,17 +120,17 @@ def seeded_library(tmp_path, monkeypatch):
          "sql": "SELECT reason, count(*) FROM returns GROUP BY reason",
          "tables": ["returns"], "note": EVAL_WARRANT, "tags": ["from_eval"]},
     ]))
-    # DS-13 — the store resolves `AUGHOR_TRUSTED_QUERIES_PATH` per call now, rather than
+    # DS-13 — the store resolves `PRAMANYX_TRUSTED_QUERIES_PATH` per call now, rather than
     # holding a module-level `_PATH`. This fixture predates that: it was doing its own
     # isolation precisely because the module had none, which is the hole that env var
     # closed. Setting the env keeps the fixture's real job — controlling the CONTENT this
     # test reads — while leaving the isolation to conftest.
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(store))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(store))
     return store
 
 
 def _du(question: str, connection_id: str = "c1"):
-    from aughor.semantic.data_understanding import build_data_understanding
+    from pramanyx.semantic.data_understanding import build_data_understanding
     return build_data_understanding(None, connection_id=connection_id, question=question)
 
 
@@ -181,7 +181,7 @@ def _raw(payload: dict, lineage: list) -> dict:
 
 
 def _build(payload=None, lineage=None, signed=False):
-    from aughor.trust.receipt import build_public_receipt
+    from pramanyx.trust.receipt import build_public_receipt
     return build_public_receipt(_raw(payload or {}, lineage or []), signed=signed)
 
 
@@ -215,7 +215,7 @@ def test_an_answer_that_learned_nothing_says_so_without_inventing_shape():
 def test_the_new_fields_are_inside_the_signature():
     """Additive fields still have to be tamper-evident, or the collapse would move
     evidence from a signed surface to an unsigned one."""
-    from aughor.trust.receipt import verify
+    from pramanyx.trust.receipt import verify
     signed = _build(payload={"learning": {"readings_reused": 1, "resolutions_crystallized": 0,
                                           "corrections_applied": 0,
                                           }}, signed=True)

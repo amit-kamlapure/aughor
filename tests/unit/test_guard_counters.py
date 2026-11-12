@@ -8,7 +8,7 @@ call paths (chat / deep / explorer / query-builder) are measured for free.
 """
 from __future__ import annotations
 
-from aughor.stats import bump, stats
+from pramanyx.stats import bump, stats
 
 
 def _count(key: str) -> int:
@@ -23,7 +23,7 @@ def test_bump_is_fail_safe_and_counts():
 
 
 def test_defan_counts_attempt_and_rewrite():
-    from aughor.sql.fanout import FanoutIssue, defan
+    from pramanyx.sql.fanout import FanoutIssue, defan
 
     before_attempt = _count("guard.defan.attempt.chasm")
     # An unbuildable finding still counts the attempt; rewritten only on success.
@@ -33,7 +33,7 @@ def test_defan_counts_attempt_and_rewrite():
 
 
 def test_grain_guard_counts_fires():
-    from aughor.sql.grain_guard import detect_fanout
+    from pramanyx.sql.grain_guard import detect_fanout
 
     def probe(sql):
         # join key is non-unique on the right table: 100 rows, 10 distinct keys
@@ -49,7 +49,7 @@ def test_grain_guard_counts_fires():
 
 
 def test_trust_checks_count_fires():
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.sql.trust_checks import run_trust_checks
 
     before = _count("guard.trust_e1.fired")
     out = run_trust_checks(

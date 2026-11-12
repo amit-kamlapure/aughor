@@ -1,0 +1,1213 @@
+"""
+Briefing Synthesis — M24b
+
+Generates an LLM-authored executive narrative from cross-domain intelligence.
+
+The narrator reads the top findings and patterns, then writes a multi-paragraph
+brief that connects them with inline citation markers [1], [2], etc. — a 2-3
+sentence lede (all the UI's collapsed card shows) followed by the depth behind it
+(what "Read full synthesis" expands to).
+
+Each citation maps back to a specific insight so the UI can render clickable
+references that deep-link to the source finding.
+
+Cache: the `briefing_cache` keyed store  |  TTL: 2 hours per connection
+"""
+from __future__ import annotations
+
+import re
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+from pramanyx.db.paths import state_dir
+from pramanyx.util.json_store import KeyedJsonStore
+
+_CACHE_PATH = state_dir() / "briefing_cache.json"
+_CACHE_TTL_HOURS = 2
+
+
+def _store() -> KeyedJsonStore:
+    """The briefing cache, per-key transactional via the KeyedJsonStore/Ledger facade.
+
+    This cache was ONE shared file for every connection, read-modify-written whole:
+    two briefings generating concurrently each loaded the file, added their own key,
+    and the last write silently dropped the other's work — the unlocked
+    load→mutate→save race the kernel Ledger was built to end (its own docstring names
+    the class), sitting unfixed in the very cache the 2026-08-03 purge bug lived in.
+    The facade gives per-key upserts and deletes; the legacy file is imported once
+    and left on disk untouched.
+
+    Constructed per call rather than held in a module global so `_CACHE_PATH` stays
+    the test seam it has always been — fixtures monkeypatch it to a temp path, and a
+    store captured at import would keep writing to the real one (the same
+    capture-at-import trap `db/paths.py` documents for `state_dir`)."""
+    return KeyedJsonStore(_CACHE_PATH)
+
+# This module's producer-logic version — bump when the narrative's SHAPE changes, so cached
+# briefs are regenerated even though their source data never moved. Registered as
+# `briefing` in pramanyx/kernel/freshness.py:LOGIC_VERSIONS (Wave V1's inventory; a ratchet
+# test fails if a producer-logic constant is not listed there).
+BRIEFING_LOGIC_VERSION = 1
+
+
+# ── Pydantic schemas (structured LLM output) ──────────────────────────────────
+
+class BriefingCitation(BaseModel):
+    ref: str = Field(description="Citation number as it appears in the narrative, e.g. '1'")
+    insight_id: str = Field(description="ID of the cited insight")
+    domain: str = Field(description="Domain the insight belongs to")
+    angle: str = Field(default="", description="Analytical angle of the insight")
+    finding: str = Field(description="The finding text being cited")
+
+    # Local models routinely return ref / insight_id as integers (6, not "6"),
+    # which fails str validation and made the whole briefing retry until timeout.
+    # Coerce scalars to strings so a numeric citation marker no longer breaks it.
+    @field_validator("ref", "insight_id", "domain", "angle", "finding", mode="before")
+    @classmethod
+    def _coerce_str(cls, v: Any) -> Any:
+        if v is None:
+            return ""
+        return v if isinstance(v, str) else str(v)
+
+
+class BriefingNarrative(BaseModel):
+    narrative: str = Field(
+        description=(
+            "Executive synthesis: a 2-3 sentence LEDE paragraph carrying the headline, then 2-4 "
+            "short paragraphs of depth, separated by blank lines. Must embed citation markers like "
+            "[1], [2], [3] inline at the exact place each finding is referenced. Business language, "
+            "no jargon."
+        )
+    )
+    citations: list[BriefingCitation] = Field(
+        description="Citations for every [N] marker in the narrative, in the same order they appear."
+    )
+    headline_theme: str = Field(
+        description="A 4-6 word theme phrase summarising the most important insight, e.g. 'Enterprise Churn Driving Revenue Risk'",
+        default="",
+    )
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+from pramanyx.util.format import round_long_decimals
+from pramanyx.util.time import now_iso as _now_iso
+
+
+from pramanyx.util.time import age_hours as _age_hours
+
+
+# ── Synthesis ─────────────────────────────────────────────────────────────────
+
+_SYSTEM = """\
+You are an intelligence analyst writing a Monday morning executive briefing for a business data team.
+Your role is to synthesise the most important cross-domain findings into a readable narrative that
+stands on its own.
+
+Structure:
+- Open with a LEDE of 2-3 sentences carrying the single biggest business move. A reader who stops
+  after the lede must still have the headline.
+- Then 2-4 short paragraphs of depth: what connects the findings, what appears to be driving what,
+  what it means for the business, and what deserves attention first.
+- Separate paragraphs with a blank line. Aim for 200-350 words in total.
+
+Rules:
+- Identify connections between findings across different domains — don't just list them.
+- Carry every finding that does real work in the argument, not only the first two or three.
+- Use business language a CFO would understand: no SQL, no technical jargon.
+- Embed citation markers like [1], [2], [3] inline at the exact point each finding is referenced.
+- Every citation marker you use MUST appear in the citations list.
+- At least 2 different domains must be referenced.
+- Highlight urgency or opportunity where the data supports it.
+- Never pad. If the findings only support a short brief, write a short one — length must come from
+  evidence, never from filler, restatement, or speculation beyond what the findings show.
+"""
+
+# Idea 3 — a briefing written for ONE period. The standing brief above juxtaposes everything the
+# platform knows; this one is told which period it covers, what it is compared with, and that a
+# standing pattern is not this period's news. Only a period brief uses it: the standing prompt is
+# untouched, byte for byte.
+_PERIOD_WORDS = {"day": "80-150", "week": "120-220", "month": "150-280", "year": "200-350"}
+_SYSTEM_PERIOD = """\
+You are an intelligence analyst writing the {label} executive briefing for a business data team.
+It covers ONE {period}, named with its dates in the [Briefing period] block, and compares it with
+the one period named there.
+
+Structure:
+- Open with a LEDE of 1-2 sentences carrying the single biggest move in this {period}, with its size
+  against the comparison period. A reader who stops after the lede must still have the headline.
+- Then 1-3 short paragraphs: what else moved, what the alerts and newly recorded findings add, and
+  what deserves attention first.
+- Separate paragraphs with a blank line. Aim for {words} words in total.
+
+Rules:
+- Every statement is about this {period}. Never present a standing pattern as news of this {period}.
+- Name the {period} with its dates once, near the start.
+- A metric that held steady earns one clause, not a paragraph.
+- Use business language a CFO would understand: no SQL, no technical jargon.
+- Embed citation markers like [1], [2], [3] inline at the exact point each finding is referenced.
+- Every citation marker you use MUST appear in the citations list.
+- Never pad. A quiet {period} gets a short brief — length must come from evidence, never from
+  filler, restatement, or speculation beyond what the findings show.
+"""
+
+
+# Used for the "All schemas" aggregate brief, where findings come from SEPARATE businesses.
+# Drawing cross-domain connections (the single-business rule above) would invent links
+# between unrelated companies — so this variant forbids it and summarizes per business.
+_SYSTEM_MULTI = """\
+You are an intelligence analyst writing a Monday morning executive briefing that spans SEVERAL
+SEPARATE, UNRELATED businesses (each finding is tagged with its Business).
+
+Structure:
+- Open with a LEDE of 2-3 sentences on the single most important signal, NAMING its business.
+- Then one short paragraph per other business covered, each self-contained.
+- Separate paragraphs with a blank line. Aim for 200-350 words in total.
+
+Rules:
+- These findings come from DIFFERENT businesses — do NOT draw connections, comparisons, or
+  shared causes across them. Treat each business independently. This holds for every paragraph:
+  more room to write is not licence to link them.
+- Cover at least two businesses.
+- Use business language a CFO would understand: no SQL, no technical jargon.
+- Embed citation markers like [1], [2], [3] inline; every marker MUST appear in the citations list.
+- Never pad. Length must come from evidence, never from filler or speculation.
+"""
+
+
+def _build_user_prompt(
+    top_insights: list[dict],
+    top_patterns: list[dict],
+    macro_context: Optional[dict] = None,
+    coverage_digest: str = "",
+    multi_schema: bool = False,
+    currency_sym: str = "$",
+) -> str:
+    lines = []
+    # Tier 2: lead with the long-arc context so the narrator can juxtapose the recent
+    # regime (the findings) against the full-history trend ("up 4× over 8 yrs, now flat").
+    if macro_context:
+        from pramanyx.explorer.temporal import render_macro_context
+        block = render_macro_context(macro_context)
+        if block:
+            lines.append(block)
+            lines.append("")
+    # Findings arrive impact-ranked (magnitude-of-change × north-star × confidence), NOT by
+    # novelty — so [1] is the single biggest business move and the narrator must lead with it.
+    if multi_schema:
+        lines.append(
+            "FINDINGS (ordered by business impact; [1] is the single most important signal) — these "
+            "come from SEPARATE, UNRELATED businesses (see Business tag). Do NOT connect findings "
+            "across businesses:"
+        )
+    else:
+        lines.append("FINDINGS (ordered by business impact — [1] is the single most important signal):")
+    for i, ins in enumerate(top_insights, 1):
+        domain = ins.get("domain", "Unknown")
+        angle = ins.get("angle", "")
+        finding = ins.get("finding", "")
+        biz = ins.get("source_schema", "")
+        prefix = f"Business: {biz} | " if (multi_schema and biz) else ""
+        lines.append(f"[{i}] {prefix}Domain: {domain} | Angle: {angle}\n    \"{finding}\"")
+
+    # Full-coverage digest: a per-domain fold of ALL findings (not just the cited top-N) so the
+    # narrator's synthesis reflects everything. Context only — it carries no citation numbers.
+    if coverage_digest:
+        lines.append("")
+        lines.append(
+            "FULL COVERAGE (the remaining findings, per domain — use for context and breadth; "
+            "do NOT cite these as numbered findings, only the FINDINGS above are citable):"
+        )
+        lines.append(coverage_digest)
+
+    if top_patterns:
+        lines.append("\nCROSS-DOMAIN PATTERNS:")
+        for p in top_patterns:
+            lines.append(
+                f"• {p.get('title', '')} ({p.get('type', '')}): "
+                f"{p.get('evidence_count', 0)} findings across {len(p.get('domains', []))} domains"
+            )
+
+    if macro_context:
+        lines.append(
+            "\nWhere the long-arc context reframes a recent finding, say so "
+            "(e.g. a recent dip that is still far above the multi-year base, or recent "
+            "growth that is flattening a longer climb). Do not cite the macro context as a "
+            "numbered finding."
+        )
+    # A currency a person confirmed labels the money; with none, the amounts stand plain and the
+    # reader is told why once — never a default "$" (the user, 2026-10-23, the Olist study's Gap 14).
+    money = (f"Report any monetary figure in {currency_sym.strip()}, never another currency symbol."
+             if currency_sym.strip() else
+             "No person has confirmed this data's currency: write every monetary figure as a plain "
+             "number with no currency symbol or code, and say once that the currency is unconfirmed.")
+    if multi_schema:
+        lines.append(
+            f"\nLEAD with finding [1] (the highest-impact signal); then summarize the single most "
+            f"important signal from EACH of the other distinct businesses separately (name the "
+            f"business) — do NOT imply any connection or shared cause across businesses. {money}"
+        )
+    else:
+        lines.append(
+            f"\nLEAD the narrative with finding [1] — it is the highest-impact signal; open on it, "
+            f"then connect the rest. {money}"
+        )
+    lines.append(
+        "\nGenerate the executive briefing narrative: a 2-3 sentence lede, then 2-4 short "
+        "paragraphs of depth, separated by blank lines, with inline citation markers."
+    )
+    return "\n".join(lines)
+
+
+# ── Coverage digest (deterministic per-domain listing) ────────────────────────
+# The narrative cites only the top-N findings; when more exist, the rest are listed here so the
+# synthesis reflects the full picture instead of silently dropping findings N+1..
+#
+# This WAS an LLM tree-reduce (pack → summarize → recurse, fanout 8). Measured on a real brief it
+# spent ~5 model calls compressing 1,291 characters into ~3 sentences — for a narrator whose context
+# window holds 32k+ tokens. That trade only makes sense when the source cannot fit; here it cost
+# latency and quota (a free tier's whole per-minute allowance went on the digest alone, so the brief
+# died before the narrator ran), added a failure mode, and DISCARDED detail the narrator could have
+# used. Listing the findings verbatim is cheaper, faster, and strictly more faithful.
+#
+# Only UNCITED findings are listed: the top-N are already in the prompt above, in full.
+
+# ── Recompose (Wave 3 / 4.2b) — the truncation backstop ───────────────────────
+# A brief that hits the output ceiling cannot be recovered by asking again: the ceiling
+# is ours and rides every request, so the reliability layer correctly declines both the
+# failover and the bounded repair. The only move left is to ask for LESS. Half the
+# citations, and a system clause that says so — one extra call, spent only when the
+# alternative is no brief at all.
+_RECOMPOSE_FINDINGS = 4
+_RECOMPOSE_CLAUSE = (
+    "\n\nIMPORTANT: your previous attempt was cut off by the length limit. Be "
+    "materially briefer this time — at most 200 words in total, and cite only the "
+    "findings given below. A complete short brief is worth more than a truncated long "
+    "one; do not trail off."
+)
+
+
+def _is_truncation(exc: BaseException) -> bool:
+    """True when a completion failed by hitting the output ceiling.
+
+    Reads the typed diagnosis the provider raises rather than matching on message
+    text — `StructuredOutputError` exists precisely so callers can branch on WHY.
+    Anything unrecognised is NOT a truncation, so an unrelated failure keeps its
+    original path instead of being quietly re-asked as a shorter brief.
+    """
+    try:
+        from pramanyx.llm.reliability import TRUNCATED, StructuredOutputError
+        return isinstance(exc, StructuredOutputError) and exc.diagnosis.failure == TRUNCATED
+    except Exception:
+        return False
+
+
+_DIGEST_MAX_PER_DOMAIN = 12     # findings listed per domain before the tail is counted, not shown
+_DIGEST_MAX_CHARS = 4000        # whole-digest budget; the narrator's window is far larger
+
+
+def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) -> str:
+    """Per-domain listing of the findings the prompt did NOT already carry.
+
+    ``""`` when nothing was dropped (the top-N prompt already holds everything). Deterministic:
+    no LLM call, so it cannot fail, stall, or invent — the old version's fail-open ``except``
+    returned "" on any model error, which silently cost the narrative its breadth."""
+    remaining: dict[str, list[str]] = {}
+    for domain, insights in domain_data.items():
+        texts = [t for ins in insights
+                 if ins.get("id", "") not in cited_ids
+                 and (t := str(ins.get("finding", "")).strip())]
+        if texts:
+            remaining[domain] = texts
+    if not remaining:
+        return ""
+
+    lines: list[str] = []
+    budget = _DIGEST_MAX_CHARS
+    for domain, texts in remaining.items():
+        shown, hidden = texts[:_DIGEST_MAX_PER_DOMAIN], texts[_DIGEST_MAX_PER_DOMAIN:]
+        head = f"{domain}:"
+        entries: list[str] = []
+        for t in shown:
+            entry = f"  - {t}"
+            if len(entry) > budget:                    # budget spent — count the tail, never drop it silently
+                hidden = texts[len(entries):]
+                break
+            entries.append(entry)
+            budget -= len(entry)
+        if not entries:
+            continue
+        lines.append(head)
+        lines.extend(entries)
+        if hidden:
+            lines.append(f"  - (+{len(hidden)} further findings in this domain)")
+    return "\n".join(lines)
+
+
+def _profile_signals(profile: Any, connection_id: str = "", schema: Optional[str] = None) -> tuple[list, str]:
+    """(north-star token-sets, currency symbol) for one dataset. The symbol is the currency a PERSON
+    confirmed for ``connection_id`` / ``schema``, else "" — never the profile's inferred code (a
+    proposal, shown on the Profile page) and never a default "$" (2026-10-23). No profile: no
+    north-star weighting; the brief still gates and ranks."""
+    from pramanyx.knowledge.triage import north_star_tokens, currency_symbol
+    from pramanyx.orgsettings import figure_currency
+    names: list[str] = []
+    if isinstance(profile, dict):
+        names = [m.get("name", "") for m in (profile.get("north_star_metrics") or [])]
+    elif profile is not None:
+        names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
+    return north_star_tokens(names), currency_symbol(figure_currency(connection_id, schema))
+
+
+def _dataset_subject(profile: Any) -> str:
+    """A 'THIS DATASET:' block from the schema's own BusinessProfile — '' when there is none.
+
+    The brief's subject is the data being briefed, not the organization reading it. Those are
+    the same thing for a single-company deployment and emphatically NOT the same when one
+    workspace holds several unrelated datasets as schemas — which is exactly when the narrator
+    used to hand the org's name to someone else's data.
+
+    `industry` and `summary` are already inferred PER SCHEMA by the profiler and were being
+    loaded and then dropped: only the profile's north-star tokens and currency ever reached the
+    prompt. This just stops throwing the rest away."""
+    if profile is None:
+        return ""
+    get = (lambda k: profile.get(k)) if isinstance(profile, dict) else (lambda k: getattr(profile, k, None))
+    industry = (get("industry") or "").strip()
+    summary = (get("summary") or "").strip()
+    model = (get("business_model") or "").strip()
+    if not (industry or summary):
+        return ""
+    bits = " · ".join(b for b in (industry, model) if b)
+    lines = ["THIS DATASET — what the findings below are ABOUT:"]
+    if bits:
+        lines.append(f"  {bits}")
+    if summary:
+        lines.append(f"  {summary}")
+    lines.append(
+        "  Write about THIS dataset. Do not attribute its activity to the reader's organization "
+        "unless they are plainly the same business."
+    )
+    return "\n".join(lines) + "\n"
+
+
+def group_held_back(held_back: list[dict]) -> list[dict]:
+    """Collapse held-back signals that were suppressed for the SAME reason into one entry.
+
+    A trust-gate reason is derived from the SQL *idiom* (``AVG()`` over a rate, ``SUM()``
+    over a VARCHAR), not from the finding — so N findings sharing one bad idiom produce N
+    byte-identical strings, and the strip renders the same sentence seven times. Grouping
+    is the honest fix: one line per DISTINCT reason, carrying ``count`` (and the domains it
+    hit) so nothing is silently dropped — ``sum(count)`` still equals the number of signals
+    the gate held back. Order is preserved (first occurrence wins), most-frequent first."""
+    groups: dict[tuple[str, str], dict] = {}
+    for h in held_back:
+        key = (h.get("severity", ""), h.get("reason", ""))
+        g = groups.get(key)
+        if g is None:
+            groups[key] = {**h, "count": 1, "domains": [h.get("domain", "")] if h.get("domain") else []}
+            continue
+        g["count"] += 1
+        dom = h.get("domain", "")
+        if dom and dom not in g["domains"]:
+            g["domains"].append(dom)
+    return sorted(groups.values(), key=lambda g: -g["count"])
+
+
+def best_action_for(ins: dict, *, industry=None) -> Optional[dict]:
+    """CB-7 — the single best action beside a Briefing item, chosen where the platform already
+    keeps its judgement: the cited investigation's own first recommendation when the item came
+    from one (executable through the inbox's gated door, `POST /investigations/{id}/recommendations/{i}/execute`),
+    else the playbook's best play for the finding's labels, ranked by its learned success rate
+    (`retriever.retrieve_for_metric_and_phases`) — a suggestion the reader takes to an investigation,
+    never fired on its own. None when neither exists: a brief item with no action is honest; one with
+    an invented action is not."""
+    inv_id = str(ins.get("investigation_id") or "")
+    if inv_id:
+        try:
+            from pramanyx.db.history import get_investigation
+            inv = get_investigation(inv_id) or {}
+            report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
+            recs = list((report or {}).get("recommendations") or [])
+            if recs:
+                r0 = recs[0]
+                text = (next((str(r0[k]) for k in ("text", "action", "title", "recommendation") if isinstance(r0, dict) and r0.get(k)), "")
+                        if isinstance(r0, dict) else str(r0))
+                if text:
+                    return {"kind": "recommendation", "inv_id": inv_id, "rec_index": 0, "text": text,
+                            "executable": True, "why": "the first recommendation of the deep analysis it came from"}
+        except Exception as exc:  # noqa: BLE001 — an action is additive; the brief never fails for one
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "the cited investigation could not be read for a brief action", counter="briefing.action")
+    # What the finding is about: the measures it reads and the metric it is of, before its angle
+    # and domain — a play is offered only when it FITS (`retriever.fits`: it names one of these in
+    # full, or two of its tags), never on a word its recommendation happens to share with the
+    # finding's domain. Eight citations of one Briefing carried the same proven play before this
+    # (2026-10-09); measured on theLook's 50 findings, 35 carried a play then, three plays between them.
+    measures = ins.get("measures") if isinstance(ins.get("measures"), list) else []
+    labels = [str(x) for x in (*measures, ins.get("metric"), ins.get("_priority"), ins.get("angle"), ins.get("domain")) if x]
+    if not labels:
+        return None
+    try:
+        from pramanyx.playbook.retriever import retrieve_for_metric_and_phases
+        plays = retrieve_for_metric_and_phases(labels, limit=1, learned_rates=True, industry=industry, fit=True)
+    except Exception as exc:  # noqa: BLE001
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "the playbook could not be read for a brief action", counter="briefing.action")
+        return None
+    if not plays:
+        return None
+    p = plays[0]
+    return {"kind": "play", "id": str(getattr(p, "id", "")), "text": str(getattr(p, "recommendation", "") or ""),
+            "when": " ".join(x for x in (str(getattr(p, "trigger_metric", "") or ""), str(getattr(p, "trigger_condition", "") or "")) if x),
+            "success_rate": float(getattr(p, "historical_success_rate", 0.0) or 0.0),
+            "executable": False, "why": "the playbook's best play for this finding, by learned success rate"}
+
+
+#: A figure in a sentence or a finding: "15,098", "581", "13156.4" — never a citation marker "[1]".
+_FIGURE = re.compile(r"(?<![\w.\[])\d[\d,]*(?:\.\d+)?(?![\d\]])")
+
+
+def _figures(text: str) -> set[float]:
+    """The figures a text states that can tell one finding from another: three digits or more, and not a year — "3%"
+    or "12 orders" sit in half the findings of any brief, so they never decide which one a sentence cites."""
+    out: set[float] = set()
+    for m in _FIGURE.finditer(text or ""):
+        raw = m.group(0).replace(",", "")          # digits, and a decimal part only with digits after it
+        whole = raw.split(".")[0]
+        if len(whole) < 3 or (len(whole) == 4 and "." not in raw and 1900 <= int(whole) <= 2100):
+            continue
+        out.add(float(raw))
+    return out
+
+
+def _reconcile_refs(narrative: str, top: list[dict]) -> dict[str, dict]:
+    """Which finding each [N] marker of the narrative cites.
+
+    The prompt numbers its findings [1]…[8] and a marker is read as that number — but a narrator may number its
+    markers in the order it uses them, and LuxExperience's September edition put [1] on the AOV sentence while ref 1
+    opened the clienteling finding (2026-10-12). So the figures decide: a marker whose numbered finding shares no figure
+    with the sentence it sits in goes to the one finding that does share them. A sentence with no telling figure, a
+    numbered finding that shares one, and a tie all keep the number."""
+    by_number = {str(i + 1): ins for i, ins in enumerate(top)}
+    said: dict[str, set[float]] = {}
+    for sentence in re.split(r"(?<=[.!?])\s+", narrative or ""):
+        figures = _figures(re.sub(r"\[\d+\]", "", sentence))
+        for ref in re.findall(r"\[(\d+)\]", sentence):
+            said.setdefault(ref, set()).update(figures)
+    out = dict(by_number)
+    for ref, figures in said.items():
+        own = by_number.get(ref)
+        if not figures or (own is not None and figures & _figures(str(own.get("finding") or ""))):
+            continue
+        shared = {n: len(figures & _figures(str(ins.get("finding") or ""))) for n, ins in by_number.items()}
+        most = max(shared.values(), default=0)
+        best = [n for n, k in shared.items() if k == most]
+        if most and len(best) == 1:
+            out[ref] = by_number[best[0]]
+    return out
+
+
+def generate_narrative(
+    domain_data: dict[str, list[dict]],
+    patterns: list[dict],
+    connection_id: str,
+    macro_context: Optional[dict] = None,
+    profile: Any = None,
+    workspace_id: Optional[str] = None,
+    col_types: Optional[dict[str, str]] = None,
+    period: Optional[dict] = None,
+    period_note_today: Any = None,
+    schema: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Call the LLM narrator and return a serialisable briefing dict.
+
+    ``period`` (idea 3) is a range Briefing's block (``briefing.ranges.range_block``,
+    measured): the narrator is told which version it is writing and gets the period prompt,
+    and the block rides the result. ``None`` — the standing brief — changes nothing.
+
+    A daily executive brief leads with the biggest business move and never prints an
+    impossible number or an anti-causal correlation as fact. So before synthesis we run
+    the deterministic triage (``knowledge.triage``) over every candidate finding:
+      • SUPPRESS impossible magnitudes (an inventory turnover of 3,600×) entirely,
+      • DEMOTE anti-causal correlations (stockouts falling as lead time rises) to a
+        flagged hypothesis that never reaches the narrative,
+      • RANK the survivors by business impact (magnitude-of-change × north-star ×
+        confidence) so the lead [1] is what moves the business, not the newest finding.
+    Held-back signals are returned (with reasons) so the UI can show the audit trail.
+
+    Returns:
+        {
+            "narrative":      str,
+            "headline_theme": str,
+            "citations":      [{"ref", "insight_id", "domain", "angle", "finding",
+                                "sql", "confidence", "novelty", "generated_at", "priority", "action"}, ...],
+            "held_back":      [{"finding", "domain", "severity", "reason", "count", "domains"}, ...],
+                              # grouped by (severity, reason) — see `group_held_back`
+            "currency_code":  str,
+            "generated_at":   str,
+        }
+    """
+    from pramanyx.knowledge.triage import plausibility, impact_score
+    ns_tokens, currency_sym = _profile_signals(profile, connection_id, schema)
+    # CB-6 — what the organisation is trying to do this quarter, written by people in organisation
+    # settings. A finding that bears on one ranks higher and the brief says which goal it bears on.
+    priorities: list = []
+    try:
+        from pramanyx.orgsettings import effective_settings
+        priorities = [p.model_dump() for p in (effective_settings(workspace_id).priorities or [])]
+    except Exception as _pe:  # noqa: BLE001 — priorities are additive; a brief never fails for want of them
+        from pramanyx.kernel.errors import tolerate
+        tolerate(_pe, "declared priorities unavailable to the brief; ranking goes on without them",
+                 counter="briefing.priorities")
+    from pramanyx.knowledge.triage import priority_hit, priority_tokensets
+    pr_tokens = priority_tokensets(priorities)
+    from pramanyx.orgsettings import figure_currency
+    # The dataset's currency as a person confirmed it, else "" (2026-10-23): the profile's inferred
+    # code is a proposal on the Profile page, and the org's preference describes the organisation.
+    currency_code = figure_currency(connection_id, schema)
+
+    # Currency-normalise any text shown in the brief: a non-USD business should never display
+    # a '$' figure (findings were authored before currency-awareness). Rewrites '$<number>' to
+    # the business symbol across the narrative, citations AND held-back text so the whole
+    # surface is consistent. A no-op when the business reports in USD.
+    import re as _re
+    def _cur(text: str) -> str:
+        # With no confirmed currency the symbol is "": a "$" the explorer baked in is dropped, so
+        # the amount stands plain rather than in dollars it was never shown to be in.
+        if not text or currency_sym == "$":
+            return text
+        return _re.sub(r"\$(?=\s?[\d.])", currency_sym, text)
+
+    # Flatten, then TRIAGE: split into trusted (synthesised) vs held-back (suppressed/demoted).
+    all_insights: list[dict] = []
+    for domain, insights in domain_data.items():
+        for ins in insights:
+            flat = dict(ins) if isinstance(ins, dict) else {}
+            flat.setdefault("domain", domain)
+            all_insights.append(flat)
+
+    held_back: list[dict] = []
+    trusted:   list[dict] = []
+    for ins in all_insights:
+        finding = ins.get("finding", "")
+        # A brief cites only what a query shows — the user, 2026-10-11: "no full synthesis entry should be without an
+        # evidence backing it". A candidate that carries no query (a promise chain's stamped figures) is held back, and
+        # the reason rides `held_back`; every citation then carries the query a reader opens as its evidence.
+        if not str(ins.get("sql") or "").strip():
+            held_back.append({
+                "finding":  _cur(finding),
+                "domain":   ins.get("domain", ""),
+                "severity": "unbacked",
+                "reason":   "no query backs it — the brief cites only what a query shows",
+            })
+            continue
+        # `col_types` (bare + qualified column → declared dtype) lets triage suppress a
+        # finding whose SQL applies a non-additive aggregate to a non-numeric column
+        # (SUM over a VARCHAR fiscal-year) BEFORE the narrator sees it — so the AI prose
+        # can never cite a type-void number. Omitted → that check no-ops (no regression).
+        verdict = plausibility(finding, ins.get("sql", ""), col_types)
+        if not verdict.ok:
+            held_back.append({
+                "finding":  _cur(finding),
+                "domain":   ins.get("domain", ""),
+                "severity": verdict.severity,   # 'implausible' (suppressed) | 'confound' (demoted)
+                "reason":   verdict.reason,
+            })
+            continue
+        ins["_impact"] = impact_score(
+            finding, ins.get("novelty", 0), ins.get("confidence", 0), ns_tokens,
+            priority_tokensets=pr_tokens,
+        )
+        ins["_priority"] = priority_hit(finding, priorities)
+        trusted.append(ins)
+
+    # Impact-ranked (was novelty): the lead [1] is the single biggest business move.
+    trusted.sort(key=lambda i: i.get("_impact", 0.0), reverse=True)
+
+    # Keep breadth: one-per-domain first (in impact order), then fill to 8 by impact.
+    seen_domains: set[str] = set()
+    seen_ids:     set[str] = set()
+    top: list[dict] = []
+
+    for ins in trusted:
+        if len(top) >= 8:
+            break
+        d = ins.get("domain", "")
+        if d not in seen_domains:
+            seen_domains.add(d)
+            seen_ids.add(ins.get("id", ""))
+            top.append(ins)
+
+    for ins in trusted:
+        if len(top) >= 8:
+            break
+        if ins.get("id", "") not in seen_ids:
+            seen_ids.add(ins.get("id", ""))
+            top.append(ins)
+
+    if not top:
+        empty = {
+            "narrative":      "",
+            "headline_theme": "",
+            "citations":      [],
+            "held_back":      group_held_back(held_back),
+            "currency_code":  currency_code,
+            "generated_at":   _now_iso(),
+        }
+        if period is not None:
+            empty["period"] = period
+        return empty
+
+    # Full-coverage digest: when trusted findings were dropped from the top-8, fold them (per
+    # domain, tree-reduced) so the narrative reflects the whole TRUSTED picture. Built from the
+    # trusted set only — a suppressed/demoted finding must not leak back in as digest context.
+    trusted_by_domain: dict[str, list[dict]] = {}
+    for ins in trusted:
+        trusted_by_domain.setdefault(ins.get("domain", ""), []).append(ins)
+    coverage = _coverage_digest(trusted_by_domain, {ins.get("id", "") for ins in top[:8]})
+
+    # RC6 — when the cited findings span multiple businesses (the "All schemas" aggregate),
+    # forbid cross-business synthesis: a beauty-ecommerce finding and a bakery finding must
+    # not be woven into one causal story.
+    multi_schema = len({ins.get("source_schema") for ins in top[:8] if ins.get("source_schema")}) > 1
+
+    # Build prompt and call LLM
+    from pramanyx.llm.provider import get_provider
+    provider = get_provider("narrator")
+    user_prompt = _build_user_prompt(
+        top[:8], patterns[:3], macro_context, coverage_digest=coverage,
+        multi_schema=multi_schema, currency_sym=currency_sym,
+    )
+    # WHAT THIS DATA IS — the dataset's OWN characterization, from the per-schema
+    # BusinessProfile that was already loaded for this scope. Without it the narrator had only
+    # the org's identity to go on and attributed the data to the org: a Netflix title catalog
+    # opened "LuxExperience has aggressively scaled content production…". The subject of the
+    # brief is the DATASET; the organization is who's reading it. Deterministic — no new
+    # inference, just passing through what the profiler already decided for this schema.
+    try:
+        _subject = _dataset_subject(profile)
+        if _subject:
+            user_prompt = _subject + "\n" + user_prompt
+    except Exception as _e:
+        import logging as _l
+        _l.getLogger(__name__).debug("briefing: dataset subject unavailable: %s", _e)
+
+    # Identity context (company/HQ/website/industry) — declared identity only, '' when unset (a
+    # no-op for unconfigured orgs), workspace override-wins. Framed explicitly as the READER's
+    # organization, because org settings are workspace-global while a brief is schema-scoped:
+    # one workspace can hold several unrelated datasets, and the org does not own all of them.
+    try:
+        from pramanyx.orgsettings import org_context
+        _org = org_context(workspace_id)
+        if _org:
+            user_prompt = _org + "\n" + user_prompt
+    except Exception as _e:
+        import logging as _l
+        _l.getLogger(__name__).debug("briefing: org_context unavailable: %s", _e)
+
+    # CB-6 — the declared priorities, in the narrator's context: when a cited finding bears on one,
+    # the sentence says which goal. Deterministic block; absent when nothing is declared.
+    if priorities:
+        _lines = []
+        for _p in priorities:
+            _bits = [str(_p.get("metric") or "")]
+            if _p.get("target"):
+                _bits.append(f"target {_p['target']}")
+            if _p.get("direction"):
+                _bits.append(f"{_p['direction']} is good")
+            if _p.get("by"):
+                _bits.append(f"by {_p['by']}")
+            _lines.append("  - " + ", ".join(x for x in _bits if x))
+        user_prompt = ("DECLARED PRIORITIES THIS QUARTER (written by the organisation's people — when a cited "
+                       "finding bears on one, say which goal it bears on, in the same sentence):\n"
+                       + "\n".join(_lines) + "\n\n" + user_prompt)
+
+    _system = _SYSTEM_MULTI if multi_schema else _SYSTEM
+    if period is not None:
+        from pramanyx.knowledge.period_brief import period_note
+        _system = _SYSTEM_PERIOD.format(label=str(period.get("label", "")).lower(),
+                                        period=period.get("period", "period"),
+                                        words=_PERIOD_WORDS.get(period.get("period"), "120-250"))
+        if period.get("recipe"):
+            # Arc BR-4: a range Briefing is written by its horizon's recipe
+            from pramanyx.briefing.recipes import GUIDANCE, WORDS
+            recipe = period["recipe"]
+            _system = _SYSTEM_PERIOD.format(label=str(period.get("label", "")).lower(),
+                                            period=period.get("period", "period"),
+                                            words=WORDS.get(recipe, "120-250"))
+            _system += GUIDANCE.get(recipe, "") + "\n"
+        if multi_schema:
+            _system += ("- The findings come from SEPARATE, UNRELATED businesses (see the Business tag): "
+                        "never connect findings across businesses; say what moved in each on its own.\n")
+        user_prompt = period_note(period, period_note_today) + "\n\n" + user_prompt
+    try:
+        result: BriefingNarrative = provider.complete(
+            system=_system, user=user_prompt,
+            response_model=BriefingNarrative, temperature=0.3,
+        )
+    except Exception as exc:
+        # Wave 3 / 4.2b — recompose, and ONLY on a truncation.
+        #
+        # A truncated brief is the one failure the layers below deliberately refuse to
+        # touch: re-asking hits the same ceiling (it is ours, sent on every backend),
+        # so `should_failover` declines the chain and `salvage` spends no repair. The
+        # result is a brief that simply dies — which is what the ~25-finding incident
+        # was.
+        #
+        # So the recovery is not a retry, it is a SMALLER BRIEF: fewer cited findings
+        # and an explicitly shorter target, composed once. Deliberately not a revival
+        # of the LLM tree-reduce this module deleted (see the note further up): that
+        # ran on EVERY brief and spent ~5 calls compressing a kilobyte. This one runs
+        # only when the alternative is no brief at all.
+        if not _is_truncation(exc):
+            raise
+        import logging as _l
+        _l.getLogger(__name__).warning(
+            "briefing: narrative hit the output ceiling — recomposing a shorter brief "
+            "from %d findings instead of %d", _RECOMPOSE_FINDINGS, len(top[:8]))
+        from pramanyx.stats import bump
+        bump("briefing.recompose")
+        short_prompt = _build_user_prompt(
+            top[:_RECOMPOSE_FINDINGS], patterns[:2], macro_context,
+            coverage_digest=coverage, multi_schema=multi_schema,
+            currency_sym=currency_sym,
+        )
+        result = provider.complete(
+            system=_system + _RECOMPOSE_CLAUSE, user=short_prompt,
+            response_model=BriefingNarrative, temperature=0.3,
+        )
+
+    # Currency-normalise the synthesis (and the cited source findings below): the narrator
+    # echoes a '$' straight from a finding's prose, and for a non-USD business every '$' figure
+    # in the brief is wrong. Bounded fix at the synthesis authority (explorer-side prevention
+    # is tracked separately).
+    # …and number-normalise it, for the same reason one layer up: the narrator echoes digits
+    # straight out of a finding's prose. Explorer-side prevention (rows_for_prompt + hygiene at
+    # emit) means this should now be a no-op on fresh findings — it stays as the response-boundary
+    # guarantee, covering findings persisted before that landed. `pramanyx.util.format` owns the rule.
+    narrative_text = round_long_decimals(_cur(result.narrative))
+
+    # Map citation refs back to actual insight IDs — by the figures each marked sentence says (`_reconcile_refs`)
+    ref_to_insight: dict[str, dict] = _reconcile_refs(narrative_text, top[:8])
+    # CB-7 — the playbook is read for this brief's industry only (a play from another industry is
+    # a plausible-sounding recipe for a business the reader is not in).
+    _pb_industry = None
+    try:
+        from pramanyx.business_profile.metric_kb import industry_scope
+        _ind = (profile.get("industry") if isinstance(profile, dict) else getattr(profile, "industry", "")) or ""
+        _pb_industry = industry_scope(connection_id, None, industry=_ind)
+    except Exception as _ie:  # noqa: BLE001
+        from pramanyx.kernel.errors import tolerate
+        tolerate(_ie, "industry scope unavailable for brief actions; plays are read unscoped", counter="briefing.action")
+
+    def _brief_action(source: dict):
+        try:
+            return best_action_for(source, industry=_pb_industry) if source else None
+        except Exception as _ae:  # noqa: BLE001
+            from pramanyx.kernel.errors import tolerate
+            tolerate(_ae, "a brief item's action could not be chosen", counter="briefing.action")
+            return None
+    citations_out = []
+    for cit in result.citations:
+        source = ref_to_insight.get(cit.ref, {})
+        citations_out.append({
+            "ref":        cit.ref,
+            "insight_id": source.get("id", cit.insight_id),
+            "domain":     source.get("domain", cit.domain),
+            "angle":      source.get("angle", cit.angle),
+            "finding":    _cur(source.get("finding", cit.finding)),
+            # The evidence, carried: a cited finding the Briefing's own list does not hold (a metric's move, a range's
+            # segment) was opened as a stand-in reading "no query recorded" and "Confidence 0%" — neither was true.
+            "sql":        source.get("sql", ""),
+            "confidence": source.get("confidence"),
+            "novelty":    source.get("novelty"),
+            "generated_at": source.get("generated_at"),
+            "priority":   source.get("_priority", ""),      # CB-6: the declared goal this bears on, or ""
+            "action":     _brief_action(source),            # CB-7: the one action beside this item, or None
+        })
+
+    # P5 — attribute each cited sentence back to its finding and persist it as that
+    # finding's contextual narrative (the briefing's "why it matters" framing). A
+    # drill-in then shows it from the dossier instead of re-synthesizing. The
+    # aggregate narrator pass already ran; this is pure attribution, no new LLM call.
+    # Best-effort: provenance must never break briefing generation.
+    try:
+        import re as _re
+        from pramanyx.explorer.dossier import update_dossier
+        _sentences = _re.split(r"(?<=[.!?])\s+", result.narrative or "")
+        _by_ref: dict[str, list[str]] = {}
+        for _sent in _sentences:
+            refs = _re.findall(r"\[(\d+)\]", _sent)
+            if not refs:
+                continue
+            _clean = _re.sub(r"\s*\[\d+\]", "", _sent).strip()
+            for _r in refs:
+                if _clean:
+                    _by_ref.setdefault(_r, []).append(_clean)
+        for _ref, _ins in ref_to_insight.items():
+            _texts = _by_ref.get(_ref)
+            if _texts and _ins.get("id"):
+                update_dossier(
+                    connection_id, _ins["id"],
+                    merge={"narrative": " ".join(dict.fromkeys(_texts))},
+                    lineage_edge=("narrated_by", "briefing:synthesis", None),
+                )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("per-finding narrative attribution failed", exc_info=True)
+
+    out = {
+        "narrative":      narrative_text,
+        "headline_theme": result.headline_theme,
+        "citations":      citations_out,
+        "held_back":      group_held_back(held_back),
+        "currency_code":  currency_code,
+        "generated_at":   _now_iso(),
+    }
+    if period is not None:
+        out["period"] = period
+    return out
+
+
+# ── Cache layer ───────────────────────────────────────────────────────────────
+
+def _brief_rebuild_decision(key: str, connection_id: str, entry: dict):
+    """Should this cached brief be regenerated? Returns ``(needs_rebuild, decision|None)``.
+
+    The TTL answer is ``age >= 2h``, and it is wrong twice over: it pays for a rebuild when
+    nothing moved (an LLM call), and it serves a brief for up to two hours after the source
+    data changed. So the age becomes the *backstop* and the source probe becomes the
+    authority — but only when ``freshness.resolved_rebuild`` is on. With the flag off this
+    is exactly the original expression.
+
+    The decision is handed back so a rebuild can be stamped with the version measured
+    *before* generation: if the source moves during the (slow, LLM) generation, the next
+    check must still rebuild, and re-probing afterwards would let the brief claim inputs it
+    never actually saw.
+    """
+    ttl_expired = _age_hours(entry.get("generated_at", "")) >= _CACHE_TTL_HOURS
+
+    from pramanyx.kernel.rebuild import resolve
+
+    decision = resolve(
+        f"brief:{key}", connection_id=connection_id, ttl_expired=ttl_expired,
+        logic=str(BRIEFING_LOGIC_VERSION),
+    )
+    return decision.should_rebuild, decision
+
+
+def cites_turned_off(connection_id: str, entry: dict, scope_key: str = "") -> bool:
+    """Whether a cached story cites a finding whose query reads a table (or schema) a person turned off since it was
+    written. Such a story is not served: it is rewritten from the findings that remain, as a schema turned off has
+    no Briefing at all. Each citation carries its finding's query (2026-10-11); one that carries none cannot be
+    checked and is let stand. False at once when the connection turned nothing off."""
+    from pramanyx.ontology.visibility import connection_exclusions, off_read
+    cites = [c for c in (entry or {}).get("citations") or [] if isinstance(c, dict) and c.get("sql")]
+    if not cites or not connection_exclusions(connection_id):
+        return False
+    from pramanyx.trust.lineage_edges import dialect_for_connection
+    dialect = dialect_for_connection(connection_id)
+    schema = scope_key.split("#", 1)[0].split(":", 1)[1] if ":" in scope_key.split("#", 1)[0] else None
+    return any(off_read(connection_id, str(c["sql"]), dialect, default_schema=schema) for c in cites)
+
+
+def peek_briefing(scope_key: str) -> dict[str, Any] | None:
+    """The cached brief for a scope, or None — READ ONLY, never generates.
+
+    `get_briefing` synthesizes on a miss (an LLM call plus a coverage fan-out), which is far
+    too expensive for a read-side consumer. "Ask this briefing" grounds its answers in the
+    brief the user is actually looking at, so it wants exactly this: the current artifact if
+    one exists, and otherwise nothing to say. Ignores the TTL deliberately — a slightly stale
+    brief is still the one on screen, and refreshing it is the Briefing's job, not the ask's."""
+    try:
+        entry = _store().get(scope_key)
+        return entry if isinstance(entry, dict) and entry.get("narrative") else None
+    except Exception:
+        return None
+
+
+def peek_entry(key: str) -> dict[str, Any] | None:
+    """The cached entry under ``key`` exactly as stored — READ ONLY, never generates, and
+    unlike ``peek_briefing`` returns an entry with no narrative too (a range whose figures were
+    measured and whose period was quiet is still a Briefing)."""
+    try:
+        entry = _store().get(key)
+        return entry if isinstance(entry, dict) else None
+    except Exception:
+        return None
+
+
+def keep_entry(key: str, entry: dict) -> None:
+    """Store ``entry`` under ``key`` in the Briefing cache — the edition's writer (Arc BG-3) keeps each
+    reader's edition here, beside the range Briefings, so a read finds it with ``peek_entry``."""
+    _store().put(key, entry)
+
+
+def _kept_version(connection_id: str, briefing: dict, scope_key, period) -> dict:
+    """BR-6 — keep this reading as of the day it was built, and hand the page its stamp.
+
+    Called on BOTH of `get_briefing`'s exits. It was first wired one layer up, in
+    `build_period_briefing`, and then here at the single `return briefing` — and neither was
+    enough. Measured live 2026-09-27: theLook's July Briefing came back with `version: null`
+    both times, because a brief that is still fresh returns from the two-hour cache at the
+    EARLY return and never reaches the bottom of the function. A Briefing served from cache is
+    still a Briefing somebody was shown, so it is still a reading to keep; recording only on
+    the path that rebuilds would have kept a history of exactly the visits that changed
+    nothing, and none of the ones a reader actually saw.
+
+    Only a brief with a PERIOD is kept: the standing brief measures no figures, so a version of
+    it would carry nothing to compare and every build would read as version 1 forever.
+    """
+    if not (isinstance(period, dict) and period):
+        return {}
+    try:
+        from pramanyx.briefing import versions as _versions
+        from pramanyx.briefing.recall import revisions_since as _revisions_since
+        recipe = str(period.get("period") or "")
+        kept = _versions.record(connection_id, briefing, scope_key=str(scope_key or ""),
+                                range_key=str(period.get("covers") or period.get("last_day") or ""),
+                                recipe=recipe)
+        return {"version": kept, "as_of_line": _versions.as_of_line(kept),
+                "revisions": _revisions_since(connection_id, days=1) if recipe == "day" else []}
+    except Exception as exc:  # noqa: BLE001 — a Briefing renders with or without its history
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "the Briefing is served whether or not its version could be kept",
+                 counter="briefing.version.attach")
+        return {}
+
+
+def get_briefing(
+    connection_id: str,
+    domain_data: dict[str, list[dict]],
+    patterns: list[dict],
+    force_refresh: bool = False,
+    scope_key: str | None = None,
+    macro_context: Optional[dict] = None,
+    profile: Any = None,
+    metric_moves: "Optional[Any]" = None,
+    workspace_id: Optional[str] = None,
+    col_types: Optional[dict[str, str]] = None,
+    promise_chains: "Optional[Any]" = None,
+    period: Optional[dict] = None,
+    period_measure: "Optional[Any]" = None,
+    period_note_today: Any = None,
+) -> dict[str, Any]:
+    """Return cached briefing narrative if fresh, otherwise generate and cache.
+
+    ``period`` (idea 3) makes this a PERIOD brief: cached under ``<scope>#<period>`` and served
+    from the cache only while its window is the same one (a new day is a new daily brief).
+    ``period_measure`` is a zero-arg callable returning ``{"findings", "measured",
+    "unmeasured"}`` — the headline metrics measured for the window — called only on a miss,
+    like ``metric_moves``. Both ``None`` → the standing brief, unchanged.
+
+    `scope_key` is the cache key (defaults to `connection_id` for backward compatibility).
+    A Canvas passes e.g. ``f"canvas:{canvas_id}"`` so a canvas-scoped briefing — built from
+    the canvas's curated tables — never collides with the connection-wide one.
+
+    `profile` is the BusinessProfile (model or dict) — its north-star metrics drive impact
+    ranking and its `currency_code` drives currency-correct figures.
+
+    `metric_moves` is an OPTIONAL zero-arg callable returning synthetic metric-move findings
+    (north-star trends). It is called ONLY on a cache miss — so the chart_sql it runs never
+    burdens the cache-hit path — and its moves join the candidates as a 'Key Metrics' domain.
+
+    `col_types` (bare + qualified column → declared dtype) is threaded into the triage so a
+    finding whose SQL applies a non-additive aggregate to a non-numeric column is held back
+    from the narrative — the same authority the insight cards stamp by. Omit → the check
+    no-ops. Only consulted on a cache miss (where generate_narrative runs).
+    """
+    key = scope_key or connection_id
+    if period is not None:
+        # a range Briefing (Arc BR-3) carries its own key, so two custom ranges never share one
+        key = f"{key}#{period.get('key') or period.get('period')}"
+    pre_decision = None
+    if not force_refresh:
+        try:
+            entry = _store().get(key)
+            same_window = period is None or (
+                isinstance(entry, dict)
+                and all((entry.get("period") or {}).get(k) == period.get(k)
+                        for k in ("start", "end", "lag_days")))
+            if entry and same_window:
+                needs, pre_decision = _brief_rebuild_decision(key, connection_id, entry)
+                # a story citing a table turned off since it was written is rewritten without it
+                if not needs and not cites_turned_off(connection_id, entry, key):
+                    return {**entry, **_kept_version(connection_id, entry, scope_key, period)}
+        except Exception:
+            pass
+
+    if period is not None and period_measure is not None:
+        try:
+            measured = period_measure() or {}
+        except Exception as _pe:  # noqa: BLE001 — an unmeasured period is said, never a failed brief
+            from pramanyx.kernel.errors import tolerate
+            tolerate(_pe, "the period measurement failed; the brief says nothing was measured",
+                     counter="briefing.period.measure")
+            measured = {"unmeasured": [{"name": "headline metrics",
+                                        "reason": f"the measurement failed ({type(_pe).__name__})"}]}
+        period = {**period, "measured": list(measured.get("measured") or []),
+                  "unmeasured": list(measured.get("unmeasured") or [])}
+        # Arc BR-4: a range recipe's own sections ride the block too (moves, why, early read …)
+        period.update({k: v for k, v in measured.items()
+                       if k not in ("findings", "candidates", "measured", "unmeasured")})
+        if measured.get("findings"):
+            domain_data = {**domain_data, "Key Metrics": list(measured["findings"])
+                           + list(domain_data.get("Key Metrics", []))}
+        for dom, rows in (measured.get("candidates") or {}).items():
+            if rows:
+                domain_data = {**domain_data, dom: list(rows) + list(domain_data.get(dom, []))}
+
+    # Cache miss → fold in north-star metric moves (the biggest KPI swings) as candidates.
+    if metric_moves is not None:
+        try:
+            moves = metric_moves() or []
+        except Exception:
+            moves = []
+        if moves:
+            domain_data = {**domain_data, "Key Metrics": list(moves) + list(domain_data.get("Key Metrics", []))}
+
+    # HB-3 — fold in the promise chains (breach rate at filing vs now, the filed
+    # ticket/thread refs, recorded outcomes), same shape and same fold as the moves:
+    # deterministic candidates under their own domain, citable by the narrative.
+    if promise_chains is not None:
+        try:
+            chains = promise_chains() or []
+        except Exception:
+            chains = []
+        if chains:
+            domain_data = {**domain_data, "Promises": list(chains) + list(domain_data.get("Promises", []))}
+
+    # The dataset the scope names ("conn:schema", with any "#period" after it) — its confirmed
+    # currency labels the figures. A canvas's scope names no dataset.
+    _sk = (scope_key or connection_id).split("#", 1)[0]
+    _scope_schema = _sk.split(":", 1)[1] if (":" in _sk and not _sk.startswith("canvas:")) else None
+    if period is None:
+        briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
+                                      profile=profile, workspace_id=workspace_id,
+                                      col_types=col_types, schema=_scope_schema)
+    else:
+        briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
+                                      profile=profile, workspace_id=workspace_id,
+                                      col_types=col_types, period=period,
+                                      period_note_today=period_note_today, schema=_scope_schema)
+
+    try:
+        # Per-key upsert: a concurrent generation for ANOTHER scope can no longer be
+        # lost to this write, because neither writer carries the whole cache anymore.
+        _store().put(key, briefing)
+    except Exception:
+        pass
+
+    # Wave V2: remember what this brief was built ON, but only now — after the narrative
+    # exists and is cached. Recording earlier (or on a failure) would consume the change:
+    # the next check would compare against inputs whose output was never produced, so a
+    # genuinely stale brief would read fresh.
+    _record_brief_inputs(key, connection_id, pre_decision)
+
+    # Wave L1: the brief joins the connection knowledge graph as a `brief` node with
+    # `derived_from` edges to every finding it cited — the same "landed, therefore
+    # readable back" rule the answer path follows. Same position and reasoning as the
+    # stamp above: only once the narrative exists and is cached.
+    _note_brief_on_graph(key, connection_id, briefing)
+
+    return {**briefing, **_kept_version(connection_id, briefing, scope_key, period)}
+
+
+def _note_brief_on_graph(key: str, connection_id: str, briefing: Any) -> None:
+    """Land a generated brief on the connection knowledge graph. Best-effort and
+    gated by `graph.build`; a brief must never fail because a graph write did.
+
+    Only the connection-scoped brief is projected — a canvas brief is keyed
+    ``canvas:<id>``, which does not name a connection, so attributing it here would
+    ground it in data it may never have read.
+    """
+    if key != connection_id:
+        return
+    try:
+        from pramanyx.ontology.context_graph_build import note_brief
+
+        entry = briefing if isinstance(briefing, dict) else {}
+        narrative = str(entry.get("narrative") or "").strip()
+        if not narrative:
+            return
+        note_brief(connection_id, {
+            "id": connection_id,
+            "text": narrative,
+            "theme": str(entry.get("headline_theme") or ""),
+            "citations": [str(c.get("insight_id") or "")
+                          for c in (entry.get("citations") or [])
+                          if isinstance(c, dict) and c.get("insight_id")],
+            "generated_at": str(entry.get("generated_at") or ""),
+        })
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "landing the brief on the context graph is best-effort; the next "
+                      "full build projects it from the cache",
+                 counter="context_graph.note_brief_hook")
+
+
+def _record_brief_inputs(key: str, connection_id: str, pre_decision=None) -> None:
+    """Stamp the source view this brief was just computed on (no-op when V2 is off).
+
+    Reuses the decision taken before generation when there is one, so the stamp names the
+    inputs the narrative actually saw — and so the common path pays for one probe, not two.
+    """
+    from pramanyx.kernel.rebuild import record, resolve
+    from pramanyx.kernel.errors import tolerate
+    try:
+        decision = pre_decision or resolve(
+            f"brief:{key}", connection_id=connection_id,
+            logic=str(BRIEFING_LOGIC_VERSION),
+        )
+        record(f"brief:{key}", decision)
+    except Exception as exc:
+        tolerate(exc, "stamping the brief's input version is best-effort; without it the "
+                      "next check falls back to the TTL rather than serving a stale brief",
+                 counter="briefing.record_inputs")
+
+
+def invalidate(connection_id: str, schema: str | None = None) -> int:
+    """Drop cached briefings for a connection. With ``schema``, remove that schema's
+    scope (``'conn_id:schema'``) AND the now-stale 'All schemas' aggregate (``'conn_id'``),
+    leaving sibling schemas — used when a single schema is removed. Without it, remove the
+    connection-level entry AND every schema scope — used by the catalog-delete cascade.
+    Returns the number of entries removed."""
+    try:
+        store = _store()
+        if schema:
+            # the schema's own briefing AND the now-stale 'All schemas' aggregate; siblings stay
+            scopes = (f"{connection_id}:{schema}", connection_id)
+            drop = [k for k in store.load() if k in scopes or k.split("#", 1)[0] in scopes]
+        else:
+            prefix = f"{connection_id}:"
+            # a period brief is keyed `<scope>#<period>` (idea 3): it goes with its scope
+            drop = [k for k in store.load()
+                    if k.split("#", 1)[0] == connection_id or k.startswith(prefix)]
+        # Per-key deletes, collecting what was actually removed: a brief cached by a
+        # CONCURRENT generation between the list and the deletes survives — correctly,
+        # it is a new artifact, not the one being invalidated.
+        removed_keys = {k for k in drop if store.delete(k)}
+    except Exception:
+        return 0
+    if removed_keys:
+        # Wave V2: drop the remembered input versions too. Leaving them behind would mean a
+        # rebuilt brief inherits a "nothing moved" memory from the brief that was deleted —
+        # an explicit invalidation must not be undone by a stale freshness record.
+        _forget_brief_inputs(removed_keys)
+    return len(removed_keys)
+
+
+def _forget_brief_inputs(keys: set[str]) -> None:
+    from pramanyx.kernel.errors import tolerate
+    from pramanyx.kernel.rebuild import forget
+
+    for k in keys:
+        try:
+            forget(f"brief:{k}")
+        except Exception as exc:
+            tolerate(exc, "clearing a brief's remembered input version is best-effort; a "
+                          "leftover record only costs one extra rebuild",
+                     counter="briefing.forget_inputs")

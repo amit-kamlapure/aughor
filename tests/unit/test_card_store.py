@@ -1,12 +1,12 @@
 """Unit tests for the dashboard-card store (Briefing dashboard, Slice 0 foundation).
 
-Hermetic: conftest points AUGHOR_DASHBOARD_DB at a throwaway temp dir. Each test uses a
+Hermetic: conftest points PRAMANYX_DASHBOARD_DB at a throwaway temp dir. Each test uses a
 distinct connection_id / scope_ref so list-count assertions never see another test's rows.
 """
 from __future__ import annotations
 
-from aughor.cards.models import CardProvenance, CardRefresh, StoredCard
-from aughor.cards.store import (
+from pramanyx.cards.models import CardProvenance, CardRefresh, StoredCard
+from pramanyx.cards.store import (
     delete_card,
     get_card,
     list_cards,

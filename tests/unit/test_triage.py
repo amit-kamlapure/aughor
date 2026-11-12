@@ -4,7 +4,7 @@ Grounded in the real missimi brief that motivated the feature: the synthesiser l
 with a noise-level ROAS split while margin/AOV slid, and printed an impossible
 turnover and an anti-causal correlation as fact.
 """
-from aughor.knowledge.triage import (
+from pramanyx.knowledge.triage import (
     extract_change,
     plausibility,
     impact_score,
@@ -275,7 +275,7 @@ NS = north_star_tokens(["Gross Margin Rate", "Repeat Purchase Rate",
 
 
 def test_north_star_membership():
-    from aughor.knowledge.triage import _hits_north_star
+    from pramanyx.knowledge.triage import _hits_north_star
     assert _hits_north_star("Fragrance has the highest repeat-purchase rate (16.87%)", NS)
     assert not _hits_north_star("Affiliate drives 86.8% of new-customer orders", NS)
 

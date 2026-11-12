@@ -8,33 +8,33 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-# BEFORE anything imports the app. `aughor/api.py` and four eval scripts call
+# BEFORE anything imports the app. `pramanyx/api.py` and four eval scripts call
 # `load_dotenv` at IMPORT, so any test that builds a TestClient — or merely imports one
 # of those eval modules — pulled the developer's `.env` into the process and every test
 # after it ran in a different environment from CI's. That is not a theoretical risk: it
 # was measured on 2026-08-24 as `test_route_wide::test_ask_causal_question_pins_
 # investigate_with_flag_on`, green in CI and red on a laptop for weeks, because `.env`'s
-# `AUGHOR_DEFAULT_POSTGRES_DSN` changed how a connection id resolves and the ask died
+# `PRAMANYX_DEFAULT_POSTGRES_DSN` changed how a connection id resolves and the ask died
 # with "Connection 'c1' not found" before it reached the faked deep body. The suite runs
 # on the environment the conftest declares, and nothing else.
-os.environ.setdefault("AUGHOR_SKIP_DOTENV", "1")
+os.environ.setdefault("PRAMANYX_SKIP_DOTENV", "1")
 
 # Point at the builtin DuckDB fixture connection during tests
-os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
-os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
+os.environ.setdefault("PRAMANYX_API_KEY", "")  # disable auth in tests
+os.environ.setdefault("PRAMANYX_CORS_ORIGINS", "*")
 # The action approval gate is ON by default in the product since 2026-10-04 (phase 0 of the 2027
 # study, ROADMAP §3.53). The suite drives governed routes with it OFF, as every test was written
 # before the flip and a 428 on a declare door is not what those tests measure; the tests OF the
 # gate (`tests/test_govern_actions.py`, `test_govern_action_coverage.py`) unset or set the
 # variable themselves, so the default is still proven. setdefault: an operator's own value wins.
-os.environ.setdefault("AUGHOR_ACTION_APPROVAL", "0")
+os.environ.setdefault("PRAMANYX_ACTION_APPROVAL", "0")
 # The flags that are part of the platform (ALWAYS_ON, ROADMAP §3.65, 2026-10-28 — Arc OC's five set the precedent on
 # 2026-10-10) are on for an install; the suite was written against their off paths, byte-identical by construction, so
 # it runs there until stage 2 deletes each off path — a test of one sets it on, or unsets it, since on is the default.
-# Read from the registry's SOURCE, not imported: nothing from aughor may load before the stores below are redirected.
+# Read from the registry's SOURCE, not imported: nothing from pramanyx may load before the stores below are redirected.
 def _always_on_vars() -> list[str]:
     import ast as _ast
-    src = (Path(__file__).resolve().parents[1] / "aughor" / "kernel" / "flags.py").read_text()
+    src = (Path(__file__).resolve().parents[1] / "pramanyx" / "kernel" / "flags.py").read_text()
     found: dict[str, dict] = {}
     for node in _ast.parse(src).body:
         target = (node.targets[0] if isinstance(node, _ast.Assign) else getattr(node, "target", None))
@@ -68,116 +68,116 @@ for _always_var in _always_on_vars():
 # right habit for a BARE SCRIPT (which would otherwise open data/system.db alongside a
 # running API). Carrying that habit into pytest is what this line refuses. A test that
 # needs a specific store uses `monkeypatch.setenv`, which runs after this and still wins.
-os.environ["AUGHOR_SYSTEM_DB"] = os.path.join(
-    tempfile.mkdtemp(prefix="aughor-test-ledger-"), "system.db")
+os.environ["PRAMANYX_SYSTEM_DB"] = os.path.join(
+    tempfile.mkdtemp(prefix="pramanyx-test-ledger-"), "system.db")
 # Hermetic connection registry — tests must NEVER mutate data/connections.db (a full
 # suite run once emptied the live registry because these paths were hardcoded).
-_test_registry_dir = tempfile.mkdtemp(prefix="aughor-test-registry-")
-os.environ["AUGHOR_REGISTRY_DB"] = os.path.join(_test_registry_dir, "connections.db")
-os.environ["AUGHOR_CONNECTION_SETTINGS"] = os.path.join(_test_registry_dir,
+_test_registry_dir = tempfile.mkdtemp(prefix="pramanyx-test-registry-")
+os.environ["PRAMANYX_REGISTRY_DB"] = os.path.join(_test_registry_dir, "connections.db")
+os.environ["PRAMANYX_CONNECTION_SETTINGS"] = os.path.join(_test_registry_dir,
                                                         "connection_settings.json")
 
 # Hermetic remaining stores — history/metastore/workspaces/audit/canvas/... all defaulted to
 # the live data/ dir and were mutated in-place by the suite (OPS-02 / DATA-01, the same class
-# of bug that once emptied the live registry). Each store now honours an AUGHOR_*_DB override
-# (aughor/db/sqlite_util.resolve_db_path); point every one at a throwaway temp dir. MUST run
+# of bug that once emptied the live registry). Each store now honours an PRAMANYX_*_DB override
+# (pramanyx/db/sqlite_util.resolve_db_path); point every one at a throwaway temp dir. MUST run
 # before any app module is imported so the module-level _DB_PATH captures the override.
-_test_stores_dir = tempfile.mkdtemp(prefix="aughor-test-stores-")
+_test_stores_dir = tempfile.mkdtemp(prefix="pramanyx-test-stores-")
 for _env, _file in (
-    ("AUGHOR_HISTORY_DB", "history.db"),
-    ("AUGHOR_METASTORE_DB", "metastore.db"),
-    ("AUGHOR_WORKSPACES_DB", "workspaces.db"),
-    ("AUGHOR_AUDIT_DB", "audit.db"),
-    ("AUGHOR_CANVAS_DB", "canvases.db"),
-    ("AUGHOR_ARTIFACTS_DB", "artifacts.db"),
-    ("AUGHOR_EVIDENCE_DB", "evidence_ledger.db"),
-    ("AUGHOR_MONITORS_DB", "monitors.db"),
-    ("AUGHOR_AGENT_ALERTS_DB", "agent_alerts.db"),
+    ("PRAMANYX_HISTORY_DB", "history.db"),
+    ("PRAMANYX_METASTORE_DB", "metastore.db"),
+    ("PRAMANYX_WORKSPACES_DB", "workspaces.db"),
+    ("PRAMANYX_AUDIT_DB", "audit.db"),
+    ("PRAMANYX_CANVAS_DB", "canvases.db"),
+    ("PRAMANYX_ARTIFACTS_DB", "artifacts.db"),
+    ("PRAMANYX_EVIDENCE_DB", "evidence_ledger.db"),
+    ("PRAMANYX_MONITORS_DB", "monitors.db"),
+    ("PRAMANYX_AGENT_ALERTS_DB", "agent_alerts.db"),
     # MI-3 — the dataset plane. Registered in the SAME commit as the store, with its
     # directory sibling below: a store is not hermetic until its env name is here.
-    ("AUGHOR_LEARNING_DB", "learning.db"),
+    ("PRAMANYX_LEARNING_DB", "learning.db"),
     # KI-1 — the intake lane's staging store, registered in the SAME commit.
-    ("AUGHOR_INTAKE_DB", "intake.db"),
-    ("AUGHOR_USER_PREFS_DB", "user_prefs.db"),
+    ("PRAMANYX_INTAKE_DB", "intake.db"),
+    ("PRAMANYX_USER_PREFS_DB", "user_prefs.db"),
     # HB-2 — the departures ledger, registered in the SAME commit as the store.
-    ("AUGHOR_DEPARTURES_DB", "departures.db"),
+    ("PRAMANYX_DEPARTURES_DB", "departures.db"),
     # Decision records (learning/decisions.py) — written from the ANSWER PATH (the tool
     # loop, the route classifier), so an unregistered default here would have every
     # suite run appending into live data/. Registered in the SAME commit as the store.
-    ("AUGHOR_DECISIONS_DB", "decisions.db"),
+    ("PRAMANYX_DECISIONS_DB", "decisions.db"),
     # HB-3 — the manifest's links (tickets/threads filed on objects), same commit.
-    ("AUGHOR_HUB_LINKS_DB", "hub_links.db"),
+    ("PRAMANYX_HUB_LINKS_DB", "hub_links.db"),
     # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it
     # writes (ontology/vocabulary.py:151). Unisolated it created data/vocabulary/ in
     # the repo on any suite run that saved a synonym.
-    ("AUGHOR_VOCABULARY_ROOT", "vocabulary"),
+    ("PRAMANYX_VOCABULARY_ROOT", "vocabulary"),
     # `skills import` writes here by default; it defaults under data/, so the suite would
     # otherwise create packs in the developer's tree. (The AUTHORED root is handled below
     # as a temp COPY, because tests READ the sample pack that ships in it.)
-    ("AUGHOR_IMPORTED_PACKS_DIR", "packs-imported"),
-    ("AUGHOR_BRIEFS_FILE", "brief_subscriptions.json"),
+    ("PRAMANYX_IMPORTED_PACKS_DIR", "packs-imported"),
+    ("PRAMANYX_BRIEFS_FILE", "brief_subscriptions.json"),
     # Custom-instructions stores (connection- and Canvas-level, JSON like BRIEFS).
     # Hardcoded to data/ from Sprint 53 until the wiring commit made them consumed
     # (grounding block `instructions`) — and a consumed store the suite writes is
     # exactly the OPS-02 class, so they turn env-resolved in the SAME commit.
-    ("AUGHOR_INSTRUCTIONS_FILE", "instructions.json"),
-    ("AUGHOR_CANVAS_INSTRUCTIONS_FILE", "canvas_instructions.json"),
-    ("AUGHOR_ORGS_DB", "orgs.db"),
-    ("AUGHOR_ORG_LLM_DB", "org_llm.db"),
-    ("AUGHOR_SAVEDQUERY_DB", "saved_queries.db"),
-    ("AUGHOR_VOLUMES_DB", "volumes.db"),
-    ("AUGHOR_VERDICTS_DB", "verdicts.db"),
-    ("AUGHOR_AMBIGUITY_LEDGER_DB", "ambiguity_ledger.db"),
-    ("AUGHOR_OVERLAY_LEDGER_DB", "overlay_ledger.db"),
-    ("AUGHOR_ACTION_OUTBOX_DB", "action_outbox.db"),       # Arc OC-6 — the outbox of a declared action's calls
-    ("AUGHOR_PACK_DELTAS_DB", "pack_deltas.db"),
-    ("AUGHOR_PACK_BINDINGS_DB", "pack_bindings.db"),
-    ("AUGHOR_GOVERN_TAGS_DB", "govern_tags.db"),
-    ("AUGHOR_GOVERN_CAPS_DB", "govern_caps.db"),
-    ("AUGHOR_QUALITY_DB", "quality.db"),
-    ("AUGHOR_CHECKPOINTS_DB", "checkpoints.db"),
-    ("AUGHOR_IDEMPOTENCY_DB", "idempotency.db"),
-    ("AUGHOR_RBAC_DB", "rbac.db"),
-    ("AUGHOR_IDENTITY_DB", "identity_links.db"),
-    ("AUGHOR_AGENTS_DB", "agents.db"),
-    ("AUGHOR_OVERVIEW_DRILLS_DB", "overview_drills.db"),
+    ("PRAMANYX_INSTRUCTIONS_FILE", "instructions.json"),
+    ("PRAMANYX_CANVAS_INSTRUCTIONS_FILE", "canvas_instructions.json"),
+    ("PRAMANYX_ORGS_DB", "orgs.db"),
+    ("PRAMANYX_ORG_LLM_DB", "org_llm.db"),
+    ("PRAMANYX_SAVEDQUERY_DB", "saved_queries.db"),
+    ("PRAMANYX_VOLUMES_DB", "volumes.db"),
+    ("PRAMANYX_VERDICTS_DB", "verdicts.db"),
+    ("PRAMANYX_AMBIGUITY_LEDGER_DB", "ambiguity_ledger.db"),
+    ("PRAMANYX_OVERLAY_LEDGER_DB", "overlay_ledger.db"),
+    ("PRAMANYX_ACTION_OUTBOX_DB", "action_outbox.db"),       # Arc OC-6 — the outbox of a declared action's calls
+    ("PRAMANYX_PACK_DELTAS_DB", "pack_deltas.db"),
+    ("PRAMANYX_PACK_BINDINGS_DB", "pack_bindings.db"),
+    ("PRAMANYX_GOVERN_TAGS_DB", "govern_tags.db"),
+    ("PRAMANYX_GOVERN_CAPS_DB", "govern_caps.db"),
+    ("PRAMANYX_QUALITY_DB", "quality.db"),
+    ("PRAMANYX_CHECKPOINTS_DB", "checkpoints.db"),
+    ("PRAMANYX_IDEMPOTENCY_DB", "idempotency.db"),
+    ("PRAMANYX_RBAC_DB", "rbac.db"),
+    ("PRAMANYX_IDENTITY_DB", "identity_links.db"),
+    ("PRAMANYX_AGENTS_DB", "agents.db"),
+    ("PRAMANYX_OVERVIEW_DRILLS_DB", "overview_drills.db"),
     # WP-4 — matcache had NO env override and was hardcoded to data/mat_cache.duckdb, so
     # any test touching the result cache wrote the developer's live file (a non-hermetic
     # hole; the same class that once emptied the live registry).
-    ("AUGHOR_MATCACHE_DB", "mat_cache.duckdb"),
-    # DuckDB demo stores — without these the suite CREATED data/aughor.duckdb and
+    ("PRAMANYX_MATCACHE_DB", "mat_cache.duckdb"),
+    # DuckDB demo stores — without these the suite CREATED data/pramanyx.duckdb and
     # opened data/samples.duckdb read-write in the developer's live data/ (lock
     # contention with a running app; same class as the registry incident).
-    ("AUGHOR_FIXTURE_DB", "aughor.duckdb"),
-    ("AUGHOR_SAMPLES_DB", "samples.duckdb"),
+    ("PRAMANYX_FIXTURE_DB", "pramanyx.duckdb"),
+    ("PRAMANYX_SAMPLES_DB", "samples.duckdb"),
     # R14 — the query-popularity counter store (born hermetic like the R11 tree).
-    ("AUGHOR_POPULARITY_DB", "popularity.db"),
+    ("PRAMANYX_POPULARITY_DB", "popularity.db"),
     # S1 — the embedded semantic index (a DIRECTORY, like vocabulary). Unpinned, the
     # suite would open qdrant local mode at <state dir>/qdrant — hermetic only via
-    # AUGHOR_STATE_DIR; this names it explicitly so the isolation survives any future
+    # PRAMANYX_STATE_DIR; this names it explicitly so the isolation survives any future
     # default change, and because local mode takes an exclusive lock a leaked default
     # would also contend with a running API, not just dirty its data.
-    ("AUGHOR_QDRANT_PATH", "qdrant"),
+    ("PRAMANYX_QDRANT_PATH", "qdrant"),
     # Briefing-cockpit — user-authored dashboard cards (born hermetic).
-    ("AUGHOR_DASHBOARD_DB", "dashboard_cards.db"),
+    ("PRAMANYX_DASHBOARD_DB", "dashboard_cards.db"),
     # Wave A1 — automations + their run history (born hermetic).
-    ("AUGHOR_AUTOMATIONS_DB", "automations.db"),
+    ("PRAMANYX_AUTOMATIONS_DB", "automations.db"),
     # Wave A4 — the resolve-once proposal inbox + target-bound standing grants (born hermetic).
-    ("AUGHOR_KINETIC_INBOX_DB", "kinetic_inbox.db"),
+    ("PRAMANYX_KINETIC_INBOX_DB", "kinetic_inbox.db"),
     # R8 — the compiled ontology doc tree (a FILE store, not SQLite). Hardcoded to
     # data/ontology_docs/ until flag strategy batch C flipped `ontology.autodoc`
     # default-ON and the suite started writing real doc trees for the fixture
     # connection — the matcache hole, rediscovered. Same fix: point it at the tmp dir.
-    ("AUGHOR_ONTOLOGY_DOCS_DIR", "ontology_docs"),
-    ("AUGHOR_KINETIC_GRANTS_DB", "kinetic_grants.db"),
+    ("PRAMANYX_ONTOLOGY_DOCS_DIR", "ontology_docs"),
+    ("PRAMANYX_KINETIC_GRANTS_DB", "kinetic_grants.db"),
     # Wave E/L — the eval plane's own store: suites, cases, RUN HISTORY and graduation
-    # receipts. It honoured AUGHOR_EVALS_DB from the start but was never listed here, so any
+    # receipts. It honoured PRAMANYX_EVALS_DB from the start but was never listed here, so any
     # test that created a suite wrote data/evals.db. Found when L4's first unit test to call
     # `ensure_suite()` left a real suite in the live store. This one is worse than a nuisance:
     # `/evals/flags/{flag}/graduate` derives a flag's BASELINE and its noise floor from this
     # store's run history, so test-written rows are not just clutter — they are potential
     # evidence in a graduation decision.
-    ("AUGHOR_EVALS_DB", "evals.db"),
+    ("PRAMANYX_EVALS_DB", "evals.db"),
     # Upload storage. `control_plane/vending.STORAGE_ROOT` reads this var at IMPORT and
     # falls back to a CWD-relative `data/uploads`, so it never passed through
     # `resolve_db_path` and the generic guard's population could not contain it. Measured
@@ -186,22 +186,22 @@ for _env, _file in (
     # into the checkout, and the live tree already held copies of exactly those two files
     # dated 2026-08-12 — an earlier run had put a test schema in a REAL workspace's upload
     # store. Assigned here, above every app import, because STORAGE_ROOT binds at import:
-    # a later `monkeypatch.setenv` is a silent no-op (aughor/knowledge/blobs.py says so).
-    ("AUGHOR_UPLOAD_DIR", "uploads"),
+    # a later `monkeypatch.setenv` is a silent no-op (pramanyx/knowledge/blobs.py says so).
+    ("PRAMANYX_UPLOAD_DIR", "uploads"),
     # The playbook, found by the same run. The app's startup seed writes `playbook.json`
     # and appends to its immutable `playbook_versions.json` sibling. It resolves per call
-    # through AUGHOR_PLAYBOOK_PATH (the serverless redirect gave it the override it had
+    # through PRAMANYX_PLAYBOOK_PATH (the serverless redirect gave it the override it had
     # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
     # got a seeded playbook written into its `data/`.
-    ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
-    # (AUGHOR_CAUSAL_PROPOSALS_FILE / AUGHOR_CAUSAL_GRAPH_FILE left 2026-10-28 with `lifecycle/causal.py`: what one
+    ("PRAMANYX_PLAYBOOK_PATH", "playbook.json"),
+    # (PRAMANYX_CAUSAL_PROPOSALS_FILE / PRAMANYX_CAUSAL_GRAPH_FILE left 2026-10-28 with `lifecycle/causal.py`: what one
     # promise does to another is a declared impact, Arc ED-5, and nothing reads or writes those files.)
     # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
-    # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
-    ("AUGHOR_INDUSTRIES_FILE", "industries.json"),
+    # developer's live deployment to it; registered in the same commit as pramanyx/packs/industry_choice.py.
+    ("PRAMANYX_INDUSTRIES_FILE", "industries.json"),
     # The organisation's settings. Unpinned, the suite read the live file: a Briefing test failed on
     # whatever this install's organisation had declared (2026-10-03).
-    ("AUGHOR_ORG_SETTINGS_FILE", "org_settings.json"),
+    ("PRAMANYX_ORG_SETTINGS_FILE", "org_settings.json"),
 ):
     os.environ[_env] = os.path.join(_test_stores_dir, _file)   # assigned, not setdefault
 
@@ -210,82 +210,82 @@ for _env, _file in (
 # (data/agent_runs.json, data/learned_actions.json), and the Action Hub (data/action_*.json).
 # Point each dir at the throwaway temp dir so the suite never writes/deletes the live files.
 #
-# AUGHOR_STATE_DIR (2026-07-21) closes the family WP-4 missed — the per-connection GENERATED
+# PRAMANYX_STATE_DIR (2026-07-21) closes the family WP-4 missed — the per-connection GENERATED
 # state: exploration_*.json, business_profile_*.json, briefing_cache.json, patterns_cache.json,
-# explore_watermark.json, AND aughor/db/purge.py, which resolved its own Path("data") and so
+# explore_watermark.json, AND pramanyx/db/purge.py, which resolved its own Path("data") and so
 # UNLINKED from the live dir even when the store it was purging had been redirected. A suite
 # run destroyed a real exploration_workspace.json (89 findings; data/*.json is gitignored, so
 # it was unrecoverable). One env for the whole family → a new store in it is isolated by
 # construction. Authored files (glossary/rules) keep their own vars and stay repo-readable; the KB lives in the
 # knowledge packages (IP-1), which the authored-packs copy below isolates.
-for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
+for _dir_env in ("PRAMANYX_EPISODES_DIR", "PRAMANYX_MEMORY_DIR", "PRAMANYX_ACTIONS_DIR",
                  # MI-3 — snapshot bytes. The DB name above is not enough on its own: a
                  # dir-keyed store needs the directory family too, a lesson paid twice.
-                 "AUGHOR_DATASETS_DIR",
-                 "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR",
+                 "PRAMANYX_DATASETS_DIR",
+                 "PRAMANYX_SLACKBOTS_DIR", "PRAMANYX_STATE_DIR",
                  # AO-5 — a custom agent's HTTP-door keys (`custom_agents/keys.py`) and the
                  # Teams bot records (`teamsbots/store.py`), added in the SAME COMMIT.
-                 "AUGHOR_AGENTS_DIR", "AUGHOR_TEAMSBOTS_DIR",
+                 "PRAMANYX_AGENTS_DIR", "PRAMANYX_TEAMSBOTS_DIR",
                  # VA-11 — integration apps/grants/pending live under this dir; added in
-                 # the SAME COMMIT as aughor/integrations/store.py (the rule a live-data
+                 # the SAME COMMIT as pramanyx/integrations/store.py (the rule a live-data
                  # write bought).
-                 "AUGHOR_INTEGRATIONS_DIR",
+                 "PRAMANYX_INTEGRATIONS_DIR",
                  # VA-9d — the MCP allowlist and the tool rosters discovered against it,
-                 # added in the SAME COMMIT as aughor/mcpservers/store.py. An unpinned
+                 # added in the SAME COMMIT as pramanyx/mcpservers/store.py. An unpinned
                  # allowlist is worse than an unpinned cache: a test that registers a
                  # server would leave a real outbound destination in the developer's
                  # live data/.
-                 "AUGHOR_MCPSERVERS_DIR",
+                 "PRAMANYX_MCPSERVERS_DIR",
                  # DS-17 — webhook-door tokens live under this dir, in the same commit as
-                 # aughor/automations/webhooks.py for the same reason. (The automations
-                 # RECORDS are SQLite under AUGHOR_AUTOMATIONS_DB, isolated above; this is
+                 # pramanyx/automations/webhooks.py for the same reason. (The automations
+                 # RECORDS are SQLite under PRAMANYX_AUTOMATIONS_DB, isolated above; this is
                  # the file-store sibling, and the two are deliberately separate stores —
                  # the token must not ride the record that every reader can GET.)
-                 "AUGHOR_AUTOMATIONS_DIR"):
+                 "PRAMANYX_AUTOMATIONS_DIR"):
     os.environ[_dir_env] = _test_stores_dir                    # assigned, not setdefault
 
-# IN-4 — the DATA HOME. Once this machine's deployment runs `aughor migrate-state`, its marker
-# lives in ~/.aughor and moves the DEFAULT of every generated store — including the stores this
+# IN-4 — the DATA HOME. Once this machine's deployment runs `pramanyx migrate-state`, its marker
+# lives in ~/.pramanyx and moves the DEFAULT of every generated store — including the stores this
 # file does not name, which until then resolved into the worktree's own data/. Without this
 # pin a test of an unlisted store would write the LIVE home rather than a scratch checkout.
 # A home with no marker in it is "not in use", so every default stays the checkout's.
-os.environ["AUGHOR_HOME"] = os.path.join(_test_stores_dir, "aughor-home")   # assigned, not setdefault
+os.environ["PRAMANYX_HOME"] = os.path.join(_test_stores_dir, "pramanyx-home")   # assigned, not setdefault
 
 # R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
 # written by the intelligence build when `ontology.column_config` is on; isolate it so
 # the suite never mutates the live tree (born hermetic, unlike the older data/ stores).
-os.environ["AUGHOR_COLUMN_CONFIG_ROOT"] = os.path.join(_test_stores_dir,
+os.environ["PRAMANYX_COLUMN_CONFIG_ROOT"] = os.path.join(_test_stores_dir,
                                                        "ontology_column_config")
 # …and its shipped seed layer (data/shipped/ontology_column_config, punch list 74), left ABSENT: before the split no
 # test read the Workspace's tracked files either (the root above already hid them), and one that tests the layering
 # names its own.
-os.environ["AUGHOR_COLUMN_CONFIG_SEED_ROOT"] = os.path.join(_test_stores_dir, "ontology_column_config_seed")
+os.environ["PRAMANYX_COLUMN_CONFIG_SEED_ROOT"] = os.path.join(_test_stores_dir, "ontology_column_config_seed")
 # ON-1b (2026-09-11) — the human overrides tree (data/ontology_overrides/{conn}/{schema}/…) and the export tree beside
 # it had no override. Every measure door and build that counts what a person declared (a backing, a display property,
 # a binding) reads the overrides tree for the connection it measures and WRITES the verdict back — so a door test that
 # cached a graph under LuxExperience's real connection id rewrote the developer's LIVE Order override with counts from a
 # three-row fixture. Found by the ON-1b live receipt, whose panel suddenly read "3 of 3 objects"; restored by
 # re-measuring through the running API. No tracked override is copied in: no test reads one.
-os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides")
+os.environ["PRAMANYX_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides")
 # …and its shipped seed layer (data/shipped/ontology_overrides), left ABSENT: no test reads a shipped override either,
 # and one that tests the layering names its own.
-os.environ["AUGHOR_ONTOLOGY_OVERRIDES_SEED_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_seed")
+os.environ["PRAMANYX_ONTOLOGY_OVERRIDES_SEED_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_seed")
 # Arc OC-2 — the draft layer above the instance tree (data/ontology_overrides_draft), where every ontology change waits.
-os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DRAFT_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_draft")
-os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
+os.environ["PRAMANYX_ONTOLOGY_OVERRIDES_DRAFT_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides_draft")
+os.environ["PRAMANYX_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
 # …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).
-os.environ["AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR"] = os.path.join(_test_stores_dir, "ontology_recommendations")
+os.environ["PRAMANYX_ONTOLOGY_RECOMMENDATIONS_DIR"] = os.path.join(_test_stores_dir, "ontology_recommendations")
 # ON-7b — the explorer's draft record (data/ontology_drafts/{conn}/{schema}.yaml), born beside the overrides tree it
 # writes into: an explore door test must never rewrite a live draft or its memory of what a person withdrew.
-os.environ["AUGHOR_ONTOLOGY_DRAFTS_DIR"] = os.path.join(_test_stores_dir, "ontology_drafts")
+os.environ["PRAMANYX_ONTOLOGY_DRAFTS_DIR"] = os.path.join(_test_stores_dir, "ontology_drafts")
 # R8a — the documents registry (data/documents.json) is written by every index/delete;
 # isolate it so suite-driven indexing can never mutate the live registry.
-os.environ["AUGHOR_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "documents.json")
+os.environ["PRAMANYX_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "documents.json")
 # The ORIGINAL uploaded bytes (data/documents/{org}/{doc_id}/) — the registry's
 # sibling, isolated in the same commit that introduced it. Without this a single
 # upload test writes a real file into the developer's tree and, worse, a delete test
 # rmtree()s a directory there. The registry above is metadata; this is the payload.
-os.environ["AUGHOR_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
+os.environ["PRAMANYX_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
 
 # No CLOCKS in a test process. The `client` fixture is session-scoped, so the app's
 # lifespan runs once and its APScheduler threads then tick for the WHOLE session —
@@ -300,26 +300,26 @@ os.environ["AUGHOR_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
 #
 # Set here rather than fixed per-test because the damage is done by threads that
 # outlive the test that started them. Tests that want a tick call it directly.
-os.environ["AUGHOR_DISABLE_SCHEDULERS"] = "1"
+os.environ["PRAMANYX_DISABLE_SCHEDULERS"] = "1"
 # Track A2 (docs/TENX_PROGRAM_2026-11-05.md): identity required with no issuer is refused unless the
-# operator declares that a proxy sets the X-Aughor-* headers. The suite IS that proxy — every
+# operator declares that a proxy sets the X-Pramanyx-* headers. The suite IS that proxy — every
 # identity-on test signs its requests with those headers — so it declares it once, here. A test of
 # the refusal itself deletes the variable (tests/unit/test_identity_unverifiable.py).
-os.environ["AUGHOR_IDENTITY_FROM_PROXY"] = "1"
+os.environ["PRAMANYX_IDENTITY_FROM_PROXY"] = "1"
 # TJ-1 — the usage summary now consults the provider's public model catalogue before
 # pricing a rollup; the suite never reaches a network. A test that exercises the fetch
 # sets "1" itself (test_llm_model_catalog.py does).
-os.environ.setdefault("AUGHOR_LLM_MODEL_FETCH", "0")
+os.environ.setdefault("PRAMANYX_LLM_MODEL_FETCH", "0")
 
 # Layer 0.2 — the runtime LLM config (data/llm_config.json) was the LAST store tests
 # inherited from the developer's machine: it holds the operator's chosen backend AND
-# secretvault-encrypted API keys, and aughor/api.py's import-time load_dotenv() brings
-# in the AUGHOR_SECRET_KEY that decrypts them — so a test could resolve a real paid
+# secretvault-encrypted API keys, and pramanyx/api.py's import-time load_dotenv() brings
+# in the PRAMANYX_SECRET_KEY that decrypts them — so a test could resolve a real paid
 # binding without a single key in its own env. Isolated like every other store; the
 # file simply doesn't exist, so tests see the pure env→default precedence.
-os.environ["AUGHOR_LLM_CONFIG_PATH"] = os.path.join(_test_stores_dir, "llm_config.json")
+os.environ["PRAMANYX_LLM_CONFIG_PATH"] = os.path.join(_test_stores_dir, "llm_config.json")
 
-# VA-3 — the telemetry EXPORT switches. `AUGHOR_OTLP_ENDPOINT` (and the Langfuse keys,
+# VA-3 — the telemetry EXPORT switches. `PRAMANYX_OTLP_ENDPOINT` (and the Langfuse keys,
 # which ride the same pipeline) turn span export on for the whole process. Without this,
 # a developer who has actually configured an observability backend — precisely the person
 # VA-3 exists for — would have the suite POST every span it produces to their real
@@ -328,7 +328,7 @@ os.environ["AUGHOR_LLM_CONFIG_PATH"] = os.path.join(_test_stores_dir, "llm_confi
 # with an endpoint set to a closed port, six "no-op when telemetry is off" tests fail and
 # the run ends in a wall of `Connection refused` retries.
 #
-# Set to EMPTY rather than popped, and that is the load-bearing detail: `aughor/api.py`
+# Set to EMPTY rather than popped, and that is the load-bearing detail: `pramanyx/api.py`
 # runs `load_dotenv()` at import time, which re-plants the developer's .env the moment any
 # test touches the app. `load_dotenv` does not override a variable that is already set —
 # so the empty value survives, where a `pop` would simply be undone.
@@ -336,7 +336,7 @@ os.environ["AUGHOR_LLM_CONFIG_PATH"] = os.path.join(_test_stores_dir, "llm_confi
 # A test that exercises export config sets the variable itself (monkeypatch wins over
 # this), and `tests/unit/test_otlp_export.py` drives real spans through an in-memory
 # exporter, which needs no endpoint at all.
-for _export_var in ("AUGHOR_OTLP_ENDPOINT", "AUGHOR_OTLP_HEADERS", "AUGHOR_OTLP_PROTOCOL",
+for _export_var in ("PRAMANYX_OTLP_ENDPOINT", "PRAMANYX_OTLP_HEADERS", "PRAMANYX_OTLP_PROTOCOL",
                     "OTEL_EXPORTER_OTLP_ENDPOINT",
                     "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"):
     os.environ[_export_var] = ""
@@ -346,9 +346,9 @@ for _export_var in ("AUGHOR_OTLP_ENDPOINT", "AUGHOR_OTLP_HEADERS", "AUGHOR_OTLP_
 # budget. Measured before this line existed: `tests/integration/test_evals_experiments.py`
 # (8 tests) logged 12 failed seed attempts, and a SUCCESSFUL seed logs nothing, so 12 was a floor.
 # Default it OFF for the whole suite; a test that genuinely exercises the seeder opts back in with
-# `monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", True)`.
+# `monkeypatch.setattr("pramanyx.semantic.autoseed._ENABLED", True)`.
 #
-# ⚠️ `_ENABLED` is read at MODULE IMPORT, so `monkeypatch.setenv("AUGHOR_AUTOSEED", ...)` inside a
+# ⚠️ `_ENABLED` is read at MODULE IMPORT, so `monkeypatch.setenv("PRAMANYX_AUTOSEED", ...)` inside a
 # test is a NO-OP — patch the attribute, not the env var. This `setdefault` must stay above any
 # app import for the same reason.
 #
@@ -358,7 +358,7 @@ for _export_var in ("AUGHOR_OTLP_ENDPOINT", "AUGHOR_OTLP_HEADERS", "AUGHOR_OTLP_
 # network latency, failing intermittently under full-suite load. Autoseed's glossary enrichment
 # had been masking it by helping the loop converge faster. Both were made hermetic (the fake now
 # raises on any unmodelled call; profile inference is pinned to None) before this default flipped.
-os.environ.setdefault("AUGHOR_AUTOSEED", "false")
+os.environ.setdefault("PRAMANYX_AUTOSEED", "false")
 
 # The glossary + metrics catalog are file stores (YAML/JSON, not SQLite) with real content — and the
 # autoseed / knowledge-sync path WRITES them with no path, so the suite mutated the live
@@ -368,28 +368,28 @@ os.environ.setdefault("AUGHOR_AUTOSEED", "false")
 import shutil as _shutil  # noqa: E402
 
 _repo_data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-for _env, _file, _name in (("AUGHOR_GLOSSARY_PATH", os.path.join("shipped", "glossary.yaml"),
+for _env, _file, _name in (("PRAMANYX_GLOSSARY_PATH", os.path.join("shipped", "glossary.yaml"),
                             "glossary.instance.yaml"),
                            # DS-12 — the vetted-query store, added the same commit the automations
                            # plane started reading it. It was the last authored file here with a
                            # hardcoded path, so a test that saved one wrote to live data/.
-                           ("AUGHOR_TRUSTED_QUERIES_PATH", "trusted_queries.json", "trusted_queries.json"),
+                           ("PRAMANYX_TRUSTED_QUERIES_PATH", "trusted_queries.json", "trusted_queries.json"),
                            # The metrics catalogue is two layers since the overlay. The session's
                            # INSTANCE is a copy of the SHIPPED catalogue — what CI always read, and
                            # never again the developer's live one — and its SEED (below) is absent,
                            # so a test that names its own instance reads exactly that file, as it
                            # did when the catalogue was one file.
-                           ("AUGHOR_METRICS_PATH", os.path.join("shipped", "metrics.json"),
+                           ("PRAMANYX_METRICS_PATH", os.path.join("shipped", "metrics.json"),
                             "metrics.instance.json")):
     _dst = os.path.join(_test_stores_dir, _name)
     _src = os.path.join(_repo_data, _file)
     if os.path.exists(_src) and not os.path.exists(_dst):
         _shutil.copyfile(_src, _dst)
     os.environ[_env] = _dst                                    # assigned, not setdefault
-os.environ["AUGHOR_METRICS_SEED_PATH"] = os.path.join(_test_stores_dir, "metrics.seed.json")
+os.environ["PRAMANYX_METRICS_SEED_PATH"] = os.path.join(_test_stores_dir, "metrics.seed.json")
 # The glossary is split the same way, for the same reason: its session instance above is a copy of the SHIPPED glossary,
-# and its seed is absent. Its generated sidecar still follows AUGHOR_GLOSSARY_PATH into this dir.
-os.environ["AUGHOR_GLOSSARY_SEED_PATH"] = os.path.join(_test_stores_dir, "glossary.seed.yaml")
+# and its seed is absent. Its generated sidecar still follows PRAMANYX_GLOSSARY_PATH into this dir.
+os.environ["PRAMANYX_GLOSSARY_SEED_PATH"] = os.path.join(_test_stores_dir, "glossary.seed.yaml")
 
 # The authored pack root, same reasoning one level up: a DIRECTORY of tracked content the
 # suite reads (the sample pack) and could write (promotion rewrites pack.yaml). A copy gives
@@ -398,18 +398,18 @@ _packs_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _packs_dst = os.path.join(_test_stores_dir, "packs-authored")
 if os.path.isdir(_packs_src) and not os.path.exists(_packs_dst):
     _shutil.copytree(_packs_src, _packs_dst)
-os.environ["AUGHOR_PACKS_DIR"] = _packs_dst
+os.environ["PRAMANYX_PACKS_DIR"] = _packs_dst
 
 
 
 @pytest.fixture(autouse=True)
 def _fresh_stats():
-    """The in-process counters (`aughor.stats`) are since-BOOT diagnostics, and `/health` reads them as
+    """The in-process counters (`pramanyx.stats`) are since-BOOT diagnostics, and `/health` reads them as
     `store_fallbacks` (Track A8): a test that provokes a store fallback — or any tolerated failure — left
     the count raised for every later test in the process, and a health read then said `degraded` for
     something another file did. Measured on the full suite, 2026-11-06: three health tests red by order
     alone. So every test starts from zero; a test that asserts on a counter still sees its own bumps."""
-    from aughor.stats import stats
+    from pramanyx.stats import stats
     stats.reset()
     yield
 
@@ -418,7 +418,7 @@ def _fresh_stats():
 def _live_env_for_marked_tests(request):
     """Give `.env` back to the tests that explicitly opted OUT of hermeticity.
 
-    The suite runs with `AUGHOR_SKIP_DOTENV` set, because a developer's `.env` leaking
+    The suite runs with `PRAMANYX_SKIP_DOTENV` set, because a developer's `.env` leaking
     into the process is what made a local run a different experiment from CI's. But tests
     marked `e2e` or `eval` make REAL calls and need the developer's real credentials —
     without them the call 401s silently and the test fails claiming the pipeline metered
@@ -457,7 +457,7 @@ def _seed_builtin_dbs():
     test. Both are gitignored dev artifacts absent on a clean checkout / CI, and the
     'fixture' connection (used by builtin_conn_id) breaks if its file is missing.
     Runs independently of the app lifespan (whose seeding is fault-isolated)."""
-    from aughor.demo.setup import ensure_fixture_db, ensure_samples_db
+    from pramanyx.demo.setup import ensure_fixture_db, ensure_samples_db
     ensure_fixture_db()
     ensure_samples_db()
     yield
@@ -495,7 +495,7 @@ def _register_agent_plugins():
     exactly as the live app does at startup (``api.py`` lifespan / the CLI). Without
     this the purge cascade and schema annotators run platform-only, and tests that
     assert the agent's contribution (e.g. ``test_connection_purge``) would fail."""
-    from aughor.agent.bootstrap import register_agent_plugins
+    from pramanyx.agent.bootstrap import register_agent_plugins
     register_agent_plugins()
     yield
 
@@ -527,7 +527,7 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(scope="session")
 def client() -> TestClient:
     """FastAPI TestClient — starts the full app, no live server needed."""
-    from aughor.api import app
+    from pramanyx.api import app
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
 
@@ -555,15 +555,15 @@ def builtin_conn_id() -> str:
 # an unregistered name would not silently no-op — it has to be registered for real.
 
 SYNTHETIC_DEFAULT_ON = "_synthetic.default_on"
-SYNTHETIC_DEFAULT_ON_VAR = "AUGHOR_SYNTHETIC_DEFAULT_ON"
+SYNTHETIC_DEFAULT_ON_VAR = "PRAMANYX_SYNTHETIC_DEFAULT_ON"
 SYNTHETIC_DEFAULT_OFF = "_synthetic.default_off"
-SYNTHETIC_DEFAULT_OFF_VAR = "AUGHOR_SYNTHETIC_DEFAULT_OFF"
+SYNTHETIC_DEFAULT_OFF_VAR = "PRAMANYX_SYNTHETIC_DEFAULT_OFF"
 SYNTHETIC_OTHER_OFF = "_synthetic.other_off"
-SYNTHETIC_OTHER_OFF_VAR = "AUGHOR_SYNTHETIC_OTHER_OFF"
+SYNTHETIC_OTHER_OFF_VAR = "PRAMANYX_SYNTHETIC_OTHER_OFF"
 
 
 def _register_synthetic(monkeypatch, name: str, var: str, default: bool) -> str:
-    from aughor.kernel import flags as _flags
+    from pramanyx.kernel import flags as _flags
 
     monkeypatch.setitem(_flags.FLAG_ENV, name, var)
     monkeypatch.setitem(_flags.FLAG_META, name,
@@ -582,12 +582,12 @@ def synthetic_default_on(monkeypatch):
     Its disposition resolves to `default_on` for free — `flag_disposition` derives
     that from FLAG_DEFAULT membership rather than a separate table.
     """
-    from aughor.kernel import flags as _flags
+    from pramanyx.kernel import flags as _flags
 
     name = _register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_ON,
                                SYNTHETIC_DEFAULT_ON_VAR, default=True)
     yield name
-    # Safe against the real store: conftest points AUGHOR_SYSTEM_DB at a tempdir.
+    # Safe against the real store: conftest points PRAMANYX_SYSTEM_DB at a tempdir.
     _flags.clear_flag(name)
 
 
@@ -596,7 +596,7 @@ def synthetic_flags(monkeypatch):
     """Two registered DEFAULT-OFF experiment flags that exist only inside the requesting test — the exemplars the flag
     machinery's own tests need (run-scoped overrides, the eval grid's flag axis) now that no product flag is a switch
     (ROADMAP §3.65, 2026-10-28)."""
-    from aughor.kernel import flags as _flags
+    from pramanyx.kernel import flags as _flags
 
     names = (_register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_OFF, SYNTHETIC_DEFAULT_OFF_VAR, default=False),
              _register_synthetic(monkeypatch, SYNTHETIC_OTHER_OFF, SYNTHETIC_OTHER_OFF_VAR, default=False))
@@ -610,7 +610,7 @@ def synthetic_flags(monkeypatch):
 @pytest.fixture
 def synthetic_default_off(monkeypatch):
     """A registered DEFAULT-OFF flag that exists only inside the requesting test."""
-    from aughor.kernel import flags as _flags
+    from pramanyx.kernel import flags as _flags
 
     name = _register_synthetic(monkeypatch, SYNTHETIC_DEFAULT_OFF,
                                SYNTHETIC_DEFAULT_OFF_VAR, default=False)
@@ -624,7 +624,7 @@ def _reset_guard_process_caches():
     probe SQL, which is right where one id names one database and wrong in a test session, where
     every fixture's fresh in-memory database is called "test" — a count cached by one test was
     served to the next, which built different rows under the same name."""
-    from aughor.sql import time_order_guard as _tog
+    from pramanyx.sql import time_order_guard as _tog
     _tog._PROBE_CACHE.clear()
     yield
     _tog._PROBE_CACHE.clear()
@@ -634,7 +634,7 @@ def _reset_guard_process_caches():
 def _reset_migration_report():
     """Clear what this process recorded before its migrations (Arc SV-1). A store held back in one test — the
     damaged-ledger probe holds one back on purpose — would otherwise leave `/health` degraded for every test after it."""
-    from aughor.db import migrations as _mig
+    from pramanyx.db import migrations as _mig
     _mig._HELD_BACK.clear()
     _mig._BACKED_UP.clear()
     yield
@@ -663,9 +663,9 @@ def _reset_provider_process_caches():
     key — and visible only as ordering luck on CI. Resetting per test makes every
     test start from the isolated (empty) config unless it builds its own.
     """
-    from aughor.llm import coordination as _c
-    from aughor.llm import provider as _p
-    _cfg_path = os.environ.get("AUGHOR_LLM_CONFIG_PATH")
+    from pramanyx.llm import coordination as _c
+    from pramanyx.llm import provider as _p
+    _cfg_path = os.environ.get("PRAMANYX_LLM_CONFIG_PATH")
 
     def _reset():
         _p._ping_cache.clear()
@@ -673,7 +673,7 @@ def _reset_provider_process_caches():
             os.unlink(_cfg_path)   # a write_config-persisting test must not leak forward
         _p._runtime = None         # re-read (isolated ⇒ empty) on next _cfg()
         _p._config_version += 1    # drop providers built against another test's config
-        # The cooldown now lives in the coordinator (aughor/llm/coordination.py); dropping
+        # The cooldown now lives in the coordinator (pramanyx/llm/coordination.py); dropping
         # the instance re-resolves a clean one from env, which clears pacing and
         # concurrency too.
         _c.set_default(None)
@@ -704,7 +704,7 @@ def _end_background_tasks_with_their_test():
     one is complete.
     """
     yield
-    from aughor.kernel.concurrency import cancel_background
+    from pramanyx.kernel.concurrency import cancel_background
     cancel_background()
 
 
@@ -720,7 +720,7 @@ def _reset_embedder_dimension_cache():
     should probe once, poison for a session that swaps embedders per test.
     """
     yield
-    from aughor.semantic.embedder import _DIM_CACHE
+    from pramanyx.semantic.embedder import _DIM_CACHE
     _DIM_CACHE.clear()
 
 
@@ -733,11 +733,11 @@ def _no_provider_credentials(request):
 
     * every provider credential env var is DELETED, driven off ``provider._KEY_ENV``
       itself so a newly registered backend is scrubbed by construction (the list can
-      never lag the registry). This matters because ``aughor/api.py`` loads the
+      never lag the registry). This matters because ``pramanyx/api.py`` loads the
       developer's real ``.env`` at import time — the suite process otherwise holds
       real keys (the "together had a key" incident: a free primary's fallback chain
       quietly reached a PAID backend that only looked configured because of .env).
-    * the fallback chain is pinned EMPTY via ``AUGHOR_FALLBACK_BACKENDS=none`` (the
+    * the fallback chain is pinned EMPTY via ``PRAMANYX_FALLBACK_BACKENDS=none`` (the
       explicit empty-chain spelling; ``""`` has always meant "default order"). The
       chain tests in test_provider_resilience set this variable themselves, and their
       own monkeypatch simply replaces the pin — no special-casing needed.
@@ -753,12 +753,12 @@ def _no_provider_credentials(request):
     fixture's teardown then runs while the test's own patches are still applied
     (test_parallel_safety's hostile-contextvar teardown caught exactly that).
     """
-    from aughor.llm import provider as _p
+    from pramanyx.llm import provider as _p
     mp = pytest.MonkeyPatch()
     try:
         if request.node.get_closest_marker("e2e") or request.node.get_closest_marker("eval"):
             # Live-spending tests keep the operator's REAL binding: undo the suite-wide
-            # runtime-config isolation (AUGHOR_LLM_CONFIG_PATH above) for this test only,
+            # runtime-config isolation (PRAMANYX_LLM_CONFIG_PATH above) for this test only,
             # or `pytest -m eval` / --run-e2e would resolve the ollama default instead of
             # the configured backend and meter zero tokens (test_ratchet_live_smoke
             # caught exactly that when the isolation first landed).
@@ -770,17 +770,17 @@ def _no_provider_credentials(request):
         else:
             for _var in _p._KEY_ENV.values():
                 mp.delenv(_var, raising=False)
-            # The BINDING env vars go too, not just credentials: aughor.api's
-            # import-time load_dotenv() plants the developer's .env (AUGHOR_BACKEND=
+            # The BINDING env vars go too, not just credentials: pramanyx.api's
+            # import-time load_dotenv() plants the developer's .env (PRAMANYX_BACKEND=
             # openrouter + model pins) into the process env the moment any test
             # touches the app — after which every later test resolves a keyless
             # openrouter binding and dies in the client constructor. Scrubbed per
             # test, so every test starts from the ollama default unless it pins a
             # backend itself (the faux_llm fixture does).
-            for _var in ("AUGHOR_BACKEND", "AUGHOR_MODEL", "AUGHOR_CODER_MODEL",
-                         "AUGHOR_NARRATOR_MODEL", "AUGHOR_FAST_NARRATOR_MODEL"):
+            for _var in ("PRAMANYX_BACKEND", "PRAMANYX_MODEL", "PRAMANYX_CODER_MODEL",
+                         "PRAMANYX_NARRATOR_MODEL", "PRAMANYX_FAST_NARRATOR_MODEL"):
                 mp.delenv(_var, raising=False)
-            mp.setenv("AUGHOR_FALLBACK_BACKENDS", "none")
+            mp.setenv("PRAMANYX_FALLBACK_BACKENDS", "none")
         yield
     finally:
         mp.undo()
@@ -794,7 +794,7 @@ def _no_coverage_run_after_profiling():
     test of a coverage run calls `coverage_proposals.run` itself, with its provider stubbed.
 
     A private MonkeyPatch, for the teardown-order reason `_no_provider_credentials` gives."""
-    from aughor.semantic import coverage_proposals as _cp
+    from pramanyx.semantic import coverage_proposals as _cp
     mp = pytest.MonkeyPatch()
     mp.setattr(_cp, "run_in_background", lambda *a, **k: False)
     try:
@@ -807,7 +807,7 @@ def _no_coverage_run_after_profiling():
 def faux_llm(monkeypatch):
     """Route every LLM completion in this test through the scripted faux backend.
 
-    Returns the ``aughor.llm.faux`` module: ``set_responses([...])`` to script,
+    Returns the ``pramanyx.llm.faux`` module: ``set_responses([...])`` to script,
     ``calls()`` to see the exact prompts the code built, ``pending()`` to prove the
     script was fully consumed. An unscripted call raises ``FauxResponsesExhausted``
     loudly and never falls through to a real provider (``never_failover``).
@@ -821,9 +821,9 @@ def faux_llm(monkeypatch):
     later real `load_config()` bump can then collide with the stale `_cache_version`
     and revive a dead provider cache.
     """
-    from aughor.llm import faux as _faux
-    from aughor.llm import provider as _p
-    monkeypatch.setenv("AUGHOR_BACKEND", _p.FAUX_BACKEND)
+    from pramanyx.llm import faux as _faux
+    from pramanyx.llm import provider as _p
+    monkeypatch.setenv("PRAMANYX_BACKEND", _p.FAUX_BACKEND)
     _faux.reset()
     yield _faux
     _faux.reset()

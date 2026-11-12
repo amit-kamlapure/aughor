@@ -16,13 +16,13 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from aughor.explorer import program as P
+from pramanyx.explorer import program as P
 
 
 # ── an automatic re-run never reaches the model's free curiosity ─────────────
 
 def _explorer(**kw):
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex.connection_id, ex.schema_name, ex._state = "c", None, {}
     for k, v in kw.items():
@@ -31,7 +31,7 @@ def _explorer(**kw):
 
 
 def test_an_automatic_rerun_with_no_uncovered_cell_calls_no_model():
-    from aughor.explorer import agent as A
+    from pramanyx.explorer import agent as A
     calls = []
 
     async def probe(*a, **k):
@@ -60,9 +60,9 @@ def test_a_question_list_cell_comes_first_and_spends_no_generation():
 # ── table layers inside a schema: findings from the business copy ─────────────
 
 def test_a_table_set_to_another_layer_is_never_asked_about_on_its_own(monkeypatch):
-    from aughor.explorer.coverage_manifest import ManifestCell
+    from pramanyx.explorer.coverage_manifest import ManifestCell
     conn = f"c-{uuid.uuid4().hex[:6]}"
-    from aughor.ontology import dataset_layers as L
+    from pramanyx.ontology import dataset_layers as L
     L.set_layer(conn, "public", "raw", table="stg_orders", set_by="amit")
     L.set_layer(conn, "public", "reference", table="dim_country", set_by="amit")
     ex = _explorer(connection_id=conn, schema_name="public", _manifest_attempted=set(), _state={})
@@ -70,8 +70,8 @@ def test_a_table_set_to_another_layer_is_never_asked_about_on_its_own(monkeypatc
                           ManifestCell("n", "dim_country", "headline", None, "profiled_measure"),
                           ManifestCell("amount", "orders", "headline", None, "profiled_measure")]
     asked = []
-    monkeypatch.setattr("aughor.explorer.manifest_query.cell_to_sql", lambda cell, *a, **k: "SELECT 1")
-    monkeypatch.setattr("aughor.explorer.manifest_query.cell_question",
+    monkeypatch.setattr("pramanyx.explorer.manifest_query.cell_to_sql", lambda cell, *a, **k: "SELECT 1")
+    monkeypatch.setattr("pramanyx.explorer.manifest_query.cell_question",
                         lambda cell, *a, **k: asked.append(cell.table) or f"q {cell.table}")
     ex._tp_by_table, ex._cp_by_key = {}, {}
     try:
@@ -79,12 +79,12 @@ def test_a_table_set_to_another_layer_is_never_asked_about_on_its_own(monkeypatc
     except Exception:  # noqa: BLE001 — only which cell it reached is under test
         pass
     assert {c[1] for c in ex._manifest_attempted} == {"orders"}, ex._manifest_attempted
-    from aughor.explorer.agent import _QUIET_LAYERS
+    from pramanyx.explorer.agent import _QUIET_LAYERS
     assert ex._table_layer("stg_orders") in _QUIET_LAYERS and ex._table_layer("orders") == ""
 
 
 def test_one_entity_in_several_layers_is_read_as_copies():
-    from aughor.ontology import dataset_layers as L
+    from pramanyx.ontology import dataset_layers as L
     assert L.entity_key("stg_orders") == L.entity_key("fct_orders") == L.entity_key("orders_raw") == "order"
     assert L.entity_key("address") == "address"
     copies = L.copies_of({"raw": ["stg_orders", "events"], "marts": ["fct_orders", "dim_customer"]})
@@ -112,7 +112,7 @@ MANIFEST = {
 
 
 def test_dbt_lineage_says_each_tables_layer_and_outweighs_its_name():
-    from aughor.ontology import dataset_layers as L
+    from pramanyx.ontology import dataset_layers as L
     signs = L.lineage_signs(MANIFEST)
     assert signs[("raw", "orders")].layer == "raw"
     assert signs[("analytics", "stg_orders")].layer == "raw"
@@ -126,26 +126,26 @@ def test_dbt_lineage_says_each_tables_layer_and_outweighs_its_name():
 
 def test_the_configured_manifest_is_read_and_reread_when_it_changes(tmp_path, monkeypatch):
     import json
-    from aughor.ontology import dataset_layers as L
+    from pramanyx.ontology import dataset_layers as L
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(MANIFEST))
-    monkeypatch.setenv("AUGHOR_DBT_MANIFEST", str(path))
+    monkeypatch.setenv("PRAMANYX_DBT_MANIFEST", str(path))
     assert L.configured_lineage()[("analytics", "orders")].layer == "business"
-    monkeypatch.delenv("AUGHOR_DBT_MANIFEST")
+    monkeypatch.delenv("PRAMANYX_DBT_MANIFEST")
     assert L.configured_lineage() == {}
 
 
 # ── a run capped at what is left of its month ─────────────────────────────────
 
 def test_a_jobs_token_cap_tightens_its_agents_budget_and_never_raises_it(monkeypatch):
-    from aughor.kernel import jobs as J
-    from aughor.kernel.agents import Governance
+    from pramanyx.kernel import jobs as J
+    from pramanyx.kernel.agents import Governance
     k = J.JobKernel.__new__(J.JobKernel) if hasattr(J, "JobKernel") else None
     if k is None:
         k = type(J.kernel()).__new__(type(J.kernel()))
-    monkeypatch.setattr("aughor.kernel.agents.effective_governance",
+    monkeypatch.setattr("pramanyx.kernel.agents.effective_governance",
                         lambda agent, ws=None: Governance(enabled=True, token_budget=200_000, time_budget_s=600))
-    monkeypatch.setattr("aughor.workspace.store.workspace_for_connection", lambda c: None)
+    monkeypatch.setattr("pramanyx.workspace.store.workspace_for_connection", lambda c: None)
 
     def with_payload(payload):
         k.ledger = SimpleNamespace(job_get=lambda jid: {"kind": "exploration", "conn_id": "c", "payload": payload})
@@ -158,14 +158,14 @@ def test_a_jobs_token_cap_tightens_its_agents_budget_and_never_raises_it(monkeyp
 
 
 def test_runs_started_together_share_what_is_left_and_rank_by_what_people_query(monkeypatch):
-    import aughor.explorer.continuous as cont
+    import pramanyx.explorer.continuous as cont
     from tests.unit.test_continuous_exploration import _complete, _planner
     states = {"marts": _complete(distributions={"orders:amount": {}}),
               "sales": _complete(distributions={"tickets:n": {}}), "ops": _complete()}
     _planner(monkeypatch, states, layers={"marts": "business", "sales": "business", "ops": "business"})
     monkeypatch.setattr(cont, "_approved_count", lambda cid, sch: 1)          # a tie on metrics
     monkeypatch.setattr(cont, "_asked_counts", lambda cid, now: {"tickets": 40, "orders": 3})
-    monkeypatch.setattr("aughor.explorer.budget.standing",
+    monkeypatch.setattr("pramanyx.explorer.budget.standing",
                         lambda cid, now=None: {"spent_out": False, "sentence": "", "remaining": 90_000})
     runs, _ = cont.plan_jobs(now=datetime(2026, 7, 12, tzinfo=timezone.utc))
     model = [r for r in runs if r["uses_model"]]
@@ -183,7 +183,7 @@ def test_two_questions_a_dataset_could_not_answer_in_a_week_reopen_it():
 
 
 def test_a_refusal_is_not_a_gap_and_a_failure_counts_against_its_dataset(monkeypatch):
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     noted = []
     monkeypatch.setattr(P, "note_unanswered", lambda key, why: noted.append((key, why)))
     monkeypatch.setattr(P, "dataset_key", lambda conn, schema: f"{conn}__{schema}")
@@ -207,11 +207,11 @@ def wh(tmp_path):
 
 
 def test_a_raw_datasets_health_says_what_changed_since_the_last_reading(wh, monkeypatch):
-    from aughor.db.connection import open_connection
-    from aughor.explorer import health as H
+    from pramanyx.db.connection import open_connection
+    from pramanyx.explorer import health as H
     conn_id, path = wh
-    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda c: {})
-    monkeypatch.setattr("aughor.semantic.metric_time.primary_date", lambda prof, t: "loaded_on")
+    monkeypatch.setattr("pramanyx.tools.profile_cache.merged_profile_entry", lambda c: {})
+    monkeypatch.setattr("pramanyx.semantic.metric_time.primary_date", lambda prof, t: "loaded_on")
     db = open_connection("duckdb", path, schema_name="landing", connection_id=conn_id)
     first = H.read_dataset(conn_id, "landing", layer="raw", reopen_questions=False, db=db)
     assert first == {"kind": "health", "notes": [], "tables": 1}
@@ -230,12 +230,12 @@ def test_a_raw_datasets_health_says_what_changed_since_the_last_reading(wh, monk
 
 
 def test_a_new_value_in_a_known_dimension_reopens_and_the_first_reading_is_a_baseline(wh, monkeypatch):
-    from aughor.db.connection import open_connection
-    from aughor.explorer import health as H
+    from pramanyx.db.connection import open_connection
+    from pramanyx.explorer import health as H
     conn_id, path = wh
     prof = {"columns": {"events.kind": {"table": "events", "column": "kind", "dtype": "VARCHAR",
                                         "is_low_cardinality": True}}}
-    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda c: prof)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.merged_profile_entry", lambda c: prof)
     db = open_connection("duckdb", path, schema_name="landing", connection_id=conn_id)
     key = P.key_for(conn_id, "landing")
     assert H.read_dataset(conn_id, "landing", layer="business", reopen_questions=True, db=db)["news"] == []
@@ -254,14 +254,14 @@ def test_a_new_value_in_a_known_dimension_reopens_and_the_first_reading_is_a_bas
 # ── a move explained by its segments ──────────────────────────────────────────
 
 def test_a_move_is_explained_by_the_segment_that_carries_it_and_the_reopen_says_so(monkeypatch):
-    from aughor.explorer import watch as W
+    from pramanyx.explorer import watch as W
     conn = f"wh-{uuid.uuid4().hex[:6]}"
     m = SimpleNamespace(name="revenue", label="revenue", time_grain="day", time_kind="flow",
                         time_column="orders.created_at", until_column="", outcome_column="",
                         sql="SUM(amount)", tables=["orders"], dimensions=[])
-    monkeypatch.setattr("aughor.briefing.ranges.governed_metrics", lambda c, s=None: [m])
+    monkeypatch.setattr("pramanyx.briefing.ranges.governed_metrics", lambda c, s=None: [m])
     spec = SimpleNamespace(start=date(2026, 10, 7), end=date(2026, 10, 8), last_day=date(2026, 10, 7))
-    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda c, preset, **k: (spec, ""))
+    monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for", lambda c, preset, **k: (spec, ""))
     measure = lambda sp: {"measured": [{"name": "revenue", "metric": "revenue", "rel": -0.12, "status": "final"}],
                           "unmeasured": []}
     explain = lambda ms, sp: [{"metric": "revenue", "name": "revenue", "dimension": "country", "group": "US",
@@ -273,7 +273,7 @@ def test_a_move_is_explained_by_the_segment_that_carries_it_and_the_reopen_says_
 
 
 def test_the_breakdown_falls_back_to_its_tables_known_dimensions(monkeypatch):
-    from aughor.explorer import watch as W
+    from pramanyx.explorer import watch as W
     prof = {"columns": {
         "orders.country": {"table": "orders", "column": "country", "dtype": "VARCHAR", "is_low_cardinality": True},
         "orders.customer_id": {"table": "orders", "column": "customer_id", "is_fk": True, "is_low_cardinality": True},

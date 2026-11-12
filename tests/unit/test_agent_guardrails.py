@@ -17,12 +17,12 @@ import importlib
 
 import pytest
 
-from aughor.govern import guardrails as g
+from pramanyx.govern import guardrails as g
 
 
 @pytest.fixture(autouse=True)
 def _clean_policies():
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     Ledger.default().kv_replace_all(g.KV_STORE, {})
     yield
     Ledger.default().kv_replace_all(g.KV_STORE, {})
@@ -30,8 +30,8 @@ def _clean_policies():
 
 @pytest.fixture
 def agent(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_AGENTS_DB", str(tmp_path / "agents.db"))
-    from aughor.custom_agents import store as s
+    monkeypatch.setenv("PRAMANYX_AGENTS_DB", str(tmp_path / "agents.db"))
+    from pramanyx.custom_agents import store as s
     importlib.reload(s)
     return s.create_agent("Guarded", instructions="x", connection_id="c1")
 
@@ -50,7 +50,7 @@ def test_an_agent_with_no_policy_behaves_exactly_as_before(agent):
 def test_a_policy_equal_to_the_defaults_is_deleted_rather_than_stored(agent):
     """Otherwise "never configured" and "configured to the defaults" drift apart, and a
     later change to a default silently fails to reach the second group."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     g.set_policy(agent.id, g.GuardrailPolicy(pii="block"))
     assert Ledger.default().kv_get(g.KV_STORE, agent.id) is not None
 
@@ -82,7 +82,7 @@ def test_no_agent_active_means_the_seam_is_inert():
 # ── the run cap ─────────────────────────────────────────────────────────────────
 
 def test_the_run_cap_arms_the_budget_the_llm_funnel_already_checks():
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
     token = g.arm_run_cap(g.GuardrailPolicy(max_tokens_per_run=5_000))
     try:
         assert metering.current_budget() == (5_000, None)
@@ -94,7 +94,7 @@ def test_two_caps_on_one_run_take_the_smaller(agent):
     """An org cap and an agent cap are statements about different things and both hold,
     so the binding one is whichever is breached first. `govern.usage_caps` reasons the
     same way; getting it backwards here would let an agent RAISE a run's tight budget."""
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
     outer = metering.set_budget(1_000, 30)
     try:
         inner = g.arm_run_cap(g.GuardrailPolicy(max_tokens_per_run=9_999))
@@ -108,7 +108,7 @@ def test_two_caps_on_one_run_take_the_smaller(agent):
 
 
 def test_no_cap_arms_nothing(agent):
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
     assert g.arm_run_cap(g.GuardrailPolicy()) is None
     assert metering.current_budget() is None
 
@@ -117,8 +117,8 @@ def test_activating_an_agent_activates_its_guardrails(agent):
     """Structural, not a second call every caller has to remember: an agent whose
     guardrails are configured but not armed is exactly how a governance plane ends up
     complete and unenforced."""
-    from aughor.custom_agents.context import activate_agent, release_agent
-    from aughor.kernel import metering
+    from pramanyx.custom_agents.context import activate_agent, release_agent
+    from pramanyx.kernel import metering
 
     g.set_policy(agent.id, g.GuardrailPolicy(max_tokens_per_run=777))
     token = activate_agent(agent)
@@ -132,13 +132,13 @@ def test_activating_an_agent_activates_its_guardrails(agent):
 # ── the enforcement point ───────────────────────────────────────────────────────
 
 def _result(rows, column: str = "email"):
-    from aughor.db.connection import QueryResult
+    from pramanyx.db.connection import QueryResult
     return QueryResult(hypothesis_id="h1", sql=f"SELECT {column} FROM t",
                        columns=[column], rows=rows, row_count=len(rows), error=None)
 
 
 def _post(result):
-    from aughor.db.connection import _security_post
+    from pramanyx.db.connection import _security_post
     return _security_post("c1", "h1", "SELECT email FROM t", result, 1.0)
 
 
@@ -146,7 +146,7 @@ PII_ROWS = [["ada@example.com"], ["grace@example.com"]]
 
 
 def test_the_default_still_redacts(agent):
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
     token = activate_agent(agent)
     try:
         out = _post(_result([list(r) for r in PII_ROWS]))
@@ -158,7 +158,7 @@ def test_the_default_still_redacts(agent):
 
 def test_block_withholds_the_result_rather_than_punching_holes_in_it(agent):
     """`block` and `redact` must not be the same behaviour under two names."""
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
     g.set_policy(agent.id, g.GuardrailPolicy(pii="block"))
     token = activate_agent(agent)
     try:
@@ -175,7 +175,7 @@ def test_block_withholds_the_result_rather_than_punching_holes_in_it(agent):
 
 
 def test_off_leaves_the_rows_untouched(agent):
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
     g.set_policy(agent.id, g.GuardrailPolicy(pii="off"))
     token = activate_agent(agent)
     try:
@@ -189,7 +189,7 @@ def test_a_clean_result_passes_under_every_mode(agent):
     """`city`, not `email`: the scanner redacts on the COLUMN NAME as well as the value,
     so a clean row under a column called `email` is redacted by design and would have
     made this test assert the opposite of what it claims."""
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
     for mode in g.PII_MODES:
         g.set_policy(agent.id, g.GuardrailPolicy(pii=mode))
         token = activate_agent(agent)
@@ -206,9 +206,9 @@ def test_a_clean_result_passes_under_every_mode(agent):
 def test_both_halves_are_recorded_so_the_rate_has_a_denominator(agent):
     """Recording only blocks would leave an agent nothing ever checked indistinguishable
     from one that always passed."""
-    from aughor import telemetry
-    from aughor.custom_agents.context import activate_agent, release_agent
-    from aughor.kernel.ledger import Ledger
+    from pramanyx import telemetry
+    from pramanyx.custom_agents.context import activate_agent, release_agent
+    from pramanyx.kernel.ledger import Ledger
 
     with telemetry.bind_trace("trace-guardrail-1"):
         token = activate_agent(agent)
@@ -225,7 +225,7 @@ def test_both_halves_are_recorded_so_the_rate_has_a_denominator(agent):
 
 def test_the_block_rate_has_no_value_when_nothing_was_evaluated():
     """Not a 0% block rate — no block rate. The same distinction `error_rate` makes."""
-    from aughor.obs.agent_alerts import measure
+    from pramanyx.obs.agent_alerts import measure
     value, population, observed = measure("guardrail_block_rate", [], guardrails=[])
     assert value is None
     assert population == 0
@@ -235,7 +235,7 @@ def test_the_block_rate_has_no_value_when_nothing_was_evaluated():
 def test_the_block_rate_counts_evaluations_not_runs():
     """A guardrail that was never consulted could not have blocked anything, so it may
     not sit in the denominator."""
-    from aughor.obs.agent_alerts import measure
+    from pramanyx.obs.agent_alerts import measure
     rows = [{"blocked": True}, {"blocked": False}, {"blocked": False}, {"blocked": False}]
     value, population, observed = measure("guardrail_block_rate", [], guardrails=rows)
     assert value == 0.25
@@ -244,7 +244,7 @@ def test_the_block_rate_counts_evaluations_not_runs():
 
 
 def test_guardrail_blocks_is_an_absolute_count():
-    from aughor.obs.agent_alerts import measure
+    from pramanyx.obs.agent_alerts import measure
     rows = [{"blocked": True}, {"blocked": True}, {"blocked": False}]
     value, population, _ = measure("guardrail_blocks", [], guardrails=rows)
     assert value == 2.0
@@ -252,7 +252,7 @@ def test_guardrail_blocks_is_an_absolute_count():
 
 
 def test_an_agent_scoped_rule_ignores_another_agents_blocks():
-    from aughor.obs.agent_alerts import AgentAlertRule, evaluate
+    from pramanyx.obs.agent_alerts import AgentAlertRule, evaluate
     rule = AgentAlertRule(id="r1", name="blocks", metric="guardrail_blocks",
                           comparator="gt", threshold=0, window_minutes=60,
                           agent_id="ua_mine")
@@ -264,7 +264,7 @@ def test_an_agent_scoped_rule_ignores_another_agents_blocks():
 
 def test_the_guardrail_kind_is_in_the_closed_event_vocabulary():
     """A monitor written against a kind must not silently miss it."""
-    from aughor.obs.session_log import EVENT_KINDS
+    from pramanyx.obs.session_log import EVENT_KINDS
     assert g.EVENT_KIND in EVENT_KINDS
 
 
@@ -274,7 +274,7 @@ def test_the_guardrail_kind_is_in_the_closed_event_vocabulary():
 def client():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -312,7 +312,7 @@ def test_the_policy_is_read_once_per_process_not_once_per_query(agent):
     """`active_policy` is consulted on EVERY query result, so an uncached read put one
     ledger open on the platform's hottest path — and `system.db` is the store this app
     has repeatedly died on. Measured after a live crash during VA-8's own verification."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     g.invalidate_cache()
     ledger = Ledger.default()

@@ -13,7 +13,7 @@ finding a wrong metric rather than none. A wrong formula and a wrong band, silen
 """
 from __future__ import annotations
 
-from aughor.business_profile.metric_kb import (_norm, curated_kb, curated_metrics, match_industry,
+from pramanyx.business_profile.metric_kb import (_norm, curated_kb, curated_metrics, match_industry,
                                                match_metric, metric_vocabulary, resolve_recipes)
 
 

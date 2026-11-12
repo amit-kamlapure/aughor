@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.automations.synthesize import MAX_ROWS, dispatch_synthesize
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.automations.synthesize import MAX_ROWS, dispatch_synthesize
 
 
 def _auto() -> Automation:
@@ -66,7 +66,7 @@ def test_the_double_matches_the_real_provider_signature():
     testing the call this module actually makes."""
     import inspect
 
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
 
     real = inspect.signature(LLMProvider.complete)
     fake = inspect.signature(_Provider.complete)
@@ -80,7 +80,7 @@ def test_the_double_matches_the_real_provider_signature():
 def provider(monkeypatch):
     def _install(*answers: str) -> _Provider:
         p = _Provider(*answers)
-        monkeypatch.setattr("aughor.llm.provider.get_provider", lambda *a, **k: p)
+        monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda *a, **k: p)
         return p
     return _install
 
@@ -177,7 +177,7 @@ def test_a_short_result_is_not_marked_truncated(provider):
 # ── the answer says what it read, and does what it was told ─────────────────────
 
 def test_the_answer_carries_the_reference_it_synthesised(provider):
-    from aughor.automations.engine import SYNTHESIS_SOURCE_KEY
+    from pramanyx.automations.engine import SYNTHESIS_SOURCE_KEY
 
     provider("EMEA did 1,412 orders.")
     out = dispatch_synthesize(
@@ -187,7 +187,7 @@ def test_the_answer_carries_the_reference_it_synthesised(provider):
 
 
 def test_the_authored_context_reaches_the_model_and_a_missing_one_has_a_stated_default(provider):
-    from aughor.automations.synthesize import DEFAULT_CONTEXT
+    from pramanyx.automations.synthesize import DEFAULT_CONTEXT
 
     p = provider("EMEA did 1,412 orders.")
     dispatch_synthesize(_step({"data": ROWS, "context": "call out anything unusual"}), _auto())
@@ -203,7 +203,7 @@ def test_a_model_outage_is_a_step_failure_not_a_crash(monkeypatch):
         def complete(self, **kw):
             raise RuntimeError("model unreachable")
 
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda *a, **k: _Boom())
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda *a, **k: _Boom())
     out = dispatch_synthesize(_step({"data": ROWS}), _auto())
     assert out.status == "failed"
     assert "model unreachable" in out.message
@@ -218,9 +218,9 @@ def test_an_empty_model_answer_is_a_failure_rather_than_an_empty_publish(provide
 # ── the step is wired into the plane the same way every sibling is ──────────────
 
 def test_the_kind_is_registered_everywhere_a_step_has_to_be():
-    from aughor.automations.dataflow import BINDABLE_FIELDS, PUBLISHED_KEYS
-    from aughor.automations.engine import _DISPATCHERS
-    from aughor.automations.palette import entries
+    from pramanyx.automations.dataflow import BINDABLE_FIELDS, PUBLISHED_KEYS
+    from pramanyx.automations.engine import _DISPATCHERS
+    from pramanyx.automations.palette import entries
 
     assert PUBLISHED_KEYS["synthesize"] == ("answer", "truncated", "source")
     assert BINDABLE_FIELDS["synthesize"] == ("data", "context")
@@ -242,7 +242,7 @@ def test_the_answer_publishes_the_values_it_was_grounded_in(provider):
     """Without this a synthesis-backed send is HELD by law 1 forever, whatever anyone
     approves: `departure_basis` builds a measurement from an analysis or an alert, and a
     synthesis is neither. Found by building the first real chain on these steps."""
-    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
+    from pramanyx.automations.engine import SYNTHESIS_BASIS_KEY
 
     provider("EMEA did 1,412 orders and APAC did 903.")
     out = dispatch_synthesize(
@@ -262,7 +262,7 @@ def test_numeric_strings_count_because_bigquery_returns_counts_as_strings(provid
         _step({"data": [{"category": "Outerwear", "items_sold": "75",
                          "sales": "11498.69"}]}), _auto())
 
-    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
+    from pramanyx.automations.engine import SYNTHESIS_BASIS_KEY
     values = out.data[SYNTHESIS_BASIS_KEY]["values"]
     assert 75.0 in values and 11498.69 in values
 
@@ -270,7 +270,7 @@ def test_numeric_strings_count_because_bigquery_returns_counts_as_strings(provid
 def test_the_basis_covers_only_the_rows_the_MODEL_saw(provider):
     """Capped input: an answer cannot cite a row it was never given, and a basis wider
     than the evidence would ground a figure the writer could not have known."""
-    from aughor.automations.engine import SYNTHESIS_BASIS_KEY
+    from pramanyx.automations.engine import SYNTHESIS_BASIS_KEY
 
     provider("Most rows are small.")
     rows = [{"n": i} for i in range(MAX_ROWS + 50)]
@@ -284,8 +284,8 @@ def test_the_basis_covers_only_the_rows_the_MODEL_saw(provider):
 def test_a_send_reading_the_synthesis_gets_that_basis_and_a_stronger_one_still_wins():
     """Ordering matters: an analysis, a promise and a finding each carry their own
     lineage, so a synthesis is the right basis only when nothing better is in the chain."""
-    from aughor.automations.engine import (SYNTHESIS_BASIS_KEY, departure_basis)
-    from aughor.automations.models import Effect
+    from pramanyx.automations.engine import (SYNTHESIS_BASIS_KEY, departure_basis)
+    from pramanyx.automations.models import Effect
 
     send = Effect(kind="slack_post", alias="send",
                   config={"bot_id": "b", "channel": "#ops",
@@ -306,7 +306,7 @@ def test_the_builder_re_checks_the_prose_rather_than_trusting_the_grounding_pass
     """`rendered` must stay False. True would assert grounding by construction — and the
     construction here includes a model, so law 1 would stop looking at the one class of
     output that most needs a second pass."""
-    from aughor.govern.departure_basis import measurement_for_synthesis
+    from pramanyx.govern.departure_basis import measurement_for_synthesis
 
     m = measurement_for_synthesis({"values": [1412.0, 903.0], "source": "the rows of q",
                                    "measured_at": "2026-09-19T12:00:00Z"})

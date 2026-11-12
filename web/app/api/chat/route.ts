@@ -45,8 +45,8 @@
 
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 
-import { projectTurn, UNCERTAIN_RESULT, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
-import { AughorToUIMessage, type AughorChunk } from "@/lib/uiMessageAdapter";
+import { projectTurn, UNCERTAIN_RESULT, type PramanyxUIMessage, type ChatTurn } from "@/lib/chatTurn";
+import { PramanyxToUIMessage, type PramanyxChunk } from "@/lib/uiMessageAdapter";
 import { backendBase, backendHeaders } from "@/lib/chatProxy";
 import { readFrames } from "@/lib/sseFrames";
 
@@ -57,7 +57,7 @@ export const maxDuration = 300;
 
 interface ChatBody {
   question?: string;
-  messages?: AughorUIMessage[];
+  messages?: PramanyxUIMessage[];
   connection_id?: string;
   session_id?: string;
   /** The reducer path's three doors: investigate | ask (forced Quick) | auto. */
@@ -160,7 +160,7 @@ function deepHistoryEntry(t: ChatTurn): ChatHistoryTurn | null {
  * history. Slightly deeper than the server's verbatim window on purpose (CI-1):
  * the server windows it itself.
  */
-function historyFrom(messages: AughorUIMessage[]): ChatHistoryTurn[] {
+function historyFrom(messages: PramanyxUIMessage[]): ChatHistoryTurn[] {
   const out: ChatHistoryTurn[] = [];
   let question = "";
   for (const m of messages) {
@@ -279,8 +279,8 @@ function upstreamRequest(body: ChatBody): { url: string; payload: Record<string,
  */
 async function recoverAfterDrop(
   invId: string,
-  adapter: AughorToUIMessage,
-  write: (c: AughorChunk) => void,
+  adapter: PramanyxToUIMessage,
+  write: (c: PramanyxChunk) => void,
   signal: AbortSignal,
 ): Promise<void> {
   const deadline = Date.now() + 4 * 60 * 1000; // bounded well inside maxDuration
@@ -343,7 +343,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
-      const adapter = new AughorToUIMessage();
+      const adapter = new PramanyxToUIMessage();
 
       // INVARIANT 1 — anything that is not a live SSE body becomes an error
       // chunk carrying the upstream's own words.

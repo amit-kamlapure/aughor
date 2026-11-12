@@ -14,7 +14,7 @@ const MESSAGES = [
     parts: [{ type: "text", text: "Do Event and Platform really join on these keys?" }] },
   { id: "a1", role: "assistant", parts: [
     { type: "text", text: "Yes. Event and Platform join cleanly on these keys.",
-      providerMetadata: { aughor: { channel: "headline" } } },
+      providerMetadata: { pramanyx: { channel: "headline" } } },
     { type: "data-sql", data: { sql: "SELECT COUNT(*) AS att_rows FROM event_attendance" } },
     { type: "data-columns", data: { columns: ["att_rows"] } },
     { type: "data-rows", data: { rows: [[1642]] } },
@@ -22,8 +22,8 @@ const MESSAGES = [
   ] },
 ];
 
-vi.mock("@/lib/useAughorChat", () => ({
-  useAughorChat: () => ({
+vi.mock("@/lib/usePramanyxChat", () => ({
+  usePramanyxChat: () => ({
     messages: MESSAGES, sendMessage: vi.fn(async () => undefined), setMessages: vi.fn(),
     regenerate: vi.fn(), stop: vi.fn(), status: "ready", error: undefined, clearError: vi.fn(),
   }),

@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from aughor.util.frame_hub import hub
+from pramanyx.util.frame_hub import hub
 
 FRAMES = [
     'data: {"type": "start", "investigation_id": "inv-1"}\n\n',
@@ -35,7 +35,7 @@ def _fake_stream(*_a, **_k):
 
 @pytest.mark.anyio
 async def test_job_stream_mirrors_into_hub(monkeypatch):
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     monkeypatch.setattr(inv, "_stream_investigation", _fake_stream)
     out = [s async for s in inv._investigation_job_streamed(
@@ -51,7 +51,7 @@ async def test_job_stream_mirrors_into_hub(monkeypatch):
 async def test_no_conversation_leaves_no_hub_run(monkeypatch):
     # The one remaining negative case: a turn with no conversation id has no key
     # to mirror under, so the hub must see nothing and the bridge must not care.
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     monkeypatch.setattr(inv, "_stream_investigation", _fake_stream)
     out = [s async for s in inv._investigation_job_streamed(
@@ -62,7 +62,7 @@ async def test_no_conversation_leaves_no_hub_run(monkeypatch):
 
 @pytest.mark.anyio
 async def test_reattach_mid_run_gets_snapshot_then_tail(monkeypatch):
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     gate = asyncio.Event()
 
@@ -92,7 +92,7 @@ async def test_reattach_mid_run_gets_snapshot_then_tail(monkeypatch):
 
 @pytest.mark.anyio
 async def test_superseding_turn_closes_the_stale_run(monkeypatch):
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
 
     monkeypatch.setattr(inv, "_stream_investigation", _fake_stream)
     stale = hub().open_run("ask:sess-seam-super")  # a prior turn never closed
@@ -110,7 +110,7 @@ async def test_bridge_carries_a_prebuilt_body_too():
     # The analyst branch hands the bridge an ALREADY-CONSTRUCTED generator via a
     # lambda (its origin resolution awaits happen request-side) — the bridge must
     # not care which shape it gets.
-    from aughor.routers.investigations import _job_streamed_body
+    from pramanyx.routers.investigations import _job_streamed_body
 
     async def _body():
         for f in FRAMES:
@@ -126,7 +126,7 @@ async def test_bridge_carries_a_prebuilt_body_too():
 
 @pytest.mark.anyio
 async def test_resume_endpoint_semantics():
-    from aughor.routers.investigations import ask_resume_stream
+    from pramanyx.routers.investigations import ask_resume_stream
 
     r = await ask_resume_stream("sess-ep-none")  # no run for this conversation
     assert r.status_code == 204

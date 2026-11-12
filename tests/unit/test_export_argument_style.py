@@ -7,7 +7,7 @@ promoted to a Financial impact section. Flag off = the legacy composition.
 """
 from __future__ import annotations
 
-from aughor.export.document import build_export_doc
+from pramanyx.export.document import build_export_doc
 
 
 def _inv():
@@ -89,7 +89,7 @@ def test_argument_style_recomposes_the_body():
 
 
 def test_degenerate_exhibit_suppression_is_row_based():
-    from aughor.export.document import _exhibit_argument
+    from pramanyx.export.document import _exhibit_argument
     assert _exhibit_argument(["a", "b"], [["x", 1]], "bar", "t") == []       # 1 row → nothing
     assert _exhibit_argument([], [], "bar", "t") == []
     out = _exhibit_argument(["a", "b"], [["x", 1], ["y", 2]], "none", "t")
@@ -98,7 +98,7 @@ def test_degenerate_exhibit_suppression_is_row_based():
 
 
 def test_exhibit_table_fallback_is_capped():
-    from aughor.export.document import _exhibit_argument
+    from pramanyx.export.document import _exhibit_argument
     rows = [[f"r{i}", i] for i in range(20)]
     out = _exhibit_argument(["k", "v"], rows, "none", "t")
     assert [b.kind for b in out] == ["table"]

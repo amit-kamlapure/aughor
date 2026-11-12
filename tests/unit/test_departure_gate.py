@@ -11,8 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.govern import departure_store as ds
-from aughor.govern.departure import TRUST_BANNER, Measurement, gate_departure
+from pramanyx.govern import departure_store as ds
+from pramanyx.govern.departure import TRUST_BANNER, Measurement, gate_departure
 
 
 @pytest.fixture(autouse=True)
@@ -20,12 +20,12 @@ def _own_ledger(tmp_path, monkeypatch):
     """Each test reads its own departures ledger: law 7 compares a send with the last one
     that departed from the same source to the same place, and a shared session ledger would
     let one test's departure become another test's repeat."""
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
 
 
 def _measured(*values):
     """A measurement taken moments ago that holds exactly these values."""
-    from aughor.util.time import now_iso_z
+    from pramanyx.util.time import now_iso_z
     return Measurement(source="stub analysis", values=[float(v) for v in values],
                        measured_at=now_iso_z())
 
@@ -45,7 +45,7 @@ def test_the_reframes_own_banner_is_held_at_departure():
     gate detects exactly that text — a reword in either place breaks this pair, which is
     the point (the 2026-09-16 incident departed BECAUSE nothing re-checked trust between
     the report and the send)."""
-    from aughor.agent.investigate import _reframe_on_trust_caveat
+    from pramanyx.agent.investigate import _reframe_on_trust_caveat
 
     class _Synth:
         confidence = "HIGH"
@@ -81,13 +81,13 @@ _REVENUE = SimpleNamespace(name="revenue", label="Revenue", sql="SUM(total_amoun
 
 
 def _stub_metrics(monkeypatch):
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
 
 
 def test_failing_tieout_holds(monkeypatch):
     _stub_metrics(monkeypatch)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: object())
-    monkeypatch.setattr("aughor.semantic.metrics.validate_metric",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: object())
+    monkeypatch.setattr("pramanyx.semantic.metrics.validate_metric",
                         lambda m, db: SimpleNamespace(passed=False,
                                                       message="1 of 1 quality tests failed"))
     v = _gate("Revenue reached 4,100 this week.", conn_id="c1")
@@ -97,8 +97,8 @@ def test_failing_tieout_holds(monkeypatch):
 
 def test_passing_tieout_departs(monkeypatch):
     _stub_metrics(monkeypatch)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: object())
-    monkeypatch.setattr("aughor.semantic.metrics.validate_metric",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: object())
+    monkeypatch.setattr("pramanyx.semantic.metrics.validate_metric",
                         lambda m, db: SimpleNamespace(passed=True, message="ok"))
     v = _gate("Revenue reached 4,100 this week.", conn_id="c1", measurement=_measured(4100))
     assert v.state == "departed"
@@ -112,7 +112,7 @@ def test_unavailable_tieout_is_recorded_not_held(monkeypatch):
 
     def _boom(cid):
         raise RuntimeError("warehouse down")
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", _boom)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", _boom)
     v = _gate("Revenue reached 4,100 this week.", conn_id="c1", measurement=_measured(4100))
     assert v.state == "departed"
     assert "unavailable" in v.checks["tie_out"]
@@ -123,7 +123,7 @@ def test_unasserted_metric_runs_no_tieout(monkeypatch):
 
     def _never(cid):  # pragma: no cover - the assertion IS that this is never reached
         raise AssertionError("tie-out must not open a connection for unasserted text")
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", _never)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", _never)
     v = _gate("Margins look stable across regions.", conn_id="c1")
     assert v.state == "departed"
 
@@ -166,7 +166,7 @@ def test_departed_rows_are_recorded_too():
 def test_broken_ledger_does_not_unhold(monkeypatch):
     def _boom(**kw):
         raise RuntimeError("disk full")
-    monkeypatch.setattr("aughor.govern.departure_store.record_departure", _boom)
+    monkeypatch.setattr("pramanyx.govern.departure_store.record_departure", _boom)
     v = _gate(f"⚠ {TRUST_BANNER}: bad. Do not read.")
     assert v.state == "held" and v.record_id == ""
 

@@ -53,8 +53,8 @@ def load_yield(db_path: Path) -> dict:
     single seam that decides where a store lives — a second path resolution here would be a
     second definition of "the decisions store", and those drift.
     """
-    os.environ["AUGHOR_DECISIONS_DB"] = str(db_path)
-    from aughor.learning import decisions
+    os.environ["PRAMANYX_DECISIONS_DB"] = str(db_path)
+    from pramanyx.learning import decisions
     return decisions.corpus_yield()
 
 

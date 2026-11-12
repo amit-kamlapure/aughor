@@ -14,9 +14,9 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.briefing import reask as rk
-from aughor.briefing.ranges import RangeSpec
+from pramanyx.api import app
+from pramanyx.briefing import reask as rk
+from pramanyx.briefing.ranges import RangeSpec
 
 client = TestClient(app)
 
@@ -149,13 +149,13 @@ def test_the_cap_is_said():
 
 
 def test_the_door_serves_the_re_ask_and_its_cache_and_refuses_without_a_range(monkeypatch):
-    from aughor.routers import exploration as ex
-    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (SPEC, ""))
+    from pramanyx.routers import exploration as ex
+    monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (SPEC, ""))
     monkeypatch.setattr(ex, "_domain_insights_for", lambda cid, schema: {
         "Orders": {"insights": [{"id": "f2", "sql": "SELECT COUNT(*) AS n FROM orders", "signature": {"tables": ["orders"]}}]},
         # The store's own shape is a plain list per domain; the served block wraps it. Both must read.
         "Catalog": [{"id": "f3", "sql": "SELECT COUNT(*) AS n FROM products", "signature": {"tables": ["products"]}}]})
-    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda cid: PROFILE)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.merged_profile_entry", lambda cid: PROFILE)
     seen = {"opened": 0}
 
     @contextmanager
@@ -163,7 +163,7 @@ def test_the_door_serves_the_re_ask_and_its_cache_and_refuses_without_a_range(mo
         seen["opened"] += 1
         run_sql, _ = _runner({"current": (["n"], [[12]], None), "previous": (["n"], [[10]], None)})
         yield run_sql, "duckdb"
-    monkeypatch.setattr("aughor.knowledge.period_brief.connection_runner", runner)
+    monkeypatch.setattr("pramanyx.knowledge.period_brief.connection_runner", runner)
     ex._REASK_CACHE.clear()
     r = client.get("/exploration/c-reask/findings/reask", params={"preset": "last_week"})
     assert r.status_code == 200, r.text

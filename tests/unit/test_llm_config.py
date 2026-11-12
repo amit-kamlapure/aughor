@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from aughor.llm import provider as P
+from pramanyx.llm import provider as P
 
 # Every env var that can move what `current_config()` reports. GEMINI_API_KEY and
 # OPENROUTER_API_KEY were missing until 2026-08-04, so `test_defaults_when_empty` — which
@@ -11,8 +11,8 @@ from aughor.llm import provider as P
 # fixture named `clean_cfg` has to clear everything it claims to isolate, or it reports a
 # pass that depends on whose machine it ran on.
 _ENV_VARS = (
-    "AUGHOR_BACKEND", "AUGHOR_MODEL", "AUGHOR_CODER_MODEL", "AUGHOR_NARRATOR_MODEL",
-    "AUGHOR_FAST_NARRATOR_MODEL", "GROQ_API_KEY", "TOGETHER_API_KEY", "ANTHROPIC_API_KEY",
+    "PRAMANYX_BACKEND", "PRAMANYX_MODEL", "PRAMANYX_CODER_MODEL", "PRAMANYX_NARRATOR_MODEL",
+    "PRAMANYX_FAST_NARRATOR_MODEL", "GROQ_API_KEY", "TOGETHER_API_KEY", "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY", "OPENROUTER_API_KEY",
 )
 
@@ -199,8 +199,8 @@ def test_the_other_two_states_are_unchanged(clean_cfg):
 def test_the_org_overlay_reads_a_stored_key_rather_than_assuming_it(clean_cfg):
     """The org panel reported `True` for the mere PRESENCE of a stored key, without ever
     decrypting it — so it could not tell a working tenant key from an unreadable one."""
-    from aughor.llm.org_config import _stored_key_state
-    from aughor.secretvault import encrypt_secret
+    from pramanyx.llm.org_config import _stored_key_state
+    from pramanyx.secretvault import encrypt_secret
 
     assert _stored_key_state(None) == "unset"
     assert _stored_key_state("") == "unset"

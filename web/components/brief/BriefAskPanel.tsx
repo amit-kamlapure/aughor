@@ -23,7 +23,7 @@
  *     from what the user is reading.
  *
  * CA-1: crossed the seam. The reducer hook is retired; this panel drives
- * `useAughorChat` (the AI-SDK transport) and renders each turn through the same
+ * `usePramanyxChat` (the AI-SDK transport) and renders each turn through the same
  * `projectTurn` → `PartsMessage` path the chat surfaces use.
  *
  * Layout follows ChatPanel's split: a fixed-width flex sibling that PUSHES the brief left
@@ -35,12 +35,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import { projectThread, newSessionId } from "@/lib/chatTurn";
-import { useAughorChat } from "@/lib/useAughorChat";
+import { usePramanyxChat } from "@/lib/usePramanyxChat";
 import { Input } from "@/components/ui/input";
 
 export const BRIEF_ASK_PANEL_WIDTH = 420;
 
-/** The `surface` this panel sends — `BRIEFING_SURFACE` in `aughor/knowledge/brief_context.py`. */
+/** The `surface` this panel sends — `BRIEFING_SURFACE` in `pramanyx/knowledge/brief_context.py`. */
 export const BRIEFING_SURFACE = "briefing";
 
 export function BriefAskPanel({
@@ -60,7 +60,7 @@ export function BriefAskPanel({
   onOpenInAsk: (q: string) => void;
 }) {
   const [sessionId] = useState(() => newSessionId());
-  const { messages, sendMessage, status, error } = useAughorChat({
+  const { messages, sendMessage, status, error } = usePramanyxChat({
     connectionId,
     sessionId,
     // depth:"quick" is the whole contract. `mode` stays "auto" so the unified /ask

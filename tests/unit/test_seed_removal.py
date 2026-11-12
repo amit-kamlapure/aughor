@@ -9,8 +9,8 @@ import json
 import duckdb
 import pytest
 
-from aughor.connectors.file.local_upload import LocalUploadConnection
-from aughor.control_plane import vending
+from pramanyx.connectors.file.local_upload import LocalUploadConnection
+from pramanyx.control_plane import vending
 
 
 @pytest.fixture

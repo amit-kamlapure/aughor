@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.doors import CLOSED, NEEDS_SETUP, OPEN, UNAVAILABLE, doors, summary
-from aughor.automations.models import Automation, Condition, Effect
+from pramanyx.automations.doors import CLOSED, NEEDS_SETUP, OPEN, UNAVAILABLE, doors, summary
+from pramanyx.automations.models import Automation, Condition, Effect
 
 CONN = "ds17"
 
@@ -30,7 +30,7 @@ CONN = "ds17"
 def _clean_automations():
     """The automations store is SESSION-scoped — a chain saved here is still there when
     the next file asks what is exposed. (Third time this trap has been paid for.)"""
-    from aughor.automations.store import delete_automation, list_automations
+    from pramanyx.automations.store import delete_automation, list_automations
     for a in list_automations(conn_id=CONN):
         delete_automation(a.id)
     yield
@@ -42,7 +42,7 @@ def _clean_automations():
 def _a_running_clock(monkeypatch):
     """Most tests are about the CHAIN half, so pin the deployment half to a live heartbeat.
     The tests that are about the clock override this explicitly."""
-    monkeypatch.setattr("aughor.automations.scheduler.clock",
+    monkeypatch.setattr("pramanyx.automations.scheduler.clock",
                         lambda: ("heartbeat", "in-process heartbeat, every 60s"))
 
 
@@ -51,7 +51,7 @@ def _one_slack_bot(monkeypatch):
     """Likewise for Slack: a deployment with exactly one usable bot, unless a test says
     otherwise. Patched rather than left to the real store because these files share
     session-scoped stores, and a bot another file created would make "no bots" untrue."""
-    monkeypatch.setattr("aughor.slackbots.store.list_bots",
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots",
                         lambda **_: [object()])
 
 
@@ -115,7 +115,7 @@ def test_a_deployment_with_no_clock_reports_the_schedule_door_UNAVAILABLE(monkey
     """`start()` swallows its own failure as non-fatal, so this is a state a deployment can
     genuinely be in — and nothing else in the product reports it. A door that read `open`
     here is the palette's original sin: offering something that quietly does nothing."""
-    monkeypatch.setattr("aughor.automations.scheduler.clock",
+    monkeypatch.setattr("pramanyx.automations.scheduler.clock",
                         lambda: ("stopped", "no clock is running in this process"))
     d = _by_kind(_chain())["schedule"]
     assert d["state"] == UNAVAILABLE
@@ -126,7 +126,7 @@ def test_serverless_keeps_the_schedule_door_OPEN(monkeypatch):
     """The alt-door rule applied to the clock. On Vercel the in-process heartbeat is OFF by
     design and an external cron drives the tick; a door that looked for a THREAD would tell
     that deployment its schedules are dead while they fire every minute."""
-    monkeypatch.setattr("aughor.automations.scheduler.clock",
+    monkeypatch.setattr("pramanyx.automations.scheduler.clock",
                         lambda: ("external", "serverless — an external cron calls GET /cron/tick"))
     d = _by_kind(_chain())["schedule"]
     assert d["state"] == OPEN
@@ -140,7 +140,7 @@ def test_a_deployment_with_no_slack_bot_is_pointed_at_the_manifest_never_at_OAut
     and Microsoft both accept them — Slack is the one that does not), so a fresh clone sent
     to the OAuth door is sent to a door it cannot open. Socket Mode needs no public URL,
     and it is what `slack_post` actually uses."""
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", lambda **_: [])
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", lambda **_: [])
     d = _by_kind(_chain(steps=("investigate", "slack_post")))["slack"]
     assert d["state"] == NEEDS_SETUP
     assert "oauth" not in d["reason"].lower()
@@ -156,7 +156,7 @@ def test_a_disabled_bot_is_not_a_door(monkeypatch):
         seen.update(kw)
         return []                       # i.e. none once the disabled ones are excluded
 
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", _bots)
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", _bots)
     _by_kind(_chain(steps=("slack_post",)))["slack"]
     assert seen.get("include_disabled") is False
 
@@ -182,7 +182,7 @@ def test_an_unreachable_bot_store_does_not_close_the_slack_door(monkeypatch):
     def _boom(**_):
         raise RuntimeError("bot store unreachable")
 
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", _boom)
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", _boom)
     d = _by_kind(_chain(steps=("slack_post",)))["slack"]
     assert d["state"] == OPEN
     assert "socket mode" not in d["reason"].lower(), "a failed probe must not claim an absence"
@@ -192,7 +192,7 @@ def test_an_unreadable_clock_does_not_declare_the_schedule_door_dead(monkeypatch
     def _boom():
         raise RuntimeError("scheduler module unreachable")
 
-    monkeypatch.setattr("aughor.automations.scheduler.clock", _boom)
+    monkeypatch.setattr("pramanyx.automations.scheduler.clock", _boom)
     assert _by_kind(_chain())["schedule"]["state"] == OPEN
 
 
@@ -224,7 +224,7 @@ def test_a_name_that_would_shadow_a_static_tool_is_refused_BEFORE_the_door_opens
 
 
 def test_two_chains_answering_to_one_name_is_refused_with_the_rival_named():
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.store import upsert_automation
     upsert_automation(_chain(name="Revenue check", exposed=True))
     rival = _chain(name="revenue  check", exposed=False)
     d = _by_kind(rival)["mcp_tool"]
@@ -247,8 +247,8 @@ def test_a_webhook_trigger_with_no_url_issued_is_CLOSED():
 
 
 def test_an_issued_url_OPENS_the_door_and_the_menu_never_carries_the_token():
-    from aughor.automations.store import upsert_automation
-    from aughor.automations.webhooks import issue_webhook_token
+    from pramanyx.automations.store import upsert_automation
+    from pramanyx.automations.webhooks import issue_webhook_token
 
     a = upsert_automation(_chain(triggers=("webhook",)))
     token = issue_webhook_token(a.id)
@@ -263,8 +263,8 @@ def test_an_issued_url_OPENS_the_door_and_the_menu_never_carries_the_token():
 def test_a_switched_off_chain_says_the_url_is_accepted_and_does_nothing():
     """Both facts, in order. `open` would promise a caller something the engine declines;
     saying nothing about the URL would suggest revoking it is unnecessary."""
-    from aughor.automations.store import upsert_automation
-    from aughor.automations.webhooks import issue_webhook_token
+    from pramanyx.automations.store import upsert_automation
+    from pramanyx.automations.webhooks import issue_webhook_token
 
     a = upsert_automation(_chain(triggers=("webhook",), enabled=False))
     issue_webhook_token(a.id)

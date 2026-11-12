@@ -4,7 +4,7 @@ assertions are isolated from any real jobs the app's lifespan may have started.
 """
 import json
 
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.ledger import Ledger
 
 
 def _seed_job(jid, kind, state, conn_id, *, metrics=None, payload=None, finished=True):

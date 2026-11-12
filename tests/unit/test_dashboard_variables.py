@@ -15,10 +15,10 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.dashboards import pieces, queries as Q, validate as V, variables, versions, wiring
-from aughor.dashboards.home import Home
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
+from pramanyx.dashboards import pieces, queries as Q, validate as V, variables, versions, wiring
+from pramanyx.dashboards.home import Home
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
 from tests.unit.test_dashboard_canvas import ME, volumes  # noqa: F401 — the fixture, by name
 from tests.unit.test_dashboard_wiring import _desk, _flags, _graph
 
@@ -138,9 +138,9 @@ def test_a_bound_query_returns_exactly_the_rows_its_values_ask_and_a_value_never
 
 @pytest.fixture
 def client(db, monkeypatch):
-    from aughor.api import app
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
-    monkeypatch.setattr("aughor.dashboards.pieces.served_graph", lambda conn: None)
+    from pramanyx.api import app
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.dashboards.pieces.served_graph", lambda conn: None)
     return TestClient(app)
 
 
@@ -161,7 +161,7 @@ def test_a_preview_binds_the_values_it_is_sent_and_says_which_it_reads(client, r
 
 
 def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own(client, rows):
-    from aughor.cards.store import get_card
+    from pramanyx.cards.store import get_card
     conn = f"v{uuid.uuid4().hex[:6]}"
     fig = {"as": "figure", "series": [{"column": "total_amount", "agg": "sum"}]}
     r = client.post("/dashboards/queries", params={"connection_id": conn}, json={"sql": ASKED, "shown": fig, "values": VALUES})
@@ -181,14 +181,14 @@ def test_a_kept_query_keeps_its_values_by_name_and_each_run_binds_the_page_s_own
 
 
 def test_a_query_reading_values_is_read_as_it_says_for_a_range_and_says_why(client, monkeypatch):
-    from aughor.briefing.ranges import RangeSpec
+    from pramanyx.briefing.ranges import RangeSpec
     conn = f"v{uuid.uuid4().hex[:6]}"
     card = client.post("/dashboards/queries", params={"connection_id": conn},
                        json={"sql": ASKED, "shown": TABLE, "values": VALUES}).json()["card"]
     d = dt.date(2024, 6, 1)
     spec = RangeSpec(preset="last_7_days", start=d, end=d + dt.timedelta(days=7), previous_start=d - dt.timedelta(days=7),
                      previous_end=d, last_year_start=None, last_year_end=None, as_of=d, lag_days=0, lag_source="test")
-    monkeypatch.setattr("aughor.routers.cards._card_range", lambda *a, **k: spec)
+    monkeypatch.setattr("pramanyx.routers.cards._card_range", lambda *a, **k: spec)
     run = client.post(f"/cards/{card['id']}/run", params={"preset": "last_7_days"}, json={"values": VALUES}).json()
     assert run["error"] is None and run["scoped"]["standing"] is True
     assert run["scoped"]["why"] == "It reads the dashboard's own values, so it is read as its query says, not cut to the range."
@@ -232,8 +232,8 @@ def test_the_server_reads_each_value_as_the_web_does_and_a_set_reading_a_count_c
 @needs_rules
 def test_the_keep_door_refuses_a_property_the_entity_lacks_and_a_query_whose_value_is_gone(
         volumes, monkeypatch):  # noqa: F811
-    from aughor.dashboards import cards
-    from aughor.cards.models import StoredCard
+    from pramanyx.dashboards import cards
+    from pramanyx.cards.models import StoredCard
     monkeypatch.setattr(pieces, "accepted_edits", lambda conn: [])
     tag = uuid.uuid4().hex[:6]
     home = Home(f"vars{tag}", ME, f"desk-{tag}")

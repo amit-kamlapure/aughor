@@ -2,7 +2,7 @@
 needs no embed model. The threshold was calibrated on real briefing pairs (paraphrase
 dupes cosine 0.87-0.93, distinct-but-related ≤0.78).
 """
-from aughor.semantic.finding_dedup import max_cosine, is_paraphrase_duplicate, DEFAULT_THRESHOLD
+from pramanyx.semantic.finding_dedup import max_cosine, is_paraphrase_duplicate, DEFAULT_THRESHOLD
 
 
 def test_max_cosine_picks_the_closest():

@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm.provider import _retry_at_low_reasoning
-from aughor.llm.reliability import EMPTY, TRUNCATED, Diagnosis, StructuredOutputError
+from pramanyx.llm.provider import _retry_at_low_reasoning
+from pramanyx.llm.reliability import EMPTY, TRUNCATED, Diagnosis, StructuredOutputError
 
 
 def _truncated() -> StructuredOutputError:

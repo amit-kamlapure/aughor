@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-09-11T11:20:27+00:00",
-  "compiler": "aughor.semantic.object_query",
+  "compiler": "pramanyx.semantic.object_query",
   "graphs": {
     "evals/ablation_samples_ecommerce.jsonl": "evals/ablation_samples_ecommerce_ontology_measured.json",
     "evals/ablation_luxexperience_hard.jsonl": "evals/ablation_luxexperience_ontology_measured.json"

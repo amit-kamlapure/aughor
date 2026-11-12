@@ -9,7 +9,7 @@ SUCCEEDED, and cancel → CANCELLED + reconcile); these lock the mechanics.
 import asyncio
 import inspect
 
-import aughor.routers.investigations as inv_mod
+import pramanyx.routers.investigations as inv_mod
 
 
 def test_wrapper_streams_generator_output_and_submits_a_job(monkeypatch):
@@ -28,7 +28,7 @@ def test_wrapper_streams_generator_output_and_submits_a_job(monkeypatch):
             asyncio.create_task(coro_factory())   # run the drive coro
             return "job-test"
 
-    import aughor.kernel.jobs as jobs_mod
+    import pramanyx.kernel.jobs as jobs_mod
     monkeypatch.setattr(jobs_mod, "kernel", lambda: _FakeKernel())
 
     async def _collect():
@@ -56,7 +56,7 @@ def test_wrapper_releases_client_even_when_generator_errors(monkeypatch):
             asyncio.create_task(coro_factory())
             return "job-test"
 
-    import aughor.kernel.jobs as jobs_mod
+    import pramanyx.kernel.jobs as jobs_mod
     monkeypatch.setattr(jobs_mod, "kernel", lambda: _FakeKernel())
 
     async def _collect():
@@ -84,7 +84,7 @@ def test_cancel_route_maps_investigation_to_its_job(monkeypatch):
     events = [{"job_id": "jX", "payload": {"investigation_id": "invA"}},
               {"job_id": "jY", "payload": {"investigation_id": "invB"}}]
 
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
 
     class _L:
         def events(self, **kw):
@@ -102,14 +102,14 @@ def _stub_agent(monkeypatch, checkpoint_values):
     """Make build_graph_generic + open_connection_for return stubs whose checkpoint
     holds `checkpoint_values`, so salvage_orphaned_investigation can run hermetically."""
     from types import SimpleNamespace
-    import aughor.agent.graph as graph_mod
+    import pramanyx.agent.graph as graph_mod
 
     class _DB:
         def close(self): pass
 
     # Salvage now opens via ExecutionScope.open(), which imports from the canonical source —
     # patch there (not the router re-export) so the stub takes.
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: _DB())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: _DB())
     agent = SimpleNamespace(get_state=lambda cfg: SimpleNamespace(values=checkpoint_values))
     monkeypatch.setattr(graph_mod, "build_graph_generic", lambda db, hitl=False: agent)
 
@@ -148,6 +148,6 @@ def test_salvage_fails_cleanly_when_no_evidence(monkeypatch):
 def test_boot_wires_salvage_after_kernel_recovery():
     """Tripwire: salvage jobs must be submitted AFTER kernel boot_recovery sweeps the
     job table, else they'd be failed as orphans themselves."""
-    import aughor.api as api_mod
+    import pramanyx.api as api_mod
     src = inspect.getsource(api_mod._kernel_boot_recovery)
     assert "_recover_orphaned_investigations()" in src

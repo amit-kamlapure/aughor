@@ -1,4 +1,4 @@
-"""Unit tests for the connection pool (aughor/db/pool.py).
+"""Unit tests for the connection pool (pramanyx/db/pool.py).
 
 Correctness-critical: a pooled connection must never be shared by two callers at
 once, a double-close must not double-return it, stale/unhealthy connections must
@@ -6,8 +6,8 @@ be discarded, and opt-outs must bypass pooling entirely.
 """
 import time
 
-import aughor.db.pool as poolmod
-from aughor.db.pool import ConnectionPool
+import pramanyx.db.pool as poolmod
+from pramanyx.db.pool import ConnectionPool
 
 
 class FakeConn:

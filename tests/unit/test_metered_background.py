@@ -14,11 +14,11 @@ import json
 import threading
 import time
 
-from aughor.kernel import jobs as jobs_mod
-from aughor.kernel import metering
-from aughor.kernel.agents import charter_for_kind
-from aughor.kernel.concurrency import ContextThreadPoolExecutor
-from aughor.kernel.jobs import JobKernel, submit_background_tick
+from pramanyx.kernel import jobs as jobs_mod
+from pramanyx.kernel import metering
+from pramanyx.kernel.agents import charter_for_kind
+from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
+from pramanyx.kernel.jobs import JobKernel, submit_background_tick
 
 
 def test_watcher_briefer_charters_are_wired_with_budgets():
@@ -51,16 +51,16 @@ def test_monitor_tick_routes_through_the_kernel_with_inline_fallback(monkeypatch
     carried this property was deleted with the legacy scheduler, and a monitor now
     ticks through the automation engine — `automations.scheduler._run_one` over the
     monitor read as a virtual automation. Same claim, current loop."""
-    from aughor.automations.adopt import monitor_as_automation
-    from aughor.automations import scheduler as auto_sched
+    from pramanyx.automations.adopt import monitor_as_automation
+    from pramanyx.automations import scheduler as auto_sched
 
     class _M:
         id, name, conn_id, enabled = "m1", "M", "c1", True
         check_cron = "* * * * *"
 
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", lambda cid: "default", raising=False)
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org", lambda cid: "default", raising=False)
     calls = {"submit": 0, "run": 0}
-    monkeypatch.setattr("aughor.automations.engine.run_automation",
+    monkeypatch.setattr("pramanyx.automations.engine.run_automation",
                         lambda a, **k: calls.__setitem__("run", calls["run"] + 1), raising=False)
     monkeypatch.setattr(jobs_mod, "submit_background_tick",
                         lambda *a, **k: (calls.__setitem__("submit", calls["submit"] + 1), "job1")[1])

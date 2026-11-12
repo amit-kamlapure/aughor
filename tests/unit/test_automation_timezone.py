@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from aughor.automations.engine import next_fire_utc
+from pramanyx.automations.engine import next_fire_utc
 
 
 def _utc(y, m, d, h, mi=0):
@@ -46,9 +46,9 @@ def test_the_result_is_always_utc_whatever_clock_evaluates():
 def test_the_scheduler_reads_the_chains_own_clock():
     """`_schedule_fired` due-ness through the same factory: a Berlin 09:00 chain whose
     last run was yesterday is DUE at 07:05Z in July, and not yet at 06:55Z."""
-    from aughor.automations.engine import _schedule_fired
-    from aughor.automations.models import Automation, AutomationRun, Condition, Effect
-    from aughor.automations.store import append_run, upsert_automation
+    from pramanyx.automations.engine import _schedule_fired
+    from pramanyx.automations.models import Automation, AutomationRun, Condition, Effect
+    from pramanyx.automations.store import append_run, upsert_automation
 
     a = upsert_automation(Automation(
         conn_id="conn-tz", name="berlin nine", timezone="Europe/Berlin",
@@ -67,7 +67,7 @@ def test_the_scheduler_reads_the_chains_own_clock():
 
 def test_a_typoed_clock_refuses_at_construction():
     import pytest
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.models import Automation, Condition, Effect
     with pytest.raises(ValueError, match="Europe/Berlin"):
         Automation(conn_id="c", name="x", timezone="Europe/Berlni",
                    conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
@@ -77,8 +77,8 @@ def test_a_typoed_clock_refuses_at_construction():
 def test_the_first_run_mute_and_the_draft_speak_the_same_instant(monkeypatch, tmp_path):
     """The store mutes a fresh chain until its first SCHEDULED time — in the chain's
     own clock now — and the drafted first_run states the same instant."""
-    from aughor.automations.store import _first_scheduled_time
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import _first_scheduled_time
+    from pramanyx.automations.models import Automation, Condition, Effect
 
     a = Automation(conn_id="c", name="x", timezone="Europe/Berlin",
                    conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
@@ -91,10 +91,10 @@ def test_the_first_run_mute_and_the_draft_speak_the_same_instant(monkeypatch, tm
 
 def test_edit_by_sentence_moves_the_clock(monkeypatch):
     """'switch it to Europe/Berlin' is a one-field diff through the same edit door."""
-    import aughor.agent.spotlight_act as act
-    from aughor.actions.inbox import accept_proposal
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import get_automation, upsert_automation
+    import pramanyx.agent.spotlight_act as act
+    from pramanyx.actions.inbox import accept_proposal
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import get_automation, upsert_automation
 
     a = upsert_automation(Automation(
         conn_id="conn-tz", name="utc nine",
@@ -115,9 +115,9 @@ def test_edit_by_sentence_moves_the_clock(monkeypatch):
 
 
 def test_the_timezone_preference_key_validates_and_reaches_drafts(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "prefs.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "prefs.db"))
     import pytest
-    from aughor.db.user_prefs import preferred_timezone, set_preference
+    from pramanyx.db.user_prefs import preferred_timezone, set_preference
 
     with pytest.raises(ValueError, match="IANA"):
         set_preference("timezone", "CEST")

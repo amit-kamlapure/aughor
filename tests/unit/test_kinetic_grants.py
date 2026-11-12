@@ -5,15 +5,15 @@ approval), eligible only for a single-parameter action, cited on every auto-allo
 its minter, and — the safety line — it bypasses APPROVAL only, never the submission criteria.
 
 The executor runs unmocked so the real approval pipeline (govern.guard, 428, audit) is exercised;
-``AUGHOR_ACTION_APPROVAL`` is forced on per test so HIGH-risk actions actually gate.
+``PRAMANYX_ACTION_APPROVAL`` is forced on per test so HIGH-risk actions actually gate.
 """
 from __future__ import annotations
 
 import pytest
 
-from aughor.actions import grants
-from aughor.actions.executor import execute_kinetic_action
-from aughor.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
+from pramanyx.actions import grants
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
 
 
 def _single(**kw) -> KineticAction:
@@ -33,13 +33,13 @@ def _multi() -> KineticAction:
 
 @pytest.fixture
 def proposals_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: n == "automations.proposals")
 
 
 @pytest.fixture
 def approval_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
 
 
 # ── eligibility ──────────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ def test_a_numeric_grant_minted_from_coerced_params_actually_matches(proposals_o
     NUMERIC action accepted with 500 coerces to 500.0; a grant bound as raw '500' would never match
     the executor's coerced '500.0'. Minting from coerced params is what makes the grant it just
     created usable. (VARCHAR tests miss this because coercion is identity there.)"""
-    from aughor.actions.executor import coerce_params
+    from pramanyx.actions.executor import coerce_params
     action = KineticAction(
         id="refund_eur", kind="side_effect",
         params=[ActionParameter(name="amount_eur", data_type="NUMERIC", required=True)],

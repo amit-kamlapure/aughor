@@ -8,7 +8,7 @@ the rest, so a single-table catalog like ``netflix.netflix_titles`` got ZERO
 exploration and ZERO briefing (it just vanished). Splitting into one pass per
 dataset must drop nothing.
 """
-from aughor.explorer.agent import _build_domain_passes
+from pramanyx.explorer.agent import _build_domain_passes
 
 
 def test_single_dataset_one_pass_per_domain():

@@ -15,7 +15,7 @@ from datetime import date, timedelta
 import duckdb
 import pytest
 
-from aughor.semantic import coverage_proposals as CP
+from pramanyx.semantic import coverage_proposals as CP
 
 TODAY = date.today()
 
@@ -57,14 +57,14 @@ def shop(tmp_path, monkeypatch):
                          **col("web_sessions", "session_id", "bigint"),
                          **col("web_sessions", "session_start", "timestamp"),
                          **col("web_sessions", "converted", "boolean")}}
-    from aughor.business_profile import metric_kb
-    from aughor.business_profile import store as profile_store
-    from aughor.db import connection as dbconn
-    from aughor.semantic import metrics as metric_store
-    from aughor.tools import profile_cache
+    from pramanyx.business_profile import metric_kb
+    from pramanyx.business_profile import store as profile_store
+    from pramanyx.db import connection as dbconn
+    from pramanyx.semantic import metrics as metric_store
+    from pramanyx.tools import profile_cache
     # a metrics file of the test's own: a definition saved here never reaches another test's raw read
     monkeypatch.setattr(metric_store, "_DEFAULT_PATH", tmp_path / "metrics.json", raising=False)
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
     monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
     monkeypatch.setattr(profile_cache, "merged_profile_entry", lambda *a, **k: entry)
     monkeypatch.setattr(profile_cache, "profile_entry_for", lambda *a, **k: entry)
@@ -76,7 +76,7 @@ def shop(tmp_path, monkeypatch):
 
 
 def _bind(conn: str, order_item: dict) -> None:
-    from aughor.packs.bindings import save_binding
+    from pramanyx.packs.bindings import save_binding
     save_binding("retail", conn, {"order_item": order_item}, schema="")
 
 
@@ -91,16 +91,16 @@ def test_a_recipe_bound_to_a_table_whose_every_row_is_a_return_is_proposed_refus
     assert rate["gates"]["moves"]["ok"] is False and "it reads 1 in every one" in rate["gates"]["moves"]["why"]
     assert rate["reason"].startswith("its roles are bound to the right columns — no: the formula counts a row")
 
-    from aughor.semantic.metric_catalogue import catalogue_for
+    from pramanyx.semantic.metric_catalogue import catalogue_for
     row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
     assert (row.source, row.state, row.area) == ("industry", "gate_failed", "returns")
     assert row.reason == rate["reason"]
 
-    from aughor import govern
+    from pramanyx import govern
     monkeypatch.setattr(govern, "guard", lambda *a, **k: None)
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     with TestClient(app) as client:
         got = client.post(f"/metrics/catalogue/{conn}/adopt", json={"items": [{"name": "return_rate"}]}).json()
     assert got["adopted"] == []
@@ -115,7 +115,7 @@ def test_bound_to_the_sold_lines_the_same_recipe_passes_every_gate(shop):
     assert rate["state"] == CP.STATE_PROPOSED, rate["reason"]
     assert set(rate["gates"]) >= {"runs", "dated", "window", "binding", "moves", "sane_range"}
     assert rate["time_column"] == "order_items.created_at"
-    from aughor.semantic.metric_catalogue import catalogue_for
+    from pramanyx.semantic.metric_catalogue import catalogue_for
     row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
     assert row.state == "proposed" and row.gates["sane_range"]["ok"] is True
 
@@ -125,7 +125,7 @@ def test_a_verdict_read_under_a_binding_that_changed_is_not_applied(shop):
     _bind(conn, {"table": "returns", "columns": {"returned_at": "return_date"}})
     CP.run(conn, None)
     _bind(conn, {"table": "order_items", "columns": {"returned_at": "returned_at"}})
-    from aughor.semantic.metric_catalogue import catalogue_for
+    from pramanyx.semantic.metric_catalogue import catalogue_for
     row = next(r for r in catalogue_for(conn) if r.name == "return_rate")
     assert row.state == "proposed" and row.gates is None
 
@@ -134,7 +134,7 @@ def test_a_verdict_read_under_a_binding_that_changed_is_not_applied(shop):
 
 def test_a_measure_three_findings_keep_computing_is_proposed_in_its_area(shop, monkeypatch):
     conn, _ = shop
-    from aughor.explorer import store as explorer_store
+    from pramanyx.explorer import store as explorer_store
     findings = [{"id": f"f{i}", "sql": f"SELECT SUM(refund) FROM returns WHERE return_id > {i}"} for i in range(3)]
     monkeypatch.setattr(explorer_store, "get_findings", lambda *a, **k: findings)
     out = CP.run(conn, None)
@@ -176,7 +176,7 @@ def test_the_writer_gets_one_call_per_uncovered_area_and_its_mistakes_are_refuse
              "sql": "SELECT COUNT(*) FROM web_sessions", "time_column": "web_sessions.session_start"}],
             "skipped": [{"pattern_id": "ec_net_revenue", "why": "no discount column"}]},
     })
-    from aughor.llm import provider as llm_provider
+    from pramanyx.llm import provider as llm_provider
     monkeypatch.setattr(llm_provider, "get_provider", lambda *a, **k: provider)
     out = CP.run(conn, None, write=True, why="the connection was profiled")
     spend = out["spend"]
@@ -197,7 +197,7 @@ def test_the_writer_gets_one_call_per_uncovered_area_and_its_mistakes_are_refuse
     orders = next(a for a in spend["areas"] if a["area"] == "orders_sales")
     assert orders["skipped"] == [{"pattern": "ec_net_revenue", "why": "no discount column"}]
     # the catalogue lists the writer's proposals as their own source, a refused one not adoptable
-    from aughor.semantic.metric_catalogue import catalogue_for
+    from pramanyx.semantic.metric_catalogue import catalogue_for
     rows = {r.name: r for r in catalogue_for(conn) if r.source == "coverage"}
     assert rows["gmv"].state == "proposed" and rows["gmv"].why_it_matters == ("the knowledge base's Gross Merchandise "
                                                                              "Value (GMV)")
@@ -207,7 +207,7 @@ def test_the_writer_gets_one_call_per_uncovered_area_and_its_mistakes_are_refuse
 def test_a_run_that_is_not_asked_to_write_makes_no_model_call(shop, monkeypatch):
     """The run door proposes by code only; the writer writes when the connection is profiled, or on its own door."""
     conn, _ = shop
-    from aughor.llm import provider as llm_provider
+    from pramanyx.llm import provider as llm_provider
     monkeypatch.setattr(llm_provider, "get_provider", lambda *a, **k: pytest.fail("a model was called"))
     out = CP.run(conn, None)
     assert out["spend"] is None and "flags" not in out
@@ -218,12 +218,12 @@ def test_an_area_a_metric_already_covers_is_still_written_for_its_open_patterns_
     """LuxExperience's Traffic & conversion had one working metric beside 22 patterns: covered, and thin. The writer is
     handed the patterns no metric there computes, never the one already measured."""
     conn, _ = shop
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="gmv", label="GMV", sql="SELECT SUM(sale_price) AS gmv FROM order_items",
                                  connection=conn, status="approved", time_kind="flow",
                                  time_column="order_items.created_at"))
     provider = _Provider({})
-    from aughor.llm import provider as llm_provider
+    from pramanyx.llm import provider as llm_provider
     monkeypatch.setattr(llm_provider, "get_provider", lambda *a, **k: provider)
     CP.run(conn, None, write=True)
     orders = next(u for u in provider.prompts if "AREA: Orders & sales" in u)
@@ -234,7 +234,7 @@ def test_an_area_a_metric_already_covers_is_still_written_for_its_open_patterns_
 def test_a_number_is_not_a_date_and_two_proposals_of_one_figure_are_one_measure():
     """Live 2026-10-26 on LuxExperience: cost per click dated by `fiscal_year`, and three consent proposals reading
     0.6196 alike."""
-    from aughor.semantic.metric_gates import column_kind
+    from pramanyx.semantic.metric_gates import column_kind
     assert CP._date_type("marketing_campaigns.fiscal_year", {"marketing_campaigns.fiscal_year": {
         "table": "marketing_campaigns", "column": "fiscal_year", "dtype": "integer"}}) == "integer"
     assert column_kind("integer") == "integer" and column_kind("text") == "text" and column_kind("date") == "time"
@@ -254,12 +254,12 @@ def test_a_proposal_dated_by_a_year_number_is_refused_before_its_figures_are_rea
     c = duckdb.connect(str(path))
     c.execute("CREATE TABLE campaigns AS SELECT 2025 AS fiscal_year, 10.0 AS spend, 100 AS clicks")
     c.close()
-    from aughor.tools import profile_cache
+    from pramanyx.tools import profile_cache
     entry = profile_cache.merged_profile_entry(conn)
     entry["columns"]["campaigns.fiscal_year"] = {"table": "campaigns", "column": "fiscal_year", "dtype": "integer"}
     p = {"name": "cpc", "label": "Cost per click", "sql": "SELECT SUM(spend) / SUM(clicks) FROM campaigns",
          "time_column": "campaigns.fiscal_year", "gates": {}}
-    from aughor.db.connection import open_connection
+    from pramanyx.db.connection import open_connection
     db = open_connection("duckdb", str(path))
 
     def run_sql(sql):

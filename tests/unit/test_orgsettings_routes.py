@@ -7,11 +7,11 @@ override, and the workspace router threads settings_override through create/upda
 """
 import pytest
 
-from aughor.orgsettings import store as S
-from aughor.orgsettings.models import OrgSettings
-from aughor.routers import orgsettings as R
-from aughor.routers import workspace as WR
-from aughor.workspace import store as WS
+from pramanyx.orgsettings import store as S
+from pramanyx.orgsettings.models import OrgSettings
+from pramanyx.routers import orgsettings as R
+from pramanyx.routers import workspace as WR
+from pramanyx.workspace import store as WS
 
 
 @pytest.fixture(autouse=True)

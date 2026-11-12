@@ -15,9 +15,9 @@ import copy
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology import put_back as PB
-from aughor.ontology.overrides import OntologyOverride, find_override, save_override, viewing
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import put_back as PB
+from pramanyx.ontology.overrides import OntologyOverride, find_override, save_override, viewing
 from tests.unit.test_object_processes import FULFILMENT, PARAMS, door  # noqa: F401 — `door` is a fixture
 
 CONN, SCHEMA = "put-back-t", "ecommerce"
@@ -26,14 +26,14 @@ PROCESS = {"kind": "process", "target_id": "order_fulfilment"}
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_SEED_ROOT", tmp_path / "seed")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: [])
 
 
 def _promise_days(process: dict) -> int:
@@ -58,7 +58,7 @@ def _published_and_moved(client) -> int:
 # ── through the doors ──────────────────────────────────────────────────────────────────────
 
 def test_a_version_put_back_waits_in_the_draft_classed_and_counted_until_published(door, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     five = _published_and_moved(client)
     history = client.get("/ontology/history", params={**PARAMS, **PROCESS}).json()
     assert history["put_back"] == {"enabled": True, "said": ""}
@@ -87,7 +87,7 @@ def test_a_version_put_back_waits_in_the_draft_classed_and_counted_until_publish
 
 
 def test_putting_back_what_readers_read_takes_the_waiting_change_away(door, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     _published_and_moved(client)
     seven = client.get("/ontology/history", params={**PARAMS, **PROCESS}).json()["versions"][0]["version"]
     nothing = client.post("/ontology/history/put-back", params=PARAMS, json={**PROCESS, "version": seven})
@@ -102,7 +102,7 @@ def test_putting_back_what_readers_read_takes_the_waiting_change_away(door, clie
 
 
 def test_refusals_are_said(door, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     _published_and_moved(client)
     missing = client.post("/ontology/history/put-back", params=PARAMS, json={**PROCESS, "version": 99})
     assert missing.status_code == 404 and "no version 99 of process 'order_fulfilment'" in missing.json()["detail"]
@@ -116,9 +116,9 @@ def test_refusals_are_said(door, client, monkeypatch):  # noqa: F811
 
 
 def test_a_version_that_no_longer_counts_is_refused_and_nothing_is_written(door, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     five = _published_and_moved(client)
-    monkeypatch.setattr("aughor.ontology.processes.resolve_process",
+    monkeypatch.setattr("pramanyx.ontology.processes.resolve_process",
                         lambda graph, pid, fields: ("stage 'delivered': Order has no delivered_at", fields))
     refused = client.post("/ontology/history/put-back", params=PARAMS, json={**PROCESS, "version": five})
     assert refused.status_code == 400 and "no delivered_at" in refused.json()["detail"]
@@ -131,14 +131,14 @@ def test_a_withdrawn_version_puts_back_the_fields_it_had(monkeypatch):
         "declared": True, "entity": "Customer", "kind": "value_set", "property": "country", "values": ["DE", "AT"]})
     OV.publish_override(CONN, SCHEMA, rule)                                       # in force — the release's own door
     assert OV.publish_withdrawal(CONN, SCHEMA, "rule", "dach")                    # withdrawn, recorded with its fields
-    from aughor.ontology import history
+    from pramanyx.ontology import history
     gone = history.versions(CONN, SCHEMA, "rule", "dach")[0]
     assert gone["state"] == "withdrawn" and gone["fields"]["values"] == ["DE", "AT"]
     plan = PB.plan(CONN, SCHEMA, "rule", "dach", gone["version"], by="person:ana")
     assert (plan.outcome, plan.state, plan.override.fields["values"]) == ("draft", "withdrawn", ["DE", "AT"])
     plan.override.binding = {"rule": {"bound": True, "note": "admits 3"}}       # what the rule door counts
     save_override(CONN, SCHEMA, plan.override)
-    from aughor.ontology import release as R
+    from pramanyx.ontology import release as R
     (row,) = R.changes(CONN, SCHEMA)
     assert (row["change"], row["class"]) == ("added", "SAFE")
     with viewing("published"):

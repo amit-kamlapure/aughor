@@ -29,11 +29,11 @@ import pytest
 import sqlglot
 from sqlglot import exp
 
-from aughor.db.connection import DuckDBConnection
-from aughor.kernel.registries.execution_hooks import collect_guard_receipts
-from aughor.semantic import enforcement as E
-from aughor.sql.executor import execute_guarded
-from aughor.sql.metric_filter_guard import enforce_metric_filters
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.kernel.registries.execution_hooks import collect_guard_receipts
+from pramanyx.semantic import enforcement as E
+from pramanyx.sql.executor import execute_guarded
+from pramanyx.sql.metric_filter_guard import enforce_metric_filters
 
 REVENUE = {"metric": "revenue", "formula": "SUM(sale_price)", "tables": ["order_items"],
            "filters": ["status <> 'Cancelled'"]}
@@ -295,7 +295,7 @@ LIVE_AOV = ("SELECT SAFE_DIVIDE(SUM(sale_price), COUNT(DISTINCT order_id)) AS av
 
 
 def test_a_statement_is_read_for_its_measure_its_table_and_its_where():
-    from aughor.sql.metric_filter_guard import measure_of, same_condition
+    from pramanyx.sql.metric_filter_guard import measure_of, same_condition
     assert measure_of(LIVE_REVENUE, "bigquery") == {
         "formula": "SUM(sale_price)", "tables": ["order_items"], "filters": ["status <> 'Cancelled'"]}
     (net,) = measure_of(LIVE_NET, "bigquery")["filters"]      # the parser's own spelling of NOT IN
@@ -319,7 +319,7 @@ def test_a_statement_is_read_for_its_measure_its_table_and_its_where():
     ("it is empty", ""),
 ])
 def test_what_is_not_one_measure_over_one_table_makes_no_rule(why, text):
-    from aughor.sql.metric_filter_guard import measure_of
+    from pramanyx.sql.metric_filter_guard import measure_of
     assert measure_of(text, "bigquery") is None, why
 
 
@@ -360,7 +360,7 @@ def test_a_tie_between_rivals_makes_no_rule():
 
 def test_the_bound_question_is_released(monkeypatch):
     seen = []
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics",
                         lambda connection_id=None: seen.append(connection_id) or [_metric()])
     assert E.rules_for_statement("c1") is None            # nothing bound, nothing to enforce
     with E.answering("total revenue in July"):
@@ -417,10 +417,10 @@ def test_the_evidence_shows_the_statement_that_ran(shop, monkeypatch):
     """The finding printed the model's statement beside the rewritten statement's rows, and
     the report then listed "does not distinguish between order statuses" as a data gap
     (live, 2026-09-29). The rows and the SQL a reader is shown are one statement's."""
-    from aughor.agent import analyst as A
-    from aughor.agent import converse_tools as T
+    from pramanyx.agent import analyst as A
+    from pramanyx.agent import converse_tools as T
     monkeypatch.setattr(T, "_connection", lambda cid, **kw: shop)
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics",
                         lambda connection_id=None: [_metric()])
     out = T.run_sql("declared", {"sql": STATEMENT}, user_question="total revenue in July")
     assert "status <> 'Cancelled'" in out["sql"] and float(out["rows"][0][0]) == 170.0
@@ -457,7 +457,7 @@ def test_a_rewrite_that_does_not_dry_run_is_not_adopted_and_the_result_says_so(s
 # ── Shown wherever the formula is shown ──────────────────────────────────────────────
 
 def test_the_prompt_block_prints_the_filter_with_the_formula():
-    from aughor.semantic.canonical import render_contracts_block
+    from pramanyx.semantic.canonical import render_contracts_block
     c = SimpleNamespace(key="revenue", sql="SUM(sale_price)", unit="$", injectable=True,
                         caveats="", filters=["status <> 'Cancelled'"])
     bare = SimpleNamespace(key="aov", sql="AVG(total)", unit="", injectable=True, caveats="",
@@ -469,8 +469,8 @@ def test_the_prompt_block_prints_the_filter_with_the_formula():
 
 
 def test_the_analyst_spec_and_the_report_definition_carry_it():
-    from aughor.agent.analyst import _spec_section
-    from aughor.agent.investigate import _metric_definition_receipt
+    from pramanyx.agent.analyst import _spec_section
+    from pramanyx.agent.investigate import _metric_definition_receipt
     intake = {"metric_label": "revenue", "metric_sql": "SUM(sale_price)",
               "metric_table": "order_items", "metric_filters": ["status <> 'Cancelled'"]}
     assert ("  metric filter (declared, part of the definition): status <> 'Cancelled'"
@@ -487,11 +487,11 @@ def test_the_analyst_spec_and_the_report_definition_carry_it():
     ("orders", []),          # the metric is not declared there; its filter names no column of it
 ])
 def test_the_pin_carries_the_filter_only_onto_the_declared_table(monkeypatch, spec_table, carried):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     governed = SimpleNamespace(name="revenue", label="Revenue", sql="SUM(sale_price)",
                                tables=["order_items"], filters=["status <> 'Cancelled'"],
                                verified=True, rank=0, unit="$", source="catalog")
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_match_canonical_metric", lambda *a, **k: governed)
     intake = SimpleNamespace(metric_label="revenue", metric_sql="sum( sale_price )",
@@ -506,7 +506,7 @@ def test_the_pin_carries_the_filter_only_onto_the_declared_table(monkeypatch, sp
 # includes cancelled lines" — the user chose: run it as written, and say what it is not.
 
 def _catalogue(monkeypatch):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     net = _metric(name="net_merchandise_revenue", label="Net Merchandise Revenue",
                   filters=["status NOT IN ('Cancelled', 'Returned')"])
     units = _metric(name="units_sold", label="Units Sold", sql="COUNT(id)",
@@ -538,7 +538,7 @@ def test_a_statement_that_deals_with_the_filter_is_told_nothing(monkeypatch):
 
 
 def test_the_editors_run_carries_the_note(client, monkeypatch):
-    from aughor.semantic import enforcement
+    from pramanyx.semantic import enforcement
     monkeypatch.setattr(enforcement, "declared_filter_notes", lambda sql, conn, dialect="duckdb": ["told"])
     r = client.post("/query/run", json={"conn_id": "fixture", "sql": "SELECT 1 AS one", "use_cache": False})
     assert r.status_code == 200

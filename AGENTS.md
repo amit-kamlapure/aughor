@@ -26,9 +26,9 @@ reasoning lives in the wave arc docs under `docs/`.
 - **No feature flags** (ROADMAP §3.65, the user, 2026-10-28). A feature merges on, as part
   of the platform; work that is not ready stays on its branch, and is shown working on live
   data before its PR. The only switches are an organisation's settings
-  (`aughor/orgsettings/allows.py`) — data leaving the install, model work nobody asked for,
+  (`pramanyx/orgsettings/allows.py`) — data leaving the install, model work nobody asked for,
   a governance posture — each off by default, an admin's choice, tested both ways. Since
-  2026-10-28 no feature flag is registered: the machinery (`aughor/kernel/flags.py`) stays,
+  2026-10-28 no feature flag is registered: the machinery (`pramanyx/kernel/flags.py`) stays,
   exercised only by test-only flags, so a new one is a decision, not a habit.
 - **One store per concept.** This repo has three times found the same bug: five
   mutually-unaware eval surfaces, thirteen spellings of "out of date", five audit sinks.
@@ -56,13 +56,13 @@ reasoning lives in the wave arc docs under `docs/`.
 
 - **Lint:** `uvx ruff@0.15.20 check .` (not `uv run ruff`).
 - **Tests:** run targeted — `pytest -k "ratchet or contract or <your area>"`. A full local
-  run has twice destroyed `data/`; each store honours an `AUGHOR_*_DB` override registered
+  run has twice destroyed `data/`; each store honours an `PRAMANYX_*_DB` override registered
   in `tests/conftest.py`, and a new store must be added there.
 - **`data/` is partly TRACKED on purpose** — `data/shipped/` is the governed content a reviewer
   should see in a diff (`data/context_graph/` was until the 2027 study's close-out: the graph is a
   projection of the ledger, rebuilt on demand, generated state now and untracked).
   `data/ontology_overrides/` and `data/ontology_column_config/` are an install's OWN trees now — on
-  a migrated install `aughor migrate-state` moves each into the state home, every file verified,
+  a migrated install `pramanyx migrate-state` moves each into the state home, every file verified,
   and the API refuses to start until it has (`db.migrate.top_up`). Nothing new is tracked in either
   (`test_seed_overlay_frozen`; the column config holds nothing tracked at all and is ignored): a
   declaration the repo ships goes in `data/shipped/ontology_overrides/` — under `key=<scope key>/`

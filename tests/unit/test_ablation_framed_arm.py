@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aughor.ontology.models import OntologyGraph
+from pramanyx.ontology.models import OntologyGraph
 from evals.ablation_eval import _arms_after_frame_check, _arms_after_impact_check, _summarize, framed_context
 
 REPO = Path(__file__).resolve().parents[2]
@@ -26,7 +26,7 @@ def test_a_declared_definition_gets_its_block_and_an_ambiguous_one_one_choice():
 
     def choose(f, g):
         chosen.append([o.name for o in f.candidates()])
-        from aughor.ontology.framing import frame_question
+        from pramanyx.ontology.framing import frame_question
         return frame_question(f.question, g, choice="delivery_breach_rate", chosen_by="model")
 
     block, frame, calls = framed_context("What was late last month?", OLIST, choose=choose)

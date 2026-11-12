@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import schema_focus as SF
+from pramanyx.agent import schema_focus as SF
 
 
 def _schema(*tables: str) -> str:
@@ -162,7 +162,7 @@ def test_for_repair_never_raises(monkeypatch):
     assert SF.for_repair(BIG, "SELECT * FROM orders", "boom") == BIG
 
 
-@pytest.mark.parametrize("mod", ["aughor.agent.nodes", "aughor.agent.explore"])
+@pytest.mark.parametrize("mod", ["pramanyx.agent.nodes", "pramanyx.agent.explore"])
 def test_both_repair_paths_share_one_definition(mod):
     """The guard battery in this repo is ~5 re-assembled sites split by path. This does not
     add a sixth: both call the same function."""

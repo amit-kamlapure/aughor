@@ -23,8 +23,8 @@ import time
 
 import pytest
 
-from aughor.db.connection import DuckDBConnection
-from aughor.routers.query import QueryAborted, _run_watched
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.routers.query import QueryAborted, _run_watched
 
 # Big enough that it cannot finish while we watch it, and cheap to start.
 _SLOW_SQL = "SELECT count(*) FROM range(20000000000) t(i) WHERE i % 7 = 0"
@@ -181,7 +181,7 @@ def test_every_duckdb_backed_connector_can_be_interrupted():
     A new connector that stores it elsewhere fails here rather than in someone's
     browser.
     """
-    from aughor.connectors.file.local_upload import LocalUploadConnection
+    from pramanyx.connectors.file.local_upload import LocalUploadConnection
 
     for cls in (DuckDBConnection, LocalUploadConnection):
         assert cls.interrupt is DuckDBConnection.interrupt, (

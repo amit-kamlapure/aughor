@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import wandering as W
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.agent import wandering as W
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 
 def _result(step, sql, rows=None, cols=("a",), error=None, caveats=()):
@@ -175,7 +175,7 @@ def test_an_empty_run_is_never_terminated():
 # ── the wiring ────────────────────────────────────────────────────────────────
 
 def test_the_veto_fires_on_a_repeat():
-    from aughor.agent import explore
+    from pramanyx.agent import explore
 
     state = {"query_history": [_result("Q1", "SELECT a FROM t", rows=[[7]])]}
     subq = type("S", (), {"id": "Q2"})()
@@ -191,7 +191,7 @@ def test_a_detector_error_lets_the_query_run(monkeypatch):
     disarm the brake, the try/except IS the only thing standing between a detector bug
     and a suppressed query.
     """
-    from aughor.agent import explore
+    from pramanyx.agent import explore
 
     monkeypatch.setattr(W, "check_before_dispatch",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -202,7 +202,7 @@ def test_a_detector_error_lets_the_query_run(monkeypatch):
 
 def test_a_fully_vetoed_step_skips_its_interpret_call():
     """The request the veto actually saves — the DB scan is the cheap half."""
-    from aughor.agent.explore import _all_vetoed
+    from pramanyx.agent.explore import _all_vetoed
 
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "This query is identical to the one already run for Q1. x", "Q1")
@@ -213,7 +213,7 @@ def test_a_fully_vetoed_step_skips_its_interpret_call():
 def test_a_step_with_any_fresh_evidence_still_gets_interpreted():
     """All, not any. A step that ran one fresh query and one repeat has new evidence, and
     skipping its narration would lose that."""
-    from aughor.agent.explore import _all_vetoed
+    from pramanyx.agent.explore import _all_vetoed
 
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "already run for Q1.", "Q1")
@@ -223,7 +223,7 @@ def test_a_step_with_any_fresh_evidence_still_gets_interpreted():
 
 
 def test_the_stop_fires_on_a_run_that_has_stopped_learning():
-    from aughor.agent import explore
+    from pramanyx.agent import explore
 
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "already run for Q1.", "Q1")
@@ -235,7 +235,7 @@ def test_the_stop_fires_on_a_run_that_has_stopped_learning():
 def test_both_routers_honour_the_brake(route_fn):
     """The sequential path and the parallel wave path each have their own loop; a brake
     wired to only one leaves the other running to the cap."""
-    from aughor.agent import explore
+    from pramanyx.agent import explore
 
     prior = _result("Q1", "SELECT a FROM t")
     v = W.Verdict("repeat", "already run for Q1.", "Q1")

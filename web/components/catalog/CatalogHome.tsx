@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The Catalog with nothing chosen — every catalog at once, redone to `aughor-v2/CLARITY.md` (2026-10-12, the approved
+ * The Catalog with nothing chosen — every catalog at once, redone to `pramanyx-v2/CLARITY.md` (2026-10-12, the approved
  * `design-mockups/catalog.html` frame 1): four figures (catalogs · tables, each once · rows · turned off), what needs
  * a person, each catalog with how far it is explored beside the largest tables — and Favorites and Recent one tap away
  * in the bar, as they were.

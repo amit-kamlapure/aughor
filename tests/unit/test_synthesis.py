@@ -5,7 +5,7 @@ a join key), and tag each pair with the composition operators it is structurally
 eligible for. The LLM articulation + confirming-query verification live in the agent
 and are not exercised here.
 """
-from aughor.explorer.synthesis import (
+from pramanyx.explorer.synthesis import (
     to_claim, candidate_pairs, render_pair_prompt, OPERATORS,
 )
 

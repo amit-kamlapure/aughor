@@ -20,9 +20,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import (
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import (
     Backing,
     Binding,
     EntityProperty,
@@ -34,9 +34,9 @@ from aughor.ontology.models import (
     OntologyRelationship,
     SemiAdditive,
 )
-from aughor.ontology.semiadditive import semiadditive_problem
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
-from aughor.sql.semiadditive import semiadditive_misuse
+from pramanyx.ontology.semiadditive import semiadditive_problem
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.sql.semiadditive import semiadditive_misuse
 
 REPO = Path(__file__).resolve().parents[2]
 GRAPH = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -205,7 +205,7 @@ def test_a_declared_first_reading_is_each_months_opening(warehouse, graph):
 
 
 def test_a_period_reading_is_never_found_across_connections(graph):
-    from aughor.semantic.object_query import ObjectQuery, _Compiler
+    from pramanyx.semantic.object_query import ObjectQuery, _Compiler
     compiler = _Compiler(_taking(graph, "last"), ObjectQuery.model_validate(_sum()), "duckdb", 1)
     compiler.far = {"x": object()}                  # as ON-8 compiles a read by key from another connection
     compiler._period_specs = [("pr1", "t0.snapshot_date", "last", "")]
@@ -357,7 +357,7 @@ def test_the_declaration_is_checked_against_the_graph(graph):
 
 
 def test_the_overlay_applies_a_bound_declaration_and_never_a_stale_one(graph):
-    from aughor.ontology.overrides import OntologyOverride, publish_override
+    from pramanyx.ontology.overrides import OntologyOverride, publish_override
     publish_override("c27", "main", OntologyOverride(
         target_kind="entity", target_id="StockSnapshot",
         fields={"semiadditive": {"on_hand": {"over": "snapshot_date", "note": ""}}},
@@ -385,7 +385,7 @@ def test_the_overlay_applies_a_bound_declaration_and_never_a_stale_one(graph):
 # ── the SQL writer's side ───────────────────────────────────────────────────────────────────
 
 def test_the_sql_writer_is_told_in_the_entity_model(graph):
-    from aughor.ontology.builder import render_ontology_annotations
+    from pramanyx.ontology.builder import render_ontology_annotations
     assert "READING AT A MOMENT" not in render_ontology_annotations(graph)
     block = render_ontology_annotations(_declared(graph))
     assert ("READING AT A MOMENT: on_hand, taken over snapshot_date (a stock count taken each morning) — SUM it only "
@@ -484,8 +484,8 @@ def test_a_statement_whose_scopes_cannot_be_built_is_still_read_flat(monkeypatch
 
 
 def test_the_trust_checks_read_the_declaration_through_the_registry(monkeypatch):
-    from aughor.kernel.registries import readings as R
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.kernel.registries import readings as R
+    from pramanyx.sql.trust_checks import run_trust_checks
     sql = "SELECT SUM(on_hand) FROM stock_snapshots"
     monkeypatch.setattr(R, "_loader", lambda conn: DECLARED if conn == "c27" else {})
     (issue,) = [t for t in run_trust_checks(sql, connection_id="c27") if t.pattern == "semiadditive-sum"]
@@ -506,11 +506,11 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
 def door(tmp_path, monkeypatch):
     """A cached graph for CONN/ecommerce (with the StockSnapshot type), an empty overrides tree, and a warehouse of its
     own every opener resolves to — never the module's, which this process holds open."""
-    import aughor.db.connection as C
-    from aughor.db.connection import open_connection
-    from aughor.ontology import store as ST
-    from aughor.ontology.semiadditive import forget_declared
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.db.connection import open_connection
+    from pramanyx.ontology import store as ST
+    from pramanyx.ontology.semiadditive import forget_declared
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
@@ -527,7 +527,7 @@ def door(tmp_path, monkeypatch):
 
 
 def test_declared_and_withdrawn_over_http_and_the_trust_checks_follow_at_once(door, client):
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.sql.trust_checks import run_trust_checks
 
     def flagged():
         return [t.pattern for t in run_trust_checks("SELECT SUM(on_hand) FROM stock_snapshots", connection_id=CONN)

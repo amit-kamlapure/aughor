@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel import parallel_safety as PS
-from aughor.kernel.concurrency import ContextThreadPoolExecutor
-from aughor.ontology.models import KineticAction
+from pramanyx.kernel import parallel_safety as PS
+from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
+from pramanyx.ontology.models import KineticAction
 
 
 def _action(**kw) -> KineticAction:
@@ -161,7 +161,7 @@ def test_fanout_region_never_breaks_the_work_it_wraps(monkeypatch):
 
 def test_the_executor_refuses_rather_than_dispatching(monkeypatch):
     """The refusal must land BEFORE step 4 — the only step that can cause a side effect."""
-    from aughor.actions.executor import execute_kinetic_action
+    from pramanyx.actions.executor import execute_kinetic_action
 
     dispatched = []
     with PS.fanout("deep_analysis.phase_waves"):
@@ -173,7 +173,7 @@ def test_the_executor_refuses_rather_than_dispatching(monkeypatch):
 
 
 def test_the_executor_is_untouched_outside_a_fanout():
-    from aughor.actions.executor import execute_kinetic_action
+    from pramanyx.actions.executor import execute_kinetic_action
 
     dispatched = []
     out = execute_kinetic_action(_action(risk="read_only"), {},
@@ -182,7 +182,7 @@ def test_the_executor_is_untouched_outside_a_fanout():
 
 
 def test_a_declared_safe_action_runs_inside_a_fanout():
-    from aughor.actions.executor import execute_kinetic_action
+    from pramanyx.actions.executor import execute_kinetic_action
 
     dispatched = []
     with PS.fanout("explore.subq_wave"):
@@ -207,13 +207,13 @@ def test_sql_parallel_safety_follows_the_read_only_gate(sql, safe):
     between 'the gate allows it' and 'we call it parallel-safe' would be worse than having
     no check at all. Lives in tools.executor, not the kernel — the kernel must not import
     the tools layer, and the platform→agent boundary test enforces that."""
-    from aughor.tools.executor import sql_is_parallel_safe
+    from pramanyx.tools.executor import sql_is_parallel_safe
 
     assert sql_is_parallel_safe(sql) is safe
 
 
 def test_check_sql_fanout_reports_the_offenders():
-    from aughor.tools.executor import check_sql_fanout
+    from pramanyx.tools.executor import check_sql_fanout
 
     bad = check_sql_fanout(["SELECT 1", "DELETE FROM t", "SELECT 2"], where="test")
     assert bad == ["DELETE FROM t"]
@@ -230,7 +230,7 @@ def test_no_fanout_is_left_undeclared():
     import re
 
     undeclared: list[str] = []
-    for path in pathlib.Path("aughor").rglob("*.py"):
+    for path in pathlib.Path("pramanyx").rglob("*.py"):
         for i, line in enumerate(path.read_text().splitlines(), 1):
             if "with ContextThreadPoolExecutor" in line and "_fanout_region" not in line:
                 undeclared.append(f"{path}:{i}")
@@ -238,7 +238,7 @@ def test_no_fanout_is_left_undeclared():
         "fan-out site(s) without a declared region — wrap with "
         f"`_fanout_region(\"<label>\"), `: {undeclared}")
     # …and the ones that exist really are wired.
-    declared = sum(1 for p in pathlib.Path("aughor").rglob("*.py")
+    declared = sum(1 for p in pathlib.Path("pramanyx").rglob("*.py")
                    for line in p.read_text().splitlines()
                    if re.search(r'with _fanout_region\("[^"]+"\), ContextThreadPoolExecutor', line))
     assert declared >= 6, f"expected every known fan-out declared, found {declared}"

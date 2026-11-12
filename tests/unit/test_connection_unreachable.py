@@ -6,8 +6,8 @@ suggestions and its schema each answered `500 {"error": "internal_error"}`, whic
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.db.connection import open_connection
-from aughor.db.errors import CONNECTION, ConnectionUnreachable, classify_error, is_unreachable
+from pramanyx.db.connection import open_connection
+from pramanyx.db.errors import CONNECTION, ConnectionUnreachable, classify_error, is_unreachable
 
 # Port 1 on this machine: nothing listens there, so the driver's refusal below is a real one.
 CLOSED = "postgresql://someone:hunter2@localhost:1/nothing"
@@ -28,8 +28,8 @@ def test_a_refused_login_is_not_called_a_database_to_start():
 
 def test_the_door_answers_what_to_do_instead_of_internal_error(monkeypatch):
     pytest.importorskip("psycopg2")
-    from aughor.api import app
-    monkeypatch.setattr("aughor.briefing.guide.draft_guide", lambda *a, **k: open_connection("postgres", CLOSED, connection_id="c1"))
+    from pramanyx.api import app
+    monkeypatch.setattr("pramanyx.briefing.guide.draft_guide", lambda *a, **k: open_connection("postgres", CLOSED, connection_id="c1"))
     r = TestClient(app, raise_server_exceptions=False).post("/exploration/c1/briefing/guide/draft")
     assert r.status_code == 503, r.text
     body = r.json()

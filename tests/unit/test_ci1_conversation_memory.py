@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.routers.investigations import (
+from pramanyx.routers.investigations import (
     build_history_section,
     resolve_history,
 )
@@ -24,7 +24,7 @@ def _turn(q, sql="SELECT 1", cols=None, head="", key_rows=None):
 # ── windowing: recent verbatim, older summarized (no LLM) ────────────────────────
 
 def test_window_keeps_recent_verbatim_and_summarizes_the_rest(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CHAT_HISTORY_WINDOW", "2")
+    monkeypatch.setenv("PRAMANYX_CHAT_HISTORY_WINDOW", "2")
     hist = [_turn(f"q{i}", sql=f"SELECT {i}") for i in range(6)]
     section = build_history_section(hist)
     # the two most recent turns render with their SQL
@@ -36,7 +36,7 @@ def test_window_keeps_recent_verbatim_and_summarizes_the_rest(monkeypatch):
 
 
 def test_short_history_has_no_summary_line(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CHAT_HISTORY_WINDOW", "4")
+    monkeypatch.setenv("PRAMANYX_CHAT_HISTORY_WINDOW", "4")
     section = build_history_section([_turn("only question")])
     assert "Earlier in this conversation" not in section
     assert "only question" in section
@@ -55,7 +55,7 @@ def test_client_history_is_preferred(monkeypatch):
         called["n"] += 1
         return []
 
-    monkeypatch.setattr("aughor.db.history.reconstruct_session_history", _recon)
+    monkeypatch.setattr("pramanyx.db.history.reconstruct_session_history", _recon)
     client = [_turn("client turn")]
     assert resolve_history(client, "sess-1") is client
     assert called["n"] == 0, "the store is not touched when the client sent history"
@@ -63,7 +63,7 @@ def test_client_history_is_preferred(monkeypatch):
 
 def test_empty_client_reconstructs_from_the_session(monkeypatch):
     reconstructed = [_turn("stored turn")]
-    monkeypatch.setattr("aughor.db.history.reconstruct_session_history",
+    monkeypatch.setattr("pramanyx.db.history.reconstruct_session_history",
                         lambda sid, **k: reconstructed)
     assert resolve_history([], "sess-42") is reconstructed
 
@@ -76,7 +76,7 @@ def test_reconstruction_failure_falls_back_to_client_value(monkeypatch):
     def _boom(sid, **k):
         raise RuntimeError("store down")
 
-    monkeypatch.setattr("aughor.db.history.reconstruct_session_history", _boom)
+    monkeypatch.setattr("pramanyx.db.history.reconstruct_session_history", _boom)
     # fail-open: the pre-CI-1 behaviour is to inject nothing, never to error the turn
     assert resolve_history([], "sess-x") == []
 
@@ -84,7 +84,7 @@ def test_reconstruction_failure_falls_back_to_client_value(monkeypatch):
 # ── the store reader shapes turns the section builder can read ───────────────────
 
 def test_reconstruct_session_history_shapes_and_filters(monkeypatch):
-    from aughor.db import history as H
+    from pramanyx.db import history as H
 
     turns = [
         {"question": "where are we losing money?", "headline": "West leads",
@@ -107,7 +107,7 @@ def test_reconstruct_session_history_shapes_and_filters(monkeypatch):
 
 
 def test_reconstruct_unknown_session_is_empty(monkeypatch):
-    from aughor.db import history as H
+    from pramanyx.db import history as H
     monkeypatch.setattr(H, "get_session_turns", lambda sid: [])
     assert H.reconstruct_session_history("nope") == []
     assert H.reconstruct_session_history("") == []

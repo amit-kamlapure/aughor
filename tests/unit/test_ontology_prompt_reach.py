@@ -1,6 +1,6 @@
 """ON-0 — the prompt-reach ratchet (ROADMAP §3.15).
 
-`aughor.ontology.prompt_reach` measures which ontology fields can change what a model
+`pramanyx.ontology.prompt_reach` measures which ontology fields can change what a model
 sees: a field reaches a prompt block iff changing it changes the block's text. This test
 pins that measurement so it moves only DELIBERATELY:
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology import prompt_reach as pr
+from pramanyx.ontology import prompt_reach as pr
 
 #: field path → the blocks it reached on 2026-09-10. A block may be ADDED to a field
 #: (reach grew); removing one needs the renderer change that justifies it, in the same PR.
@@ -285,7 +285,7 @@ def test_action_census_counts_files(tmp_path):
 def test_intake_context_is_byte_identical_to_the_inline_block():
     """The block extracted from agent/investigate.py must render exactly what the inline
     code rendered — the extraction exists so the audit can see it, not to change it."""
-    from aughor.ontology.semantic_block import entity_intake_fields, render_entity_context
+    from pramanyx.ontology.semantic_block import entity_intake_fields, render_entity_context
 
     order = pr.fixture_graph().entities["Order"]
     fields = entity_intake_fields(order)

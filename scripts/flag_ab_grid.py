@@ -1,8 +1,8 @@
 """A/B one flag over an eval suite — with the two guards this session paid to learn.
 
     FLAG=explore.route_wide SUITE=9c1e13e458ff DEPTH=quick TEMPERATURE=0 REPLICATE=1 \
-      AUGHOR_FALLBACK_DISABLED=1 \
-      AUGHOR_LLM_RPM=16 AUGHOR_LLM_MAX_CONCURRENCY=2 \
+      PRAMANYX_FALLBACK_DISABLED=1 \
+      PRAMANYX_LLM_RPM=16 PRAMANYX_LLM_MAX_CONCURRENCY=2 \
       .venv/bin/python -u scripts/flag_ab_grid.py
 
 **Guard 1 — refuse to grid an INERT flag.** Before spending anything, the same question is
@@ -73,12 +73,12 @@ def _counting_send(self, request, **kw):
 
 httpx.Client.send = _counting_send
 
-from aughor.evals import store  # noqa: E402
-from aughor.evals.experiments import Cell  # noqa: E402
-from aughor.evals.runner import run_experiment  # noqa: E402
-from aughor.evals.targets import ask_target  # noqa: E402
-from aughor.kernel.flags import flag_overrides  # noqa: E402
-from aughor.stats import stats  # noqa: E402
+from pramanyx.evals import store  # noqa: E402
+from pramanyx.evals.experiments import Cell  # noqa: E402
+from pramanyx.evals.runner import run_experiment  # noqa: E402
+from pramanyx.evals.targets import ask_target  # noqa: E402
+from pramanyx.kernel.flags import flag_overrides  # noqa: E402
+from pramanyx.stats import stats  # noqa: E402
 
 
 _schema_ctx: str | None = None
@@ -91,8 +91,8 @@ def _schema_context() -> str:
     global _schema_ctx
     if _schema_ctx is None:
         try:
-            from aughor.db.connection import open_connection_for
-            from aughor.tools.schema import build_schema_context
+            from pramanyx.db.connection import open_connection_for
+            from pramanyx.tools.schema import build_schema_context
             _schema_ctx = build_schema_context(
                 open_connection_for(CONN)._conn, connection_id=CONN)
         except Exception as exc:
@@ -110,7 +110,7 @@ def _grounding_for(question: str) -> str:
     it changed the prompt's largest block — the exact blind spot the module
     docstring warns about, sitting inside the guard itself.
     """
-    from aughor.agent.grounding import correction_priors, schema_slice, trusted_templates
+    from pramanyx.agent.grounding import correction_priors, schema_slice, trusted_templates
     return (trusted_templates(question, CONN)
             + correction_priors(question, CONN)
             + schema_slice(question, CONN, schema=_schema_context()))
@@ -150,8 +150,8 @@ def _refuse_second_writer() -> None:
     """
     import subprocess
 
-    from aughor.kernel.ledger import _DEFAULT_DB
-    path = os.environ.get("AUGHOR_SYSTEM_DB") or str(_DEFAULT_DB)
+    from pramanyx.kernel.ledger import _DEFAULT_DB
+    path = os.environ.get("PRAMANYX_SYSTEM_DB") or str(_DEFAULT_DB)
     if os.environ.get("ALLOW_SHARED_STORE", "") not in ("", "0", "false", "no"):
         return
     try:
@@ -162,7 +162,7 @@ def _refuse_second_writer() -> None:
     if others:
         print(f"\n⛔ REFUSING to run: {path} is held open by pid(s) {', '.join(others)}.\n"
               f"   A second writer on the WAL-mode ledger is how it got corrupted (2026-08-14,\n"
-              f"   2026-08-15). Stop the other holder (uvicorn?) or point AUGHOR_SYSTEM_DB at a\n"
+              f"   2026-08-15). Stop the other holder (uvicorn?) or point PRAMANYX_SYSTEM_DB at a\n"
               f"   copy; set ALLOW_SHARED_STORE=1 only if the other holder is read-only.",
               flush=True)
         raise SystemExit(4)
@@ -182,7 +182,7 @@ def main() -> int:
         # cause is CWD — the eval store resolves `data/evals.db` RELATIVELY, so running from
         # another directory silently opens an empty one.
         print(f"\n⛔ suite {SUITE!r} has NO CASES — nothing to compare.\n"
-              f"   Run from the repo root, or set AUGHOR_EVALS_DB to the store holding it.",
+              f"   Run from the repo root, or set PRAMANYX_EVALS_DB to the store holding it.",
               flush=True)
         return 3
 
@@ -212,8 +212,8 @@ def main() -> int:
     # grid silently degenerates to guard-fire rate while looking like an accuracy A/B.
     checker = None
     if any((c.get("expected") or {}).get("reference_sql") for c in cases):
-        from aughor.db.connection import open_connection_for
-        from aughor.evals.targets import reference_checker
+        from pramanyx.db.connection import open_connection_for
+        from pramanyx.evals.targets import reference_checker
         checker = reference_checker(open_connection_for(CONN))
         print("accuracy: cases declare reference_sql — attaching the execution-grounded checker",
               flush=True)

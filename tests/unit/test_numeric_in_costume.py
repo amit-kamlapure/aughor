@@ -23,15 +23,15 @@ import json
 import duckdb
 import pytest
 
-from aughor.connectors.file.local_upload import LocalUploadConnection
-from aughor.control_plane import vending
-from aughor.explorer.verify import unparsed_numeric_diagnosis, verify_insight
-from aughor.db.schema_render import (
+from pramanyx.connectors.file.local_upload import LocalUploadConnection
+from pramanyx.control_plane import vending
+from pramanyx.explorer.verify import unparsed_numeric_diagnosis, verify_insight
+from pramanyx.db.schema_render import (
     format_value_samples,
     parse_schema_tables,
     strip_value_samples,
 )
-from aughor.sql.numeric_text import (
+from pramanyx.sql.numeric_text import (
     costume_clean_sql,
     detect_costume,
     interpret_costume,
@@ -361,14 +361,14 @@ def test_strip_value_samples_is_load_bearing():
     """Sample VALUES are data. Left in the text, a product named 'Discount Cable' is
     harvested by the loss-signal scan as a discount COLUMN — one that does not exist,
     handed to the planner as something to aggregate."""
-    from aughor.agent.loss_signals import detect_loss_signals
+    from pramanyx.agent.loss_signals import detect_loss_signals
     schema = (
         "TABLE: sales  (3 rows)\n"
         "  product  VARCHAR  ~ e.g. 'Discount Cable', 'Refund Kit'\n"
         "  amount  DOUBLE  ~ e.g. '10.0'\n"
     )
     # Unstripped, the scan invents columns out of product names …
-    from aughor.agent.loss_signals import CONTRA_REVENUE_RE
+    from pramanyx.agent.loss_signals import CONTRA_REVENUE_RE
     assert {m.group(1).lower() for m in CONTRA_REVENUE_RE.finditer(schema)}
     # … stripped, it sees only the real columns, so the detector reports no contra signal.
     assert not {m.group(1).lower()
@@ -446,7 +446,7 @@ def test_gate_prefers_the_root_cause_over_the_symptom(tmp_path):
     ("Leakage Rate", "AVG(discounted_price)", False),
 ])
 def test_leakage_direction_fix(label, sql, expect_fix):
-    from aughor.agent.loss_signals import leakage_direction_fix
+    from pramanyx.agent.loss_signals import leakage_direction_fix
     got = leakage_direction_fix(label, sql)
     assert (got is not None) is expect_fix, f"{label!r} / {sql!r}"
 
@@ -454,7 +454,7 @@ def test_leakage_direction_fix(label, sql, expect_fix):
 def test_corrected_leakage_matches_the_real_loss(tmp_path):
     """The corrected formula must reproduce the discount actually in the data — and rank
     the deepest-discounted segment as the WORST, which is the reading that inverted."""
-    from aughor.agent.loss_signals import leakage_direction_fix
+    from pramanyx.agent.loss_signals import leakage_direction_fix
     fixed, note = leakage_direction_fix("Leakage Rate",
                                         "SUM(discounted_price) / SUM(actual_price)")
     assert "retained" in note.lower() or "RETAINED" in note
@@ -492,7 +492,7 @@ def test_metric_polarity_decides_which_tail_matters(label, worse_high):
     loss rate, where the worst segment is the LARGEST. A capped ascending scan of leakage
     returns the healthiest slice of the business, and the report then cannot locate the
     loss it was asked about."""
-    from aughor.agent.loss_signals import higher_is_worse
+    from pramanyx.agent.loss_signals import higher_is_worse
     assert higher_is_worse(label) is worse_high
 
 
@@ -509,12 +509,12 @@ def test_metric_polarity_decides_which_tail_matters(label, worse_high):
 def test_loss_magnitude_extracts_the_money_behind_the_rate(sql, expected):
     """A rate says how deeply, never how much. 90% leakage on ₹2M and on ₹900 rank the
     same by rate; only the magnitude separates them."""
-    from aughor.agent.loss_signals import loss_magnitude_sql
+    from pramanyx.agent.loss_signals import loss_magnitude_sql
     assert loss_magnitude_sql(sql) == expected
 
 
 def test_loss_magnitude_runs_and_equals_the_real_money(tmp_path):
-    from aughor.agent.loss_signals import loss_magnitude_sql
+    from pramanyx.agent.loss_signals import loss_magnitude_sql
     expr = loss_magnitude_sql(
         "SUM(actual_price - discounted_price) / NULLIF(SUM(actual_price), 0) * 100")
     c = _conn()

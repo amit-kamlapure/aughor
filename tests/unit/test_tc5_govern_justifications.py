@@ -14,15 +14,15 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.ledger import Ledger
 
-_ENV = "AUGHOR_GOVERN_JUSTIFICATIONS"
+_ENV = "PRAMANYX_GOVERN_JUSTIFICATIONS"
 _DAY = "2001-02-03"
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -183,7 +183,7 @@ def test_a_boundary_second_is_cut_exactly_or_refused_by_name(client, monkeypatch
     assert _summaries(second["events"]) == ["update metric earlier (draft → approved)"]
     assert second["next_cursor"] is None
 
-    import aughor.govern.audit_categories as ac
+    import pramanyx.govern.audit_categories as ac
     monkeypatch.setattr(ac, "WINDOW_READ_MAX", 2)
     refused = client.get("/audit/feed", params=window)
     assert refused.status_code == 422 and "one second" in refused.json()["detail"]
@@ -204,7 +204,7 @@ def test_the_export_is_the_windowed_feed_as_a_file(client, monkeypatch):
     _seed_window(day)
     feed = client.get("/audit/feed", params=_window(day, limit=100)).json()["events"]
     assert len(feed) == 6
-    import aughor.govern.audit_categories as ac
+    import pramanyx.govern.audit_categories as ac
     monkeypatch.setattr(ac, "EXPORT_PAGE", 2)              # the file is three pages, walked by the cursor
 
     as_csv = client.get("/audit/feed/export", params=_window(day, format="csv"))
@@ -221,7 +221,7 @@ def test_the_export_is_the_windowed_feed_as_a_file(client, monkeypatch):
 # ── a reason to read ─────────────────────────────────────────────────────────────────────────
 
 def _fake_run(monkeypatch, trace_id: str) -> None:
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     events = [
         {"seq": 1, "kind": session_log.USER_REQUEST, "at": "2026-10-26T10:00:00Z", "span_id": None,
          "parent_span_id": None, "name": "", "user_id": "analyst-3", "trace_id": trace_id,
@@ -264,7 +264,7 @@ def test_a_payload_read_with_a_reason_is_recorded_once_with_it(client, monkeypat
     assert p["what"] == "run_payload" and p["reason"].startswith("ticket 4411")
     assert p["subject_user_id"] == "analyst-3" and p["trace_id"] == t
     assert p["content_events"] == 1 and "by" in p
-    from aughor.govern.audit_categories import KIND_CATEGORY, _summarize
+    from pramanyx.govern.audit_categories import KIND_CATEGORY, _summarize
     assert KIND_CATEGORY["access.justified"] == "data_access"
     assert "ticket 4411" in _summarize("access.justified", p)
 

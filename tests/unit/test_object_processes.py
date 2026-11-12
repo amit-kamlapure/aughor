@@ -18,9 +18,9 @@ from collections import Counter
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
-from aughor.ontology.business_rules import (
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.business_rules import (
     declared_rule,
     measure_rule,
     resolve_rule,
@@ -28,10 +28,10 @@ from aughor.ontology.business_rules import (
     rule_fields,
     rule_spec_problem,
 )
-from aughor.ontology.derived import derived_for, find_derived_metric
-from aughor.ontology.models import EntityProperty, OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, apply_overrides
-from aughor.ontology.processes import (
+from pramanyx.ontology.derived import derived_for, find_derived_metric
+from pramanyx.ontology.models import EntityProperty, OntologyGraph
+from pramanyx.ontology.overrides import OntologyOverride, apply_overrides
+from pramanyx.ontology.processes import (
     declared_process,
     describe_process,
     measure_process,
@@ -247,7 +247,7 @@ def test_a_promise_within_hours_counts_the_hours_that_pass_not_the_calendar_days
                                            ("2024-01-10T13:30:15+00:00", "2024-01-09 13:30:15"),
                                            ("2024-01-10", "2024-01-09 00:00:00")])
 def test_an_open_object_is_past_a_within_hours_promise_exactly_when_more_than_n_hours_have_gone(as_of, cutoff):
-    from aughor.ontology.processes import _cutoff_hours
+    from pramanyx.ontology.processes import _cutoff_hours
     assert _cutoff_hours(as_of, 24) == cutoff
 
 
@@ -591,9 +591,9 @@ DRAFT = {**PARAMS, "ontology_view": "draft"}
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", fresh_graph())
@@ -718,8 +718,8 @@ def test_a_declared_process_is_changed_in_place_through_the_same_law(door, clien
 
 
 def test_a_declared_process_and_rule_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
-    import aughor.routers.ontology as onto
-    from aughor.ontology import overrides as overrides_tree
+    import pramanyx.routers.ontology as onto
+    from pramanyx.ontology import overrides as overrides_tree
     monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
     assert client.post("/ontology/processes", params=DRAFT, json=FULFILMENT).status_code == 200
     assert client.post("/ontology/rules", params=DRAFT, json=FULFILLED).status_code == 200
@@ -748,7 +748,7 @@ def test_a_declared_process_and_rule_survive_an_export_and_an_import_into_an_emp
 def test_an_open_object_is_past_a_within_days_promise_exactly_when_more_than_n_calendar_days_have_gone(as_of):
     """The overdue count compares each open object's previous moment with one cutoff date; it must agree, object by
     object, with counting calendar days to the data's own clock — including on the boundary day itself."""
-    from aughor.ontology.processes import _cutoff
+    from pramanyx.ontology.processes import _cutoff
     moments = ["2024-01-06 23:59:59", "2024-01-07 00:00:00", "2024-01-07 18:00:00", "2024-01-08 00:00:00",
                "2024-01-08 09:30:00", "2024-01-09 23:59:59", "2024-01-10 00:00:01"]
     values = ", ".join(f"(TIMESTAMP '{m}')" for m in moments)
@@ -853,7 +853,7 @@ def test_objects_counted_as_kept_although_their_lag_is_impossible_reach_the_prom
                                            "WHERE refunded_at < received_at AND date_diff('day', received_at, refunded_at) > 10")
     assert early_breaches == 0
 
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_FLAG
     [flag] = [f for f in promise.flags if f.startswith(IMPOSSIBLE_LAG_FLAG)]
     assert f"{early:,} of the {reached:,}" in flag
     without = breached / (reached - early)
@@ -865,7 +865,7 @@ def test_the_flag_travels_to_the_surface_that_quotes_the_number(backdated_db):
     """A4's actual claim. A caveat computed and left in the record is the defect, not the fix."""
     graph = backdated_graph()
     _, p = declare(graph, backdated_db, REFUNDING)
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_FLAG
     described = describe_process(graph, p)["stages"][1]["promise"]
     assert any(f.startswith(IMPOSSIBLE_LAG_FLAG) for f in described["flags"])
 
@@ -874,7 +874,7 @@ def test_a_deadline_promise_is_not_flagged_for_an_ordering_it_says_nothing_about
     """Mutation guard. `out_of_order` compares this stage's moment with the PREVIOUS stage's;
     a deadline promise is about neither, so an object that arrived out of order CAN still miss
     its deadline. Dropping the early return in `_flag_out_of_order` makes this test red."""
-    from aughor.ontology.processes import _flag_out_of_order
+    from pramanyx.ontology.processes import _flag_out_of_order
 
     class _P:
         reached, breached, breach_rate, flags = 100, 10, 0.1, []
@@ -895,7 +895,7 @@ def test_a_deadline_promise_is_not_flagged_for_an_ordering_it_says_nothing_about
 def test_the_rate_is_only_stated_when_the_denominator_is_sound(spec, reached, expect_rate):
     """Saying less beats deriving a rate from the wrong population. The ordering is still
     flagged in every case — only the arithmetic is withheld."""
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
 
     class _P:
         breached, breach_rate = 10, 0.1
@@ -912,7 +912,7 @@ def test_the_rate_is_only_stated_when_the_denominator_is_sound(spec, reached, ex
 
 
 def test_nothing_is_flagged_when_every_object_arrived_in_order():
-    from aughor.ontology.processes import _flag_out_of_order
+    from pramanyx.ontology.processes import _flag_out_of_order
 
     class _P:
         reached, breached, breach_rate, flags = 100, 10, 0.1, []
@@ -937,7 +937,7 @@ def test_impossible_rows_that_do_not_move_the_number_are_said_but_never_held():
     """theLook's delivery promise: 23 of 96,476 out of order, 8.11% either way. Holding a
     working send over a difference that rounds to nothing would be the kind of guard people
     route around. It is still stated — just not with the prefix the gate blocks on."""
-    from aughor.ontology.processes import (
+    from pramanyx.ontology.processes import (
         IMPOSSIBLE_LAG_FLAG, IMPOSSIBLE_LAG_NOISE_FLAG, _flag_out_of_order)
 
     class _P:
@@ -957,7 +957,7 @@ def test_impossible_rows_that_do_not_move_the_number_are_said_but_never_held():
 
 def test_a_rate_that_cannot_be_computed_blocks_rather_than_assuming_it_is_small():
     """Unquantified is not the same as immaterial, so the conservative direction wins."""
-    from aughor.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
+    from pramanyx.ontology.processes import IMPOSSIBLE_LAG_FLAG, _flag_out_of_order
 
     class _P:
         reached, breached, breach_rate, flags = 100, 10, 0.1, []

@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.routers import cron as C
+from pramanyx.routers import cron as C
 
 
 @pytest.fixture()
@@ -47,7 +47,7 @@ def test_tick_runs_the_one_loop_and_reports_what_it_evaluated(client, monkeypatc
 
     calls: list[int] = []
 
-    from aughor.automations import scheduler as auto_sched
+    from pramanyx.automations import scheduler as auto_sched
 
     def _tick_once():
         calls.append(1)
@@ -70,7 +70,7 @@ def test_tick_survives_a_crashing_engine_tick(client, monkeypatch):
     monkeypatch.delenv("CRON_SECRET", raising=False)
     monkeypatch.delenv("VERCEL", raising=False)
 
-    from aughor.automations import scheduler as auto_sched
+    from pramanyx.automations import scheduler as auto_sched
     monkeypatch.setattr(auto_sched, "tick_once",
                         lambda: (_ for _ in ()).throw(RuntimeError("boom")))
 

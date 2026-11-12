@@ -17,11 +17,11 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from aughor.ontology import overrides as OV
-from aughor.ontology import store as ST
-from aughor.ontology.models import OntologyGraph
-from aughor.routers import ontology as router
-from aughor.util.json_store import KeyedJsonStore
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import store as ST
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.routers import ontology as router
+from pramanyx.util.json_store import KeyedJsonStore
 
 CONN = "rebuild-t"
 OLD = "2020-01-01T00:00:00+00:00"
@@ -41,18 +41,18 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
-    monkeypatch.setattr("aughor.memory.skills.load_learned_actions", lambda connection_id, schema_name: {})
+    monkeypatch.setattr("pramanyx.memory.skills.load_learned_actions", lambda connection_id, schema_name: {})
     monkeypatch.setattr(router, "get_meta", lambda cid: {"schema_name": "main"})
     monkeypatch.setattr(router, "_invalidate_schema_cache", lambda cid: None)
-    monkeypatch.setattr("aughor.db.registry.get_dsn", lambda cid: ("duckdb", "/data/warehouse.duckdb"))
+    monkeypatch.setattr("pramanyx.db.registry.get_dsn", lambda cid: ("duckdb", "/data/warehouse.duckdb"))
     profiles: list[tuple[str, str]] = []
 
     def _infer(connection_id, schema_name):
         profiles.append((connection_id, schema_name))
         return SimpleNamespace(industry="retail")
 
-    monkeypatch.setattr("aughor.business_profile.infer.infer_business_profile", _infer)
-    monkeypatch.setattr("aughor.orgsettings.resolve_industry", lambda industry: industry)
+    monkeypatch.setattr("pramanyx.business_profile.infer.infer_business_profile", _infer)
+    monkeypatch.setattr("pramanyx.orgsettings.resolve_industry", lambda industry: industry)
     return SimpleNamespace(profiles=profiles)
 
 
@@ -84,7 +84,7 @@ def _opens(monkeypatch, build) -> list[tuple[str | None, _FakeDB]]:
         opened.append((schema_name, db))
         return db
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", _open)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", _open)
     return opened
 
 
@@ -197,7 +197,7 @@ def test_a_built_graph_whose_enrichment_failed_says_what_it_lacks(env, monkeypat
 
 def test_an_in_memory_upload_says_why_and_journals_the_failure(env, monkeypatch):
     ST.save_ontology(CONN, "main", "fp", _graph("main", generated_at=OLD))
-    monkeypatch.setattr("aughor.db.registry.get_dsn", lambda cid: ("local_upload", "local://upload-1"))
+    monkeypatch.setattr("pramanyx.db.registry.get_dsn", lambda cid: ("local_upload", "local://upload-1"))
     # Re-opened empty: `build_intelligence` returns before any annotator runs, so nothing journals the build.
     _opens(monkeypatch, lambda db: "No tables")
 
@@ -207,7 +207,7 @@ def test_an_in_memory_upload_says_why_and_journals_the_failure(env, monkeypatch)
     assert "in-memory file upload" in err.value.detail
     assert err.value.detail.endswith("The previous ontology is unchanged.")
     # The build never journaled itself, so the route did. The ledger is conftest's per-session temp system.db.
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     journaled = [e["payload"] for e in Ledger.default().events(kind="ontology.build", conn_id=CONN, limit=50)]
     assert any(p.get("stage") == "rebuild" and p.get("in_memory") is True for p in journaled)
     assert ST.load_latest_ontology(CONN, "main").generated_at == OLD
@@ -236,7 +236,7 @@ def test_a_forced_rebuild_skips_the_fingerprint_cache_for_its_own_connection_onl
         extracted.append(kw["connection_id"])
         return _graph(kw["schema_name"], fingerprint=kw["schema_fingerprint"])
 
-    monkeypatch.setattr("aughor.ontology.builder.extract_structural_ontology", _extract)
+    monkeypatch.setattr("pramanyx.ontology.builder.extract_structural_ontology", _extract)
 
     def build():
         return ST.get_or_build_ontology(CONN, "main", tables, {}, {}, {})
@@ -254,7 +254,7 @@ def test_a_forced_rebuild_skips_the_fingerprint_cache_for_its_own_connection_onl
 # ── The auto-refresh ───────────────────────────────────────────────────────────
 
 def test_the_auto_refresh_picks_only_ontologies_past_their_interval(env, monkeypatch):
-    import aughor.api as api
+    import pramanyx.api as api
     now = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
     ST.save_ontology(CONN, "main", "fp", _graph("main", generated_at=(now - timedelta(hours=30)).isoformat()))
     ST.save_ontology(CONN, "sales", "fp", _graph("sales", generated_at=(now - timedelta(hours=2)).isoformat()))
@@ -269,7 +269,7 @@ def test_the_auto_refresh_picks_only_ontologies_past_their_interval(env, monkeyp
 
 @pytest.mark.anyio
 async def test_the_auto_refresh_rebuilds_instead_of_deleting(env, monkeypatch):
-    import aughor.api as api
+    import pramanyx.api as api
     ST.save_ontology(CONN, "main", "fp", _graph("main", generated_at=OLD))
     monkeypatch.setattr(api, "list_connections", lambda: [{"id": CONN}])
     monkeypatch.setattr(api, "get_connection_settings", lambda cid: {"ontology_refresh_hours": 1})

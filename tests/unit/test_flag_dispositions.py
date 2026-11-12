@@ -9,7 +9,7 @@ supplied them (docs/FLAG_STRATEGY_2026-07-31.md §4).
 """
 from __future__ import annotations
 
-from aughor.kernel.flags import (
+from pramanyx.kernel.flags import (
     ALWAYS_ON,
     AUTO_ELIGIBLE,
     COST_LATENCY_PROFILE,
@@ -41,7 +41,7 @@ def test_every_flag_has_exactly_one_disposition():
         homes = [k for k, s in SETS.items() if name in s]
         assert len(homes) == 1, (
             f"{name!r} is in {homes or 'NO disposition'} — every registered flag "
-            f"must declare exactly one exit (aughor/kernel/flags.py §disposition ratchet)")
+            f"must declare exactly one exit (pramanyx/kernel/flags.py §disposition ratchet)")
 
 
 def test_no_disposition_names_a_ghost_flag():

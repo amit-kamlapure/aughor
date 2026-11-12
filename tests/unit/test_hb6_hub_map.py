@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
-from aughor.automations.store import append_run, upsert_automation
-from aughor.org.context import current_org_id
+from pramanyx.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import append_run, upsert_automation
+from pramanyx.org.context import current_org_id
 
 _AID = "hb6-map-watch"
 _PROMISE = "promise:order_to_delivery.dispatch"
@@ -20,7 +20,7 @@ _PROMISE = "promise:order_to_delivery.dispatch"
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -53,16 +53,16 @@ def _row(client) -> dict:
 def test_the_map_carries_all_seven_columns(client, monkeypatch):
     _seed_automation()
     _seed_run()
-    from aughor.rbac.groups import upsert_group
-    from aughor.metastore.store import add_grant
+    from pramanyx.rbac.groups import upsert_group
+    from pramanyx.metastore.store import add_grant
     oid = current_org_id()
     upsert_group(oid, "maptest", "Map Test")
     add_grant("group:maptest", "process:order_to_delivery", "subscribe", org_id=oid)
-    from aughor.actions.grants import mint_notify_grant
+    from pramanyx.actions.grants import mint_notify_grant
     mint_notify_grant(_AID, "trg-9", connection_id="olist", created_by="user:ana")
     # The session log's per-trace fold, pinned: one investigation trace priced, the
     # run's own trace with one call that reported no usage at all.
-    import aughor.obs.session_log as sl
+    import pramanyx.obs.session_log as sl
     monkeypatch.setattr(sl, "recent_sessions", lambda **kw: [
         {"trace_id": "inv-1", "total_tokens": 1234, "cost_usd": 0.05,
          "unpriced_calls": 1, "calls_without_usage": 0},
@@ -113,7 +113,7 @@ def test_the_map_carries_all_seven_columns(client, monkeypatch):
 
 def test_marked_departures_show_as_measured_precision(client):
     _seed_automation()
-    from aughor.govern import departure_store as ds
+    from pramanyx.govern import departure_store as ds
     for n in range(5):
         ds.record_departure(id=f"hb6-map-dep-{n}", automation_id=_AID,
                             state="held_probation", org_id=current_org_id())
@@ -134,7 +134,7 @@ def test_the_map_narrows_by_connection_and_a_foreign_one_is_empty_of_it(client):
 def test_a_disarmed_pack_automation_reads_as_disabled_with_its_lineage(client):
     """The pack half meets the map half: an installed pack automation appears on the
     map disarmed, on probation, owned by its pack."""
-    from aughor.packs.install import install_pack
+    from pramanyx.packs.install import install_pack
     install_pack("supply-chain", connection_id="olist")
     body = client.get("/hub/map").json()
     rows = {r["id"]: r for r in body["rows"]}

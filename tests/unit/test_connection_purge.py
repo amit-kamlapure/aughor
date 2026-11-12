@@ -16,25 +16,25 @@ import pytest
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
     """Redirect every connection-keyed store + the upload root to tmp."""
-    from aughor.briefing import store as brief_store
-    from aughor.db import history, purge, type_overrides
-    from aughor.evidence import store as evidence_store
-    from aughor.monitors import store as monitor_store
-    from aughor.packs import bindings, deltastore
-    from aughor.canvas import store as canvas_store
-    from aughor.explorer import watermark
-    from aughor.knowledge import briefing, patterns
-    from aughor.ontology import store as ontology_store
-    from aughor.control_plane import vending
-    from aughor.business_profile import store as profile_store
-    from aughor.semantic import connection_kb
-    from aughor.tools import profile_cache
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.briefing import store as brief_store
+    from pramanyx.db import history, purge, type_overrides
+    from pramanyx.evidence import store as evidence_store
+    from pramanyx.monitors import store as monitor_store
+    from pramanyx.packs import bindings, deltastore
+    from pramanyx.canvas import store as canvas_store
+    from pramanyx.explorer import watermark
+    from pramanyx.knowledge import briefing, patterns
+    from pramanyx.ontology import store as ontology_store
+    from pramanyx.control_plane import vending
+    from pramanyx.business_profile import store as profile_store
+    from pramanyx.semantic import connection_kb
+    from pramanyx.tools import profile_cache
+    from pramanyx.util.json_store import KeyedJsonStore
 
     data = tmp_path / "data"
     data.mkdir()
     (data / "api_sync").mkdir()
-    from aughor.explorer import store as explorer_store
+    from pramanyx.explorer import store as explorer_store
     monkeypatch.setattr(purge, "_DATA_DIR", data)
     monkeypatch.setattr(profile_store, "_DATA_DIR", data)
     # The cascade now delegates exploration deletion to the store, so its dir must
@@ -61,11 +61,11 @@ def isolated(tmp_path, monkeypatch):
 
 
 def test_store_helpers_delete_by_connection(isolated):
-    from aughor.db import history, type_overrides
-    from aughor.evidence import store as evidence_store
-    from aughor.evidence.models import EvidenceClaim
-    from aughor.monitors import store as monitor_store
-    from aughor.monitors.models import Monitor
+    from pramanyx.db import history, type_overrides
+    from pramanyx.evidence import store as evidence_store
+    from pramanyx.evidence.models import EvidenceClaim
+    from pramanyx.monitors import store as monitor_store
+    from pramanyx.monitors.models import Monitor
 
     # type override
     type_overrides.set_override("c1", "orders", "amount", "DOUBLE")
@@ -93,12 +93,12 @@ def test_store_helpers_delete_by_connection(isolated):
 
 
 def test_cascade_purges_everything_and_reports_counts(isolated):
-    from aughor.db import history, purge, type_overrides
-    from aughor.evidence import store as evidence_store
-    from aughor.evidence.models import EvidenceClaim
-    from aughor.monitors import store as monitor_store
-    from aughor.monitors.models import Monitor
-    from aughor.packs import bindings
+    from pramanyx.db import history, purge, type_overrides
+    from pramanyx.evidence import store as evidence_store
+    from pramanyx.evidence.models import EvidenceClaim
+    from pramanyx.monitors import store as monitor_store
+    from pramanyx.monitors.models import Monitor
+    from pramanyx.packs import bindings
 
     conn = "cat_to_delete"
 
@@ -114,7 +114,7 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     type_overrides.set_override(conn, "t", "c", "DOUBLE")
     import time
 
-    from aughor.db import metadata                                  # DE-3c: read once, kept per connection
+    from pramanyx.db import metadata                                  # DE-3c: read once, kept per connection
     read = metadata.MetadataRead(engine="duckdb", strategy="catalog", facts={}, detail={})
     metadata._CACHE[conn] = (time.monotonic(), read)
     metadata._CACHE["other_conn"] = (time.monotonic(), read)
@@ -123,12 +123,12 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
         investigation_id=inv9, claim_text="x", confidence=0.5))
     monitor_store.upsert_monitor(Monitor(conn_id=conn, name="rev drop"))
     bindings.save_binding("pack1", conn, {"role": {"table": "t"}})
-    from aughor.semantic import ambiguity_ledger
+    from pramanyx.semantic import ambiguity_ledger
     ambiguity_ledger.purge_connections([conn])  # start clean (session-shared ledger DB)
     ambiguity_ledger.crystallize_user_choice(conn, "top products", "by revenue")
 
     import json
-    from aughor.knowledge import briefing, patterns
+    from pramanyx.knowledge import briefing, patterns
     briefing._CACHE_PATH.write_text(json.dumps({
         conn: {"briefing": "x"},                 # connection-level entry
         f"{conn}:main": {"briefing": "y"},        # schema-scoped entry
@@ -140,7 +140,7 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     }))
 
     # uploaded data dir
-    from aughor.control_plane.vending import vend_storage
+    from pramanyx.control_plane.vending import vend_storage
     root = vend_storage(conn).root
     (root / "main").mkdir(parents=True)
     (root / "main" / "sales.csv").write_text("a,b\n1,2\n")
@@ -190,7 +190,7 @@ def test_schema_scoped_briefing_invalidate(isolated):
     connection-level entry and sibling schemas survive (the reported leak: a
     removed schema's briefing kept showing because schema-delete never cleared it)."""
     import json
-    from aughor.knowledge import briefing, patterns
+    from pramanyx.knowledge import briefing, patterns
     briefing._CACHE_PATH.write_text(json.dumps({
         "workspace": {"b": 0},
         "workspace:missimi": {"b": 1},
@@ -214,14 +214,14 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
     aggregates, but leaves sibling schemas (the user's ask: deleting a catalog/schema
     takes its investigations, canvas, briefings, everything with it)."""
     import json
-    from aughor.canvas import store as canvas_store
-    from aughor.canvas.models import CanvasScope
-    from aughor.db import history, purge
-    from aughor.evidence import store as evidence_store
-    from aughor.evidence.models import EvidenceClaim
-    from aughor.knowledge import briefing, patterns
-    from aughor.monitors import store as monitor_store
-    from aughor.monitors.models import Monitor
+    from pramanyx.canvas import store as canvas_store
+    from pramanyx.canvas.models import CanvasScope
+    from pramanyx.db import history, purge
+    from pramanyx.evidence import store as evidence_store
+    from pramanyx.evidence.models import EvidenceClaim
+    from pramanyx.knowledge import briefing, patterns
+    from pramanyx.monitors import store as monitor_store
+    from pramanyx.monitors.models import Monitor
 
     CONN = "workspace"
     gone, keep = "missimi", "zomato_data"
@@ -242,7 +242,7 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
         f"{CONN}:{gone}": 1, CONN: 0, f"{CONN}:{keep}": 2}))
     patterns._CACHE_PATH.write_text(json.dumps({CONN: {"patterns": []}}))
     # watermark: gone schema tables + sibling
-    from aughor.explorer import watermark
+    from pramanyx.explorer import watermark
     watermark._PATH.write_text(json.dumps({CONN: {f"{gone}.orders": "d", f"{keep}.sales": "d"}}))
     # canvas bound to the removed schema (+ an artifact) and a sibling canvas
     cv = canvas_store.create_canvas("missimi cv", [CanvasScope(connection_id=CONN, schema_name=gone)])
@@ -287,7 +287,7 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
 
 
 def test_cascade_is_idempotent(isolated):
-    from aughor.db import purge
+    from pramanyx.db import purge
     # Purging a connection that never existed is a clean no-op, not an error.
     counts = purge.purge_connection_artifacts("never_existed")
     assert counts.get("investigations", 0) == 0
@@ -299,8 +299,8 @@ def test_purge_removes_store_seeded_exploration_state(isolated):
     written through the family store — must be purged just as thoroughly. A finding
     that survives purge in ANY home is the stale-intelligence class (the 2026-08-04
     briefing citing a deleted table)."""
-    from aughor.db import purge
-    from aughor.explorer import store as explorer_store
+    from pramanyx.db import purge
+    from pramanyx.explorer import store as explorer_store
 
     def _seed(key: str, finding_id: str) -> None:
         explorer_store.save(key, {"phase": "complete", "insights": [{"id": finding_id}]})
@@ -322,8 +322,8 @@ def test_purge_counts_a_key_once_when_it_lives_in_store_and_file(isolated):
     """An imported entry exists as a store row AND its legacy file; purging it is
     ONE removal — double-counting would overstate what the cascade did."""
     import json as _json
-    from aughor.db import purge
-    from aughor.explorer import store as explorer_store
+    from pramanyx.db import purge
+    from pramanyx.explorer import store as explorer_store
 
     (isolated / "exploration_cat_dual.json").write_text(_json.dumps({"phase": "complete"}))
     assert explorer_store.load("cat_dual")["phase"] == "complete"   # import into the store
@@ -344,13 +344,13 @@ def test_a_deleted_connection_leaves_nothing_on_disk():
     `residue_of`, which reads every SQLite table with a connection column, every path and
     every JSON/YAML store under the data directory — so a store nobody seeds here still shows
     up the first time a real delete runs (the cascade logs it)."""
-    from aughor.db import purge
-    from aughor.explorer import watermark
-    from aughor.kernel.ledger import Ledger
-    from aughor.knowledge import indexer
-    from aughor.metastore import store as metastore
-    from aughor.ontology import column_config, doctree
-    from aughor.sql import popularity
+    from pramanyx.db import purge
+    from pramanyx.explorer import watermark
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.knowledge import indexer
+    from pramanyx.metastore import store as metastore
+    from pramanyx.ontology import column_config, doctree
+    from pramanyx.sql import popularity
 
     conn = "deadbeef42"
     column_config.save_table_config(conn, "main", "orders",
@@ -391,10 +391,10 @@ def test_a_deleted_canvas_takes_its_cards_and_cockpit_history_and_keeps_its_file
     behind, unreachable. Measured 2026-10-04 on the live install: four deleted canvases still
     held 881 kernel artifacts, 680 jobs and 5,478 events. A chat answer filed under the canvas
     is a RUN and stays, with its receipt — as a deleted chat thread's runs do (FL-6)."""
-    from aughor.cards import store as cards
-    from aughor.cards.models import StoredCard
-    from aughor.db import purge
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.cards import store as cards
+    from pramanyx.cards.models import StoredCard
+    from pramanyx.db import purge
+    from pramanyx.kernel.ledger import Ledger
 
     canvas = "cv_gone_01"
     cards.upsert_card(StoredCard(connection_id="c1", scope="canvas", scope_ref=canvas,
@@ -464,7 +464,7 @@ def test_a_removed_connection_is_swept_from_every_store_keeping_only_the_audit_a
     import json
     import sqlite3
 
-    from aughor.db import purge
+    from pramanyx.db import purge
 
     conn = "e5b0c74c"
     _seed_leftovers(tmp_path, conn)
@@ -494,7 +494,7 @@ def test_a_removed_connection_is_swept_from_every_store_keeping_only_the_audit_a
 
 
 def test_a_delete_ends_by_sweeping_what_its_stores_left(tmp_path, monkeypatch):
-    from aughor.db import purge
+    from pramanyx.db import purge
 
     conn = "e5b0c74c"
     _seed_leftovers(tmp_path, conn)
@@ -508,9 +508,9 @@ def test_a_removed_connection_can_be_read_and_cleared_through_its_doors_and_a_he
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor import govern
-    from aughor.db import purge, registry
-    from aughor.routers import connections as R
+    from pramanyx import govern
+    from pramanyx.db import purge, registry
+    from pramanyx.routers import connections as R
 
     app = FastAPI()
     app.include_router(R.router)

@@ -15,7 +15,7 @@ constraint in the repo falls on one side of a single decision rule:
 > scale it with the model. If no model strength fixes the failure, it is
 > VERIFICATION — keep it.**
 
-`aughor/sql/grain_guard.py:5` states the verification case exactly: *"A stronger
+`pramanyx/sql/grain_guard.py:5` states the verification case exactly: *"A stronger
 model does not fix this — it writes the same plausible join."* The NL2SQL benchmark
 arc measured the same thing (deterministic guards beat LLM machinery 4× on strong
 models). Those guards are probes against the real data — they are **direction**.
@@ -29,15 +29,15 @@ and ours saw a type name.*
 
 | Mechanism | Where | Why it's a restriction |
 |---|---|---|
-| Schema linker: top-4 tables × top-8 cols by keyword score, hardcoded e-commerce hint dictionary | `aughor/tools/schema_linker.py:450-540`, hints `:55-121` | Bag-of-words decides what a frontier model is allowed to see; drops, doesn't rank |
-| `_SCHEMA_CHAR_LIMIT = 20_000` — comment literally cites "Groq free tier" | `aughor/agent/investigate.py:252-256` | Sized for a dead constraint; `context_budget.py:49-67` only ever scales **down** |
+| Schema linker: top-4 tables × top-8 cols by keyword score, hardcoded e-commerce hint dictionary | `pramanyx/tools/schema_linker.py:450-540`, hints `:55-121` | Bag-of-words decides what a frontier model is allowed to see; drops, doesn't rank |
+| `_SCHEMA_CHAR_LIMIT = 20_000` — comment literally cites "Groq free tier" | `pramanyx/agent/investigate.py:252-256` | Sized for a dead constraint; `context_budget.py:49-67` only ever scales **down** |
 | Sample values only on the upload connector | producer: `connectors/file/local_upload.py:963-990`; absent from `db/schema_render.py:39-156` and every warehouse connector | The exact currency-VARCHAR failure, structurally fixed for one path out of ~10 |
-| Value annotations only for `dimension/flag/ordinal` non-FK columns | `aughor/tools/schema.py:525-593` | A `measure`, `text`, `key`, `timestamp` column never shows values |
-| `_EVIDENCE_BUDGET = 6000` chars = the entire evidence for a board-level synthesis | `aughor/agent/investigate.py:1951, 6780` | 6KB of evidence into a 100K+ context model |
-| `_results_to_text(max_rows=12)` default interpret window | `aughor/agent/investigate.py:688` | The analyst reads 12 rows |
-| `_MAX_OUTPUT_TOKENS=4096`, reasoning effort `"low"`, `_STRUCTURED_ATTEMPTS=1`, temp 0.0–0.1 | `aughor/llm/provider.py:110,115,265,1255,1341` | Justified by a July cost incident, not by answer quality; throttles thinking uniformly regardless of task depth |
-| Chart vocabulary: renderer supports 22 types, quick prompt offers 13–14, deep `Literal` offers 8 | `web/components/charts/chartTypeInference.ts:36-89` vs `aughor/agent/prompts.py:123-128` vs `prompts_investigate.py:750,778` | ~10 renderable exhibit forms unreachable from any model output; +100 lines of hand-written selection rules duplicated twice in one prompt |
-| Semantic compiler cage: 4 intents, 6 aggs, unranked `measures[:10]/dims[:10]` | `aughor/semantic/compiler.py:255,269-285` | Top-10 in arbitrary dict order |
+| Value annotations only for `dimension/flag/ordinal` non-FK columns | `pramanyx/tools/schema.py:525-593` | A `measure`, `text`, `key`, `timestamp` column never shows values |
+| `_EVIDENCE_BUDGET = 6000` chars = the entire evidence for a board-level synthesis | `pramanyx/agent/investigate.py:1951, 6780` | 6KB of evidence into a 100K+ context model |
+| `_results_to_text(max_rows=12)` default interpret window | `pramanyx/agent/investigate.py:688` | The analyst reads 12 rows |
+| `_MAX_OUTPUT_TOKENS=4096`, reasoning effort `"low"`, `_STRUCTURED_ATTEMPTS=1`, temp 0.0–0.1 | `pramanyx/llm/provider.py:110,115,265,1255,1341` | Justified by a July cost incident, not by answer quality; throttles thinking uniformly regardless of task depth |
+| Chart vocabulary: renderer supports 22 types, quick prompt offers 13–14, deep `Literal` offers 8 | `web/components/charts/chartTypeInference.ts:36-89` vs `pramanyx/agent/prompts.py:123-128` vs `prompts_investigate.py:750,778` | ~10 renderable exhibit forms unreachable from any model output; +100 lines of hand-written selection rules duplicated twice in one prompt |
+| Semantic compiler cage: 4 intents, 6 aggs, unranked `measures[:10]/dims[:10]` | `pramanyx/semantic/compiler.py:255,269-285` | Top-10 in arbitrary dict order |
 | `enforce_context_cap` — dead code on the path that uses it | `tools/data_catalog.py:242` matches `TABLE:`, but `routers/investigations.py:1401` feeds it `## table` headers | A cap that silently does nothing — delete or fix |
 | Catalog swap drops enrichment | `routers/investigations.py:1398-1401` | Replacing schema with the catalog gains 5-row samples but silently loses glossary annotations, value enumerations, and profile blocks |
 
@@ -67,10 +67,10 @@ instead of silently overriding.
 
 Three hand-rolled enums for a system whose flag values are all `bool`:
 
-1. `aughor/kernel/flags.py:1019-1021` — truthy/falsy string tuples, **asymmetric**:
-   `AUGHOR_X=enabled` resolves True for a default-ON flag and False for a
+1. `pramanyx/kernel/flags.py:1019-1021` — truthy/falsy string tuples, **asymmetric**:
+   `PRAMANYX_X=enabled` resolves True for a default-ON flag and False for a
    default-OFF flag. Same string, opposite meaning.
-2. `aughor/routers/system.py:77-99` — `state` is a bare `str` (not
+2. `pramanyx/routers/system.py:77-99` — `state` is a bare `str` (not
    `Literal["on","off","auto"]`); the vocabulary is enforced by an in-tuple check.
 3. `web/components/SystemPanel.tsx:257-278` — hardcoded `GROUPS` array; unknown
    dispositions silently bucketed as `default_on`.
@@ -90,7 +90,7 @@ the scoped thing** (Wave H went 6/6 on pre-checks moving scope). Every item belo
 names its pre-check. Free checks first ("does it change the prompt?" costs nothing).
 
 ### A1. ModelProfile: capability knobs keyed to the bound model — *the keystone*
-New `aughor/llm/profile.py`: `ModelProfile { context_window, max_output, reasoning_effort_by_depth, schema_char_budget, evidence_budget, interpret_rows }`
+New `pramanyx/llm/profile.py`: `ModelProfile { context_window, max_output, reasoning_effort_by_depth, schema_char_budget, evidence_budget, interpret_rows }`
 resolved from `data/llm_config.json`'s bound model. All the constants in the
 restriction table above become reads from the profile. `context_budget.py` learns
 to scale **up**, not only down. Reasoning effort becomes depth-scaled: quick=low,
@@ -241,7 +241,7 @@ Pramanyx SSE frames → AI SDK UIMessage stream parts.
   abort→DONE, and the 5-minute drop-recovery poll against
   `GET /investigations/{id}`.
 - The existing `POST /agui/run` AG-UI endpoint is prior art for exactly this
-  mapping (`aughor/routers/agui.py:62-74`) — crib its table, don't require its
+  mapping (`pramanyx/routers/agui.py:62-74`) — crib its table, don't require its
   flag; the adapter talks to `/ask` directly.
 
 ### C2. Rich parts
@@ -282,11 +282,11 @@ sample dataset (Superstore, US retail, unrelated to this operator) contained:
 The operator's company name, asserted over someone else's data. Same run rendered every
 figure in EUR on a USD dataset.
 
-**Root cause, located.** `aughor/explorer/agent.py:2259` calls `org_context()` with **no
+**Root cause, located.** `pramanyx/explorer/agent.py:2259` calls `org_context()` with **no
 arguments**, so exploration resolves identity from the app-level global only.
 `workspace_for_connection` is called in exactly four places — `routers/_shared.py` (×2),
 `routers/connections.py`, `routers/investigations.py` — and **never anywhere under
-`aughor/explorer/`**. The explorer never asks which workspace it is exploring for, so a
+`pramanyx/explorer/`**. The explorer never asks which workspace it is exploring for, so a
 per-workspace override cannot reach it. `POST /exploration/{conn_id}/start` also accepts no
 `workspace_id` (unlike `/briefing`, which does), so a caller cannot supply one either.
 

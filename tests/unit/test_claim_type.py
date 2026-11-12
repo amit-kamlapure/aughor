@@ -9,10 +9,10 @@ import re
 
 import pytest
 
-from aughor.agent.claim_type import (admissible_verbs_directive, is_at_least,
+from pramanyx.agent.claim_type import (admissible_verbs_directive, is_at_least,
                                      overreaching_sentences, resolve_claim_type)
-from aughor.agent.investigate import _stamp_claim_type
-from aughor.agent.report_checks import (PITFALLS, check_claim_type, check_grounding, pitfall,
+from pramanyx.agent.investigate import _stamp_claim_type
+from pramanyx.agent.report_checks import (PITFALLS, check_claim_type, check_grounding, pitfall,
                                         run_report_checks)
 
 
@@ -249,7 +249,7 @@ def test_a_change_across_a_period_is_descriptive_and_a_change_to_a_thing_is_not(
     """theLook, 2026-10-01: a correct describe answer — "the repeat rate … generally increased
     throughout the year" — was refused as causal and capped, because `throughout` was read as
     the verb's object (the list held `through`, which a word boundary keeps from matching)."""
-    from aughor.agent.claim_type import overreaching_sentences
+    from pramanyx.agent.claim_type import overreaching_sentences
     said = ("The 90-day repeat rate for customers who placed their first order in 2025 generally "
             "increased throughout the year, starting at 6.2% for the January cohort and rising to 13.1%.")
     assert overreaching_sentences(said, "descriptive") == []

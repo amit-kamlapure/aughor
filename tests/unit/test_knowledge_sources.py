@@ -8,11 +8,11 @@ surface, and the data catalog's category ratchet stays exactly as pinned.
 
 These tests pin the door's three laws: the form is SERVED from the connector registry
 (never mirrored), a source is tested live before it is saved, and secret values never
-come back out. Plus the state-path fix: sync state follows `AUGHOR_STATE_DIR`, never the
+come back out. Plus the state-path fix: sync state follows `PRAMANYX_STATE_DIR`, never the
 process's CWD — a bare `Path("data")` made any process started elsewhere read an empty
 sync state and re-sync from scratch.
 
-Hermetic — `tests/conftest.py` points the registry DB and `AUGHOR_STATE_DIR` at tempdirs.
+Hermetic — `tests/conftest.py` points the registry DB and `PRAMANYX_STATE_DIR` at tempdirs.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def test_missing_required_fields_fail_in_the_connectors_own_words(client):
 
 
 def test_a_source_that_fails_its_live_test_is_never_saved(client, monkeypatch):
-    from aughor.connectors.knowledge.notion import NotionSync
+    from pramanyx.connectors.knowledge.notion import NotionSync
     monkeypatch.setattr(NotionSync, "test",
                         lambda self: (False, "401 from api.notion.com"))
     r = client.post("/knowledge/sources", json={
@@ -61,7 +61,7 @@ def test_a_source_that_fails_its_live_test_is_never_saved(client, monkeypatch):
 
 
 def test_create_then_list_carries_status_and_never_the_secret(client, monkeypatch):
-    from aughor.connectors.knowledge.notion import NotionSync
+    from pramanyx.connectors.knowledge.notion import NotionSync
     monkeypatch.setattr(NotionSync, "test", lambda self: (True, "Notion connected"))
     r = client.post("/knowledge/sources", json={
         "conn_type": "notion", "name": "Team wiki",
@@ -78,9 +78,9 @@ def test_create_then_list_carries_status_and_never_the_secret(client, monkeypatc
 
 
 def test_sync_state_follows_the_state_dir_not_the_cwd(tmp_path, monkeypatch):
-    from aughor.connectors.knowledge.notion import NotionSync
+    from pramanyx.connectors.knowledge.notion import NotionSync
 
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path))
     monkeypatch.chdir(tmp_path / ".." if (tmp_path / "..").exists() else tmp_path)
     syncer = NotionSync("connX", {"integration_token": "t"})
     syncer._save_state({"last_sync": "2026-09-06T00:00:00Z"})
@@ -96,11 +96,11 @@ def test_a_page_that_does_not_land_is_listed_with_its_reason_not_counted(tmp_pat
     """Short pages used to vanish: under 40 characters skipped unsaid, under the chunker's
     floor indexed to zero chunks and COUNTED, and a sink failure (`ingest` returns `{}`)
     counted too. Only a page with chunks counts now; the rest are named, with why."""
-    from aughor.connectors.knowledge.confluence import ConfluenceSync
-    from aughor.kernel.registries import ingestion
-    from aughor.knowledge.documents import _split_into_chunks
+    from pramanyx.connectors.knowledge.confluence import ConfluenceSync
+    from pramanyx.kernel.registries import ingestion
+    from pramanyx.knowledge.documents import _split_into_chunks
 
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path))
 
     def fake_sink(**doc):
         if "boom" in doc["title"]:

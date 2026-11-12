@@ -7,7 +7,6 @@
   </h1>
   <p><strong>The agentic data intelligence platform.</strong></p>
   <p><em>Connect to your data. Let insights find you.</em></p>
-  <p><sub>Formerly Aughor.</sub></p>
 
   <p>
     <a href="https://github.com/amit-kamlapure/pramanyx/actions/workflows/ci.yml"><img src="https://github.com/amit-kamlapure/pramanyx/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -73,10 +72,10 @@ powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/ami
 The installer asks once which industries Pramanyx is for (airline, food delivery, logistics,
 manufacturing, retail and e-commerce, SaaS). Press Enter to keep them all: each connection's industry
 is then detected from its data. To answer without being asked, add `--industries retail,saas` (or
-`all`, or `none`) — `curl … | sh -s -- --industries retail`, or set `AUGHOR_INDUSTRIES` — and change it
-later in **Settings → Organization** or with `aughor industries`.
+`all`, or `none`) — `curl … | sh -s -- --industries retail`, or set `PRAMANYX_INDUSTRIES` — and change it
+later in **Settings → Organization** or with `pramanyx industries`.
 
-Next time, run `aughor` — Pramanyx's command-line tool, which keeps its name.
+Next time, run `pramanyx` — Pramanyx's command-line tool, which keeps its name.
 
 ### What it installs, and where
 
@@ -84,12 +83,12 @@ Nothing needs to be installed first — not even Git — and nothing asks for ad
 
 | | |
 |---|---|
-| **The checkout** | `~/aughor` (`AUGHOR_DIR` to change it). A `git clone` when this computer has a working Git, otherwise the same code as a downloaded snapshot. |
+| **The checkout** | `~/pramanyx` (`PRAMANYX_DIR` to change it). A `git clone` when this computer has a working Git, otherwise the same code as a downloaded snapshot. |
 | **uv** | Only if missing, from `astral.sh`. |
 | **Python 3.11** | Through `uv python install`, into uv's own store. |
-| **Node.js** | This computer's, if it is 20.9 or newer. Otherwise a private Node 24 into `.aughor/node/`, verified against nodejs.org's published SHA-256 before anything is unpacked. |
-| **The `aughor` command** | Into uv's command folder, which is already on `PATH`. No shell startup file is edited. |
-| **Logs** | `.aughor/logs/` inside the checkout. A failed step prints the end of its log and what to do next. |
+| **Node.js** | This computer's, if it is 20.9 or newer. Otherwise a private Node 24 into `.pramanyx/node/`, verified against nodejs.org's published SHA-256 before anything is unpacked. |
+| **The `pramanyx` command** | Into uv's command folder, which is already on `PATH`. No shell startup file is edited. |
+| **Logs** | `.pramanyx/logs/` inside the checkout. A failed step prints the end of its log and what to do next. |
 
 **Disk.** About 2 GB after a full install — measured on macOS: ~1 GB for the Python
 environment and ~1 GB for the web app's packages, plus the checkout and a web build. Re-running
@@ -103,10 +102,10 @@ it, so this page does not claim it.
 ### Running it again, updating, uninstalling
 
 ```bash
-aughor doctor           # uv, Python, Node, both ports, the state dir, PATH, the model, the latest backup
-aughor update           # fetch and fast-forward, then re-run the install steps
-aughor backups          # the backups of this install's own state, newest first
-aughor restore <name>   # put one back — refused while the API is serving
+pramanyx doctor           # uv, Python, Node, both ports, the state dir, PATH, the model, the latest backup
+pramanyx update           # fetch and fast-forward, then re-run the install steps
+pramanyx backups          # the backups of this install's own state, newest first
+pramanyx restore <name>   # put one back — refused while the API is serving
 ```
 
 **Backups.** While the API runs it backs up its own state every hour that something changed —
@@ -117,16 +116,16 @@ leaving it out unsaid. A restore lists every removal it would bring back and ask
 backup of the present, and never writes over the SQL audit log or the model-call log — though
 a SQL audit log lost with its disk is put back.
 
-`aughor update` refuses rather than guesses: a checkout with local commits the remote does not
+`pramanyx update` refuses rather than guesses: a checkout with local commits the remote does not
 have is **never** rewound, and local edits outside `data/` stop it with the files named.
 Changes inside `data/` never block it — that is state the app writes. A snapshot install has
 no remote to update from, so it tells you to re-run the installer, which leaves your data alone.
 
-To **uninstall**, delete the checkout (`~/aughor`) and the `aughor` launcher in uv's command
-folder — `aughor doctor` prints its path. Your connections, history, receipts, sheets and
+To **uninstall**, delete the checkout (`~/pramanyx`) and the `pramanyx` launcher in uv's command
+folder — `pramanyx doctor` prints its path. Your connections, history, receipts, sheets and
 their backups live under `data/` inside the checkout, so copy that out first if you want to
-keep them — unless `aughor migrate-state` has moved them to `~/.aughor/state`
-(`%LOCALAPPDATA%\aughor` on Windows), every file verified and nothing deleted; people's
+keep them — unless `pramanyx migrate-state` has moved them to `~/.pramanyx/state`
+(`%LOCALAPPDATA%\pramanyx` on Windows), every file verified and nothing deleted; people's
 ontology declarations and per-column settings move with them, and the API will not start
 while a move is owed.
 
@@ -138,9 +137,9 @@ curl -LsSf …/install.sh | sh -s -- --industries all --no-start
 
 | | |
 |---|---|
-| `--industries retail,saas` \| `all` \| `none` | Answer the one question up front (or set `AUGHOR_INDUSTRIES`). |
+| `--industries retail,saas` \| `all` \| `none` | Answer the one question up front (or set `PRAMANYX_INDUSTRIES`). |
 | `--no-start` | Install only; do not start or open a browser. |
-| `AUGHOR_DIR=/some/folder` | Install somewhere other than `~/aughor`. |
+| `PRAMANYX_DIR=/some/folder` | Install somewhere other than `~/pramanyx`. |
 
 ### When it will not install
 
@@ -166,19 +165,19 @@ underlying reason.
 Pramanyx **ships no default model** — nothing is assumed about another vendor's catalogue, so you name one before your first question. The one route to a model is **Settings → Models** in the web UI: pick a backend, and the picker lists what that backend actually serves (plus your custom entries). Backends: **Ollama · LM Studio · Groq · Together · Anthropic · Gemini · OpenRouter · OpenAI** (OpenRouter and Gemini both have free tiers) — and any OpenAI-compatible endpoint you add yourself (Azure OpenAI, Mistral, a keyed vLLM) with **Add a provider**: a name, a base URL and a key, encrypted where every key is and never returned. Removing one clears everything that named it, and says each clearing.
 
 - **Three roles, independently pluggable:** SQL generation (`coder`), report synthesis (`narrator`), and the fast interpret sub-tier (`fast`) each resolve on their own — run a fast structured model for SQL and a stronger one for prose.
-- **A fallback you choose and watch:** pick a fallback backend/model in Settings; when the primary fails, the chain fails over — and since the run narrates its hops in the chat stream, a failing primary can't hide behind a healthy fallback. A link with no model of its own is skipped, and says why — never sent the primary's. Pin the chain order with `AUGHOR_FALLBACK_BACKENDS` when you need to.
+- **A fallback you choose and watch:** pick a fallback backend/model in Settings; when the primary fails, the chain fails over — and since the run narrates its hops in the chat stream, a failing primary can't hide behind a healthy fallback. A link with no model of its own is skipped, and says why — never sent the primary's. Pin the chain order with `PRAMANYX_FALLBACK_BACKENDS` when you need to.
 - **Every model call is on the record:** each attempt that reached a provider, or that a provider refused, is one row in the model-call log — backend, model, the failure's class and the provider's own words, the fallback hop it was. Spend counts refusals apart, never as billed. **Test connection** tries the models on the form and, when a provider refuses, says why in the provider's words.
-- **Env is the fallback layer**, not the primary config: `cp .env.example .env` and set `AUGHOR_BACKEND` + a key for headless/deployment setups; Settings wins when both exist.
-- The `aughor up` boot summary shows whether a backend and model are configured (no network call — it can't tell you the backend is *reachable*). The API serves without an LLM; questions fail until one answers.
+- **Env is the fallback layer**, not the primary config: `cp .env.example .env` and set `PRAMANYX_BACKEND` + a key for headless/deployment setups; Settings wins when both exist.
+- The `pramanyx up` boot summary shows whether a backend and model are configured (no network call — it can't tell you the backend is *reachable*). The API serves without an LLM; questions fail until one answers.
 
 Minimal fully-local `.env`:
 
 ```env
-AUGHOR_BACKEND=ollama
-AUGHOR_CODER_MODEL=qwen2.5-coder:14b
-AUGHOR_NARRATOR_MODEL=qwen2.5-coder:14b
+PRAMANYX_BACKEND=ollama
+PRAMANYX_CODER_MODEL=qwen2.5-coder:14b
+PRAMANYX_NARRATOR_MODEL=qwen2.5-coder:14b
 OLLAMA_BASE_URL=http://localhost:11434/v1
-AUGHOR_EMBED_MODEL=nomic-embed-text
+PRAMANYX_EMBED_MODEL=nomic-embed-text
 ```
 
 ## What's inside
@@ -214,11 +213,11 @@ The left rail groups every page under seven destinations — **Home · Ask · Da
 - **Spend** — usage and model cost by run, caps that stop a run and open a budget editor, and a governance feed that pages by date and exports. Refused model-call attempts are counted apart, not billed.
 - **Security & Audit** — every query checked and recorded, by person or agent: what was blocked, what was flagged, what was masked, and the gate map. An organisation can require a reason before anyone reads a run's details, recorded once.
 - **Evals** — suites, runs and experiments in the app; golden-set, Spider 2 and ablation harnesses in `evals/`, and a nightly evaluation (`evals/nightly.py`) on a copy of the newest backup — golden answers, abstention, another organisation refused at the door, an instruction planted in a column ignored — each against a baseline of the same model, under a cost ceiling.
-- **MCP server** — Pramanyx's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m aughor.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL. An administrator can also open doors through which outside agents read the ontology and propose its actions; every outside caller is someone — a service principal whose grant names the areas, entities, actions and connections it may use.
-- **Agent skill & catalog** — [`SKILL.md`](SKILL.md) teaches a coding agent the governed workflow; [`llms.txt`](llms.txt) and a machine-readable connector catalog ([`aughor/connectors/catalog.json`](aughor/connectors/catalog.json), secrets flagged) make the platform legible to tools.
-- **Security & RBAC** — fail-closed SQL safety gate (a statement held in a string, as `query()` or `query_table()`, is refused too), read-only Postgres, SSRF allowlist, prompt-injection fencing; org tenancy enforced on every read once `AUGHOR_REQUIRE_IDENTITY` is set — which needs an OIDC issuer, or a declared authenticating proxy, or every request is refused with what to set — with a viewer ⊂ analyst ⊂ owner ladder, row-level policy compiled into every connector's WHERE, and row and property security on the ontology. A verified ID token is exchanged for an HttpOnly session cookie; an owner check answers owned, shared, another organisation's, not found or unresolved, and only the first two pass; no access decision reads the plan tier. Every job records the authority it was started under, and a send made inside one re-checks that person's role as it leaves.
+- **MCP server** — Pramanyx's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m pramanyx.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL. An administrator can also open doors through which outside agents read the ontology and propose its actions; every outside caller is someone — a service principal whose grant names the areas, entities, actions and connections it may use.
+- **Agent skill & catalog** — [`SKILL.md`](SKILL.md) teaches a coding agent the governed workflow; [`llms.txt`](llms.txt) and a machine-readable connector catalog ([`pramanyx/connectors/catalog.json`](pramanyx/connectors/catalog.json), secrets flagged) make the platform legible to tools.
+- **Security & RBAC** — fail-closed SQL safety gate (a statement held in a string, as `query()` or `query_table()`, is refused too), read-only Postgres, SSRF allowlist, prompt-injection fencing; org tenancy enforced on every read once `PRAMANYX_REQUIRE_IDENTITY` is set — which needs an OIDC issuer, or a declared authenticating proxy, or every request is refused with what to set — with a viewer ⊂ analyst ⊂ owner ladder, row-level policy compiled into every connector's WHERE, and row and property security on the ontology. A verified ID token is exchanged for an HttpOnly session cookie; an owner check answers owned, shared, another organisation's, not found or unresolved, and only the first two pass; no access decision reads the plan tier. Every job records the authority it was started under, and a send made inside one re-checks that person's role as it leaves.
 - **Brain map** — every store behind what Pramanyx knows, with its live count, and the measured links between them; below it, the facts that changed since first seen and what each replaced.
-- **Backups** — the platform's own state backed up every hour something changed, a checked copy before every migration, and `aughor restore` to put one back ([above](#running-it-again-updating-uninstalling)).
+- **Backups** — the platform's own state backed up every hour something changed, a checked copy before every migration, and `pramanyx restore` to put one back ([above](#running-it-again-updating-uninstalling)).
 
 ## Stack
 
@@ -230,14 +229,14 @@ The left rail groups every page under seven destinations — **Home · Ask · Da
 | Charts | Vega-Lite — one grammar for screen and PDF/PPTX export |
 | LLM runtime | Ollama · LM Studio · Groq · Together · Anthropic · Gemini · OpenRouter · OpenAI, plus any OpenAI-compatible endpoint you add — per-role, with a chosen fallback chain |
 | Statistics · SQL | scipy, numpy · SQLGlot |
-| Observability | OpenTelemetry (GenAI semantic conventions) — point `AUGHOR_OTLP_ENDPOINT` at Jaeger/Tempo/Langfuse; unset = no export |
+| Observability | OpenTelemetry (GenAI semantic conventions) — point `PRAMANYX_OTLP_ENDPOINT` at Jaeger/Tempo/Langfuse; unset = no export |
 | State · Packaging | SQLite (history, registry, evidence, audit) · uv |
 
 ## Project structure
 
 ```
-aughor/
-├── aughor/
+pramanyx/
+├── pramanyx/
 │   ├── agent/        # LangGraph investigative loop + phase prompts
 │   ├── briefing/     # The Briefing — guides, readers, editions composed from blocks
 │   ├── canvas/       # Data Canvas — scoped workspaces and their answers
@@ -269,14 +268,14 @@ aughor/
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AUGHOR_BACKEND` | `ollama` | `ollama` \| `lmstudio` \| `groq` \| `together` \| `anthropic` \| `gemini` \| `openrouter` \| `openai`, or the id of a provider added in Settings |
-| `AUGHOR_CODER_MODEL` / `AUGHOR_NARRATOR_MODEL` | — | Per-role models (Settings → Models overrides env) |
-| `AUGHOR_FALLBACK_BACKENDS` | Settings choice | Pin the failover chain order (`none` disables it) |
-| `AUGHOR_DEFAULT_POSTGRES_DSN` | — | Pre-loads a Postgres connection on startup |
-| `AUGHOR_QDRANT_PATH` | `qdrant/` in the state directory | Embedded vector store for semantic search (`semantic` extra) — in-process, no server |
-| `AUGHOR_QDRANT_URL` | — | Set to pin a Qdrant *server* instead of the embedded store (e.g. `http://localhost:6333`) |
-| `AUGHOR_PUBLIC_API_URL` | — | This API's public HTTPS origin, when it has one. It turns a Slack install into a button (the OAuth callback), gives a Teams bot its messaging endpoint, and puts absolute URLs on an agent's doors and A2A card. Unset, those say what is missing instead of guessing. |
-| `AUGHOR_MODEL_PRICES` | — | Rates for a provider whose API publishes none, so spend tiles say a number instead of **unpriced**: `provider:model=input/output@date`, USD per 1M tokens, `;`-separated. Google publishes no price endpoint, so a Gemini model needs one: the list price the aggregators carried for `gemini-3.1-flash-lite` on 2026-09-15 was `gemini:gemini-3.1-flash-lite=0.25/1.50@2026-09-15` — re-check it, the date is part of the claim. A declared rate outranks the catalogue; the product itself ships no model id. |
+| `PRAMANYX_BACKEND` | `ollama` | `ollama` \| `lmstudio` \| `groq` \| `together` \| `anthropic` \| `gemini` \| `openrouter` \| `openai`, or the id of a provider added in Settings |
+| `PRAMANYX_CODER_MODEL` / `PRAMANYX_NARRATOR_MODEL` | — | Per-role models (Settings → Models overrides env) |
+| `PRAMANYX_FALLBACK_BACKENDS` | Settings choice | Pin the failover chain order (`none` disables it) |
+| `PRAMANYX_DEFAULT_POSTGRES_DSN` | — | Pre-loads a Postgres connection on startup |
+| `PRAMANYX_QDRANT_PATH` | `qdrant/` in the state directory | Embedded vector store for semantic search (`semantic` extra) — in-process, no server |
+| `PRAMANYX_QDRANT_URL` | — | Set to pin a Qdrant *server* instead of the embedded store (e.g. `http://localhost:6333`) |
+| `PRAMANYX_PUBLIC_API_URL` | — | This API's public HTTPS origin, when it has one. It turns a Slack install into a button (the OAuth callback), gives a Teams bot its messaging endpoint, and puts absolute URLs on an agent's doors and A2A card. Unset, those say what is missing instead of guessing. |
+| `PRAMANYX_MODEL_PRICES` | — | Rates for a provider whose API publishes none, so spend tiles say a number instead of **unpriced**: `provider:model=input/output@date`, USD per 1M tokens, `;`-separated. Google publishes no price endpoint, so a Gemini model needs one: the list price the aggregators carried for `gemini-3.1-flash-lite` on 2026-09-15 was `gemini:gemini-3.1-flash-lite=0.25/1.50@2026-09-15` — re-check it, the date is part of the claim. A declared rate outranks the catalogue; the product itself ships no model id. |
 
 **No feature flags.** Everything Pramanyx does is part of the platform and on. The only switches are
 six choices an organisation's admin makes in **Settings ▸ Organization ▸ What Pramanyx may do** — share
@@ -284,7 +283,7 @@ summary statistics with other installs, send row text to an outside model, ask f
 run's details are read, let Pramanyx run model work on its own schedule, read each warehouse's own query
 history, copy a source's rows into the federation engine for a cross-source join — each off by default.
 
-**Before exposing Pramanyx beyond `localhost`,** read [SECURITY.md](SECURITY.md) — the defaults assume a trusted single-user machine (`AUGHOR_API_KEY` gates requests when set; `AUGHOR_CORS_ORIGINS` scopes browsers; `AUGHOR_SECRET_KEY` encrypts stored credentials).
+**Before exposing Pramanyx beyond `localhost`,** read [SECURITY.md](SECURITY.md) — the defaults assume a trusted single-user machine (`PRAMANYX_API_KEY` gates requests when set; `PRAMANYX_CORS_ORIGINS` scopes browsers; `PRAMANYX_SECRET_KEY` encrypts stored credentials).
 
 ### Optional extras
 

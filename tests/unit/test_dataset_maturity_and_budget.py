@@ -10,10 +10,10 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from aughor.explorer import budget as B
-from aughor.explorer import maturity as M
-from aughor.explorer import program as P
-from aughor.explorer import watch as W
+from pramanyx.explorer import budget as B
+from pramanyx.explorer import maturity as M
+from pramanyx.explorer import program as P
+from pramanyx.explorer import watch as W
 
 BUSINESS = frozenset({"business"})
 
@@ -88,8 +88,8 @@ def _spec(last: date):
 def test_a_grain_is_read_once_per_settled_period_and_a_real_move_reopens(monkeypatch):
     conn = f"wh-{uuid.uuid4().hex[:6]}"
     metrics = [_metric("revenue"), _metric("aov")]
-    monkeypatch.setattr("aughor.briefing.ranges.governed_metrics", lambda c, s=None: metrics)
-    monkeypatch.setattr("aughor.briefing.ranges.resolve_for",
+    monkeypatch.setattr("pramanyx.briefing.ranges.governed_metrics", lambda c, s=None: metrics)
+    monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for",
                         lambda c, preset, **kw: (_spec(date(2026, 10, 7)), ""))
     reads: list = []
 
@@ -150,10 +150,10 @@ def test_the_tighter_budget_holds_and_says_so(monkeypatch):
 
 
 def test_a_budget_is_set_in_the_organisations_settings_and_the_connections(monkeypatch):
-    from aughor.orgsettings.models import OrgSettings
+    from pramanyx.orgsettings.models import OrgSettings
     assert OrgSettings().exploration_monthly_tokens == 0, "none unless a person sets one"
-    monkeypatch.setattr("aughor.orgsettings.load_org_settings", lambda: OrgSettings(exploration_monthly_tokens=900))
-    monkeypatch.setattr("aughor.db.registry.get_connection_settings", lambda c: {"exploration_monthly_tokens": 0})
+    monkeypatch.setattr("pramanyx.orgsettings.load_org_settings", lambda: OrgSettings(exploration_monthly_tokens=900))
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_settings", lambda c: {"exploration_monthly_tokens": 0})
     assert B.limits("wh") == (900, None), "0 clears a connection's budget"
 
 

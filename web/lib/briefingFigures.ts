@@ -11,7 +11,7 @@
  */
 import type { PaperNumber } from "@/components/brief/BriefPaper";
 
-/** The figures the front holds — `BRIEFING_FRONT_MAX` in `aughor/db/user_prefs.py`. */
+/** The figures the front holds — `BRIEFING_FRONT_MAX` in `pramanyx/db/user_prefs.py`. */
 export const FRONT_MAX = 6;
 export const PREF_KEY = "briefing_figures";
 

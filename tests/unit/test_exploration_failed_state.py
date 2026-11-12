@@ -33,7 +33,7 @@ import json
 # ── ① the reason survives a restart ──────────────────────────────────────────────
 
 def _restored(state: dict):
-    from aughor.routers.exploration import _restored_error
+    from pramanyx.routers.exploration import _restored_error
     return _restored_error(state)
 
 
@@ -76,7 +76,7 @@ def test_save_state_mirrors_the_reason_beside_the_phase():
     fields that explain each other are written by the same function."""
     import inspect
 
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     src = inspect.getsource(SchemaExplorer._save_state)
     assert '_state["phase"]' in src
     assert '_state["error"]' in src, (
@@ -90,7 +90,7 @@ def test_save_state_mirrors_the_reason_beside_the_phase():
 # ── ② a failed run's verified facts still reach the planner ──────────────────────
 
 def _annotations(monkeypatch, state: dict) -> str:
-    from aughor.explorer import store
+    from pramanyx.explorer import store
     monkeypatch.setattr(store, "load_aggregate", lambda _cid: state)
     return store.render_exploration_annotations("c1")
 
@@ -142,7 +142,7 @@ def test_the_live_shape_that_prompted_this(monkeypatch):
 def test_a_schema_its_budget_stopped_is_said_as_a_stop_not_a_failure():
     """LuxExperience, 2026-10-13: "2 of 3 schemas failed to explore" over 46 findings, when both schemas had stopped at
     their token budget with progress saved — and the platform continues such a stop a day later."""
-    from aughor.routers.exploration import _restored_error
+    from pramanyx.routers.exploration import _restored_error
     stop = {"phase": "failed", "error": "cancelled (token budget (200,000 tokens) exceeded) — progress saved",
             "stopped_on_budget_at": "2026-10-13T17:12:29+00:00"}
     states = {"gold_governance": stop, "luxexperience": stop,

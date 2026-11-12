@@ -12,7 +12,7 @@ package belonging to another industry cannot leak in.
 """
 from __future__ import annotations
 
-from aughor.business_profile.metric_kb import (_metric_key, _render_sane_range, curated_metrics,
+from pramanyx.business_profile.metric_kb import (_metric_key, _render_sane_range, curated_metrics,
                                                match_industry)
 
 
@@ -69,8 +69,8 @@ class TestABandKeepsItsBasis:
     def test_a_band_with_no_sources_is_not_marked_published(self):
         """The marker is a provenance claim. `metrics/*.yaml` is readable on a pack that never
         declared `anatomy: 1`, so gate 3's no-unsourced-band rule is not what guarantees this."""
-        from aughor.business_profile.metric_kb import _anatomy_metrics
-        from aughor.packs.models import PackMetric, SaneRange
+        from pramanyx.business_profile.metric_kb import _anatomy_metrics
+        from pramanyx.packs.models import PackMetric, SaneRange
 
         unsourced = PackMetric(name="m", sane_range=SaneRange(min=0.0, max=1.0, basis="a guess"))
         sourced = PackMetric(name="m", sane_range=SaneRange(min=0.0, max=1.0, basis="b", sources=["s"]))
@@ -80,8 +80,8 @@ class TestABandKeepsItsBasis:
 
             def dump(self): return None
         seen = []
-        import aughor.packs.loader as loader
-        import aughor.packs.knowledge as knowledge
+        import pramanyx.packs.loader as loader
+        import pramanyx.packs.knowledge as knowledge
         real_load, real_index = loader.load_pack, knowledge.knowledge_index
 
         class _Pkg:

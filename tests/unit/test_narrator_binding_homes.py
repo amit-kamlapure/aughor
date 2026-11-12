@@ -15,13 +15,13 @@ that card; a query nobody wrote about keeps its own title and no borrowed prose.
 """
 from types import SimpleNamespace
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _align_narrator_findings,
     _align_narrator_findings_with_orphans,
     _assemble_phase_findings,
     _finding_homes,
 )
-from aughor.explorer.verify import _salient_number_pairs, raw_grounded_fraction
+from pramanyx.explorer.verify import _salient_number_pairs, raw_grounded_fraction
 
 ORDERS_VS_AOV_COLS = ["aug_rev", "sep_rev", "rev_delta", "rev_pct", "aug_orders", "sep_orders", "aug_aov",
                       "sep_aov", "aug_units_per_order", "sep_units_per_order", "aug_price_per_unit",

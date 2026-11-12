@@ -6,7 +6,7 @@
 
 **How to read it**
 - Each page lists its items in seven parts: 1 controls · 2 dialogs, drawers and panels · 3 figures, counts and chips · 4 keyboard · 5 URL params · 6 empty, error, loading and withheld states · 7 what it loads on open. The page ends with **Top rows today**, which names the controls that the new title row and toolbar row must take in.
-- Paths are relative to `web/` unless they start with `aughor/` (the API). All line numbers are at commit `629ec70a`. The page components did not change in that commit; only `app/page.tsx` moved, and its references were remapped.
+- Paths are relative to `web/` unless they start with `pramanyx/` (the API). All line numbers are at commit `629ec70a`. The page components did not change in that commit; only `app/page.tsx` moved, and its references were remapped.
 - Everything here comes from reading code only. Nothing was run and no API was called.
 - ⚠ marks a call that **WRITES** or **SPENDS** (model or warehouse).
 
@@ -32,8 +32,8 @@
 | **Total** | **1,367** |
 
 **Calls that write or spend just because a page or panel opened**
-- ⚠ **Graph** WRITES on open when no graph is committed. `GET /graph`, `/graph/audit`, `/graph/review` and `/graph/trust` build the graph and persist it. They make no model call and no warehouse query (`aughor/routers/ontology.py:929`, `:1058`; `aughor/ontology/context_graph_store.py:96`).
-- ⚠ **Record › Missions Reader** SPENDS on the warehouse. `GET /record/missions/{id}/report?compose=true` runs SQL on every open and again on each version or report change (`aughor/routers/record.py:1071-1083`). An active mission also calls `GET …/proposals`, which measures the objective with SQL (`record.py:369-384`).
+- ⚠ **Graph** WRITES on open when no graph is committed. `GET /graph`, `/graph/audit`, `/graph/review` and `/graph/trust` build the graph and persist it. They make no model call and no warehouse query (`pramanyx/routers/ontology.py:929`, `:1058`; `pramanyx/ontology/context_graph_store.py:96`).
+- ⚠ **Record › Missions Reader** SPENDS on the warehouse. `GET /record/missions/{id}/report?compose=true` runs SQL on every open and again on each version or report change (`pramanyx/routers/record.py:1071-1083`). An active mission also calls `GET …/proposals`, which measures the objective with SQL (`record.py:369-384`).
 - ⚠ **Semantic Layer** SPENDS on the warehouse in four places:
   - The coverage card re-reads with `figures=true` whenever any area is "not checked".
   - A metric's approval view loads `definition-report`, which executes the metric.
@@ -347,17 +347,17 @@ Entry: rail **Define › Semantic Layer** (`lib/navDestinations.ts:65`, id `sema
 
 ### 7. Loads on open (API calls; flag WRITES / SPENDS)
 **Panel (any tab)**
-- [ ] GET `/connections/{id}/schema/rich` via `useRichSchema` (shared cache) — feeds the Dataset/Table pickers. ⚠ SPENDS (warehouse): opens the connection, builds the schema on a server-cache miss and reads declared FK metadata (components/SemanticLayerPanel.tsx:730; lib/schema-context.tsx:54; aughor/routers/connections.py:557-588)
+- [ ] GET `/connections/{id}/schema/rich` via `useRichSchema` (shared cache) — feeds the Dataset/Table pickers. ⚠ SPENDS (warehouse): opens the connection, builds the schema on a server-cache miss and reads declared FK metadata (components/SemanticLayerPanel.tsx:730; lib/schema-context.tsx:54; pramanyx/routers/connections.py:557-588)
 
 **Metrics tab (landing)**
 - [ ] GET `/metrics?connection…` (registry) (components/MetricsPanel.tsx:777; lib/api.ts:1218)
-- [ ] GET `/metrics/catalogue/{conn}?schema=` (computed catalogue; read) (components/MetricsPanel.tsx:783; aughor/routers/metrics.py:158)
-- [ ] GET `/metrics/coverage/{conn}?schema=` — then, if any area is "not checked", AGAIN with `figures=true`. ⚠ SPENDS (warehouse): reads each uncached approved metric's last six months of figures (in-process cache, ≤hourly). Only when a single dataset is in view (components/semantic/CoverageCard.tsx:76-89; aughor/semantic/metric_coverage.py:214-242)
-- [ ] (Read on interaction, not open) opening a defined row: POST `/metrics/proposals` debounced 250ms on every SQL/tables/filters/name edit — POST but read-only (profile cache, no warehouse, no write) (components/MetricsPanel.tsx:732-752; aughor/routers/metrics.py:516)
-- [ ] Approval view open: GET `/metrics/{name}/audit` (components/MetricsPanel.tsx:474) and GET `/metrics/{name}/definition-report` — ⚠ SPENDS (warehouse): opens the connection and executes the definition ("Whether it runs"); fetched for every state since every state has a next action (components/MetricsPanel.tsx:485-494; aughor/routers/metrics.py:1068-1112; aughor/semantic/definition_report.py:243-261)
-- [ ] Measures view open: GET `/ontology/keys` (read-only, no model/warehouse) (components/MetricsPanel.tsx:182-185; aughor/routers/ontology.py:764)
+- [ ] GET `/metrics/catalogue/{conn}?schema=` (computed catalogue; read) (components/MetricsPanel.tsx:783; pramanyx/routers/metrics.py:158)
+- [ ] GET `/metrics/coverage/{conn}?schema=` — then, if any area is "not checked", AGAIN with `figures=true`. ⚠ SPENDS (warehouse): reads each uncached approved metric's last six months of figures (in-process cache, ≤hourly). Only when a single dataset is in view (components/semantic/CoverageCard.tsx:76-89; pramanyx/semantic/metric_coverage.py:214-242)
+- [ ] (Read on interaction, not open) opening a defined row: POST `/metrics/proposals` debounced 250ms on every SQL/tables/filters/name edit — POST but read-only (profile cache, no warehouse, no write) (components/MetricsPanel.tsx:732-752; pramanyx/routers/metrics.py:516)
+- [ ] Approval view open: GET `/metrics/{name}/audit` (components/MetricsPanel.tsx:474) and GET `/metrics/{name}/definition-report` — ⚠ SPENDS (warehouse): opens the connection and executes the definition ("Whether it runs"); fetched for every state since every state has a next action (components/MetricsPanel.tsx:485-494; pramanyx/routers/metrics.py:1068-1112; pramanyx/semantic/definition_report.py:243-261)
+- [ ] Measures view open: GET `/ontology/keys` (read-only, no model/warehouse) (components/MetricsPanel.tsx:182-185; pramanyx/routers/ontology.py:764)
 - [ ] Adopt "Choose and date them": POST `/metrics/proposals` per proposal (read-only) (components/semantic/AdoptProposals.tsx:43-58)
-- [ ] Bind roles dialog open: GET `/packs/{id}`, GET `/packs/{id}/binding`, GET `/connections/{id}/schema/rich`, POST `/packs/{id}/propose-bindings` — ⚠ SPENDS (warehouse): propose-bindings opens the connection and builds a schema context (components/semantic/BindRoles.tsx:51-68; aughor/routers/packs.py:222-274)
+- [ ] Bind roles dialog open: GET `/packs/{id}`, GET `/packs/{id}/binding`, GET `/connections/{id}/schema/rich`, POST `/packs/{id}/propose-bindings` — ⚠ SPENDS (warehouse): propose-bindings opens the connection and builds a schema context (components/semantic/BindRoles.tsx:51-68; pramanyx/routers/packs.py:222-274)
 - [ ] On click only — ⚠ SPENDS model: "Generate from the definition" (POST `/metrics/generate-sql`), "Write from the knowledge base" (POST coverage/write, N calls); ⚠ SPENDS warehouse: "Validate now" (POST validate), "Check freshness" (GET freshness), Bind (POST `/packs/{id}/bind`, dry run); ⚠ WRITES: create/update/delete/transition/promote/materialise/remove/restore/adopt/entity/dates, "Propose by code" (POST coverage/run) (lib/api.ts:1327-1700; components/MetricsPanel.tsx:702-968)
 
 **Annotations tab**
@@ -365,7 +365,7 @@ Entry: rail **Define › Semantic Layer** (`lib/navDestinations.ts:65`, id `sema
 
 **Knowledge tab**
 - [ ] GET `/semantic/{conn}/knowledge` (components/SemanticLayerPanel.tsx:347)
-- [ ] GET `/framing/misses?connection_id=` (read) (components/semantic/MissedQuestions.tsx:111; aughor/routers/ontology.py:4855)
+- [ ] GET `/framing/misses?connection_id=` (read) (components/semantic/MissedQuestions.tsx:111; pramanyx/routers/ontology.py:4855)
 - [ ] GET `/ontology?connection_id=` (declared terms, the served graph) (components/semantic/MissedQuestions.tsx:115; lib/api.ts:1109)
 - [ ] On click: POST rebuild-index (⚠ WRITES index), PUT `/ontology/vocabulary/key` (⚠ WRITES synonym), knowledge POST/PUT/DELETE
 
@@ -579,7 +579,7 @@ Entry: rail row "Ontology" → `?tab=ontology` resolves to tab `intelligence`, l
 - [ ] `?tab=intelligence&layer=ontology` — shell reads and writes the layer (app/page.tsx:1243)
 - [ ] `?conn={id}` — the selected connection, read and written by the shell (app/page.tsx:1232)
 - [ ] Record's "open map" door navigates here (app/page.tsx:1990)
-- [ ] Not in the URL (lost on reload): schema (kept in localStorage `aughor_schema_choice:{conn}`, lib/schemaChoice.ts:12), Org/Domain/Connection mode, open drawer, selected type, open process, designer (components/OntologyPanel.tsx:553)
+- [ ] Not in the URL (lost on reload): schema (kept in localStorage `pramanyx_schema_choice:{conn}`, lib/schemaChoice.ts:12), Org/Domain/Connection mode, open drawer, selected type, open process, designer (components/OntologyPanel.tsx:553)
 - [ ] Map arrangement persisted in localStorage `ont-map-layout` and per-user preference `ontology_map_layout` (components/ontology/EntityTypeMap.tsx:93)
 - [ ] Org board pill positions persisted in localStorage `ont-pos:{conn}:{schema}` (components/OntologyCanvas.tsx:826)
 
@@ -876,7 +876,7 @@ Entry:
 - [ ] None read. Selected type, open process and designer state are component state only — no deep link to a type, process or designer (components/ontology/EntityTypeMap.tsx:173)
 - [ ] Writes: "Open Actions" / "Open in Actions" → `/?tab=intelligence&layer=kinetic&conn=<id>` (components/ontology/EntityTypePanel.tsx:2365; lib/objectLinks.ts:23)
 - [ ] Navigates via `requestTab("dashboards", {conn})` after Make a dashboard / Start a dashboard / Open {dashboard} (components/dashboards/MakeDashboard.tsx:31; components/ontology/ProcessPanel.tsx:148; components/ontology/ProcessDesigner.tsx:259; components/ontology/ActionDesigner.tsx:308)
-- [ ] localStorage: `aughor:process-draft:{conn}:{schema}` (lib/processDraft.ts:177), `aughor:action-draft:{conn}:{schema}` credential stripped (lib/actionDraft.ts:206), `aughor:cockpit:{conn}` = dashboard to open (components/ontology/ActionDesigner.tsx:307; lib/dashboards/start.ts:73)
+- [ ] localStorage: `pramanyx:process-draft:{conn}:{schema}` (lib/processDraft.ts:177), `pramanyx:action-draft:{conn}:{schema}` credential stripped (lib/actionDraft.ts:206), `pramanyx:cockpit:{conn}` = dashboard to open (components/ontology/ActionDesigner.tsx:307; lib/dashboards/start.ts:73)
 
 #### 6. Empty / error / loading / withheld states (quote the gist)
 **EntityTypePanel**
@@ -938,11 +938,11 @@ Entry:
 **EntityTypePanel** (re-read on every map version bump)
 - [ ] GET /object-types/{type} — the type's detail (lib/objectTypes.ts:664; components/ontology/EntityTypePanel.tsx:153) — served graph + overrides, no warehouse
 - [ ] GET /object-types/{type}/uses — dependents + audited reads per month (lib/objectTypes.ts:655; components/ontology/EntityTypePanel.tsx:165) — audit store, no warehouse
-- [ ] GET /ontology/processes — only when the type has processes or derived sets (lib/objectTypes.ts:1408; components/ontology/EntityTypePanel.tsx:231) — ⚠ SPENDS (warehouse) conditionally: re-counts a process for the reader where a row policy restricts it (aughor/routers/ontology.py:2641)
+- [ ] GET /ontology/processes — only when the type has processes or derived sets (lib/objectTypes.ts:1408; components/ontology/EntityTypePanel.tsx:231) — ⚠ SPENDS (warehouse) conditionally: re-counts a process for the reader where a row policy restricts it (pramanyx/routers/ontology.py:2641)
 - [ ] Properties tab: GET /ontology/keys (lib/api.ts:1145; components/ontology/EntityTypePanel.tsx:2487) — "no model and no warehouse"
-- [ ] Sources tab: GET /connections/{id}/tables/{table}/columns (lib/api.ts:876; components/ontology/EntityTypePanel.tsx:1543) — ⚠ SPENDS (warehouse, metadata): opens the connection (aughor/routers/connections.py:735)
+- [ ] Sources tab: GET /connections/{id}/tables/{table}/columns (lib/api.ts:876; components/ontology/EntityTypePanel.tsx:1543) — ⚠ SPENDS (warehouse, metadata): opens the connection (pramanyx/routers/connections.py:735)
 - [ ] History tab: GET /ontology/history?kind=entity&target_id= (lib/objectTypes.ts:635; components/ontology/EntityTypePanel.tsx:2070)
-- [ ] Make a dashboard dialog: GET /dashboards/from-object (lib/api.ts:3440; components/dashboards/ObjectDashboardStarter.tsx:95) — ⚠ SPENDS (warehouse): every piece measured before it is offered (aughor/routers/dashboards.py:236)
+- [ ] Make a dashboard dialog: GET /dashboards/from-object (lib/api.ts:3440; components/dashboards/ObjectDashboardStarter.tsx:95) — ⚠ SPENDS (warehouse): every piece measured before it is offered (pramanyx/routers/dashboards.py:236)
 - [ ] On click only (WRITES): POST /ontology/measure (warehouse counts); PUT key / display property / part-of / backing / bindings / expressions / edit-states / link name / retiring / vocabulary key; POST confirm, declare link/process/rule, restore, history put-back, backing preview (warehouse read); DELETE entity / link / binding / expression / backing / edit-states / retiring (lib/objectTypes.ts:306-1559; lib/api.ts:1058)
 
 **ProcessPanel**
@@ -951,7 +951,7 @@ Entry:
 
 **ProcessDesigner**
 - [ ] localStorage read of a kept draft (components/ontology/ProcessDesigner.tsx:127)
-- [ ] GET /ontology/processes/candidates?entity= when a type is set (lib/objectTypes.ts:1264; components/ontology/ProcessDesigner.tsx:155) — ⚠ SPENDS (warehouse): counts moments and status values (aughor/routers/ontology.py:2805)
+- [ ] GET /ontology/processes/candidates?entity= when a type is set (lib/objectTypes.ts:1264; components/ontology/ProcessDesigner.tsx:155) — ⚠ SPENDS (warehouse): counts moments and status values (pramanyx/routers/ontology.py:2805)
 - [ ] POST /ontology/processes/preview, auto-fired 900 ms after every valid draft change (on open when changing a process or restoring a valid draft) (lib/objectTypes.ts:1320; components/ontology/ProcessDesigner.tsx:169-182) — POST but writes nothing; ⚠ SPENDS (warehouse) each settle
 - [ ] On click: POST /objects/list (Show me 20, warehouse read), POST or PUT /ontology/processes (WRITES), GET /ontology/release, POST /ontology/release/publish (WRITES), PUT /dashboards/{id} (WRITES) (components/ontology/ProcessDesigner.tsx:215, :227, :232, :243, :257)
 
@@ -961,7 +961,7 @@ Entry:
 - [ ] GET /actions/triggers — when "Tell someone" is chosen (lib/api.ts:7468; components/ontology/ActionDesigner.tsx:180)
 - [ ] GET /ontology/processes/candidates?entity= — when a type is set (components/ontology/ActionDesigner.tsx:189) — ⚠ SPENDS (warehouse)
 - [ ] GET /dashboards, then GET /dashboards/{id} for EVERY non-retired dashboard (N+1 reads) — when a type is set (lib/api.ts:3338, :3348; components/ontology/ActionDesigner.tsx:202-207)
-- [ ] POST /ontology/declared-actions/preview, auto-fired 900 ms after every valid draft change (lib/objectTypes.ts:1374; components/ontology/ActionDesigner.tsx:226-239) — writes nothing; ⚠ SPENDS (warehouse): counts allowed objects and dry-runs a press on a real object (aughor/routers/ontology.py:3875)
+- [ ] POST /ontology/declared-actions/preview, auto-fired 900 ms after every valid draft change (lib/objectTypes.ts:1374; components/ontology/ActionDesigner.tsx:226-239) — writes nothing; ⚠ SPENDS (warehouse): counts allowed objects and dry-runs a press on a real object (pramanyx/routers/ontology.py:3875)
 - [ ] On click: PUT /ontology/kinetic-actions/{id} (WRITES), GET /ontology/release, POST /ontology/release/publish (WRITES), PUT /dashboards/{id} per ticked dashboard + POST /objects/list for default columns (WRITES) (components/ontology/ActionDesigner.tsx:255, :260, :271, :296, :106)
 
 Top rows today (part B, detail panels): EntityTypePanel header row = type icon · name · domain/role/declared tags · (right) Make a dashboard · Edit/Done, then connection line, description, part-of / retiring lines, Withdraw (edit), the four figures, then the six-tab strip; ProcessPanel header = name · process/verdict/origin tags, id, description, "goes through it", note/leaves, "counted …", Start a dashboard, Change this process, Withdraw; ProcessDesigner and ActionDesigner top row = breadcrumb (Ontology › Processes / {within} › Actions) · title · state chip · (right) Save draft · Review and publish|Review and declare · Close, with the status / "your draft" line under it.
@@ -1185,10 +1185,10 @@ Entry: rail row "Graph" → `?tab=graph` (resolves to Intelligence layer `graph`
 - [ ] Joins: "No joins." (components/ConnectionGraphPanel.tsx:633)
 ### 7. Loads on open (API calls; flag WRITES / SPENDS)
 - [ ] GET /governance/tags?securable_prefix=table: (components/ConnectionGraphPanel.tsx:85; lib/api.ts:469)
-- [ ] GET /graph?connection_id=&schema_name= — **WRITES when no graph is committed**: the handler builds the graph and persists it (save_graph); no model call, no warehouse query (lib/api.ts:1943; aughor/routers/ontology.py:929; aughor/ontology/context_graph_build.py:491)
-- [ ] GET /graph/audit — **WRITES under the same build-on-read fallback** (_load_graph_or_404 builds+persists) (components/ConnectionGraphPanel.tsx:168; aughor/routers/ontology.py:1019, :1058)
-- [ ] GET /graph/review — same build-on-read fallback (components/ConnectionGraphPanel.tsx:171; aughor/routers/ontology.py:1145)
-- [ ] GET /graph/trust — read-time sidecar, same fallback (components/ConnectionGraphPanel.tsx:174; aughor/routers/ontology.py:1181)
+- [ ] GET /graph?connection_id=&schema_name= — **WRITES when no graph is committed**: the handler builds the graph and persists it (save_graph); no model call, no warehouse query (lib/api.ts:1943; pramanyx/routers/ontology.py:929; pramanyx/ontology/context_graph_build.py:491)
+- [ ] GET /graph/audit — **WRITES under the same build-on-read fallback** (_load_graph_or_404 builds+persists) (components/ConnectionGraphPanel.tsx:168; pramanyx/routers/ontology.py:1019, :1058)
+- [ ] GET /graph/review — same build-on-read fallback (components/ConnectionGraphPanel.tsx:171; pramanyx/routers/ontology.py:1145)
+- [ ] GET /graph/trust — read-time sidecar, same fallback (components/ConnectionGraphPanel.tsx:174; pramanyx/routers/ontology.py:1181)
 - [ ] On demand: GET /graph/tour (on Tour; narrate=false, no model call) (components/ConnectionGraphPanel.tsx:198); GET /graph/lineage (on opening a table page) (components/ConnectionGraphPanel.tsx:802)
 - [ ] On click: Rebuild = POST /graph/rebuild, WRITES (no model, no warehouse); every Ask/Re-examine/Measure/Define button opens Ask and auto-sends the question = SPENDS (model + warehouse) (app/page.tsx:1588; components/ChatPanel.tsx:954)
 
@@ -1285,7 +1285,7 @@ Entry: rail row "Memory" → `?tab=memory` (Intelligence layer `memory`, app/pag
 - [ ] GET /learning/summary (components/MemoryPanel.tsx:125; lib/api.ts:10691)
 - [ ] GET /learning/resolutions (components/MemoryPanel.tsx:128; lib/api.ts:492)
 - [ ] GET /learning/trusted (components/MemoryPanel.tsx:131; lib/api.ts:12216)
-- [ ] GET /learning/datasets — store stats + gate status (components/MemoryPanel.tsx:134; aughor/routers/learning.py:151)
+- [ ] GET /learning/datasets — store stats + gate status (components/MemoryPanel.tsx:134; pramanyx/routers/learning.py:151)
 - [ ] Nothing on open writes or spends. On click: Seed, Save (edit) and Re-verify & propose run the SQL = SPENDS (warehouse) + WRITES; Approve/Reject/Deprecate/Remove/Revoke = WRITES (audited); Export now = POST /learning/export WRITES (exports datasets) (lib/api.ts:12239, :12253, :12269, :10755)
 
 Top rows today: no title row; shared context bar above (inert here); the page opens with the one-sentence lead, then the Needs you block; section tools sit on section heads (Seed a trusted query, Export now).
@@ -1409,10 +1409,10 @@ Entry: rail Decide ▸ Inbox (lib/navDestinations.ts:75); `?tab=inbox`; app/page
 - [ ] Write failure on a row: "Not marked <status> — <error>" (role=alert) (components/RecommendationInbox.tsx:301, 383, 407)
 
 ### 7. Loads on open (API calls; flag WRITES / SPENDS)
-- [ ] GET /investigations?limit=20&workspace_id=… — read (components/RecommendationInbox.tsx:107; aughor/routers/investigations.py:6384)
-- [ ] For each completed investigation (up to 20): GET /investigations/{id} and GET /investigations/{id}/outcomes — read; up to 40 calls per open (components/RecommendationInbox.tsx:112-118; lib/api.ts:4010; aughor/routers/investigations.py:6407, 6968)
+- [ ] GET /investigations?limit=20&workspace_id=… — read (components/RecommendationInbox.tsx:107; pramanyx/routers/investigations.py:6384)
+- [ ] For each completed investigation (up to 20): GET /investigations/{id} and GET /investigations/{id}/outcomes — read; up to 40 calls per open (components/RecommendationInbox.tsx:112-118; lib/api.ts:4010; pramanyx/routers/investigations.py:6407, 6968)
 - [ ] Lazily, on opening Execute →: GET /actions/triggers — read (components/actions/ExecuteRecommendation.tsx:35-42)
-- [ ] No write or spend on open. On click only: POST /investigations/{id}/recommendations/{i}/outcome — WRITES; "accepted" SPENDS (warehouse): it measures a baseline with run_sql_for (aughor/routers/investigations.py:6934-6941, 6867-6883); verified/implemented/rejected also book a decision/outcome into the Record (6942-6960) (lib/api.ts:3989)
+- [ ] No write or spend on open. On click only: POST /investigations/{id}/recommendations/{i}/outcome — WRITES; "accepted" SPENDS (warehouse): it measures a baseline with run_sql_for (pramanyx/routers/investigations.py:6934-6941, 6867-6883); verified/implemented/rejected also book a decision/outcome into the Record (6942-6960) (lib/api.ts:3989)
 - [ ] On click only: POST /investigations/{id}/recommendations/{i}/execute — WRITES + SENDS (Slack/webhook/Jira through the departure gate) (components/actions/ExecuteRecommendation.tsx:48-51)
 
 Top rows today: no header, title or toolbar — the page opens straight on the four-figure tally (Open · In progress · Verified · Closed, components/RecommendationInbox.tsx:172-183); its only list control, the Open | All filter, sits at the right of the "Recommendations" card's label row (:200-206).
@@ -1793,10 +1793,10 @@ Entry: rail Decide ▸ Record (lib/navDestinations.ts:76); `?tab=record` (+ lega
 - [ ] Missions ledger: GET /record/missions (components/missions/MissionsPanel.tsx:75)
 - [ ] Write/Edit mission dialog: GET /record/missions/templates?connection_id= (components/missions/MissionsPanel.tsx:198-199) + metrics
 - [ ] Mission Reader: GET /record/missions/{id} (components/missions/MissionsPanel.tsx:370)
-- [ ] ⚠ Mission Reader — SPENDS (warehouse) on open: GET /record/missions/{id}/report?compose=true composes the report now by running SQL on the connection (run_sql_for); re-runs on each version / report change (components/missions/MissionsPanel.tsx:537-538; aughor/routers/record.py:1071-1083)
-- [ ] ⚠ Mission Reader, active mission — SPENDS (warehouse) on open: GET /record/missions/{id}/proposals measures the objective with run_sql_for (components/missions/MissionsPanel.tsx:456, 576; aughor/routers/record.py:369-384)
+- [ ] ⚠ Mission Reader — SPENDS (warehouse) on open: GET /record/missions/{id}/report?compose=true composes the report now by running SQL on the connection (run_sql_for); re-runs on each version / report change (components/missions/MissionsPanel.tsx:537-538; pramanyx/routers/record.py:1071-1083)
+- [ ] ⚠ Mission Reader, active mission — SPENDS (warehouse) on open: GET /record/missions/{id}/proposals measures the objective with run_sql_for (components/missions/MissionsPanel.tsx:456, 576; pramanyx/routers/record.py:369-384)
 - [ ] Past report: GET /record/missions/{id}/reports/{rid} — read (components/missions/MissionsPanel.tsx:538)
-- [ ] Claims ledger: GET /record/claims?limit=500[&as_of=] (components/record/RecordPanel.tsx:89); GET /onboarding?connection_id=<selectedConn> — read, "never builds" (components/record/RecordPanel.tsx:90-91; aughor/routers/onboarding.py:17-31)
+- [ ] Claims ledger: GET /record/claims?limit=500[&as_of=] (components/record/RecordPanel.tsx:89); GET /onboarding?connection_id=<selectedConn> — read, "never builds" (components/record/RecordPanel.tsx:90-91; pramanyx/routers/onboarding.py:17-31)
 - [ ] Claim Reader: GET /record/claims/{id}, GET /record/claims/{id}/versions, GET /ontology/claim-links/{id} (components/record/RecordPanel.tsx:414-417)
 - [ ] Corrections: GET /record/corrections?limit=500 (components/record/CorrectionsPanel.tsx:46)
 - [ ] Corrections refuted-cause click: GET /record/inquiries?limit=500 to resolve the key (components/record/RecordWorkspace.tsx:105)

@@ -27,8 +27,8 @@ Quick is a DEPTH choice, not a research path, so it maps onto the `depth="quick"
 import pytest
 from ag_ui.core import RunAgentInput
 
-from aughor.agent.ask_router import decide_ask_route as decide_route
-from aughor.routers.agui import ask_request_from
+from pramanyx.agent.ask_router import decide_ask_route as decide_route
+from pramanyx.routers.agui import ask_request_from
 
 
 def _req(**props):

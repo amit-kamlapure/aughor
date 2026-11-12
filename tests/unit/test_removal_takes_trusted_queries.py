@@ -11,12 +11,12 @@ import json
 
 import pytest
 
-from aughor.semantic import trusted_queries as tq
+from pramanyx.semantic import trusted_queries as tq
 
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "trusted_queries.json"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "trusted_queries.json"))
     rows = [
         {"id": "lux-orders", "connection_id": "workspace", "question": "orders", "sql": "SELECT COUNT(*) FROM luxexperience.orders"},
         {"id": "lux-join", "connection_id": "workspace", "question": "returns by reason",
@@ -45,6 +45,6 @@ def test_a_removed_dataset_takes_the_trusted_queries_that_read_it_and_keeps_the_
 
 
 def test_it_runs_on_every_dataset_removal(store):
-    from aughor.kernel.registries import purge_hooks
+    from pramanyx.kernel.registries import purge_hooks
     assert "trusted_queries" in purge_hooks.registered_hook_names()["schema"]
     assert purge_hooks.run_schema_purge_hooks("workspace", "luxexperience")["trusted_queries"] == 3

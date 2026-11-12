@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
-from aughor.ontology.context_graph_search import (
+from pramanyx.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+from pramanyx.ontology.context_graph_search import (
     GRAPH_COLLECTION,
     index_graph,
     lexical_search,
@@ -27,8 +27,8 @@ SCHEMA = "main"
 def infra_or_skip():
     """Skip unless both Ollama (embeddings) and Qdrant are reachable."""
     try:
-        from aughor.semantic.embedder import embed_one
-        from aughor.semantic.vector_store import collection_count
+        from pramanyx.semantic.embedder import embed_one
+        from pramanyx.semantic.vector_store import collection_count
         embed_one("reachability probe")
         collection_count(GRAPH_COLLECTION)
     except Exception as exc:  # noqa: BLE001
@@ -51,8 +51,8 @@ def _graph() -> ContextGraph:
 
 def _cleanup():
     try:
-        from aughor.ontology.context_graph_search import graph_scope_filter
-        from aughor.semantic.vector_store import delete_by_filter
+        from pramanyx.ontology.context_graph_search import graph_scope_filter
+        from pramanyx.semantic.vector_store import delete_by_filter
         delete_by_filter(GRAPH_COLLECTION, graph_scope_filter(f"{ORG}|{CONN}|{SCHEMA}"))
     except Exception:
         pass
@@ -79,14 +79,14 @@ def test_vector_search_adds_semantic_recall(infra_or_skip):
 
 
 def test_readback_end_to_end_through_real_substrate(infra_or_skip, monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
-    monkeypatch.setenv("AUGHOR_GRAPH_READBACK", "1")
+    monkeypatch.setenv("PRAMANYX_GRAPH_READBACK", "1")
     cg = _graph()
     store.save_graph(cg)
     try:
         index_graph(cg)  # so the read-back's vector rank has something to find
-        from aughor.ontology.context_graph_readback import build_graph_prior
+        from pramanyx.ontology.context_graph_readback import build_graph_prior
         p = build_graph_prior("why did sales drop last quarter", CONN, org_id=ORG)
         assert p.fired
         assert "third quarter" in p.section  # the finding text reached the plan

@@ -15,7 +15,7 @@ unindented, non-blank, non-TABLE:, non-`--` line after the tables, so a new
 section kind can never reintroduce the bug by being missing from a header list)
 and keeps everything from there verbatim.
 """
-from aughor.tools.schema_linker import link_schema
+from pramanyx.tools.schema_linker import link_schema
 
 # A question matching `orders` only, so pruning is deterministic (zero-signal
 # tables are dropped: the keep set requires score > 0).

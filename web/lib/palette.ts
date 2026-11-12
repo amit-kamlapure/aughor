@@ -2,7 +2,7 @@
  * palette.ts — brand-ramp chrome for index-cycled cards, derived from ONE source.
  *
  * There is a single brand palette: the `--chart-1..6` CSS tokens (defined in the
- * active theme, `aughor-v2/theme/tokens-v2.css`). The ECharts theme reads them live
+ * active theme, `pramanyx-v2/theme/tokens-v2.css`). The ECharts theme reads them live
  * (`components/charts/vega/config.ts`), and the card palettes below derive from the
  * SAME tokens via `color-mix` — so changing `--chart-1` moves both the chart series
  * and the card chrome, and everything flips together in dark/light (REC-U4).

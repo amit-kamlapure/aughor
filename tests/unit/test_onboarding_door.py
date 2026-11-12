@@ -1,4 +1,4 @@
-"""Phase 6 of the 2027 study, P6-2 — the day-one door (`aughor/packs/onboarding.py`, `GET /onboarding`):
+"""Phase 6 of the 2027 study, P6-2 — the day-one door (`pramanyx/packs/onboarding.py`, `GET /onboarding`):
 onboarding hours as a release gate, the data shopping list, coverage.
 
 What these hold: the hours run from the connection's first build to the first claim a decision
@@ -13,10 +13,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from aughor.ontology.models import OntologyEntity, OntologyGraph
-from aughor.packs import onboarding as OB
-from aughor.record import claims as C
-from aughor.record import decisions as D
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.packs import onboarding as OB
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
 
 
 def _conn():
@@ -89,12 +89,12 @@ def test_the_shopping_list_names_what_the_data_cannot_answer_and_what_would_unlo
 
 
 def test_the_door_serves_the_day_one_screen_with_its_gate(monkeypatch):
-    from aughor.routers import onboarding as R
+    from pramanyx.routers import onboarding as R
     conn = _conn()
     graph = _graph(conn, "2026-10-01T09:00:00+00:00")
-    import aughor.agent.framing as framing
+    import pramanyx.agent.framing as framing
     monkeypatch.setattr(framing, "served_graph", lambda c, s=None: graph)
-    import aughor.tools.profile_cache as pc
+    import pramanyx.tools.profile_cache as pc
     monkeypatch.setattr(pc, "latest_profiled_tables", lambda c: ["shop.orders", "shop.returns"])
     out = R.get_onboarding(connection_id=conn, schema_name="shop", pack_id="core-ecommerce")
     assert out["gate"]["hours"] == 24 and out["hours"]["passed"] is None

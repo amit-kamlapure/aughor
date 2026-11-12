@@ -1,7 +1,7 @@
 # Pramanyx installer for Windows.
 #
 # On a computer without Pramanyx, one line does everything, typed in Command Prompt or PowerShell:
-# downloads Pramanyx into the aughor folder in your home folder, installs what it needs, starts it
+# downloads Pramanyx into the pramanyx folder in your home folder, installs what it needs, starts it
 # and opens it in the browser. Nothing has to be installed first, not even Git:
 #   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.ps1 | iex"
 #
@@ -14,14 +14,14 @@
 # Run it again whenever you like: it only redoes what changed.
 #
 # Like install.sh, this only finds the checkout (or downloads one) and gets uv, then hands over
-# to `python -m aughor.installer`, which runs the same steps on every OS.
+# to `python -m pramanyx.installer`, which runs the same steps on every OS.
 # Keep this file ASCII: Windows PowerShell 5.1 reads a script without a BOM as ANSI, so any
 # other character here would be garbled.
 
-# AUGHOR_REPO_URL and AUGHOR_ARCHIVE_URL install from a fork (or a local copy) instead.
-$RepoUrl = if ($env:AUGHOR_REPO_URL) { $env:AUGHOR_REPO_URL } else { 'https://github.com/amit-kamlapure/pramanyx.git' }
-$ArchiveUrl = if ($env:AUGHOR_ARCHIVE_URL) { $env:AUGHOR_ARCHIVE_URL } else { 'https://github.com/amit-kamlapure/pramanyx/archive/refs/heads/main.zip' }
-$PythonVersion = '3.11'  # aughor/installer.py PYTHON_VERSION
+# PRAMANYX_REPO_URL and PRAMANYX_ARCHIVE_URL install from a fork (or a local copy) instead.
+$RepoUrl = if ($env:PRAMANYX_REPO_URL) { $env:PRAMANYX_REPO_URL } else { 'https://github.com/amit-kamlapure/pramanyx.git' }
+$ArchiveUrl = if ($env:PRAMANYX_ARCHIVE_URL) { $env:PRAMANYX_ARCHIVE_URL } else { 'https://github.com/amit-kamlapure/pramanyx/archive/refs/heads/main.zip' }
+$PythonVersion = '3.11'  # pramanyx/installer.py PYTHON_VERSION
 
 function Write-Status([string]$Text) {
     Write-Host "  $Text"
@@ -46,7 +46,7 @@ function Test-Checkout([string]$Dir) {
     $pyproject = Join-Path $Dir 'pyproject.toml'
     if (-not (Test-Path -LiteralPath $pyproject)) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $Dir 'web\package.json'))) { return $false }
-    return [bool](Select-String -LiteralPath $pyproject -Pattern '^name = "aughor"' -Quiet)
+    return [bool](Select-String -LiteralPath $pyproject -Pattern '^name = "pramanyx"' -Quiet)
 }
 
 function Find-Uv {
@@ -110,7 +110,7 @@ function Show-ProxyHint {
     Write-Status '  $env:NODE_EXTRA_CA_CERTS = "C:\path\to\ca-bundle.pem"'
 }
 
-function Get-Aughor([string]$Target, [string]$Log) {
+function Get-Pramanyx([string]$Target, [string]$Log) {
     if (Get-Command git -ErrorAction SilentlyContinue) {
         & git clone --quiet $RepoUrl $Target *> $Log
         if ($LASTEXITCODE -eq 0) { return }
@@ -126,11 +126,11 @@ function Get-Aughor([string]$Target, [string]$Log) {
     }
     $parent = Split-Path -Parent $Target
     New-Item -ItemType Directory -Force -Path $parent -ErrorAction Stop | Out-Null
-    $staging = Join-Path $parent ('.aughor-download-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $staging = Join-Path $parent ('.pramanyx-download-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     $previousProgress = $ProgressPreference
     try {
         New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
-        $zip = Join-Path $staging 'aughor.zip'
+        $zip = Join-Path $staging 'pramanyx.zip'
         # Windows PowerShell draws Invoke-WebRequest's progress bar so slowly that it multiplies
         # the download time; nothing here needs it.
         $ProgressPreference = 'SilentlyContinue'
@@ -160,7 +160,7 @@ function Get-Aughor([string]$Target, [string]$Log) {
 $script:ExitCode = 0
 $script:Blank = $false
 
-function Install-Aughor([string[]]$Arguments) {
+function Install-Pramanyx([string[]]$Arguments) {
     Write-Host ''
     Write-Host '  Pramanyx installer'
     Write-Host ''
@@ -172,19 +172,19 @@ function Install-Aughor([string[]]$Arguments) {
     } elseif (Test-Checkout (Get-Location).Path) {
         $root = (Get-Location).Path
     } else {
-        $root = if ($env:AUGHOR_DIR) { $env:AUGHOR_DIR } else { Join-Path $HOME 'aughor' }
+        $root = if ($env:PRAMANYX_DIR) { $env:PRAMANYX_DIR } else { Join-Path $HOME 'pramanyx' }
         if (-not (Test-Checkout $root)) {
             # Never write into a folder that holds anything else: a failed download is cleaned
             # up by deleting the folder, and that must only ever meet what the download put there.
             if ((Test-Path -LiteralPath $root) -and (Get-ChildItem -LiteralPath $root -Force | Select-Object -First 1)) {
-                Write-Failure "$root already exists, and it isn't Pramanyx." 'Move it out of the way, or pick another folder by setting AUGHOR_DIR, then run this again.'
+                Write-Failure "$root already exists, and it isn't Pramanyx." 'Move it out of the way, or pick another folder by setting PRAMANYX_DIR, then run this again.'
                 $script:ExitCode = 1; return
             }
             Test-Reachable 'github.com'
             Write-Status "Downloading Pramanyx into $root..."
-            $downloadLog = Join-Path $env:TEMP 'aughor-download.log'
+            $downloadLog = Join-Path $env:TEMP 'pramanyx-download.log'
             try {
-                Get-Aughor $root $downloadLog
+                Get-Pramanyx $root $downloadLog
             } catch {
                 Add-Content -LiteralPath $downloadLog -Value $_.Exception.Message -ErrorAction SilentlyContinue
                 if (Test-CertificateFailure $_) { Show-ProxyHint }
@@ -196,7 +196,7 @@ function Install-Aughor([string[]]$Arguments) {
         $root = (Resolve-Path -LiteralPath $root).Path
     }
 
-    $logs = Join-Path $root '.aughor\logs'
+    $logs = Join-Path $root '.pramanyx\logs'
     New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
     # -- Get uv, the one tool the rest cannot install through itself --
@@ -214,7 +214,7 @@ function Install-Aughor([string[]]$Arguments) {
             $script:ExitCode = 1; return
         }
         Write-Ok 'uv installed'
-        $env:AUGHOR_UV_INSTALLED = '1'
+        $env:PRAMANYX_UV_INSTALLED = '1'
     }
     $env:Path = (Split-Path -Parent $uv) + ';' + $env:Path
 
@@ -228,7 +228,7 @@ function Install-Aughor([string[]]$Arguments) {
     $checkoutElsewhere = $root -ne (Get-Location).Path
     Push-Location $root
     try {
-        if ($checkoutElsewhere) { $env:AUGHOR_CHECKOUT_DIR = $root }
+        if ($checkoutElsewhere) { $env:PRAMANYX_CHECKOUT_DIR = $root }
         & $uv python find $PythonVersion *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Status "Installing Python $PythonVersion..."
@@ -244,16 +244,16 @@ function Install-Aughor([string[]]$Arguments) {
         # -- Hand over: every remaining step is the same on every OS --
         # --isolated --no-project: a throwaway environment, never the project's .venv, which
         # the first step may have to rebuild (and which Windows locks while it runs).
-        $env:AUGHOR_BOOTSTRAP = '1'
-        & $uv run --quiet --no-project --isolated --python $PythonVersion python -m aughor.installer @Arguments
+        $env:PRAMANYX_BOOTSTRAP = '1'
+        & $uv run --quiet --no-project --isolated --python $PythonVersion python -m pramanyx.installer @Arguments
         $script:ExitCode = $LASTEXITCODE
     } finally {
         Pop-Location
-        Remove-Item Env:\AUGHOR_BOOTSTRAP -ErrorAction SilentlyContinue
-        Remove-Item Env:\AUGHOR_UV_INSTALLED -ErrorAction SilentlyContinue
-        Remove-Item Env:\AUGHOR_CHECKOUT_DIR -ErrorAction SilentlyContinue
+        Remove-Item Env:\PRAMANYX_BOOTSTRAP -ErrorAction SilentlyContinue
+        Remove-Item Env:\PRAMANYX_UV_INSTALLED -ErrorAction SilentlyContinue
+        Remove-Item Env:\PRAMANYX_CHECKOUT_DIR -ErrorAction SilentlyContinue
     }
 }
 
-Install-Aughor $args
+Install-Pramanyx $args
 if ($PSCommandPath) { exit $script:ExitCode }  # run as a file (install.cmd): hand the result back

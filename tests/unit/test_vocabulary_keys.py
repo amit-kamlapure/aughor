@@ -12,10 +12,10 @@ import json
 
 import pytest
 
-from aughor.ontology import vocabulary as V
-from aughor.ontology.framing import frame_question
-from aughor.ontology.keys import keyed_counts, propose_synonym_key, subject_columns, vocabulary_keys
-from aughor.ontology.models import OntologyGraph
+from pramanyx.ontology import vocabulary as V
+from pramanyx.ontology.framing import frame_question
+from pramanyx.ontology.keys import keyed_counts, propose_synonym_key, subject_columns, vocabulary_keys
+from pramanyx.ontology.models import OntologyGraph
 from tests.unit.test_object_bindings import GRAPH
 
 CONN = "vocab-keys"
@@ -24,7 +24,7 @@ CONN = "vocab-keys"
 @pytest.fixture
 def graph(monkeypatch, tmp_path):
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
     monkeypatch.setattr(V, "_served_graph", lambda conn: g)
     return g
 
@@ -67,7 +67,7 @@ def test_the_linker_is_handed_the_table_and_column_and_never_a_name_nothing_matc
 def test_a_word_added_by_any_door_reaches_the_linker_at_once(graph):
     """The pack and intake doors call `add_synonym` and never cleared the linker's cached hints: their word went unseen
     until the cache turned over. The store's one write now clears it."""
-    from aughor.tools.schema_linker import build_connection_hints
+    from pramanyx.tools.schema_linker import build_connection_hints
     V.add_synonym(CONN, "property", "Order.status", "order state")
     assert build_connection_hints(CONN)[2]["order state"] == {"orders", "status"}
     V.add_synonym(CONN, "entity", "Order", "purchases")                                       # cached before this
@@ -97,12 +97,12 @@ def test_the_keys_read_and_the_census_say_how_far_the_vocabulary_is_keyed(graph)
 
 @pytest.fixture
 def served(graph, monkeypatch):
-    from aughor.routers import ontology as ONT
+    from pramanyx.routers import ontology as ONT
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda conn, schema=None: graph)
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -136,14 +136,14 @@ THELOOK = OntologyGraph.model_validate(json.loads(
 
 @pytest.fixture
 def thelook(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
     monkeypatch.setattr(V, "_served_graph", lambda conn: THELOOK)
-    from aughor.routers import ontology as ONT
+    from pramanyx.routers import ontology as ONT
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda conn, schema=None: THELOOK)
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -155,7 +155,7 @@ def thelook(monkeypatch, tmp_path):
 ])
 def test_a_word_from_a_missed_question_is_added_and_the_question_is_framed_on_it(thelook, question, word, kind,
                                                                                   subject, stored):
-    from aughor.agent.framing import person_synonyms
+    from pramanyx.agent.framing import person_synonyms
     assert not frame_question(question, THELOOK).defines                       # a miss, as the door counts one
     r = thelook.put("/ontology/vocabulary/key", params={"connection_id": CONN},
                     json={"synonym": word, "kind": kind, "subject": subject})

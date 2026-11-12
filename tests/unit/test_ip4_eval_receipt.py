@@ -5,7 +5,7 @@
 read 14 of 14 for airline and 51 of 51 for banking while nothing had been computed — and each one had cost a planner
 pass on the connection first.
 
-What holds now: the checker refuses a golden it cannot judge, the runner reads the receipt `aughor packs measure`
+What holds now: the checker refuses a golden it cannot judge, the runner reads the receipt `pramanyx packs measure`
 committed, and a receipt that is missing, stale or failing is reported as exactly that. The door downloads nothing,
 builds nothing and calls no model.
 """
@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aughor.packs.evalrunner import check_expectation, run_pack_evals
-from aughor.packs.loader import load_pack
+from pramanyx.packs.evalrunner import check_expectation, run_pack_evals
+from pramanyx.packs.loader import load_pack
 
 PACKS = Path(__file__).resolve().parents[2] / "packs"
 AIRLINE_DATASET = "bts-marketing-ontime-2019-01"
@@ -58,7 +58,7 @@ def test_a_golden_whose_figure_was_changed_is_not_reported_as_passing(airline):
 
     results = run_pack_evals(load_pack(airline), _never_asked)
     assert not any(r.passed for r in results)
-    assert all("the package changed since" in r.detail and "aughor packs measure airline" in r.detail
+    assert all("the package changed since" in r.detail and "pramanyx packs measure airline" in r.detail
                for r in results)
 
 
@@ -66,7 +66,7 @@ def test_a_package_with_no_receipt_reports_that_and_names_the_command(airline):
     shutil.rmtree(airline / "measurements")
     results = run_pack_evals(load_pack(airline), _never_asked)
     assert not any(r.passed for r in results)
-    assert all("carries no receipt" in r.detail and "aughor packs measure airline" in r.detail for r in results)
+    assert all("carries no receipt" in r.detail and "pramanyx packs measure airline" in r.detail for r in results)
 
 
 def test_a_figure_the_receipt_says_did_not_reproduce_is_not_a_pass(airline):

@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from aughor.semantic import suggestions_cache as sc
+from pramanyx.semantic import suggestions_cache as sc
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +45,7 @@ def test_a_stored_entry_is_readable_whatever_the_persist_does(monkeypatch) -> No
     does, and assert the property that has to hold either way. The ordering claim
     underneath it is pinned deterministically by the next test.
     """
-    monkeypatch.setattr("aughor.semantic.vector_store.available", lambda: False)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.available", lambda: False)
 
     try:
         sc.store("c1", "fp1", _six())
@@ -64,8 +64,8 @@ def test_the_local_write_happens_before_anything_that_can_raise(monkeypatch) -> 
     def _boom(*a, **k):
         raise RuntimeError("qdrant is configured but not answering")
 
-    monkeypatch.setattr("aughor.semantic.vector_store.available", lambda: True)
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection", _boom)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.available", lambda: True)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection", _boom)
 
     with pytest.raises(RuntimeError):
         sc.store("c1", "fp1", _six())

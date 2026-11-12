@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 
-from aughor.agent import converse_tools as ct
+from pramanyx.agent import converse_tools as ct
 
 # Tokens shaped like a tool name: two+ lowercase words joined by underscores. Plain
 # words (`caveats`, `sql`) never match; neither do dotted counters or CamelCase.

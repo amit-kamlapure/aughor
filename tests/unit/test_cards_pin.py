@@ -1,6 +1,6 @@
 """Pin-from-insight endpoint (Briefing dashboard, Slice 0 — Door 1).
 
-Verifies the ENDPOINT's contract, not the guard battery (which is tested in aughor/sql):
+Verifies the ENDPOINT's contract, not the guard battery (which is tested in pramanyx/sql):
 the finding is resolved from the brief's domain insights, its SQL is re-run through
 execute_guarded, a query that errors is REFUSED (422, nothing stored), and a clean pin is
 stored linked back to the source finding. The resolver / connection / guard are stubbed so
@@ -12,9 +12,9 @@ import types
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.cards.store import get_card, list_cards
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.api import app
+from pramanyx.cards.store import get_card, list_cards
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 client = TestClient(app)
 
@@ -25,10 +25,10 @@ FAKE_INSIGHTS = {
 
 def _patch(monkeypatch, *, insights=FAKE_INSIGHTS, result=None):
     monkeypatch.setattr(
-        "aughor.routers.exploration._domain_insights_for", lambda conn, schema: insights
+        "pramanyx.routers.exploration._domain_insights_for", lambda conn, schema: insights
     )
     monkeypatch.setattr(
-        "aughor.db.connection.open_connection_for",
+        "pramanyx.db.connection.open_connection_for",
         lambda conn: types.SimpleNamespace(close=lambda: None),
     )
     if result is None:
@@ -36,7 +36,7 @@ def _patch(monkeypatch, *, insights=FAKE_INSIGHTS, result=None):
             hypothesis_id="pin", sql="SELECT 0.32 AS rate",
             columns=["rate"], rows=[[0.32]], row_count=1,
         )
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: result)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda db, sql, **kw: result)
 
 
 def test_pin_creates_guarded_card_linked_to_finding(monkeypatch):

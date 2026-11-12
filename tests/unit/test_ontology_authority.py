@@ -10,8 +10,8 @@ popularity ranking gets that case wrong, confidently.
 """
 from __future__ import annotations
 
-from aughor.ontology.authority import authority, choose, rank
-from aughor.ontology.models import DefinitionSource
+from pramanyx.ontology.authority import authority, choose, rank
+from pramanyx.ontology.models import DefinitionSource
 
 
 def d(**kw) -> DefinitionSource:
@@ -134,7 +134,7 @@ def test_no_definitions_is_an_honest_empty():
 # ── the field is additive: every graph written before it still loads ─────────────────
 
 def test_a_metric_written_before_this_field_loads_with_an_empty_list():
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.ontology.models import OntologyMetric
     m = OntologyMetric(id="revenue", display_name="Revenue", entity="orders",
                        formula_sql="SUM(net)")
     assert m.definitions == []

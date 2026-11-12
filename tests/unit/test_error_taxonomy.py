@@ -1,7 +1,7 @@
 """R3 — the typed SQL-error taxonomy (the Verifier's signal that routes repair).
 Covers DuckDB (prefixed), Postgres, and SQLite error shapes."""
-from aughor.sql.writer import FixResult
-from aughor.tools.error_classifier import (
+from pramanyx.sql.writer import FixResult
+from pramanyx.tools.error_classifier import (
     SqlErrorClass,
     classify_error_type,
     error_class_guidance,

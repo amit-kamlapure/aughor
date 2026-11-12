@@ -14,12 +14,12 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.agent.prompts import FIX_SQL_PROMPT
-from aughor.db.connection import DuckDBConnection
-from aughor.db.schema_render import parse_schema_column_types, parse_schema_tables
-from aughor.kernel.registries.execution_hooks import collect_guard_receipts
-from aughor.sql.day_window import read_last_days_whole
-from aughor.sql.executor import execute_guarded
+from pramanyx.agent.prompts import FIX_SQL_PROMPT
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.db.schema_render import parse_schema_column_types, parse_schema_tables
+from pramanyx.kernel.registries.execution_hooks import collect_guard_receipts
+from pramanyx.sql.day_window import read_last_days_whole
+from pramanyx.sql.executor import execute_guarded
 
 TYPES = {"thelook.order_items": {"id": "INT64", "created_at": "TIMESTAMP", "status": "STRING"},
          "thelook.users": {"id": "INT64", "traffic_source": "STRING", "created_at": "TIMESTAMP"},

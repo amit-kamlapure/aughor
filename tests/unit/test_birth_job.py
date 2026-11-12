@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from aughor.routers import _shared
+from pramanyx.routers import _shared
 
 
 class _FakeDB:
@@ -45,7 +45,7 @@ def _step(summary: dict, step: str) -> list[str]:
 @pytest.mark.anyio
 async def test_run_birth_happy_path(monkeypatch):
     db = _FakeDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
     spawned = {}
 
     async def _fake_spawn(conn_id, **kw):
@@ -62,7 +62,7 @@ async def test_run_birth_happy_path(monkeypatch):
     assert spawned["conn_id"] == "connA"
 
     # The rite is journaled on the K2 spine — steps + the terminal summary.
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     kinds = [e["kind"] for e in Ledger.default().events(conn_id="connA", limit=20)]
     assert "birth.step" in kinds
     assert "birth.done" in kinds
@@ -71,7 +71,7 @@ async def test_run_birth_happy_path(monkeypatch):
 @pytest.mark.anyio
 async def test_run_birth_intelligence_failure_still_explores(monkeypatch):
     db = _FakeDB(raise_on_build=True)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
 
     async def _fake_spawn(conn_id, **kw):
         return {"ok": True, "reason": None, "job_id": "job-9"}
@@ -87,7 +87,7 @@ async def test_run_birth_intelligence_failure_still_explores(monkeypatch):
 @pytest.mark.anyio
 async def test_run_birth_raises_only_when_nothing_accomplished(monkeypatch):
     db = _FakeDB(raise_on_build=True)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
 
     async def _fake_spawn(conn_id, **kw):
         raise RuntimeError("spawn down")
@@ -106,7 +106,7 @@ async def test_run_birth_schema_scoped_open(monkeypatch):
         opened["schema"] = schema
         return db
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", _open_with_schema)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", _open_with_schema)
 
     async def _fake_spawn(conn_id, **kw):
         return {"ok": True, "reason": None, "job_id": "j"}
@@ -118,14 +118,14 @@ async def test_run_birth_schema_scoped_open(monkeypatch):
 
 @pytest.mark.anyio
 async def test_run_birth_mines_popularity(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_POPULARITY_DB", str(tmp_path / "pop.db"))
+    monkeypatch.setenv("PRAMANYX_POPULARITY_DB", str(tmp_path / "pop.db"))
     db = _FakeDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
-    monkeypatch.setattr("aughor.sql.query_log_miner.collect_logged_sql",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.sql.query_log_miner.collect_logged_sql",
                         lambda cid, limit=5000: ["SELECT brand FROM sales"])
     # Stub the task_history fallback source — under full-suite ordering the
     # hermetic ledger carries earlier tests' executed SQL (CI caught the leak).
-    monkeypatch.setattr("aughor.sql.popularity._sqls_from_task_history",
+    monkeypatch.setattr("pramanyx.sql.popularity._sqls_from_task_history",
                         lambda cid, limit: [])
 
     async def _fake_spawn(conn_id, **kw):
@@ -135,7 +135,7 @@ async def test_run_birth_mines_popularity(monkeypatch, tmp_path):
     summary = await _shared.run_birth("connPop")
     assert _step(summary, "popularity") == ["started", "done"]
 
-    from aughor.sql.popularity import load_popularity
+    from pramanyx.sql.popularity import load_popularity
     assert load_popularity("connPop")["table"] == {"sales": 1}
 
 
@@ -211,7 +211,7 @@ async def test_intelligence_and_popularity_overlap(monkeypatch):
             return super().build_intelligence()
 
     db = _SlowDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
 
     def _slow_popularity(conn_id):
         t0 = time.monotonic()
@@ -222,7 +222,7 @@ async def test_intelligence_and_popularity_overlap(monkeypatch):
             table_counts = {"orders": 7}
         return _Sig()
 
-    monkeypatch.setattr("aughor.sql.popularity.refresh_popularity", _slow_popularity)
+    monkeypatch.setattr("pramanyx.sql.popularity.refresh_popularity", _slow_popularity)
 
     async def _fake_spawn(conn_id, **kw):
         return {"ok": True, "reason": None, "job_id": "job-par"}
@@ -251,12 +251,12 @@ async def test_popularity_failure_does_not_lose_the_intelligence_build(monkeypat
     """`gather`, not `TaskGroup`: a best-effort mining hiccup must not cancel its
     sibling. This is the specific regression the concurrency change could introduce."""
     db = _FakeDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
 
     def _boom(conn_id):
         raise RuntimeError("miner exploded")
 
-    monkeypatch.setattr("aughor.sql.popularity.refresh_popularity", _boom)
+    monkeypatch.setattr("pramanyx.sql.popularity.refresh_popularity", _boom)
 
     async def _fake_spawn(conn_id, **kw):
         return {"ok": True, "reason": None, "job_id": "job-x"}
@@ -290,7 +290,7 @@ async def test_exploration_is_handed_off_before_the_prep_steps(monkeypatch):
             return super().build_intelligence()
 
     db = _RecordingDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
 
     def _slow_popularity(conn_id):
         time.sleep(0.15)
@@ -300,7 +300,7 @@ async def test_exploration_is_handed_off_before_the_prep_steps(monkeypatch):
             table_counts = {"t": 3}
         return _Sig()
 
-    monkeypatch.setattr("aughor.sql.popularity.refresh_popularity", _slow_popularity)
+    monkeypatch.setattr("pramanyx.sql.popularity.refresh_popularity", _slow_popularity)
 
     async def _fake_spawn(conn_id, **kw):
         order.append("exploration")
@@ -322,7 +322,7 @@ async def test_a_declined_handoff_still_runs_the_prep(monkeypatch):
     """"already running" is a decline, not a crash — the prep must still happen, or
     moving the handoff earlier would have made a declined exploration skip the build."""
     db = _FakeDB()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
 
     async def _declined(conn_id, **kw):
         return {"ok": False, "reason": "already running", "job_id": None}

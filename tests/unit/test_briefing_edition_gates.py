@@ -10,11 +10,11 @@ from datetime import date
 
 import pytest
 
-from aughor.briefing import edition as E
-from aughor.briefing import guide as G
-from aughor.briefing import ranges
-from aughor.briefing.compose.sources import Source
-from aughor.briefing.compose.spec import allowed_numbers
+from pramanyx.briefing import edition as E
+from pramanyx.briefing import guide as G
+from pramanyx.briefing import ranges
+from pramanyx.briefing.compose.sources import Source
+from pramanyx.briefing.compose.spec import allowed_numbers
 
 OCT29 = date(2026, 10, 29)
 

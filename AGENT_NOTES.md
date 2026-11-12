@@ -49,7 +49,7 @@ Decision (mine, pending user scope pick on the bigger bets): ship the no-regret 
 (cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).
 
 ## ◑ IN PROGRESS — Rec 2 cross-source federation (branch `2026-07-07-guarded-extraction`)
-Staged (XL). **Stage 1 ✅ SHIPPED:** `aughor/connectors/remote_join.py` — `batched_foreach_join(left,
+Staged (XL). **Stage 1 ✅ SHIPPED:** `pramanyx/connectors/remote_join.py` — `batched_foreach_join(left,
 left_key, right_conn, right_table, right_key, how=inner|left)`: dedups left keys, one `WHERE right_key IN
 (...)` query PER KEY-CHUNK to the right conn (N+1-free, one keyed batch per source), hash-join in memory. Bounded
 (chunk 1000 / 100k right / 50k out), injection-safe (escaped literals), fail-safe (any error → left result
@@ -57,7 +57,7 @@ unchanged). `cross_source_join(...)` = by-connection-id wrapper the planner/API 
 `federated.py` (DuckDB ATTACH when co-located; batched-foreach for true cross-engine). 7 tests (two real
 in-memory DuckDB conns + counting wrapper proving 1 query for 5 rows/2 keys, and 3 queries for 5 keys/chunk 2).
 **Stage 2 ✅ SHIPPED:** `POST /query/cross-source-join` (`routers/query.py`, flag `federation.remote_join` /
-`AUGHOR_FEDERATION_REMOTE_JOIN`, default off → 404) calls `cross_source_join`; left SQL runs through
+`PRAMANYX_FEDERATION_REMOTE_JOIN`, default off → 404) calls `cross_source_join`; left SQL runs through
 `gate_user_sql`. 3 integration tests (404-when-off, end-to-end join across two registered DuckDB files,
 field-validation 400). Suite 2708 green. **Stage 2b ✅ SHIPPED:** self-healing keys in `remote_join.py` —
 when raw match rate < 0.15 and `reconcile=True`, retry under PAIRED normalizations (Python fn on materialized
@@ -66,13 +66,13 @@ adopt the first reaching ≥0.60 match AND ≥+0.30 gain. Refactored the primiti
 `{jk_expr} AS __jk`, one path for raw+normalized) + `_hash_join` + `_try_reconcile`. Endpoint passes
 `reconcile=flag_enabled("join.key_reconciliation")` (same flag as Rec 3 — the cross-source twin). 3 tests
 (raw misses bid_N↔bref_N, reconcile heals to 3 rows, disjoint C00x↔CMPx doesn't false-reconcile). Suite
-**2711 green**. **Stage 3 ✅ SHIPPED:** `aughor/agent/federated_planner.py` — `answer_federated(question, left_id, right_id)`:
+**2711 green**. **Stage 3 ✅ SHIPPED:** `pramanyx/agent/federated_planner.py` — `answer_federated(question, left_id, right_id)`:
 ONE LLM call → `FederatedPlan{left/right FederatedSide(sql, join_key), how}` grounded on both `get_schema()`;
 `validate_plan` executes each sub-query as `SELECT * FROM (sql) AS _t LIMIT 0` and checks the join_key is an
 output column (bad plan → issues, NO execution); then `cross_source_join(..., right_sql=plan.right.sql)`.
 Engine extended: `batched_foreach_join`/`cross_source_join` now take `right_table` OR `right_sql` (keyword;
 `from_clause` = `(subquery) AS __rt` or quoted table) — the right side can be a grounded sub-query. Endpoint
-`POST /query/federated-answer` (flag `federation.planner` / `AUGHOR_FEDERATION_PLANNER`, default off → 404),
+`POST /query/federated-answer` (flag `federation.planner` / `PRAMANYX_FEDERATION_PLANNER`, default off → 404),
 returns merged result + the plan (inspectable) + issues. 6 tests (fake planner LLM + 2 real registered DuckDB
 sources). Suite 2718 green. v1 = exactly 2 sources, conn_ids[0] drives. N-source/driver-selection/answer-path
 integration are follow-ups.
@@ -154,20 +154,20 @@ Label-free quality estimator (the champion-model idea from the semantic-operator
 `_filter_verdicts(rows, ci, pred, provider, batch, indices)`; `semantic_filter` gains `validate_sample=`/
 `champion_role=` — runs cheap `fast` tier, re-judges an evenly-spread sample on the strong `coder` champion,
 and if sample disagreement > 20% escalates the WHOLE batch to the champion (else trusts cheap). Flag
-`semops.champion_validate` / `AUGHOR_SEMOPS_CHAMPION_VALIDATE`, default off = byte-identical (champion branch
+`semops.champion_validate` / `PRAMANYX_SEMOPS_CHAMPION_VALIDATE`, default off = byte-identical (champion branch
 skipped). Wired in `routers/query.py` (validate_sample=8 when on). NOTE: Role literal is coder/narrator/fast
 (NO "reasoner") — champion = "coder". 3 tests, suite **2698 green**, ruff 0. Follow-on: the full LOTUS
 calibrated-threshold cascade with (precision,recall,δ) GUARANTEES is the principled successor (see the deeper
 2026-07-08 research pass) — this ships the tractable estimator first.
 
 ## ✅ SHIPPED — Ill-formatted key reconciliation (Rec 3, branch `2026-07-07-guarded-extraction`)
-DAB GAP-3 (26/54). `aughor/sql/join_guard.py`: when the value-domain guard flags a low-overlap join,
+DAB GAP-3 (26/54). `pramanyx/sql/join_guard.py`: when the value-domain guard flags a low-overlap join,
 `reconcile_join_keys` tries deterministic DuckDB normalizations (trim+lower/digits/strip-prefix/strip-zeros/
 alnum-lower) on both keys, re-probes overlap direction-aware, and if one lifts to ≥0.60 AND ≥+0.30 over raw,
 attaches a `KeyReconciliation` to the `JoinDomainWarning` — `to_prompt_text()` then surfaces the exact
 `ON regexp_replace(...) = regexp_replace(...)` to join on. Distinguishes bid_123↔bref_123 (reconciles) from
 truly disjoint entities (C00x↔CMPx, no transform helps). Flag `join.key_reconciliation` /
-`AUGHOR_JOIN_KEY_RECONCILIATION`, default off = byte-identical (recon=None → original message). Only runs when
+`PRAMANYX_JOIN_KEY_RECONCILIATION`, default off = byte-identical (recon=None → original message). Only runs when
 a mismatch already fired (rare), breaks on first strong hit, fail-open. 6 tests, suite **2695 green**, ruff 0.
 NOTE: probe is DuckDB-syntax (USING SAMPLE + regexp_replace) — works on DuckDB + the FederatedConnection
 (the cross-source surface), fails-open on other dialects exactly like the base probe.
@@ -176,20 +176,20 @@ NOTE: probe is DuckDB-syntax (USING SAMPLE + regexp_replace) — works on DuckDB
 Gleaning (arXiv 2410.12189) on `semops/operators.py::semantic_extract`: infer a type (year/date/email/number) from
 each field's name/desc, deterministically validate extracted values, re-extract off-type cells with
 targeted feedback for `max_rounds`, surface+keep residuals (never drop — fail-open contract holds).
-Flag `semops.guarded_extract` (`AUGHOR_GUARDED_EXTRACT`), default off = byte-identical; wired into both
+Flag `semops.guarded_extract` (`PRAMANYX_GUARDED_EXTRACT`), default off = byte-identical; wired into both
 live callers (`routers/query.py::query_semantic` + `agent/investigate.py` ADA semantic step). 12 tests,
 full suite **2690 green**, ruff 0. This is the deterministic-guard-over-LLM answer to the axis where
 every frontier model scores 0%.
 
 ## Baseline (main @ 879fbee, 2026-07-07 — session 2)
 - Full suite `uv run pytest -q -m "not e2e and not eval" -p no:cacheprovider`: **2663 passed, 1 skipped, 6 deselected in 89.2s** (green; grew +155 from the 2508 in the prior baseline).
-- Ruff (`uvx ruff@0.15.20 check .`): **0**. LOC: aughor/ 83,386 py · tests/ 31,002.
+- Ruff (`uvx ruff@0.15.20 check .`): **0**. LOC: pramanyx/ 83,386 py · tests/ 31,002.
 - Note: `timeout` is not on this macOS — don't wrap pytest in it.
 
 ## Baseline (main @ 7d13abe, 2026-07-05)
 - Full suite `uv run pytest -q -m "not e2e and not eval"`: **2508 passed, 1 skipped, 6 deselected in 97s** (green — the memory claim "2 TestRatchets RED on main" is STALE).
 - Ruff: 0. Web `npx tsc --noEmit`: 3.1s.
-- LOC: aughor/ 82,135 py · web/ 43,546 ts(x) excl. api.gen.ts · tests/ 29,281.
+- LOC: pramanyx/ 82,135 py · web/ 43,546 ts(x) excl. api.gen.ts · tests/ 29,281.
 - Churn last 6wk (commits touching): explorer/agent.py 111 · routers/investigations.py 95 · agent/investigate.py 71 · routers/exploration.py 38.
 
 ## Survey reconciliation (2026-07-05) — verify subagent claims before reporting
@@ -209,7 +209,7 @@ every frontier model scores 0%.
 - Local benchmark clone `/Users/amitkamlapure/dev/Spider2` is STALE (last commit 2026-01-30) — `git pull` before any campaign work (gold refreshes landed through 2025-08; auth docs changed).
 - Snowflake access = Google form (12h turnaround) + MFA + PAT; the "dead credential" was a template, never a secret. BigQuery = own GCP project (`bigquery-public-data` covers ~70% of BQ instances).
 - Prior pipeline NEVER read the per-instance external-knowledge docs (13/135 local instances ship one; more on cloud tracks) — known, unfixed gap.
-- `tests/` has an export-CSV↔evaluator byte-parity test; the closed-loop primitive is `aughor/sql/closed_loop.py`. The eval harness itself was deliberately removed — rebuilding it is sanctioned when the campaign restarts.
+- `tests/` has an export-CSV↔evaluator byte-parity test; the closed-loop primitive is `pramanyx/sql/closed_loop.py`. The eval harness itself was deliberately removed — rebuilding it is sanctioned when the campaign restarts.
 - Leaderboard submission only by email; NEVER send without explicit user permission (draft + show).
 
 ## WS1 measurements (2026-07-06) — profile-first killed two "obvious" optimizations
@@ -222,11 +222,11 @@ every frontier model scores 0%.
 - The silent-swallow ratchet counts ANY bare `except: pass` — including deliberately-trailless fail-safes like stats.bump(). Use `return` + a comment for those (the ratchet's AST check counts Pass/Continue bodies only).
 - tests/integration/test_golden_reference.py::sql048 flaked ONLY while the machine ran a heavy parallel LLM harness (load-sensitive, likely slow-exec). Passes 3× standalone + full suite when idle. If it flakes in CI (idle machines), investigate for real.
 - Ollama `/v1/models` does NOT list cloud models that still WORK (glm-5.2:cloud answered while absent from the list) — don't conclude a model is gone from the listing alone.
-- **MODEL RESOLUTION: don't read `.env` and assume.** `.env` says `AUGHOR_CODER_MODEL=qwen3-coder-next:cloud` but the runtime inference-plane config (`provider._cfg()['models']['coder']`) pins **glm-5.2:cloud**, which WINS (layer-1 runtime override > layer-2 env > layer-3 default). ALL WS5 runs + the ratchet baseline used glm-5.2:cloud (confirmed via `get_provider('coder')._model` AND the run banner). I mis-stated it as qwen3-coder-next early on — always verify with `get_provider('coder')._model`, never the env var alone.
+- **MODEL RESOLUTION: don't read `.env` and assume.** `.env` says `PRAMANYX_CODER_MODEL=qwen3-coder-next:cloud` but the runtime inference-plane config (`provider._cfg()['models']['coder']`) pins **glm-5.2:cloud**, which WINS (layer-1 runtime override > layer-2 env > layer-3 default). ALL WS5 runs + the ratchet baseline used glm-5.2:cloud (confirmed via `get_provider('coder')._model` AND the run banner). I mis-stated it as qwen3-coder-next early on — always verify with `get_provider('coder')._model`, never the env var alone.
 - evals scripts must load .env themselves (provider falls back to a hardcoded default model otherwise — spider2.py caught this; run_golden documents the same lesson).
 
 ## Repo conventions that matter
 - Docs (ROADMAP.md/FEATURES.md) are unusually accurate but verify anyway; the repo's own rule: code > docs on disagreement.
-- All stores must honour `AUGHOR_*_DB` env overrides; the suite is hermetic — never point tests at data/.
+- All stores must honour `PRAMANYX_*_DB` env overrides; the suite is hermetic — never point tests at data/.
 - Feature work here ships flag-gated, default-byte-identical, then gets flipped via the ledger override. Follow that pattern.
 - Test ratchets (silent-swallow count, private-import baseline) may only go DOWN; never raise a baseline.

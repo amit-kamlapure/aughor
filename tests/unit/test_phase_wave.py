@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from aughor.agent.phase_waves import ada_phase_wave, route_after_wave
+from pramanyx.agent.phase_waves import ada_phase_wave, route_after_wave
 
 
 class _StubConn:
@@ -33,7 +33,7 @@ def _phase_update(pid: str, extra: dict | None = None) -> dict:
 @pytest.fixture
 def stub_phases(monkeypatch):
     """Patch the three real phase nodes with recording stubs."""
-    import aughor.agent.investigate as inv
+    import pramanyx.agent.investigate as inv
 
     calls: dict[str, dict] = {}
 
@@ -121,7 +121,7 @@ def test_route_after_wave_defaults_to_synthesize():
 
 
 def test_graph_wires_wave_only_when_flag_on(monkeypatch):
-    import aughor.agent.graph as g
+    import pramanyx.agent.graph as g
 
     class _Db(_StubConn):
         pass

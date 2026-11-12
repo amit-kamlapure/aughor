@@ -10,15 +10,15 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import (
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import (
     KineticAction,
     OntologyEntity,
     OntologyGraph,
     SideEffect,
     SubmissionCriterion,
 )
-import aughor.kernel.flags as flags
+import pramanyx.kernel.flags as flags
 
 
 def _graph() -> OntologyGraph:
@@ -159,7 +159,7 @@ def test_side_effect_kind_is_constrained():
 # ── the read-only API surface ────────────────────────────────────────────────────
 
 def test_api_returns_declared_actions(_flag_on, monkeypatch):
-    from aughor.routers import ontology as R
+    from pramanyx.routers import ontology as R
     _save_action("refund_order", _ACTION_FIELDS)
     g, _ = OV.apply_overrides(_graph(), "c", "s")
     monkeypatch.setattr(R, "_get_ontology_graph", lambda *a, **k: g)
@@ -171,7 +171,7 @@ def test_api_returns_declared_actions(_flag_on, monkeypatch):
 
 def test_api_404_when_no_ontology(monkeypatch):
     from fastapi import HTTPException
-    from aughor.routers import ontology as R
+    from pramanyx.routers import ontology as R
     monkeypatch.setattr(R, "_get_ontology_graph", lambda *a, **k: None)
     with pytest.raises(HTTPException):
         R.get_kinetic_actions(connection_id="c", schema_name=None)

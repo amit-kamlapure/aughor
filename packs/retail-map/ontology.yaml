@@ -1,4 +1,4 @@
-# The omnichannel retail-chain industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: industry `retail`,
+# The omnichannel retail-chain industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: industry `retail`,
 # 60 reference types) as an industry map: 58 objects. Two types are folded into a near-identical object rather than
 # named twice — Sales Associate into StoreEmployee (one staff table in nearly every chain), Cycle Count Event into
 # InventoryCount (a cycle count is a count of part of the stock).

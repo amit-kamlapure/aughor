@@ -16,7 +16,7 @@ per-feature detail, history, and the technology behind each increment.
 ## 1. One conversational agent — depth chosen for you (`POST /ask`)
 
 A single conversational entry decides **how deep to go** instead of making the user pick a mode up
-front (BIRD-INTERACT-driven, arXiv 2510.05318). A **deterministic-first router** (`aughor/agent/ask_router.py`)
+front (BIRD-INTERACT-driven, arXiv 2510.05318). A **deterministic-first router** (`pramanyx/agent/ask_router.py`)
 picks the depth — clear lookup → quick, causal/complex → deep, with no model call on the obvious cases;
 the user sees a `route` receipt explaining *why* and can re-run at another depth (**auto + transparency**).
 The underlying depths:
@@ -33,11 +33,11 @@ The underlying depths:
 On top of the depths, the conversational agent (the unified-answer-path arc, PR #89):
 
 - **Ask-vs-guess clarification** — when a question is materially ambiguous it asks **one** targeted
-  question instead of guessing: deterministic under-spec + value-term detection (`aughor/agent/clarify.py`)
-  **plus SOMA candidate-disagreement** (`aughor/agent/soma.py`) — generate N candidate readings, execute
+  question instead of guessing: deterministic under-spec + value-term detection (`pramanyx/agent/clarify.py`)
+  **plus SOMA candidate-disagreement** (`pramanyx/agent/soma.py`) — generate N candidate readings, execute
   them, and ask **only when their results diverge**, with each reading surfaced as a grounded option chip
   **carrying its result preview** (`= 68` vs `= 1131`), so the divergence is visible before you choose.
-- **The Ambiguity Ledger — resolution that COMPOUNDS** (`aughor/semantic/ambiguity_ledger.py`) — when an
+- **The Ambiguity Ledger — resolution that COMPOUNDS** (`pramanyx/semantic/ambiguity_ledger.py`) — when an
   ambiguity is settled (by an execution probe, by the user's clarify choice, or by a reviewer verdict) the
   resolution **crystallizes as a first-class, per-connection record** and is read back as an authoritative
   plan-time prior (`verify/priors.py`, the leading block on the live answer paths). Idempotent burn-down
@@ -54,12 +54,12 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
   subsequent run **hard-binds it and never re-asks** (precedence: resolution > clarify > canonical pin). Off by default;
   fires only on a genuine divergence, at most once per run.
 - **Conversational follow-ups** — "now break that down by region / just for the ultra tier" composes on the
-  prior query (`aughor/agent/followup.py` + a result digest carried across turns), on **every** path: the
+  prior query (`pramanyx/agent/followup.py` + a result digest carried across turns), on **every** path: the
   quick Insight path, AND the deep/Direct-lookup path (a follow-up in a canvas anchors on the previous turn's
   query via an origin-finding seed — kept its metric/filters/grain, extended by the new dimension).
 - **Progressive escalation (ITS)** — a quick answer that's inconclusive (errored, empty on an analytical
   question, or a "why" answered by a single figure) **offers** a deeper investigation rather than leaving
-  a thin answer (`aughor/agent/escalate.py`).
+  a thin answer (`pramanyx/agent/escalate.py`).
 - **Wide questions route to the explore wave** (`explore.route_wide`, default-off) — a genuinely BROAD
   "characterize / profile / map how X varies across the business" question routes to the **multi-cut explore
   subgraph** (decompose → dependency-respecting parallel waves → synthesis) instead of a single investigation.
@@ -73,7 +73,7 @@ On top of the depths, the conversational agent (the unified-answer-path arc, PR 
   (`evals/interactive.py`, `evals/ambiguity_eval.py`, `evals/its_structural.py`): built and measured
   before it ships (the SOMA build was justified by a measured 0/6 detection gap + a 0/3→3/3 asking gain).
 
-All depths share **one SQL-safety pipeline** (`aughor/sql/safety.py` `preflight_repair`) and **one
+All depths share **one SQL-safety pipeline** (`pramanyx/sql/safety.py` `preflight_repair`) and **one
 data-understanding context**, so quick and deep stay at parity (mode cross-pollination). `/chat` and
 `/investigate` remain as back-compat shims.
 
@@ -152,7 +152,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   ~10%) with no row fan-out to trip the other guards. The metric's **true global level is recomputed
   independently** (each aggregate over its own full table), and when every scanned segment sits ≥2.5× above it —
   the systematic-inflation signature of a conditioned denominator — the guard fires.
-- **Grain-correct ratio repair** (`aughor/sql/ratio_grain.py`) — the guard now **recomputes rather than only
+- **Grain-correct ratio repair** (`pramanyx/sql/ratio_grain.py`) — the guard now **recomputes rather than only
   suppressing**: a corrupted per-segment ratio is rebuilt deterministically (numerator over its own table,
   denominator over its own, joined at the segment grain) and **accepted only when the recompute's own
   whole-population level reproduces the independently-computed true global within 2%** — a wrong join guess
@@ -160,7 +160,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   never a confident wrong ranking. What the checksum rejects is suppressed **terminally**: the artifact reaches
   no reader surface — not a tile, chart, export table, or the synthesis prose (rows are redacted from the
   narrator's evidence, so it can't cite a value it was told is corrupt), and the one caveat renders once.
-- **Loss-lens decision-grade opportunity** (`aughor/agent/opportunity.py`) — a
+- **Loss-lens decision-grade opportunity** (`pramanyx/agent/opportunity.py`) — a
   "where are we losing money?" (or its optimisation flip side — "where can we improve / what's underutilised")
   is answered with a **gap × volume opportunity computed deterministically**, not written by the model:
   the utilization lens's "long-haul flies 74.5% vs short-haul's 77.2% → ~1,812 empty seats" and the leakage
@@ -168,7 +168,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   (higher-is-worse for a cost-like rate) and scale pinned from the data. The claim is grouped by a
   **low-cardinality class** (haul, cabin) with named units as evidence, materiality is measured against the
   *addressable* base (empty seats, not the whole business) with the gap's own sampling error as the floor, and
-  a probed **lifecycle filter** (`aughor/sql/lifecycle_guard.py`) is **enforced into the planned SQL** —
+  a probed **lifecycle filter** (`pramanyx/sql/lifecycle_guard.py`) is **enforced into the planned SQL** —
   values read off the data name which units count as sold (flown, not cancelled/no-show), a contract the
   planner kept ignoring as prose.
 - **Report relevance & ranking** — a deterministic pass drops findings that can't move the reader toward a
@@ -236,7 +236,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
   earned confidence (`kernel/ledger.py`, `_write_answer_receipt`) — **and any resolved ambiguity the answer
   applied** ("followed a previously-resolved reading, settled by a probe / the user / a reviewer"), so the
   compounding machinery is inspectable, not hidden (`web/components/TrustReceipt.tsx`).
-- **Trustworthy by inspection — the public Trust Receipt** (`GET /receipt/{id}`, `aughor/trust/receipt.py`) —
+- **Trustworthy by inspection — the public Trust Receipt** (`GET /receipt/{id}`, `pramanyx/trust/receipt.py`) —
   every answer, of any mode (quick · deep · builder · briefing figure), carries a stable **receipt id** (the
   kernel ledger artifact id, streamed as a `receipt_id` event) that resolves to ONE signed, inspectable
   contract: the executed SQL, input tables, the guards that fired (each named, with its action), caveats,
@@ -272,7 +272,7 @@ Deterministic, execution-grounded guards over LLM-generated SQL — each ships w
 - **Join inference & fingerprinting**, **FK-neighbour expansion**, value-verified join edges + "DO NOT JOIN" hints.
 - **Schema linking & compression** — trim wide schemas to the relevant tables; collapse sharded/dated table families.
 - **Query-log mining** — learn real join paths, value domains, and business formulas from past queries.
-- **Ontology docs as a build artifact** (`ontology.autodoc`, default-off; CLI `aughor ontology-docs`) — the
+- **Ontology docs as a build artifact** (`ontology.autodoc`, default-off; CLI `pramanyx ontology-docs`) — the
   built ontology compiles into a **persisted, Merkle-checksummed doc tree** (column→table→schema→connection;
   file-per-node YAML under `data/ontology_docs/`) where every parent folds its children's *summaries* —
   understanding compiled once and re-read cheaply. Incremental rebuild reuses unchanged subtrees (cache hits
@@ -386,7 +386,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 - **User-defined agents** (`agents.user_defined`) — reusable domain personas ("Gems on governed data"):
   an agent binds standing INSTRUCTIONS + a set of uploaded DOCUMENTS + a CONNECTION
-  (`aughor/custom_agents/`, store `data/agents.db`, CRUD `/agents/custom`). Answering via
+  (`pramanyx/custom_agents/`, store `data/agents.db`, CRUD `/agents/custom`). Answering via
   `/ask` + `agent_id`: the instructions lead the prompt (rules_block-style), document retrieval is
   restricted to the agent's bound documents (fail-closed — an agent with none sees none), the
   connection binding wins (a conflicting explicit connection is a 409, never a silent override), and
@@ -424,7 +424,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   `tags.investigation_id`, and attributed to its **session** (`mlflow.trace.session`), **user**
   (`mlflow.trace.user`) and **agent** (`tags.agent_id`) so MLflow's Sessions / user / per-agent /
   cost views populate — all ambient from request-scoped contextvars, no threading through the
-  graph. Third backend of the one telemetry seam (`aughor/telemetry.py`, beside
+  graph. Third backend of the one telemetry seam (`pramanyx/telemetry.py`, beside
   Langfuse/OTel): lazy lock-serialized init, transient server failures retry on a 60s cooldown (never a
   process-lifetime disable), HTTP timeout/retries bounded so a dead server can't stall the answer path,
   and flipping the flag OFF **unpatches autolog** (no silent trace export after opting out). Client is
@@ -434,29 +434,29 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   Phase 1 of the MLflow arc.
 - **Functional-plane consolidation** (Part 2 of the 2026-07-03 review, flag-gated) — the diffused agent
   runtime is being re-drawn as clean horizontal planes, each with a typed contract + a conformance test:
-  a **Trust plane** (`aughor/trust:verify(sql|code|metadata, scope) → Verdict`) hoisting the ~9 scattered
+  a **Trust plane** (`pramanyx/trust:verify(sql|code|metadata, scope) → Verdict`) hoisting the ~9 scattered
   validation guards behind one façade — its live consumers are now **on by default** (WP-1f): the AST
   read-only/mutation **BLOCK** runs on the Deep-Analysis generation path (`trust.verify_live`) and on the
   `/query/validate` surface (`trust.verify_facade`), so a mutating/DDL statement is stopped at the plane,
   not just at the fail-closed connection layer;
-  a **Capability plane** (`aughor/pipeline`) — one `Generate→Validate→Execute→Interpret` template
+  a **Capability plane** (`pramanyx/pipeline`) — one `Generate→Validate→Execute→Interpret` template
   parameterized by domain (`data` SQL + `metadata` schema-Q&A), whose `validate` *is* the Trust plane;
-  and a **Semantic plane** (`aughor/semantic/context.py:resolve → SemanticContext`) that resolves
+  and a **Semantic plane** (`pramanyx/semantic/context.py:resolve → SemanticContext`) that resolves
   metrics/ontology/profile/KB **once** per run instead of ad-hoc, read back by the planner. Live-verified
   end-to-end (`POST /query/capability-answer`). Each plane is a swap-point; a new capability = register one impl.
-- **One noun model at the boundaries** (Part 2 Wave 3) — **`ExecutionScope`** (`aughor/canvas/scope.py`):
+- **One noun model at the boundaries** (Part 2 Wave 3) — **`ExecutionScope`** (`pramanyx/canvas/scope.py`):
   the canvas/connection/schema/table-filter precedence resolved once (was hand-rolled at 4 router call
-  sites; fixes a salvage/resume sibling-schema leak). **`SemanticContract`** (`aughor/semantic/contracts.py`):
+  sites; fixes a salvage/resume sibling-schema leak). **`SemanticContract`** (`pramanyx/semantic/contracts.py`):
   the one governed-metric type both the curated catalog and the ontology serialize to, unified via
   `SemanticContext.contracts()` (catalog wins on collision). **`answer_report`** — the deep-report SSE
   event/field renamed from the internal `ada_report` codename across every consumer (web + MCP), old name
   kept as a `@deprecated` wire alias one release; the web report type is now `AnswerReport`.
 - **Cross-source federation** (`federation.planner`) — answer a question that spans two-or-more databases
-  end-to-end, deterministic-first. A no-LLM **connection selector** (`aughor/agent/connection_selector.py`,
+  end-to-end, deterministic-first. A no-LLM **connection selector** (`pramanyx/agent/connection_selector.py`,
   lexical schema-relevance + greedy set-cover) picks the sources the question touches; a one-call LLM
-  **federated planner** (`aughor/agent/federated_planner.py`) decomposes it into a grounded sub-query per
+  **federated planner** (`pramanyx/agent/federated_planner.py`) decomposes it into a grounded sub-query per
   source + the join keys (it also picks the driver and chains 3+ sources), validated deterministically; the
-  **batched-foreach engine** (`aughor/connectors/remote_join.py`, `federation.remote_join`) joins them
+  **batched-foreach engine** (`pramanyx/connectors/remote_join.py`, `federation.remote_join`) joins them
   **N+1-free** (one keyed batch per source, in SQL), with **self-healing ill-formatted
   keys**, cross-type numeric matching, and cap-lifted fetches (`execute_bounded`). Exposed as
   `POST /query/cross-source-join` · `/query/federated-answer` · `/query/auto-federated-answer`, and folded into
@@ -484,7 +484,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   so a report can't show 40% (per order) and 76% (per line-item) for one rate. Both fan-outs run over `ContextThreadPoolExecutor` (so the metering
   accumulator + P6 budget propagate), with budget-abort, failure isolation, serial fallback and deterministic
   merge; in-phase dimension queries already run in parallel. See `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`.
-- **Org / workspace tenancy** — `org_id` on every store, and (flag-gated on `AUGHOR_REQUIRE_IDENTITY`, default
+- **Org / workspace tenancy** — `org_id` on every store, and (flag-gated on `PRAMANYX_REQUIRE_IDENTITY`, default
   off) **enforced on the read path**: a request-identity + object-level-authz seam (`security/authz.py` — a
   `Principal`, owner-checks on by-id routes), org-scoped `list_connections` / investigation history, a pure-ASGI
   `_OrgContextMiddleware` that binds `current_org_id()` to the request, and kernel jobs that re-bind their own
@@ -496,8 +496,8 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   stores stay behind a `kernel/registries/resource_org.py` resolver registry so the platform never imports them.
   **licensing tiers** (Free/Pro/Enterprise, 402 → upsell),
   **governed-intelligence MCP server**, time-to-first-insight instrumentation.
-- **Role-based access control (RBAC)** — a second authorization axis orthogonal to licensing (`aughor/rbac/`,
-  flag-gated on `AUGHOR_REQUIRE_IDENTITY` **and** the `RBAC_SSO` capability → localhost/non-RBAC tiers
+- **Role-based access control (RBAC)** — a second authorization axis orthogonal to licensing (`pramanyx/rbac/`,
+  flag-gated on `PRAMANYX_REQUIRE_IDENTITY` **and** the `RBAC_SSO` capability → localhost/non-RBAC tiers
   unchanged). A built-in role ladder **viewer ⊂ analyst ⊂ owner** over a small permission taxonomy, an
   org-scoped assignment store, and a **first-user-is-owner** bootstrap so enabling identity never locks out
   admin. Enforcement is centralized in one auditable **declarative policy table** (`rbac/policy.py`,
@@ -525,7 +525,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 
 ## 13. Quality bar & engineering discipline
 
-- **One number-format authority** (`aughor/util/format.py`, mirrored by `normalizeNumberPrecision` in
+- **One number-format authority** (`pramanyx/util/format.py`, mirrored by `normalizeNumberPrecision` in
   `web/lib/format.ts`) — prose rounds `|v| ≥ 1` to 2dp and `|v| < 1` to 6dp, touching only runs of 4+ fractional digits;
   data-grid cells keep up to 4dp on purpose. Applied at BOTH ends: rows are rounded on the way INTO an LLM prompt (so a
   17-digit float never exists for the model to quote) and prose is rounded at every persist/response boundary.
@@ -551,8 +551,8 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   `NameError`s), plus a **codegen-drift gate** (the typed TS client `web/lib/api.gen.ts` is regenerated
   from the route surface via a hermetic offline OpenAPI dump — `scripts/dump_openapi.py` — and CI fails
   if it's stale). ~2,900 tests; the suite is **fully store-isolated so it can never mutate live data** — every SQLite
-  store honours an `AUGHOR_*_DB` override, and the glossary + metrics-catalog **file** stores (`AUGHOR_GLOSSARY_PATH` /
-  `AUGHOR_METRICS_PATH`) point at a throwaway temp copy in tests, so the autoseed / knowledge-sync write path can never
+  store honours an `PRAMANYX_*_DB` override, and the glossary + metrics-catalog **file** stores (`PRAMANYX_GLOSSARY_PATH` /
+  `PRAMANYX_METRICS_PATH`) point at a throwaway temp copy in tests, so the autoseed / knowledge-sync write path can never
   touch `data/`.
 - **Enforced frontend design layer** (Part 2 of the 2026-07-03 review) — three baseline-zero, *blocking*
   web gates, the ruff discipline applied to the UI: a **design-token gate** (`lint:tokens` — no raw radius or
@@ -574,19 +574,19 @@ the ask-vs-guess gate (flag endgame Wave 2d; `skip_clarify` on a single turn is 
 remaining bypass) and premise validation (Wave 3 — the question ASSERTING a direction is
 the trigger, so a flag in front of it decided nothing).
 
-- **Close the loop** (`AUGHOR_CLOSED_LOOP`) — captured human corrections/verdicts + trusted queries are
+- **Close the loop** (`PRAMANYX_CLOSED_LOOP`) — captured human corrections/verdicts + trusted queries are
   read back into the planner as priors, so a corrected mistake isn't repeated (+0.70 accuracy on a repeat set).
-- **Agent Context surface** (`AUGHOR_CONTEXT_SURFACE`) — the working context is an inspectable, editable
+- **Agent Context surface** (`PRAMANYX_CONTEXT_SURFACE`) — the working context is an inspectable, editable
   object (typed table set + live token budget + rescope endpoint); the ContextRibbon in the answer surface.
-- **Editable plan gate** (`AUGHOR_PLAN_GATE`) — deep/explore runs pause after decomposition so the user can
+- **Editable plan gate** (`PRAMANYX_PLAN_GATE`) — deep/explore runs pause after decomposition so the user can
   review/trim the sub-question plan before the expensive fan-out (reuses the LangGraph HITL interrupt/resume).
 - **Graduated approval + audit** — risk-graded per-action gate under the user's identity: high-risk mutations
   require approval, every action is audited to the ledger; per-scope allowlist + the "Action approvals" audit
   view in Security & Audit. **On by default since 2026-10-04** (phase 0 of the 2027 study, ROADMAP §3.53);
-  `AUGHOR_ACTION_APPROVAL=0` is the kill switch, and `=1` still means on.
-- **Declarative modes** (`AUGHOR_DECLARATIVE_MODES`) — a mode's routing/context-scope is editable YAML with a
-  hardcoded fallback (`aughor/agent/modes/`).
-- **Deployment budget ceiling** (`AUGHOR_MAX_TOKEN_BUDGET`) — one hard cap floors every agent's token budget.
+  `PRAMANYX_ACTION_APPROVAL=0` is the kill switch, and `=1` still means on.
+- **Declarative modes** (`PRAMANYX_DECLARATIVE_MODES`) — a mode's routing/context-scope is editable YAML with a
+  hardcoded fallback (`pramanyx/agent/modes/`).
+- **Deployment budget ceiling** (`PRAMANYX_MAX_TOKEN_BUDGET`) — one hard cap floors every agent's token budget.
 - **Premise validation** (always on since flag endgame Wave 3) — a "why is X so high" investigation validates
   the premise (subject vs overall/peers) *before* explaining it, instead of assuming it — questioning the
   question itself. It fires only when the question asserts a direction, which is why it needed no flag.

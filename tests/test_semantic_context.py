@@ -1,4 +1,4 @@
-"""Plane-conformance tests for the Semantic plane (AL-05) — `aughor/semantic/context.py`.
+"""Plane-conformance tests for the Semantic plane (AL-05) — `pramanyx/semantic/context.py`.
 
 `resolve()` must COMPOSE the ad-hoc consultations (metrics, ontology, cached profile, KB) into one
 `SemanticContext`, fail-open on any one source, and expose a JSON-safe `summary()`. Plus: the
@@ -8,8 +8,8 @@ hermetic (no ontology cache / Qdrant needed).
 """
 from __future__ import annotations
 
-from aughor.semantic.context import resolve, SemanticContext
-from aughor.pipeline import CapabilityRequest
+from pramanyx.semantic.context import resolve, SemanticContext
+from pramanyx.pipeline import CapabilityRequest
 
 
 class _FakeMetric:
@@ -22,11 +22,11 @@ class _FakeOntology:
 
 
 def _patch_all(monkeypatch, *, metrics=None, ontology=None, profile=None, kb=False):
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics",
                         lambda *a, **k: metrics if metrics is not None else [])
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: ontology)
-    monkeypatch.setattr("aughor.business_profile.store.load_raw", lambda *a, **k: profile)
-    monkeypatch.setattr("aughor.semantic.kb_retriever.has_strong_kb_match", lambda *a, **k: kb)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda *a, **k: ontology)
+    monkeypatch.setattr("pramanyx.business_profile.store.load_raw", lambda *a, **k: profile)
+    monkeypatch.setattr("pramanyx.semantic.kb_retriever.has_strong_kb_match", lambda *a, **k: kb)
 
 
 # ── Composition: resolve() bundles the four sources ──────────────────────────────────────
@@ -64,8 +64,8 @@ class _OntoWithMetrics:
 
 
 def test_contracts_unifies_catalog_and_ontology():
-    from aughor.semantic.metrics import MetricDefinition
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.semantic.metrics import MetricDefinition
+    from pramanyx.ontology.models import OntologyMetric
     ctx = SemanticContext(
         question="q", connection_id="c",
         metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)")],
@@ -78,8 +78,8 @@ def test_contracts_unifies_catalog_and_ontology():
 
 
 def test_contracts_catalog_wins_on_key_collision():
-    from aughor.semantic.metrics import MetricDefinition
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.semantic.metrics import MetricDefinition
+    from pramanyx.ontology.models import OntologyMetric
     ctx = SemanticContext(
         question="q", connection_id="c",
         metrics=[MetricDefinition(name="revenue", label="Revenue", sql="SUM(catalog)")],
@@ -93,7 +93,7 @@ def test_contracts_catalog_wins_on_key_collision():
 
 
 def test_contracts_is_fail_open_on_bad_entry():
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     # A junk ontology metric (missing required fields) is skipped, the good catalog one survives.
     ctx = SemanticContext(
         question="q", connection_id="c",
@@ -105,8 +105,8 @@ def test_contracts_is_fail_open_on_bad_entry():
 
 
 def test_summary_reports_unified_contract_count():
-    from aughor.semantic.metrics import MetricDefinition
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.semantic.metrics import MetricDefinition
+    from pramanyx.ontology.models import OntologyMetric
     ctx = SemanticContext(
         question="q", connection_id="c",
         metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)")],
@@ -127,7 +127,7 @@ def _profile_with_ns(name="gross_margin", value_sql="SUM(m)/NULLIF(SUM(p),0)"):
 
 
 def test_contracts_includes_profile_north_star():
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     ctx = SemanticContext(question="q", connection_id="c",
                           metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)")],
                           profile=_profile_with_ns())
@@ -137,8 +137,8 @@ def test_contracts_includes_profile_north_star():
 
 
 def test_contracts_precedence_catalog_over_profile_over_ontology():
-    from aughor.semantic.metrics import MetricDefinition
-    from aughor.ontology.models import OntologyMetric
+    from pramanyx.semantic.metrics import MetricDefinition
+    from pramanyx.ontology.models import OntologyMetric
     ctx = SemanticContext(
         question="q", connection_id="c",
         metrics=[MetricDefinition(name="revenue", label="R", sql="SUM(catalog)")],
@@ -152,7 +152,7 @@ def test_contracts_precedence_catalog_over_profile_over_ontology():
 
 
 def test_contracts_malformed_north_star_is_skipped():
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     ctx = SemanticContext(question="q", connection_id="c",
                           metrics=[MetricDefinition(name="ok", label="OK", sql="SUM(a)")],
                           profile={"north_star_metrics": [{"name": "junk"}]})  # missing required fields
@@ -161,7 +161,7 @@ def test_contracts_malformed_north_star_is_skipped():
 
 
 def test_summary_surfaces_serialized_contracts():
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     ctx = SemanticContext(question="q", connection_id="c",
                           metrics=[MetricDefinition(name="mrr", label="MRR", sql="SUM(a)", unit="$")])
     s = ctx.summary()
@@ -178,7 +178,7 @@ def test_resolve_is_fail_open(monkeypatch):
 
     def _boom(*a, **k):
         raise RuntimeError("ontology cache unreadable")
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", _boom)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", _boom)
 
     ctx = resolve("q", "fixture")            # must NOT raise
     assert ctx.ontology is None              # the erroring source degrades to its default

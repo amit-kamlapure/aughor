@@ -2,7 +2,7 @@
 trip the deterministic guards it composes. Hermetic (no live connection, no LLM)."""
 from __future__ import annotations
 
-from aughor.sql.fanout import detect_fanout, measure_times_key_arithmetic
+from pramanyx.sql.fanout import detect_fanout, measure_times_key_arithmetic
 from evals.ablation_eval import _classify_plain, _classify_guarded
 
 
@@ -71,7 +71,7 @@ def test_load_graph_reads_the_served_json_when_mapped_and_the_store_otherwise(tm
     """`--graph-json` is the door for a run beside a serving API: the store is system.db,
     a redirected store is empty, and the file is what GET /ontology returned."""
     import json
-    from aughor.ontology.prompt_reach import fixture_graph
+    from pramanyx.ontology.prompt_reach import fixture_graph
     from evals.ablation_eval import _load_graph
     g = fixture_graph()
     path = tmp_path / "served.json"
@@ -88,7 +88,7 @@ def test_load_graph_reads_the_served_json_when_mapped_and_the_store_otherwise(tm
 
 def test_llm_identity_is_a_receipt_never_an_abort(monkeypatch):
     from evals.ablation_eval import _llm_identity
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "none")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "none")
     ident = _llm_identity()
     assert set(ident) >= {"backend", "model", "role", "fallback_chain"}
     assert ident["role"] == "coder"
@@ -150,9 +150,9 @@ def _samples_objects_fixture(tmp_path):
 
     import duckdb
 
-    from aughor.db.connection import open_connection
-    from aughor.demo.setup import _seed_ecommerce
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.db.connection import open_connection
+    from pramanyx.demo.setup import _seed_ecommerce
+    from pramanyx.ontology.models import OntologyGraph
 
     path = tmp_path / "samples.duckdb"
     con = duckdb.connect(str(path))

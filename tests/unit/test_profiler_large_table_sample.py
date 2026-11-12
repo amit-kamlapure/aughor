@@ -23,11 +23,11 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-import aughor.tools.profiler as profiler
-from aughor.db.connection import DatabaseConnection, open_connection
-from aughor.ontology.builder import extract_structural_ontology
-from aughor.db.dialects import sql_for_engine
-from aughor.tools.profiler import build_column_profiles, profile_connection
+import pramanyx.tools.profiler as profiler
+from pramanyx.db.connection import DatabaseConnection, open_connection
+from pramanyx.ontology.builder import extract_structural_ontology
+from pramanyx.db.dialects import sql_for_engine
+from pramanyx.tools.profiler import build_column_profiles, profile_connection
 
 _ROWS = 638_649   # the BTS table the defect was measured on
 _STATUSES = {"arrived", "cancelled", "diverted"}

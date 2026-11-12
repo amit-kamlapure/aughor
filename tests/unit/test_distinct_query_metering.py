@@ -10,7 +10,7 @@ only if THIS number is high — never on the artifact number.
 """
 from __future__ import annotations
 
-from aughor.kernel import metering
+from pramanyx.kernel import metering
 
 
 def _run():

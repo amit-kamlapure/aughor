@@ -113,11 +113,11 @@ function shows(card: { kind?: string; from?: string }): string {
 }
 
 function remembered(connectionId: string): string {
-  try { return localStorage.getItem(`aughor:cockpit:${connectionId}`) ?? ""; } catch { return ""; }
+  try { return localStorage.getItem(`pramanyx:cockpit:${connectionId}`) ?? ""; } catch { return ""; }
 }
 
 function remember(connectionId: string, dashboardId: string) {
-  try { localStorage.setItem(`aughor:cockpit:${connectionId}`, dashboardId); } catch { /* private mode: the choice just won't persist */ }
+  try { localStorage.setItem(`pramanyx:cockpit:${connectionId}`, dashboardId); } catch { /* private mode: the choice just won't persist */ }
 }
 
 function Refused({ outcome }: { outcome: DashboardKept }) {
@@ -702,7 +702,7 @@ function SharedDashboardView({ connectionId, schema, owner, dashboardId, range, 
 /** How long after the last step of a resize it is kept: a burst of steps is ONE version (Arc AP-1). */
 const KEEP_AFTER_MS = 900;
 
-/** What the object door says when a row policy or a mask holds something back from a reader (aughor/ontology/security.py):
+/** What the object door says when a row policy or a mask holds something back from a reader (pramanyx/ontology/security.py):
  *  a listing's "only the … objects … may see are shown", a count's "counted over only the … objects", a masked property,
  *  and a group or a person in none of the policy's groups. A preview says these in its banner. */
 const WITHHELD = /may see are shown|counted over only the|masked for|sees no |none of its groups/;

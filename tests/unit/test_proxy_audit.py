@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.fidelity import assess
-from aughor.evals.proxy_audit import (
+from pramanyx.evals.fidelity import assess
+from pramanyx.evals.proxy_audit import (
     AXIS_KIND,
     GROUND_TRUTH_AXIS,
     audit_inversion,

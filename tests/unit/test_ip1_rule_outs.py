@@ -15,15 +15,15 @@ import json
 
 import pytest
 
-from aughor.playbook import builder, rule_outs, store
-from aughor.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
-from aughor.playbook.retriever import is_data_quality
+from pramanyx.playbook import builder, rule_outs, store
+from pramanyx.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
+from pramanyx.playbook.retriever import is_data_quality
 
 
 @pytest.fixture()
 def playbook(tmp_path, monkeypatch):
     path = tmp_path / "playbook.json"
-    monkeypatch.setenv("AUGHOR_PLAYBOOK_PATH", str(path))
+    monkeypatch.setenv("PRAMANYX_PLAYBOOK_PATH", str(path))
     return path
 
 
@@ -74,7 +74,7 @@ def test_a_play_without_cause_or_fix_keeps_the_receipt_it_had_before_they_existe
 def test_changing_a_plays_status_through_the_api_keeps_its_cause_and_fix(playbook):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     store.save_entry(PlaybookEntry(id="kb_t_inflation_x_abc123", source_kb_id="t", trigger_metric="t",
                                    trigger_condition="T appears inflated", recommendation="Check x.",
@@ -247,11 +247,11 @@ def test_listing_a_check_journals_its_use_pinned_to_the_version(playbook, shippe
 # ── the Verifier owns them, and the deep report carries them ───────────────────────────────────────────
 
 def test_the_verifier_attaches_the_rule_outs_to_the_finished_report(playbook, shipped_plays, monkeypatch):
-    from aughor.agent import investigate
-    from aughor.agent.verifier import Verifier
+    from pramanyx.agent import investigate
+    from pramanyx.agent.verifier import Verifier
 
     _topped_up(playbook, shipped_plays)
-    monkeypatch.setattr("aughor.business_profile.metric_kb.industry_scope", lambda conn, schema=None: "retail")
+    monkeypatch.setattr("pramanyx.business_profile.metric_kb.industry_scope", lambda conn, schema=None: "retail")
     report = {"metric": "total GMV", "total_change_label": "-€239,911", "comparison_basis": "Prior 2 months"}
     investigate._attach_rule_outs(report, {"connection_id": "c1", "scope_schema": ""})
     assert report["rule_outs"] == Verifier.rule_outs("total GMV", "-€239,911", "Prior 2 months",
@@ -263,8 +263,8 @@ def test_the_verifier_attaches_the_rule_outs_to_the_finished_report(playbook, sh
 
 
 def test_a_failing_rule_out_leaves_the_report_as_it_was(monkeypatch):
-    from aughor.agent import investigate
-    from aughor.agent.verifier import Verifier
+    from pramanyx.agent import investigate
+    from pramanyx.agent.verifier import Verifier
 
     def boom(*_a, **_k):
         raise RuntimeError("playbook unreadable")
@@ -295,7 +295,7 @@ def test_the_lead_names_the_metric_the_direction_and_that_nothing_was_checked():
 
 
 def test_the_exported_report_carries_them_before_the_recommendations():
-    from aughor.export.document import build_export_doc
+    from pramanyx.export.document import build_export_doc
 
     inv = {"question": "why did GMV fall", "connection_id": "c", "kind": "investigation",
            "report": {"headline": "GMV fell", "executive_summary": "", "phases": [], "rule_outs": _FOUND,
@@ -312,7 +312,7 @@ def test_the_exported_report_carries_them_before_the_recommendations():
 def test_the_cli_prints_them_before_the_actions_without_eating_brackets(monkeypatch):
     from rich.console import Console
 
-    from aughor import cli
+    from pramanyx import cli
 
     recorded = Console(record=True, width=200)
     monkeypatch.setattr(cli, "console", recorded)

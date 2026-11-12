@@ -8,13 +8,13 @@ Covers the four legs of the grammar wave:
        range-clipped so an out-of-range line can't distort the axis;
   W4 — the PRINT renderer speaks the same grammar. It no longer speaks it by
        MIRRORING: CA-4 made print run the web's own resolver (ECharts SSR via
-       aughor/export/echarts.py), so "same grammar" is now identity rather than a
+       pramanyx/export/echarts.py), so "same grammar" is now identity rather than a
        promise two renderers keep. These tests assert the exhibit + column_units
        reach that shared renderer, and that an absent spec changes nothing.
 """
 from __future__ import annotations
 
-from aughor.agent.exhibit import (
+from pramanyx.agent.exhibit import (
     attach_exhibit,
     clip_ref_lines,
     exhibit_for_cross_section,
@@ -22,9 +22,9 @@ from aughor.agent.exhibit import (
     order_from_sql,
     quick_exhibit,
 )
-from aughor.agent.opportunity import compute_opportunity, segment_rates
-from aughor.agent.prompts import CHAT_SQL_SYSTEM, chat_sql_system
-from aughor.export.echarts import render_chart_svg
+from pramanyx.agent.opportunity import compute_opportunity, segment_rates
+from pramanyx.agent.prompts import CHAT_SQL_SYSTEM, chat_sql_system
+from pramanyx.export.echarts import render_chart_svg
 
 
 # ── W1: prompt variants ──────────────────────────────────────────────────────
@@ -248,7 +248,7 @@ import pytest
 import shutil as _shutil
 from pathlib import Path as _Path
 
-_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "pramanyx" / "export" / "chart_ssr.bundle.mjs"
 _ssr = pytest.mark.skipif(not _shutil.which("node") or not _SSR_BUNDLE.exists(),
                           reason="chart SSR needs node + chart_ssr.bundle.mjs")
 
@@ -338,7 +338,7 @@ def test_export_wide_profile_and_degenerate_x_are_tables():
 
 
 def test_export_strips_planner_notes_from_explore_prose():
-    from aughor.export.document import _strip_planner_notes
+    from pramanyx.export.document import _strip_planner_notes
     text = ("The gap between p99 and max is extreme for several columns.\n\n"
             "→ Q2 (threshold drill-down) should use p99 as the outlier cutoff\n"
             "for right-skewed monetary columns rather than mean+3σ.")
@@ -385,7 +385,7 @@ def _explore_inv() -> dict:
 
 
 def test_explore_report_dispatches_to_its_own_builder_and_charts():
-    from aughor.export.document import build_export_doc
+    from pramanyx.export.document import build_export_doc
     doc = build_export_doc(_explore_inv())
     assert doc.kind == "explore"
     kinds = [b.kind for b in doc.blocks]
@@ -397,7 +397,7 @@ def test_explore_report_dispatches_to_its_own_builder_and_charts():
 
 
 def test_explore_export_produces_a_valid_pdf():
-    from aughor.export import export_report
+    from pramanyx.export import export_report
     data, fname, media = export_report(_explore_inv(), "pdf")
     assert data[:4] == b"%PDF" and fname.endswith(".pdf")
 
@@ -407,7 +407,7 @@ def test_explore_export_produces_a_valid_pdf():
 def test_composition_is_a_ranked_bar_under_the_grammar():
     """The grammar's three forms are ranked bar, scatter, table — zero donuts. A 2-part
     composition (full 60.7 / taxes_only 39.3) reads as two sorted bars."""
-    from aughor.agent.investigate import _chart_type_for_finding
+    from pramanyx.agent.investigate import _chart_type_for_finding
     f = {"columns": ["refund_type", "pct_of_total"],
          "rows": [["full", 60.7], ["taxes_only", 39.3]]}
     assert _chart_type_for_finding(f, "composition") == "bar_horizontal"
@@ -431,7 +431,7 @@ def test_percent_axis_scale_is_decided_once_from_the_data():
 
 
 def test_verdict_prefix_is_stripped_and_unshouted():
-    from aughor.agent.investigate import _strip_verdict_prefix
+    from pramanyx.agent.investigate import _strip_verdict_prefix
     assert _strip_verdict_prefix(
         "VERDICT: UNIFORM. The leading reason shows a 100% share in every segment."
     ) == "Uniform. The leading reason shows a 100% share in every segment."

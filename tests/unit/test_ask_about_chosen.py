@@ -14,11 +14,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import ask_subject
-from aughor.dashboards import validate as V
-from aughor.ontology.models import RowPolicy
-from aughor.ontology.object_refs import same_type, split_ref
-from aughor.routers.investigations import AskFocus, AskRequest
+from pramanyx.agent import ask_subject
+from pramanyx.dashboards import validate as V
+from pramanyx.ontology.models import RowPolicy
+from pramanyx.ontology.object_refs import same_type, split_ref
+from pramanyx.routers.investigations import AskFocus, AskRequest
 from tests.unit.test_object_actions import CONN, db, graph  # noqa: F401 — fixtures by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
@@ -28,7 +28,7 @@ SHIPPED = ("shipped", "delivered")
 
 @pytest.fixture
 def served(graph, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
 
 
@@ -57,7 +57,7 @@ def test_the_ask_body_names_what_a_focus_is_about():
 
 
 def test_one_parser_reads_a_reference_for_an_action_and_a_subject():
-    from aughor.actions.executor import ParamError, object_ref
+    from pramanyx.actions.executor import ParamError, object_ref
     param = SimpleNamespace(name="order", object_type="Order")
     assert split_ref("Order:O1") == ("Order", "O1") and split_ref("O1", "Order") == ("Order", "O1")
     assert split_ref({"object_type": "order_item", "pk": 7}) == ("order_item", "7")
@@ -76,11 +76,11 @@ def _turn(monkeypatch, focus: dict) -> tuple[dict, list[str]]:
     conversation was handed."""
     import json
 
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     handed: list[str] = []
     route = SimpleNamespace(depth="quick", forced=None, mode="", shape="describe",
                             to_event=lambda: {"depth": "quick", "why": "asked quickly"})
-    monkeypatch.setattr("aughor.agent.ask_router.decide_ask_route", lambda *a, **k: route)
+    monkeypatch.setattr("pramanyx.agent.ask_router.decide_ask_route", lambda *a, **k: route)
     monkeypatch.setattr(inv, "_converse_eligible", lambda req, r: True)
     monkeypatch.setattr(inv, "_analyst_eligible", lambda req, r: False)
     monkeypatch.setattr(inv, "_overview_eligible", lambda req: False)
@@ -112,14 +112,14 @@ def test_the_turn_says_its_subject_on_the_receipt_and_hands_it_to_the_conversati
 
 
 def test_a_deep_turn_hands_the_subject_to_the_analyst_beside_its_memory(monkeypatch):
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     seen: list = []
 
     def analyst(conn, question, **kw):
         seen.append(kw.get("extra_context"))
         return SimpleNamespace(report=None, answer="ok", stop_reason="done", steps=[], investigation_id=None,
                                injected_chars=0, reinjection_ratio=0.0, context_timings={})
-    monkeypatch.setattr("aughor.agent.analyst.run_analyst", analyst)
+    monkeypatch.setattr("pramanyx.agent.analyst.run_analyst", analyst)
     monkeypatch.setattr(inv, "resolve_prior_answers", lambda *a, **k: [])
 
     async def run(prose: str) -> list[str]:
@@ -147,12 +147,12 @@ def test_chosen_objects_are_named_by_key_and_one_that_is_not_there_is_counted(se
 
 
 def test_a_chosen_object_a_row_policy_withholds_is_dropped_and_said_never_listed(served, db, monkeypatch):  # noqa: F811
-    from aughor.rbac.groups import add_member, upsert_group
+    from pramanyx.rbac.groups import add_member, upsert_group
     upsert_group("default", "fulfilment", "Fulfilment")
     add_member("default", "fulfilment", "user:ana")
     served.entities["Order"].row_policies = [
         RowPolicy(group="fulfilment", conditions=[{"path": "status", "op": "in", "values": list(SHIPPED)}])]
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     hers, not_hers = _keys(db, "shipped", 2), _keys(db, "cancelled", 2)
     subject = ask_subject.resolve(AskFocus(kind="objects", objects=[f"Order:{k}" for k in hers + not_hers]), CONN)
     [part] = subject.parts
@@ -190,8 +190,8 @@ def _desk() -> dict:
 
 @pytest.fixture
 def desk(served, monkeypatch):
-    from aughor.dashboards import versions
-    from aughor.dashboards.home import Home
+    from pramanyx.dashboards import versions
+    from pramanyx.dashboards.home import Home
     mine = Home(CONN, "default", "desk")
     monkeypatch.setattr(versions, "latest", lambda home: {"spec": _desk(), "retired": False} if home == mine else None)
     return served

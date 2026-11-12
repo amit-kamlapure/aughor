@@ -16,7 +16,7 @@ import urllib.error
 
 import pytest
 
-from aughor import installer
+from pramanyx import installer
 
 
 @pytest.fixture(autouse=True)

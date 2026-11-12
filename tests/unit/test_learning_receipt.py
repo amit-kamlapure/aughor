@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.learning_receipt import build_activation_receipt, build_learning_receipt
-from aughor.kernel import metering
+from pramanyx.agent.learning_receipt import build_activation_receipt, build_learning_receipt
+from pramanyx.kernel import metering
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def test_receipt_merges_runtime_events(monkeypatch, run):
 # ── the touchpoint (end to end) ───────────────────────────────────────────────
 
 def test_crystallize_records_a_signal_within_a_run(run):
-    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
+    from pramanyx.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
     purge_connections(["lr_cryst"])
     crystallize_user_choice("lr_cryst", "top products", "by revenue")
     assert metering.learning_snapshot()["resolutions_crystallized"] == 1
@@ -87,7 +87,7 @@ def test_crystallize_records_a_signal_within_a_run(run):
 
 def _capture_artifacts(monkeypatch):
     """Patch artifact_write/emit on the real Ledger singleton; return the captured-payload list."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     payloads: list[dict] = []
     real = Ledger.default()
     monkeypatch.setattr(real, "artifact_write", lambda kind, nk, payload, **kw: payloads.append(payload))
@@ -96,13 +96,13 @@ def _capture_artifacts(monkeypatch):
 
 
 def test_write_answer_receipt_attaches_and_returns_learning(monkeypatch, run):
-    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")            # retrieve_resolutions is closed_loop-gated
-    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
+    monkeypatch.setenv("PRAMANYX_CLOSED_LOOP", "1")            # retrieve_resolutions is closed_loop-gated
+    from pramanyx.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
     purge_connections(["lr_wr"])
     crystallize_user_choice("lr_wr", "top products", "by revenue")   # matched below + records crystallized=1
     payloads = _capture_artifacts(monkeypatch)
 
-    from aughor.routers.investigations import _write_answer_receipt
+    from pramanyx.routers.investigations import _write_answer_receipt
     out = _write_answer_receipt(
         kind="chat_answer", natural_key="chat:lr_wr:t1", question="what are the top products?",
         sqls=["SELECT 1"], headline="Top products", schema="", connection_id="lr_wr")
@@ -137,7 +137,7 @@ def test_write_answer_receipt_carries_activations(monkeypatch, run):
     metering.record_activation("capability.contract")
     payloads = _capture_artifacts(monkeypatch)
 
-    from aughor.routers.investigations import _write_answer_receipt
+    from pramanyx.routers.investigations import _write_answer_receipt
     out = _write_answer_receipt(
         kind="chat_answer", natural_key="chat:act:t1", question="anything",
         sqls=["SELECT 1"], headline="h", schema="", connection_id="act")

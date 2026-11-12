@@ -5,7 +5,7 @@ is connection-scoped (list filters by connection, newest-first), and supports pa
 DB path is isolated per-test so the real data/ dir is never touched."""
 import pytest
 
-from aughor.savedquery import store as S
+from pramanyx.savedquery import store as S
 
 
 @pytest.fixture(autouse=True)

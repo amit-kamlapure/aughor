@@ -5,8 +5,8 @@ import asyncio
 
 import pytest
 
-from aughor.kernel import metering
-from aughor.kernel.agents import (
+from pramanyx.kernel import metering
+from pramanyx.kernel.agents import (
     Governance,
     agent_for,
     charter_for_kind,
@@ -16,8 +16,8 @@ from aughor.kernel.agents import (
     list_charters,
     set_governance,
 )
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
 
 
 def _run(coro):
@@ -71,7 +71,7 @@ class TestGovernance:
     def test_charter_defaults_when_unset(self):
         gov = effective_governance("scout")
         assert gov.enabled is True
-        from aughor.kernel.agents import get_charter
+        from pramanyx.kernel.agents import get_charter
         assert gov.token_budget == get_charter("scout").default_budget.token_budget   # the charter's own default
         assert is_enabled("scout") is True
 
@@ -95,7 +95,7 @@ class TestGovernance:
 
     def test_is_enabled_fail_open(self, monkeypatch):
         # a governance read error must never block work
-        monkeypatch.setattr("aughor.kernel.agents.effective_governance",
+        monkeypatch.setattr("pramanyx.kernel.agents.effective_governance",
                             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
         assert is_enabled("scout") is True
 
@@ -125,7 +125,7 @@ class TestAgentsAPI:
 
 class TestEnableGate:
     def test_disabled_scout_skips_auto_exploration(self):
-        from aughor.routers._shared import kickoff_exploration
+        from pramanyx.routers._shared import kickoff_exploration
         set_governance("scout", enabled=False)
         # auto=True is gated on Scout; the gate returns before any loop/DB work.
         assert kickoff_exploration("no-such-conn", auto=True) is False
@@ -153,7 +153,7 @@ class TestBudgetEnforcement:
         # Drive the real enforcement path: a run over its token budget is cancelled
         # by the heartbeat — and the cancel (CancelledError) unwinds even an
         # agent that swallows ordinary exceptions.
-        monkeypatch.setattr("aughor.kernel.jobs._HEARTBEAT_SECONDS", 0.05)
+        monkeypatch.setattr("pramanyx.kernel.jobs._HEARTBEAT_SECONDS", 0.05)
         set_governance("scout", token_budget=50)          # Scout owns "exploration"
         ledger = Ledger(tmp_path / "system.db")
 
@@ -182,7 +182,7 @@ class TestBudgetEnforcement:
 
 class TestWorkspaceResolution:
     def test_no_workspace_falls_back_to_app_scope(self):
-        from aughor.workspace.store import workspace_for_connection
+        from pramanyx.workspace.store import workspace_for_connection
         assert workspace_for_connection(None) is None
         assert workspace_for_connection("conn-in-no-workspace-xyz") is None
 

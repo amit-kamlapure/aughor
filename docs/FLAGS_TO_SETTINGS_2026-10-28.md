@@ -52,7 +52,7 @@ Everything else is either the product, or a piece of the product that waits for 
 | **Always on** | 57 | The flag and its off branch are deleted; the code path stays. All 57 are on live today. |
 | **Always on, after its check** | 10 | Each is off today. It is turned on with a check on live theLook (the receipt it already names), then deleted the same way. One that fails its check is fixed or deleted — never left as a switch. |
 | **On when set up** | 4 | No switch: inbound email works once its domain and secret are set; Google comments once the OAuth client is; the Slack bot once Slack is configured; word search over documents once the vector store is up. Missing setup is *said* where the feature would appear. |
-| **Organisation setting** | 5 → 4 settings | Admin-only, in the organisation settings that already exist (`aughor/orgsettings`, the same place as currency and the model policy), each with its default stated. |
+| **Organisation setting** | 5 → 4 settings | Admin-only, in the organisation settings that already exist (`pramanyx/orgsettings`, the same place as currency and the model policy), each with its default stated. |
 | **Decided once** | 5 | Experiments that change prompts or routing. Each is kept (always on) or deleted, on a measurement or on your word — never a switch. |
 
 **The four organisation settings** (Settings ▸ Organization ▸ *What Pramanyx may do*):

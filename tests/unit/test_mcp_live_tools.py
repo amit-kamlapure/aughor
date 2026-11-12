@@ -14,7 +14,7 @@ import asyncio
 from mcp import types
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from aughor.mcp import server as srv
+from pramanyx.mcp import server as srv
 
 PREFERENCE = {"name": "set_preference", "description": "Set one appearance preference.",
               "parameters": {"type": "object", "properties": {

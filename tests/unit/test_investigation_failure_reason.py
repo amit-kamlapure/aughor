@@ -6,13 +6,13 @@ construction. Measured 2026-09-06: run a0c735ef sat at status=failed with headli
 hypotheses=0, queries=0, report={} and 878 seconds of silence. Why it died is not
 recoverable, because nothing ever wrote it down.
 
-No fixture here on purpose: `AUGHOR_HISTORY_DB` is in the conftest allowlist, so the store
+No fixture here on purpose: `PRAMANYX_HISTORY_DB` is in the conftest allowlist, so the store
 is already isolated. Reloading the module to point it elsewhere is the trap that leaves two
 live modules and passes alone while failing in the suite.
 """
 from __future__ import annotations
 
-from aughor.db import history
+from pramanyx.db import history
 
 
 def test_a_failure_records_its_reason():
@@ -49,12 +49,12 @@ def test_a_running_row_carries_no_reason_yet():
 def test_the_runner_reports_the_recorded_reason_not_just_the_status(monkeypatch):
     """The Sep 6 chain end to end: nothing on the stream, a row that says why, and a
     caller that now hears the CAUSE instead of `executed`."""
-    from aughor.runners import investigation as runner
+    from pramanyx.runners import investigation as runner
     from tests.unit.test_runners_investigation import _fake_ask, _no_loop, _req
 
     _no_loop(monkeypatch)
     _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-900"})
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda i: {"status": "failed", "query_count": 0,
                                    "error": "the run ended without a terminal status "
                                             "— cancelled (deadline or budget)"})
@@ -67,12 +67,12 @@ def test_the_runner_reports_the_recorded_reason_not_just_the_status(monkeypatch)
 def test_a_failure_with_no_recorded_reason_still_reports_the_status(monkeypatch):
     """The reason is an ADDITION, never a precondition: a row from before this migration
     must still be reported as a failure rather than slipping back to `executed`."""
-    from aughor.runners import investigation as runner
+    from pramanyx.runners import investigation as runner
     from tests.unit.test_runners_investigation import _fake_ask, _no_loop, _req
 
     _no_loop(monkeypatch)
     _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-old"})
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda i: {"status": "failed", "query_count": 0, "error": ""})
 
     run = runner.run_investigation(_req(), idempotency_key="k")

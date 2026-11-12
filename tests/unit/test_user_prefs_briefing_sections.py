@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.db.user_prefs import ALLOWED_KEYS, BRIEFING_SECTIONS, get_preferences
+from pramanyx.db.user_prefs import ALLOWED_KEYS, BRIEFING_SECTIONS, get_preferences
 
 KEY = "briefing_sections"
 WEB = Path(__file__).resolve().parents[2] / "web" / "lib" / "briefingSections.ts"

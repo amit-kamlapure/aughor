@@ -5,7 +5,7 @@ string the synthesizer received, and (c) everything is fail-open. Pure + hermeti
 from __future__ import annotations
 
 
-from aughor.agent.orchestrator import (
+from pramanyx.agent.orchestrator import (
     plan_phases, reconcile, detect_contradictions,
     ContradictionReport,
 )

@@ -33,31 +33,31 @@ export interface Look {
 /** What the user chose for everyone who has not chosen for themselves (2026-10-06; typeface, added
  *  2026-10-25, defaults to what the page was; edges defaults to the skin's own grammar, on). On 2026-11-10
  *  the default took the Evidence → Action mockups' look (ROADMAP §6 item 64): a blue accent, held to AA by
- *  `aughor-v2/theme/tokens-v2.css`; slate greys; small corners (6px panels); 36px table rows. */
+ *  `pramanyx-v2/theme/tokens-v2.css`; slate greys; small corners (6px panels); 36px table rows. */
 export const DEFAULT_LOOK: Look = {
   accent: "blue", grey: "slate", radius: "small", scaling: "100%", edges: "on", typeface: "inter", rows: "default",
 };
 
-/** A preset is every knob at once, named for what it does. `aughor` is the default; `workbench`
+/** A preset is every knob at once, named for what it does. `pramanyx` is the default; `workbench`
  *  is the operations look the user asked for on 2026-10-25 (the design study of that date, in docs/):
  *  a cool grey, one blue, square corners, a step denser, every card boxed, a narrower face — and, since
  *  rows became a knob (2026-11-10), compact rows. */
 export const PRESETS = {
-  aughor: DEFAULT_LOOK,
+  pramanyx: DEFAULT_LOOK,
   workbench: { accent: "blue", grey: "slate", radius: "small", scaling: "95%", edges: "on", typeface: "source-sans", rows: "compact" },
 } as const satisfies Record<string, Look>;
 export type Preset = keyof typeof PRESETS;
 export const PRESET_NAMES = Object.keys(PRESETS) as Preset[];
 
 /** The values each knob admits — the same lists the person's settings store validates against
- *  (`aughor/db/user_prefs.py`). */
+ *  (`pramanyx/db/user_prefs.py`). */
 export const LOOK_VALUES: { [K in keyof Look]: readonly Look[K][] } = {
   accent: ACCENTS, grey: GREYS, radius: RADII, scaling: SCALINGS, edges: EDGES, typeface: TYPEFACES, rows: ROWS,
 };
 export const LOOK_KEYS = Object.keys(LOOK_VALUES) as (keyof Look)[];
 
 /** The look's home in this browser; the boot script reads the same key. */
-export const LOOK_KEY = "aughor_look";
+export const LOOK_KEY = "pramanyx_look";
 
 /** Whatever was handed in, with every knob that is not one of its own values put back to the
  *  default: a stored look written by an older build, or by hand, never reaches the Theme raw. */

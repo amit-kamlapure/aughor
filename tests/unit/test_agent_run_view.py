@@ -18,11 +18,11 @@ import uuid
 
 import pytest
 
-from aughor.db.history import (
+from pramanyx.db.history import (
     create_investigation, list_investigations_for_agent, save_chat_turn,
 )
-from aughor.custom_agents.context import activate_agent, release_agent
-from aughor.custom_agents.models import UserAgent
+from pramanyx.custom_agents.context import activate_agent, release_agent
+from pramanyx.custom_agents.models import UserAgent
 
 
 @pytest.fixture
@@ -118,9 +118,9 @@ def _llm_call(agent_id: str, at: str, *, model: str = "openrouter-model:free",
 def test_spend_reads_the_agent_axis_over_the_window(monkeypatch):
     """AO-3: the slice is read over ONE window (the one the page shows), keyed to the
     agent, and the row says how many calls had no price."""
-    from aughor.kernel.ledger import Ledger
-    from aughor.obs.timeseries import resolve_window
-    from aughor.routers.agents import _agent_spend
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.obs.timeseries import resolve_window
+    from pramanyx.routers.agents import _agent_spend
 
     win = resolve_window("24h")
     seen: dict = {}
@@ -140,9 +140,9 @@ def test_spend_reads_the_agent_axis_over_the_window(monkeypatch):
 def test_an_agent_with_no_recorded_calls_is_zero_not_missing(monkeypatch):
     """Recording is permanent, so an empty slice is a confident zero — not an
     unmeasured one. That distinction used to need a flag; now it is structural."""
-    from aughor.kernel.ledger import Ledger
-    from aughor.obs.timeseries import resolve_window
-    from aughor.routers.agents import _agent_spend
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.obs.timeseries import resolve_window
+    from pramanyx.routers.agents import _agent_spend
 
     monkeypatch.setattr(Ledger, "session_events", lambda self, **kw: [])
     spend = _agent_spend("ua_never_ran", resolve_window("24h"))

@@ -1,19 +1,19 @@
-"""IN-1 — `aughor doctor`, and the port probe it exposed as broken.
+"""IN-1 — `pramanyx doctor`, and the port probe it exposed as broken.
 
 The probe bug is the reason this file leads with it. `_port_in_use` bound `127.0.0.1` with
 `SO_REUSEADDR` and its docstring claimed that could not succeed over a live listener on
 BSD/macOS. That holds only for the SAME address: a server on the wildcard `0.0.0.0` — exactly
 how the deployment runbook starts this API — does not stop a bind of the specific
 `127.0.0.1`. Measured 2026-09-20 on a live machine: `lsof` named a listener on `*:8000` and
-one on `*:3000`, and the probe answered "free" for both, so `aughor up`'s guard had never
+one on `*:3000`, and the probe answered "free" for both, so `pramanyx up`'s guard had never
 fired there.
 """
 from __future__ import annotations
 
 import socket
 
-from aughor import doctor
-from aughor.netprobe import port_in_use
+from pramanyx import doctor
+from pramanyx.netprobe import port_in_use
 
 
 def _wildcard_listener():
@@ -76,8 +76,8 @@ class TestTheVerdictIsTyped:
         """The owner is forced, because `lsof` on a listener owned by the pytest process is
         not deterministic — and without an owner `_port` takes the UNKNOWN branch, whose fix
         is a different sentence. Aiming at the branch under test rather than hoping for it."""
-        monkeypatch.setattr("aughor.netprobe.port_in_use", lambda _p: True)
-        monkeypatch.setattr("aughor.netprobe.port_owner", lambda _p: "uvicorn (pid 1)")
+        monkeypatch.setattr("pramanyx.netprobe.port_in_use", lambda _p: True)
+        monkeypatch.setattr("pramanyx.netprobe.port_owner", lambda _p: "uvicorn (pid 1)")
         api = doctor._port("api", 8000, "--api-port")
         web = doctor._port("web", 3000, "--web-port")
         assert api.status == doctor.WARN, api
@@ -87,8 +87,8 @@ class TestTheVerdictIsTyped:
     def test_a_busy_port_with_no_owner_is_unknown_not_a_failure(self, monkeypatch):
         """`_port_owner` shells out to `lsof`, which is POSIX-only. No answer is not "nobody",
         and reporting it as a failure sends a person to fix something that is fine."""
-        monkeypatch.setattr("aughor.netprobe.port_in_use", lambda _p: True)
-        monkeypatch.setattr("aughor.netprobe.port_owner", lambda _p: "")
+        monkeypatch.setattr("pramanyx.netprobe.port_in_use", lambda _p: True)
+        monkeypatch.setattr("pramanyx.netprobe.port_owner", lambda _p: "")
         assert doctor._port("api", 8000, "--api-port").status == doctor.UNKNOWN
 
 
@@ -99,30 +99,30 @@ class TestTheModelCheckTouchesNoStore:
         `data/` — the shape behind four `system.db` corruptions."""
         cfg = tmp_path / "llm_config.json"
         cfg.write_text('{"backend": "anthropic"}')
-        monkeypatch.setattr("aughor.llm.provider._CONFIG_PATH", cfg)
+        monkeypatch.setattr("pramanyx.llm.provider._CONFIG_PATH", cfg)
 
         def explode(*_a, **_k):
             raise AssertionError("doctor opened a store")
-        monkeypatch.setattr("aughor.db.backend.connect_store", explode, raising=False)
+        monkeypatch.setattr("pramanyx.db.backend.connect_store", explode, raising=False)
 
         check = doctor._model()
         assert check.ok and "anthropic" in check.found
 
     def test_no_backend_anywhere_is_a_failure_with_a_fix(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("aughor.llm.provider._CONFIG_PATH", tmp_path / "absent.json")
-        monkeypatch.delenv("AUGHOR_BACKEND", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider._CONFIG_PATH", tmp_path / "absent.json")
+        monkeypatch.delenv("PRAMANYX_BACKEND", raising=False)
         check = doctor._model()
         assert check.status == doctor.FAIL and check.fix
 
     def test_an_unreadable_config_is_unknown_not_a_failure(self, monkeypatch, tmp_path):
         bad = tmp_path / "llm_config.json"
         bad.write_text("{not json")
-        monkeypatch.setattr("aughor.llm.provider._CONFIG_PATH", bad)
+        monkeypatch.setattr("pramanyx.llm.provider._CONFIG_PATH", bad)
         assert doctor._model().status == doctor.UNKNOWN
 
     def test_the_environment_answers_when_the_file_does_not(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("aughor.llm.provider._CONFIG_PATH", tmp_path / "absent.json")
-        monkeypatch.setenv("AUGHOR_BACKEND", "ollama")
+        monkeypatch.setattr("pramanyx.llm.provider._CONFIG_PATH", tmp_path / "absent.json")
+        monkeypatch.setenv("PRAMANYX_BACKEND", "ollama")
         check = doctor._model()
         assert check.ok and "ollama" in check.found
 
@@ -149,7 +149,7 @@ class TestTheBackupsCheck:
     def test_a_backup_checked_lately_is_ok_and_an_old_one_is_said(self, tmp_path):
         from datetime import timedelta
 
-        from aughor.db import backups
+        from pramanyx.db import backups
         root = self._state(tmp_path)
         out = backups.take(root=root, force=True, reason="test")
         assert out.status == "taken", out
@@ -161,7 +161,7 @@ class TestTheBackupsCheck:
     def test_a_failed_last_backup_fails_and_names_the_newest_whole_copy(self, tmp_path):
         import json
 
-        from aughor.db import backups
+        from pramanyx.db import backups
         root = self._state(tmp_path)
         backups.take(root=root, force=True, reason="test")
         note = backups.backups_dir(root) / backups.LAST_RUN

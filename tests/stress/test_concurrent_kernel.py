@@ -8,8 +8,8 @@ import asyncio
 
 import pytest
 
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()

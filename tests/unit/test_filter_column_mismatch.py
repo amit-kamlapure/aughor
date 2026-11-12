@@ -16,9 +16,9 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
-from aughor.sql.executor import execute_guarded
-from aughor.sql.join_guard import (
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.sql.executor import execute_guarded
+from pramanyx.sql.join_guard import (
     FilterDomainWarning,
     check_filter_value_domains,
     repair_filter_literals,

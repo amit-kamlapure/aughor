@@ -17,14 +17,14 @@ guard" — returned an empty mapping and passed every aggregate.
 The fixture below is theLook's real cached BigQuery schema, trimmed.
 """
 
-from aughor.db.schema_render import parse_inline_columns, parse_schema_tables
-from aughor.tools.schema import (
+from pramanyx.db.schema_render import parse_inline_columns, parse_schema_tables
+from pramanyx.tools.schema import (
     build_mermaid_er,
     build_rich_schema,
     col_types_from_schema,
 )
 
-# theLook, as the BigQuery connector renders it (aughor/connectors/warehouse/bigquery.py).
+# theLook, as the BigQuery connector renders it (pramanyx/connectors/warehouse/bigquery.py).
 # `user_id` appears on two tables because that shared name is what the join map
 # keys on — one table carrying it in isolation infers nothing, in either dialect.
 INLINE = """\
@@ -71,7 +71,7 @@ class TestParseInlineColumns:
         assert [c for c, _ in cols] == ["amount", "name"]
 
     def test_the_s3_source_annotation_is_not_a_column_list(self):
-        # aughor/connectors/file/s3.py renders `[source: s3://bucket/prefix]`.
+        # pramanyx/connectors/file/s3.py renders `[source: s3://bucket/prefix]`.
         assert parse_inline_columns("TABLE: events  [source: s3://bucket/prefix]") == []
 
     def test_a_column_with_no_type_still_parses(self):

@@ -2,7 +2,7 @@
 
 The development environment is ~1.2 GB and that was believed to rule out any
 250 MB-limited deployment target. Measuring what the API actually loads — import
-`aughor.api`, diff `sys.modules` — gives a boot closure of ~106 MB. The weight was never
+`pramanyx.api`, diff `sys.modules` — gives a boot closure of ~106 MB. The weight was never
 on the request path; it was in dependencies nothing at boot imports
 (`docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md` §1).
 
@@ -52,7 +52,7 @@ def _boot_closure() -> set[str]:
     code = textwrap.dedent("""
         import json, sys, sysconfig, pathlib
         before = set(sys.modules)
-        import aughor.api          # noqa: F401
+        import pramanyx.api          # noqa: F401
         sp = pathlib.Path(sysconfig.get_paths()["purelib"])
         tops = set()
         for name in set(sys.modules) - before:
@@ -104,7 +104,7 @@ def test_statsmodels_is_not_a_dependency_anywhere():
 def test_export_degrades_with_an_actionable_message_not_an_import_error():
     """Without the extra, asking for a PDF must say what to install — an ImportError out
     of a router tells the operator nothing they can act on."""
-    import aughor.export as E
+    import pramanyx.export as E
 
     if E.EXPORT_AVAILABLE:                      # the dev env has the extra installed
         pytest.skip("export extra is installed; the unavailable path is covered below")
@@ -115,7 +115,7 @@ def test_export_degrades_with_an_actionable_message_not_an_import_error():
 def test_the_unavailable_path_names_the_install_command(monkeypatch):
     """Exercised regardless of what is installed locally, because the message is the
     whole feature."""
-    import aughor.export as E
+    import pramanyx.export as E
 
     monkeypatch.setattr(E, "EXPORT_AVAILABLE", False)
     monkeypatch.setattr(E, "_EXPORT_IMPORT_ERROR", "No module named 'reportlab'")
@@ -131,7 +131,7 @@ def test_the_export_package_imports_cleanly_without_its_extra():
     HANDLER time — so it stayed green while a serving install answered the export route
     with 500 and a ModuleNotFoundError traceback.
 
-    `aughor.export` must import on a machine that has none of the extra's packages,
+    `pramanyx.export` must import on a machine that has none of the extra's packages,
     leaving EXPORT_AVAILABLE False. Everything downstream — export_report's actionable
     message, the router's 501 — is unreachable if this import raises. Run in a SUBPROCESS
     with the packages blocked, because the test session already imported them."""
@@ -148,7 +148,7 @@ def test_the_export_package_imports_cleanly_without_its_extra():
                 return None
 
         sys.meta_path.insert(0, Blocker())
-        import aughor.export as E
+        import pramanyx.export as E
         print(json.dumps({
             "available": E.EXPORT_AVAILABLE,
             "cause": E._EXPORT_IMPORT_ERROR,
@@ -158,7 +158,7 @@ def test_the_export_package_imports_cleanly_without_its_extra():
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                           timeout=300)
     assert proc.returncode == 0, (
-        "importing aughor.export without the extra must not raise — a serving install "
+        "importing pramanyx.export without the extra must not raise — a serving install "
         f"answers /investigations/{{id}}/export with 500 when it does:\n{proc.stderr[-800:]}")
 
     import json
@@ -175,8 +175,8 @@ def test_the_export_route_answers_501_and_not_500_without_the_extra(client, monk
     extra" and "Nothing here fails hard". A serving install answered 500 with an
     internal_error body, because the missing dependency surfaced as an ImportError the
     handler's `except ExportUnavailable` could never see."""
-    import aughor.export as E
-    from aughor.db import history
+    import pramanyx.export as E
+    from pramanyx.db import history
 
     inv_id = history.create_investigation("why did revenue drop", "fixture")
     monkeypatch.setattr(E, "EXPORT_AVAILABLE", False)
@@ -190,24 +190,24 @@ def test_the_export_route_answers_501_and_not_500_without_the_extra(client, monk
 
 
 def test_the_export_route_answers_501_when_the_package_itself_cannot_import(client, monkeypatch):
-    """The second layer. The route imports `aughor.export` inside the handler, so the
+    """The second layer. The route imports `pramanyx.export` inside the handler, so the
     import ITSELF can fail on a serving install — and an ImportError raised there is the
     same configuration state as ExportUnavailable, not a fault. Guarded only around
     export_report(), it escaped as a 500."""
     import sys
     from importlib.abc import MetaPathFinder
 
-    from aughor.db import history
+    from pramanyx.db import history
 
     class BlockExport(MetaPathFinder):
         def find_spec(self, fullname, path=None, target=None):
-            if fullname == "aughor.export" or fullname.startswith("aughor.export."):
+            if fullname == "pramanyx.export" or fullname.startswith("pramanyx.export."):
                 raise ImportError("blocked for test: no module named 'matplotlib'")
             return None
 
     inv_id = history.create_investigation("why did revenue drop", "fixture")
     # Drop the cached module so the handler's import statement re-runs the finders.
-    for name in [n for n in list(sys.modules) if n.split(".")[:2] == ["aughor", "export"]]:
+    for name in [n for n in list(sys.modules) if n.split(".")[:2] == ["pramanyx", "export"]]:
         monkeypatch.delitem(sys.modules, name)
     monkeypatch.setattr(sys, "meta_path", [BlockExport(), *sys.meta_path])
 
@@ -218,7 +218,7 @@ def test_the_export_route_answers_501_when_the_package_itself_cannot_import(clie
 
 def test_an_unsupported_format_still_fails_before_the_availability_check():
     """A bad format is a client error whether or not the extra is installed."""
-    import aughor.export as E
+    import pramanyx.export as E
 
     with pytest.raises(ValueError, match="unsupported export format"):
         E.export_report({"report": {}}, "docx")
@@ -247,7 +247,7 @@ def no_qdrant(monkeypatch):
 
 
 def test_vector_store_reports_unavailable_without_the_extra(no_qdrant):
-    from aughor.semantic import vector_store
+    from pramanyx.semantic import vector_store
 
     assert vector_store.available() is False
 
@@ -256,7 +256,7 @@ def test_the_no_qdrant_fixture_actually_changes_something():
     """Vacuous-pass guard for every test above: the development environment HAS
     qdrant-client, so if `available()` were False for some unrelated reason, the whole
     degraded-path suite would pass while testing nothing."""
-    from aughor.semantic import vector_store
+    from pramanyx.semantic import vector_store
 
     assert vector_store.available() is True, (
         "qdrant-client is not installed locally, so the no_qdrant tests prove nothing — "
@@ -266,7 +266,7 @@ def test_the_no_qdrant_fixture_actually_changes_something():
 def test_reads_answer_like_an_empty_index(no_qdrant):
     """A deployment without semantic search HAS no index; 'no hits' is the honest answer,
     and every caller already handles it."""
-    from aughor.semantic import vector_store
+    from pramanyx.semantic import vector_store
 
     assert vector_store.search("anything", [0.1, 0.2], top_k=5) == []
     assert vector_store.collection_count("anything") == 0
@@ -274,7 +274,7 @@ def test_reads_answer_like_an_empty_index(no_qdrant):
 
 
 def test_writes_no_op_rather_than_raising(no_qdrant):
-    from aughor.semantic import vector_store
+    from pramanyx.semantic import vector_store
 
     vector_store.ensure_collection("c")                      # must not raise
     vector_store.upsert("c", [{"id": "1", "vector": [0.0], "payload": {}}])
@@ -283,7 +283,7 @@ def test_writes_no_op_rather_than_raising(no_qdrant):
 def test_the_raw_client_fails_with_an_actionable_message(no_qdrant):
     """`_client` is deliberately unguarded — it is the one place a caller who skipped the
     availability check should hear about it, and the message must name the fix."""
-    from aughor.semantic import vector_store
+    from pramanyx.semantic import vector_store
 
     with pytest.raises(vector_store.SemanticIndexUnavailable) as exc:
         vector_store._client()
@@ -292,14 +292,14 @@ def test_the_raw_client_fails_with_an_actionable_message(no_qdrant):
 
 def test_purge_hooks_report_nothing_to_purge(no_qdrant):
     """A purge over an index that does not exist removed zero points — not an error."""
-    from aughor.agent.bootstrap import _qdrant_conn, _qdrant_inv
+    from pramanyx.agent.bootstrap import _qdrant_conn, _qdrant_inv
 
     assert _qdrant_conn("conn1", "org1") == {"qdrant_points": 0}
     assert _qdrant_inv(["inv1", "inv2"]) == {"qdrant_points": 0}
 
 
 def test_the_suggestions_cache_misses_rather_than_raising(no_qdrant):
-    from aughor.semantic.suggestions_cache import get_cached
+    from pramanyx.semantic.suggestions_cache import get_cached
 
     assert get_cached("conn1", "fingerprint") is None
 
@@ -307,6 +307,6 @@ def test_the_suggestions_cache_misses_rather_than_raising(no_qdrant):
 def test_the_connection_filter_degrades_to_no_filter(no_qdrant):
     """Its value is moot once search() returns nothing, so None keeps the three call
     sites free of their own guards."""
-    from aughor.tools.prior_analyses import _connection_filter
+    from pramanyx.tools.prior_analyses import _connection_filter
 
     assert _connection_filter("conn1") is None

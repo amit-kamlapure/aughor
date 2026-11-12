@@ -21,8 +21,8 @@ import { expect, it, vi } from "vitest";
 
 // The palette mounts a chat hook (Spotlight's answer pane) and fetches recent runs on
 // open. Neither is under test; stub both so this stays a keyboard-navigation test.
-vi.mock("@/lib/useAughorChat", () => ({
-  useAughorChat: () => ({ messages: [], sendMessage: vi.fn(), status: "ready", error: null }),
+vi.mock("@/lib/usePramanyxChat", () => ({
+  usePramanyxChat: () => ({ messages: [], sendMessage: vi.fn(), status: "ready", error: null }),
 }));
 vi.mock("@/lib/schema-context", () => ({ useRichSchema: () => ({ schema: null }) }));
 

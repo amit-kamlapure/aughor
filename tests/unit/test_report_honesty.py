@@ -12,8 +12,8 @@
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import _degraded_report, _phase_result, _phases_summary
-from aughor.agent.opportunity import annotate_opportunity, compute_opportunity
+from pramanyx.agent.investigate import _degraded_report, _phase_result, _phases_summary
+from pramanyx.agent.opportunity import annotate_opportunity, compute_opportunity
 
 _CAVEAT = ("This finding's scan touched ~112,439 rows but the metric's table has only ~2 — "
            "a join multiplied the rows, so its magnitude is inflated by a fan-out.")

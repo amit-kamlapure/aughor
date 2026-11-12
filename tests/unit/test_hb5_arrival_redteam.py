@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.hub import links as L
+from pramanyx.hub import links as L
 
 _PROMISE = "promise:order_to_delivery.dispatch"
 
@@ -35,17 +35,17 @@ ATTACKS: list[tuple[str, str]] = [
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def _pending_acts() -> int:
-    from aughor.actions.inbox import list_proposals
+    from pramanyx.actions.inbox import list_proposals
     return len(list_proposals(status="pending"))
 
 
 def _automation_count() -> int:
-    from aughor.automations.store import list_automations
+    from pramanyx.automations.store import list_automations
     return len(list_automations())
 
 
@@ -98,7 +98,7 @@ def test_the_stored_note_is_the_attack_as_words_not_as_a_command(client, monkeyp
                 title="landing", source="automation:rt")
     client.post("/arrivals/slack", json={
         "channel": "CR", "thread_ts": "3.003", "text": ATTACKS[0][1]})
-    from aughor.ontology.agent_notes import object_notes_for
+    from pramanyx.ontology.agent_notes import object_notes_for
     rows = object_notes_for("redteam2", _PROMISE)
     assert rows and "Ignore all previous instructions" in rows[-1]["note"]
     assert rows[-1]["status"] == "pending"          # a person stands between it and use

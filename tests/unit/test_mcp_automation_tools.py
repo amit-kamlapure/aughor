@@ -27,7 +27,7 @@ import asyncio
 
 import pytest
 
-from aughor.mcp import server as S
+from pramanyx.mcp import server as S
 
 
 def _run(coro):
@@ -35,7 +35,7 @@ def _run(coro):
 
 
 class _FakeClient:
-    """An AughorClient stand-in: records what was run, answers from a fixed roster."""
+    """A PramanyxClient stand-in: records what was run, answers from a fixed roster."""
 
     def __init__(self, tools, fail: bool = False):
         self._tools, self._fail = tools, fail
@@ -57,7 +57,7 @@ def _clean_automations():
     """The automations store is SESSION-scoped, so a chain saved by one test is still
     there when the next one asks what is exposed. Learned the same way one file over: a
     suite that leaves rows behind fails in the full run and passes on its own."""
-    from aughor.automations.store import delete_automation, list_automations
+    from pramanyx.automations.store import delete_automation, list_automations
     for a in list_automations(conn_id="ds14"):
         delete_automation(a.id)
     yield
@@ -78,8 +78,8 @@ def _clean_registry():
 # ── the flag, and the column behind it ────────────────────────────────────────
 
 def _automation(name: str, *, exposed: bool, enabled: bool = True, conn="ds14"):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import upsert_automation
     return upsert_automation(Automation(
         name=name, conn_id=conn, exposed_as_tool=exposed, enabled=enabled,
         conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
@@ -93,7 +93,7 @@ def test_the_flag_survives_a_round_trip_through_the_store():
     back as its default and NOTHING raises. Here that default would silently un-expose a
     tool an operator had opted in — or, read the other way, is the one assertion that
     proves the column exists."""
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     saved = _automation("Daily sales report", exposed=True)
     assert get_automation(saved.id).exposed_as_tool is True
 
@@ -103,7 +103,7 @@ def test_the_flag_survives_a_round_trip_through_the_store():
 
 def test_the_flag_defaults_OFF():
     """A deployment's automations are its private machinery. Exposure is opt-in."""
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.models import Automation, Condition, Effect
     a = Automation(name="x", conn_id="c",
                    conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
                    effects=[Effect(kind="investigate", config={"question": "q"})])
@@ -113,7 +113,7 @@ def test_the_flag_defaults_OFF():
 # ── the route the server reads ────────────────────────────────────────────────
 
 def _tools(conn="ds14"):
-    from aughor.routers.automations import exposed_tools
+    from pramanyx.routers.automations import exposed_tools
     return exposed_tools(conn_id=conn)
 
 

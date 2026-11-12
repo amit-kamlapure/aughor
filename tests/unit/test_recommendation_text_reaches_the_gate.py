@@ -40,7 +40,7 @@ FALLBACK = "Recommendation #0 from investigation inv1"
 def test_the_recommendation_text_is_read_not_the_placeholder():
     """The defect itself: the wrong field made every extraction fall through, and the
     placeholder is what the gate then inspected."""
-    from aughor.routers.actions import recommendation_text
+    from pramanyx.routers.actions import recommendation_text
 
     got = recommendation_text(REPORT, 0, FALLBACK)
     assert "1,204,551" in got and "1,180,002" in got
@@ -49,7 +49,7 @@ def test_the_recommendation_text_is_read_not_the_placeholder():
 
 def test_it_reads_the_stored_shape_as_JSON_TEXT_too():
     """`report_json` is a TEXT column; the route hands whatever the row holds."""
-    from aughor.routers.actions import recommendation_text
+    from pramanyx.routers.actions import recommendation_text
 
     assert "1,204,551" in recommendation_text(json.dumps(REPORT), 0, FALLBACK)
 
@@ -57,7 +57,7 @@ def test_it_reads_the_stored_shape_as_JSON_TEXT_too():
 def test_the_older_field_name_still_works_as_a_fallback():
     """The report prompt still names `recommended_actions`, so a hand-built or older
     report may use it. A fallback costs nothing; assuming history costs a placeholder."""
-    from aughor.routers.actions import recommendation_text
+    from pramanyx.routers.actions import recommendation_text
 
     old = {"recommended_actions": [{"text": "Raise the row limit to 200."}]}
     assert recommendation_text(old, 0, FALLBACK) == "Raise the row limit to 200."
@@ -76,7 +76,7 @@ def test_the_older_field_name_still_works_as_a_fallback():
 def test_anything_unreadable_falls_back_rather_than_inventing(report, index):
     """The placeholder is the honest answer when there is nothing to quote — the defect
     was never the fallback, it was falling back SILENTLY on every well-formed report."""
-    from aughor.routers.actions import recommendation_text
+    from pramanyx.routers.actions import recommendation_text
 
     assert recommendation_text(report, index, FALLBACK) == FALLBACK
 
@@ -84,7 +84,7 @@ def test_anything_unreadable_falls_back_rather_than_inventing(report, index):
 def test_a_negative_index_does_not_read_the_last_recommendation():
     """Python's negative indexing would have quietly dispatched a different
     recommendation than the one clicked."""
-    from aughor.routers.actions import recommendation_text
+    from pramanyx.routers.actions import recommendation_text
 
     assert recommendation_text(REPORT, -1, FALLBACK) == FALLBACK
 
@@ -95,7 +95,7 @@ def test_the_route_hands_the_gate_what_this_function_returns():
     store and the dispatcher to assert one argument would test those instead."""
     import inspect
 
-    from aughor.routers import actions as mod
+    from pramanyx.routers import actions as mod
 
     src = inspect.getsource(mod.execute_recommendation_action)
     assert "rec_text = recommendation_text(" in src

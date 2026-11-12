@@ -15,8 +15,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.custom_agents import create_agent, delete_agent, list_agents, update_agent
-from aughor.custom_agents.keys import (agent_key_issued_at, agent_key_matches, issue_agent_key,
+from pramanyx.custom_agents import create_agent, delete_agent, list_agents, update_agent
+from pramanyx.custom_agents.keys import (agent_key_issued_at, agent_key_matches, issue_agent_key,
                                        revoke_agent_key)
 
 
@@ -26,16 +26,16 @@ def _clean():
     for a in list_agents():
         revoke_agent_key(a.id)
         delete_agent(a.id)
-    from aughor.teamsbots import store
+    from pramanyx.teamsbots import store
     for b in store.list_bots():
         store.delete_bot(b.id)
 
 
 @pytest.fixture()
 def client(monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "agents.user_defined")
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -46,7 +46,7 @@ def _stub_fold(monkeypatch, seen: list):
                 "headline": "There were 49 orders.", "sql": "SELECT COUNT(DISTINCT order_id) FROM orders",
                 "columns": ["order_count"], "rows": [[49]], "row_count": 1, "receipt_id": "rc-1",
                 "investigation_id": "inv-1", "error": "", "truncated": False, "frames": 7}
-    monkeypatch.setattr("aughor.custom_agents.reach.fold_ask", _fold)
+    monkeypatch.setattr("pramanyx.custom_agents.reach.fold_ask", _fold)
     return _fold
 
 
@@ -117,7 +117,7 @@ def test_a_paused_agent_answers_nothing_and_says_so(client, monkeypatch):
 def test_the_webhook_answers_in_the_response_and_delivers_to_the_callback(client, monkeypatch):
     _stub_fold(monkeypatch, [])
     delivered: list = []
-    monkeypatch.setattr("aughor.routers.doors._deliver", lambda url, ans: delivered.append((url, ans["headline"])) or {"ok": True, "status": 200})
+    monkeypatch.setattr("pramanyx.routers.doors._deliver", lambda url, ans: delivered.append((url, ans["headline"])) or {"ok": True, "status": 200})
     a = create_agent("Hook", instructions="x")
     key = client.post(f"/agents/custom/{a.id}/key").json()["key"]
     r = client.post(f"/doors/agents/{a.id}/webhook",
@@ -132,7 +132,7 @@ def test_the_webhook_answers_in_the_response_and_delivers_to_the_callback(client
 
 
 def test_a_callback_that_is_not_http_is_refused_not_tried(monkeypatch):
-    from aughor.routers.doors import _deliver
+    from pramanyx.routers.doors import _deliver
     assert _deliver("file:///etc/passwd", {})["ok"] is False
 
 
@@ -192,9 +192,9 @@ def test_a_teams_bot_binds_an_app_to_an_agent_and_names_its_endpoint(client, mon
     bot = r.json()["bot"]
     assert bot["app_password"] != "pw-secret" and "secret" not in bot["app_password"], "masked"
     assert r.json()["messaging_endpoint"] == "" and "HTTPS" in r.json()["needs"][0]
-    monkeypatch.setenv("AUGHOR_PUBLIC_API_URL", "https://aughor.example.com")
+    monkeypatch.setenv("PRAMANYX_PUBLIC_API_URL", "https://pramanyx.example.com")
     r2 = client.post("/teams-bots", json={"name": "b2", "agent_id": a.id, "app_id": "app-2", "app_password": "pw"})
-    assert r2.json()["messaging_endpoint"] == f"https://aughor.example.com/doors/teams/{r2.json()['bot']['id']}/messages"
+    assert r2.json()["messaging_endpoint"] == f"https://pramanyx.example.com/doors/teams/{r2.json()['bot']['id']}/messages"
     assert client.post("/teams-bots", json={"name": "x", "app_id": "a", "app_password": ""}).status_code == 422
     assert client.get("/teams-bots").json()["bots"][0]["agent_id"] == a.id
     doors = client.get(f"/agents/custom/{a.id}/doors").json()
@@ -205,7 +205,7 @@ def test_a_teams_bot_binds_an_app_to_an_agent_and_names_its_endpoint(client, mon
 def test_an_inbound_activity_is_verified_answered_as_the_agent_and_replied(client, monkeypatch):
     seen: list = []
     _stub_fold(monkeypatch, seen)
-    from aughor.teamsbots import reply, verify
+    from pramanyx.teamsbots import reply, verify
     monkeypatch.setattr(verify, "verify_activity_token",
                         lambda auth, app_id: (auth == "Bearer good" and app_id == "app-1", "verified" if auth == "Bearer good" else "token refused"))
     monkeypatch.setattr(reply, "connector_token", lambda app_id, pw: (True, "tok") if pw == "pw-secret" else (False, "no"))
@@ -231,7 +231,7 @@ def test_an_inbound_activity_is_verified_answered_as_the_agent_and_replied(clien
 
 
 def test_the_rendered_teams_answer_carries_rows_and_sql():
-    from aughor.teamsbots.reply import render_answer
+    from pramanyx.teamsbots.reply import render_answer
     text = render_answer({"headline": "Two.", "columns": ["n"], "rows": [[1], [2]], "sql": "SELECT 1",
                           "receipt_id": "rc"})
     assert text.startswith("Two.") and "| N |" in text and "```sql" in text and "receipt rc" in text
@@ -244,7 +244,7 @@ def _sse(events: list[dict]) -> str:
 
 
 def _mcp_client(routes: dict):
-    from aughor.mcp.client import AughorClient
+    from pramanyx.mcp.client import PramanyxClient
 
     def handler(request: httpx.Request) -> httpx.Response:
         resp = routes.get(request.url.path)
@@ -252,11 +252,11 @@ def _mcp_client(routes: dict):
             return httpx.Response(404, json={"detail": f"no mock route for {request.url.path}"})
         return resp(request) if callable(resp) else resp
 
-    return AughorClient(base_url="http://test", transport=httpx.MockTransport(handler))
+    return PramanyxClient(base_url="http://test", transport=httpx.MockTransport(handler))
 
 
 def test_each_enabled_custom_agent_becomes_a_tool_that_asks_as_it(monkeypatch):
-    from aughor.mcp import server as S
+    from pramanyx.mcp import server as S
     asks: list = []
 
     def _ask(request: httpx.Request) -> httpx.Response:
@@ -296,14 +296,14 @@ def test_each_enabled_custom_agent_becomes_a_tool_that_asks_as_it(monkeypatch):
         assert asks[0]["agent_id"] == "ua_1" and asks[0]["connection_id"] == "c1"
         assert asks[0]["principal_ref"] == "api:mcp:claude"
     finally:
-        from aughor.mcp.policy import DYNAMIC_LEVELS
+        from pramanyx.mcp.policy import DYNAMIC_LEVELS
         for name in added:
             S.mcp._tool_manager.remove_tool(name)
             DYNAMIC_LEVELS.pop(name, None)
 
 
 def test_an_unreachable_api_registers_nothing_and_raises_nothing():
-    from aughor.mcp import server as S
+    from pramanyx.mcp import server as S
     client = _mcp_client({})
     assert asyncio.run(S.register_agent_tools(client)) == []
 
@@ -313,10 +313,10 @@ def test_an_agents_tool_is_a_run_under_the_organisations_agent_policy(client, mo
     needs: the install's default policy (`run`) lists it with a run's hints, a `read` policy
     hides it, and the door it calls is a run at the API too. Measured 2026-10-03 with the
     two arcs combined: the tool was registered, then hidden and refused as an unmapped act."""
-    from aughor.mcp import policy as P
-    from aughor.mcp import server as S
-    from aughor.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER
-    from aughor.orgsettings import agent_policy as AP
+    from pramanyx.mcp import policy as P
+    from pramanyx.mcp import server as S
+    from pramanyx.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER
+    from pramanyx.orgsettings import agent_policy as AP
 
     def _policy(level: str):
         async def agent_policy():
@@ -362,7 +362,7 @@ def test_the_fold_takes_the_turn_id_from_the_quick_paths_done_frame(monkeypatch)
     quick path names its turn `inv_id` on `done`, the deep path `investigation_id` on
     `start`, and the fold read one spelling. A verdict needs the turn, so both are read."""
     import asyncio
-    from aughor.custom_agents import reach
+    from pramanyx.custom_agents import reach
 
     async def _stream(_req, _user):
         for e in [{"type": "headline", "headline": "October."},
@@ -377,7 +377,7 @@ def test_the_fold_takes_the_turn_id_from_the_quick_paths_done_frame(monkeypatch)
                   {"type": "done", "inv_id": "quick-7", "has_receipt": True}]:
             yield f"data: {json.dumps(e)}\n\n"
 
-    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", _stream)
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", _stream)
     out = asyncio.run(reach.fold_ask(agent_id="ua_x", question="q", connection_id="workspace",
                                      principal_ref="api:http:t", session_id="", depth="quick", max_rows=50))
     assert out["investigation_id"] == "quick-7" and out["receipt_id"] == "rc-7"

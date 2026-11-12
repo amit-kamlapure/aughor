@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.dashboards import cards, images, propose, validate as V, versions
-from aughor.dashboards.home import Home
-from aughor.cards.models import StoredCard
+from pramanyx.dashboards import cards, images, propose, validate as V, versions
+from pramanyx.dashboards.home import Home
+from pramanyx.cards.models import StoredCard
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -33,9 +33,9 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 @pytest.fixture
 def volumes(tmp_path, monkeypatch):
     """Volumes and their catalog in a temp home, as the files tests arrange them."""
-    import aughor.files.store as vol_store
-    import aughor.metastore.store as ms_store
-    from aughor.control_plane import vending
+    import pramanyx.files.store as vol_store
+    import pramanyx.metastore.store as ms_store
+    from pramanyx.control_plane import vending
     monkeypatch.setattr(ms_store, "_DB_PATH", tmp_path / "metastore.db")
     monkeypatch.setattr(vol_store, "_DB_PATH", tmp_path / "volumes.db")
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
@@ -52,7 +52,7 @@ class Desk:
             cards.place(self.home, StoredCard(id=cid, kind="kpi", title=title, sql="SELECT 1"))
         text = FIXTURE.read_text().replace("c7f3a001", self.rate).replace("c91b2002", self.net)
         self.spec = json.loads(text)
-        from aughor.metastore import upsert_catalog
+        from pramanyx.metastore import upsert_catalog
         upsert_catalog(self.connection, name=self.connection, conn_id=self.connection)
 
     def with_note(self, text="Target for Q4: under **10%**.", key="note-1", **props):
@@ -242,7 +242,7 @@ def test_the_outline_names_a_note_and_an_image_as_a_person_reads_them():
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

@@ -11,11 +11,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology.models import Backing, OntologyGraph
-from aughor.semantic.object_instances import ObjectNotFound, get_object, list_linked, title_column
-from aughor.semantic.object_query import ObjectQueryRefused
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology.models import Backing, OntologyGraph
+from pramanyx.semantic.object_instances import ObjectNotFound, get_object, list_linked, title_column
+from pramanyx.semantic.object_query import ObjectQueryRefused
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 
@@ -102,7 +102,7 @@ def test_a_missing_key_is_not_found_an_unknown_type_is_refused_and_a_key_is_neve
 # batch door that resolves a page of keys in ONE query, and its refusals.
 
 def test_many_keys_are_named_in_one_query_and_a_key_nothing_matches_is_simply_absent(db, graph):
-    from aughor.semantic.object_instances import titles
+    from pramanyx.semantic.object_instances import titles
 
     reference = {str(r[0]): str(r[1]) for r in db.execute(
         "reference", "SELECT customer_id, full_name FROM customers ORDER BY customer_id LIMIT 5").rows}
@@ -114,7 +114,7 @@ def test_many_keys_are_named_in_one_query_and_a_key_nothing_matches_is_simply_ab
 
 
 def test_a_type_named_by_its_key_resolves_nothing_and_says_so(db, graph):
-    from aughor.semantic.object_instances import titles
+    from pramanyx.semantic.object_instances import titles
 
     found = titles(graph, db, "order", ["O000123"])
 
@@ -123,7 +123,7 @@ def test_a_type_named_by_its_key_resolves_nothing_and_says_so(db, graph):
 
 
 def test_titling_repeats_no_key_caps_the_batch_and_never_splices_one(db, graph):
-    from aughor.semantic.object_instances import MAX_TITLES, titles
+    from pramanyx.semantic.object_instances import MAX_TITLES, titles
 
     over = titles(graph, db, "customer", [f"C{n:05d}" for n in range(MAX_TITLES + 10)])
     assert over["truncated"] is True
@@ -135,8 +135,8 @@ def test_titling_repeats_no_key_caps_the_batch_and_never_splices_one(db, graph):
 def test_a_name_on_a_static_binding_titles_the_object_and_the_batch_reads_it_through_the_binding(db, graph):
     """ON-1b let a property live on a bound source; naming an object by one was the leftover. The binding joins
     on the OBJECT's key, so its name is as single-valued as a column of the backing."""
-    from aughor.ontology.models import Binding, DisplayProperty, EntityProperty
-    from aughor.semantic.object_instances import titles
+    from pramanyx.ontology.models import Binding, DisplayProperty, EntityProperty
+    from pramanyx.semantic.object_instances import titles
 
     product = graph.entities["Product"]
     product.bindings = [Binding(name="naming", kind="static", table="products", key="product_id",
@@ -154,8 +154,8 @@ def test_a_name_on_a_static_binding_titles_the_object_and_the_batch_reads_it_thr
 
 
 def test_a_display_property_is_measured_over_the_binding_that_supplies_it(db, graph):
-    from aughor.ontology.display import display_source, measure_display
-    from aughor.ontology.models import Binding, EntityProperty
+    from pramanyx.ontology.display import display_source, measure_display
+    from pramanyx.ontology.models import Binding, EntityProperty
 
     product = graph.entities["Product"]
     product.bindings = [Binding(name="naming", kind="static", table="products", key="product_id",
@@ -175,8 +175,8 @@ def test_a_display_property_is_measured_over_the_binding_that_supplies_it(db, gr
 def test_an_unmeasured_binding_does_not_get_to_name_anything(db, graph):
     """The one law for reading a binding holds for titles too: an uncounted binding is never joined, so its
     column cannot become a name through the back door."""
-    from aughor.ontology.display import display_source
-    from aughor.ontology.models import Binding, EntityProperty
+    from pramanyx.ontology.display import display_source
+    from pramanyx.ontology.models import Binding, EntityProperty
 
     product = graph.entities["Product"]
     product.bindings = [Binding(name="unmeasured", kind="static", table="products", key="product_id",

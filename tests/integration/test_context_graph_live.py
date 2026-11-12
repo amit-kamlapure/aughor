@@ -1,6 +1,6 @@
 """Wave C1 — the finding-node path proven end-to-end through the REAL stores.
 
-Runs under the conftest data isolation (``AUGHOR_STATE_DIR`` + ``AUGHOR_SYSTEM_DB``
+Runs under the conftest data isolation (``PRAMANYX_STATE_DIR`` + ``PRAMANYX_SYSTEM_DB``
 point at a temp dir), so this exercises the real ``explorer.store`` enumeration and
 the real Ledger dossier read — the write-only half of the open feedback loop becoming
 a graph node — without touching live data or spending an LLM request. The unit tests
@@ -9,11 +9,11 @@ real persisted findings and marks their provenance from the actual dossier artif
 """
 from __future__ import annotations
 
-from aughor.explorer import store as explorer_store
-from aughor.kernel.ledger import Ledger
-from aughor.ontology.context_graph_build import build_context_graph
-from aughor.ontology.models import OntologyEntity, OntologyGraph
-from aughor.ontology.store import save_ontology
+from pramanyx.explorer import store as explorer_store
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.ontology.context_graph_build import build_context_graph
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.ontology.store import save_ontology
 
 SCHEMA = "main"
 FP = "itfp1"
@@ -32,7 +32,7 @@ def _seed_ontology(conn: str) -> None:
 
 def test_finding_node_from_a_real_dossier(monkeypatch):
     conn = "ctxgraph_it_dossier"
-    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "1")
+    monkeypatch.setenv("PRAMANYX_GRAPH_BUILD", "1")
     _seed_ontology(conn)
 
     insight_id = "Catalog__widgets__1"
@@ -74,7 +74,7 @@ def test_finding_node_from_a_real_dossier(monkeypatch):
 
 def test_finding_without_dossier_is_honestly_sourced_as_exploration(monkeypatch):
     conn = "ctxgraph_it_nodossier"
-    monkeypatch.setenv("AUGHOR_GRAPH_BUILD", "1")
+    monkeypatch.setenv("PRAMANYX_GRAPH_BUILD", "1")
     _seed_ontology(conn)
     explorer_store.save(conn, {"insights": [{
         "id": "x1", "finding": "a finding with no captured dossier",

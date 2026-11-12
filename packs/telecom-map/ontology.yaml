@@ -1,4 +1,4 @@
-# The telecommunications and ISP industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 62 reference
+# The telecommunications and ISP industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 62 reference
 # types) as an industry map: expectations matched to tables by name or alias, never facts. Sixty objects; two reference
 # types are folded into a near-identical one and kept as its aliases:
 #   * Cell Site         → NetworkSite

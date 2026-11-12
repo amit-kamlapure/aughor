@@ -5,7 +5,7 @@ record can't take down a read path". That is right for reading configuration and
 the point of use: the ciphertext then travels as the credential, and the provider answers
 about the credential.
 
-Measured, driving the real ladder with `AUGHOR_SECRET_KEY` unset: `endpoint_for("gemini")`
+Measured, driving the real ladder with `PRAMANYX_SECRET_KEY` unset: `endpoint_for("gemini")`
 returned `enc:…` — 171 characters of Fernet token — the call went to Google, and Google said
 `400 Please pass a valid API key`. Which is true of what it received and false about what is
 wrong: the stored key was fine, the secret that unlocks it was absent.
@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm import provider
-from aughor.secretvault import is_encrypted
+from pramanyx.llm import provider
+from pramanyx.secretvault import is_encrypted
 
 
 def _ciphertext() -> str:
@@ -42,7 +42,7 @@ def test_an_undecryptable_key_is_refused_and_names_the_real_cause(monkeypatch):
         provider.endpoint_for("gemini")
 
     message = str(exc.value)
-    assert "AUGHOR_SECRET_KEY" in message, "the message must name the thing that is missing"
+    assert "PRAMANYX_SECRET_KEY" in message, "the message must name the thing that is missing"
     assert "nothing was sent to the provider" in message
     assert "key itself is probably fine" in message, (
         "a person reading this must not be sent to rotate a working key")
@@ -80,7 +80,7 @@ def test_the_chat_path_refuses_at_construction(monkeypatch):
     monkeypatch.setattr(provider, "_active_key", lambda _b: _ciphertext())
     monkeypatch.setattr(provider, "_active_model", lambda _b, _r: "some-model")
 
-    with pytest.raises(RuntimeError, match="AUGHOR_SECRET_KEY"):
+    with pytest.raises(RuntimeError, match="PRAMANYX_SECRET_KEY"):
         provider.LLMProvider(backend="gemini", role="coder")
 
 
@@ -116,11 +116,11 @@ def test_the_embedding_lane_surfaces_the_refusal(monkeypatch):
     """The path that found this. The lane's own "no API key" check passes — the value is
     non-empty — so without the guard one layer down, the first sign of trouble is a
     provider error."""
-    from aughor.semantic import embedder
+    from pramanyx.semantic import embedder
 
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "gemini")
-    monkeypatch.setenv("AUGHOR_EMBED_MODEL", "models/some-embedding-model")
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "gemini")
+    monkeypatch.setenv("PRAMANYX_EMBED_MODEL", "models/some-embedding-model")
     monkeypatch.setattr(provider, "_active_key", lambda _b: _ciphertext())
 
-    with pytest.raises(RuntimeError, match="AUGHOR_SECRET_KEY"):
+    with pytest.raises(RuntimeError, match="PRAMANYX_SECRET_KEY"):
         embedder.endpoint()

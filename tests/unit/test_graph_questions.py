@@ -7,10 +7,10 @@ graph produces an empty queue.
 """
 from __future__ import annotations
 
-from aughor.ontology.context_graph import (
+from pramanyx.ontology.context_graph import (
     ContextGraph, GraphEdge, GraphNode, Provenance,
 )
-from aughor.ontology.graph_questions import queue_summary, review_queue
+from pramanyx.ontology.graph_questions import queue_summary, review_queue
 
 
 def _table(cg, nid, label=None, summary="", sources=None):
@@ -212,7 +212,7 @@ def test_a_non_integer_limit_does_not_crash_a_direct_caller():
 def test_the_queue_declares_truncation_rather_than_capping_silently():
     """Rendering '50 things this graph cannot vouch for' over a warehouse with 300 would
     under-report the very thing the queue exists to report."""
-    from aughor.ontology.graph_questions import queue_summary, review_queue_with_total
+    from pramanyx.ontology.graph_questions import queue_summary, review_queue_with_total
 
     cg = ContextGraph(org_id="o", connection_id="c")
     for i in range(12):

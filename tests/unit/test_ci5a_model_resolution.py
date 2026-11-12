@@ -2,7 +2,7 @@
 narrator no longer ships a fallback report without a fight.
 
 The premise check found the roadmap's main CI-5a deliverable ALREADY SHIPPED:
-`AUGHOR_{CODER,NARRATOR,FAST_NARRATOR}_MODEL` exist in `_env_model_for_role`, and
+`PRAMANYX_{CODER,NARRATOR,FAST_NARRATOR}_MODEL` exist in `_env_model_for_role`, and
 `data/llm_config.json` is untracked — a serverless cold start has an empty runtime
 config, so the env vars already govern prod. What was missing: the contract pinned as
 tests (it lived only in the module docstring and one memory entry), the documented
@@ -17,11 +17,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.llm import provider as P
+from pramanyx.llm import provider as P
 
 _ENV_VARS = (
-    "AUGHOR_BACKEND", "AUGHOR_MODEL", "AUGHOR_CODER_MODEL", "AUGHOR_NARRATOR_MODEL",
-    "AUGHOR_FAST_NARRATOR_MODEL",
+    "PRAMANYX_BACKEND", "PRAMANYX_MODEL", "PRAMANYX_CODER_MODEL", "PRAMANYX_NARRATOR_MODEL",
+    "PRAMANYX_FAST_NARRATOR_MODEL",
 )
 
 
@@ -47,26 +47,26 @@ def _write_cfg(path, payload):
 def test_serverless_posture_env_models_govern(clean_cfg, monkeypatch):
     """Empty runtime config (every cold start on Vercel) + env vars ⇒ env wins.
     This is the configuration prod actually runs on — the durable one."""
-    monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "env-narrator-model")
-    monkeypatch.setenv("AUGHOR_CODER_MODEL", "env-coder-model")
+    monkeypatch.setenv("PRAMANYX_NARRATOR_MODEL", "env-narrator-model")
+    monkeypatch.setenv("PRAMANYX_CODER_MODEL", "env-coder-model")
     assert P._active_model("openrouter", "narrator") == "env-narrator-model"
     assert P._active_model("openrouter", "coder") == "env-coder-model"
 
 
 def test_fast_falls_back_to_narrator_env(clean_cfg, monkeypatch):
-    monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "env-narrator-model")
+    monkeypatch.setenv("PRAMANYX_NARRATOR_MODEL", "env-narrator-model")
     assert P._active_model("openrouter", "fast") == "env-narrator-model"
-    monkeypatch.setenv("AUGHOR_FAST_NARRATOR_MODEL", "env-fast-model")
+    monkeypatch.setenv("PRAMANYX_FAST_NARRATOR_MODEL", "env-fast-model")
     assert P._active_model("openrouter", "fast") == "env-fast-model"
 
 
 def test_config_backend_disables_env_models(clean_cfg, monkeypatch):
-    """THE TRAP, pinned deliberately: a UI-chosen backend makes AUGHOR_*_MODEL a
+    """THE TRAP, pinned deliberately: a UI-chosen backend makes PRAMANYX_*_MODEL a
     silent no-op even with no models chosen — env model names are tuned for the env
     backend, and applying one to a different binding would 404 every call. If this
     behaviour is ever changed, this test is the notice that the operator note in the
     module docstring must change with it."""
-    monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "env-narrator-model")
+    monkeypatch.setenv("PRAMANYX_NARRATOR_MODEL", "env-narrator-model")
     _write_cfg(clean_cfg, {"backend": "openrouter"})
     resolved = P._active_model("openrouter", "narrator")
     assert resolved != "env-narrator-model"
@@ -77,7 +77,7 @@ def test_config_backend_disables_env_models(clean_cfg, monkeypatch):
 
 
 def test_config_models_outrank_everything(clean_cfg, monkeypatch):
-    monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "env-narrator-model")
+    monkeypatch.setenv("PRAMANYX_NARRATOR_MODEL", "env-narrator-model")
     _write_cfg(clean_cfg, {"backend": "openrouter",
                            "models": {"narrator": "cfg-narrator-model"}})
     assert P._active_model("openrouter", "narrator") == "cfg-narrator-model"
@@ -90,7 +90,7 @@ class _Synth(SimpleNamespace):
 
 
 def test_rescue_serves_a_report_when_the_narrator_died(monkeypatch):
-    from aughor.agent import investigate as inv
+    from pramanyx.agent import investigate as inv
 
     calls = []
 
@@ -105,7 +105,7 @@ def test_rescue_serves_a_report_when_the_narrator_died(monkeypatch):
 
 
 def test_rescue_failure_lands_on_the_fallback(monkeypatch):
-    from aughor.agent import investigate as inv
+    from pramanyx.agent import investigate as inv
 
     def _fake_provider(role):
         return SimpleNamespace(complete=lambda **kw: (_ for _ in ()).throw(RuntimeError("down")))
@@ -116,7 +116,7 @@ def test_rescue_failure_lands_on_the_fallback(monkeypatch):
 
 
 def test_rescue_respects_its_own_timeout(monkeypatch):
-    from aughor.agent import investigate as inv
+    from pramanyx.agent import investigate as inv
 
     def _fake_provider(role):
         def _slow(**kw):
@@ -125,7 +125,7 @@ def test_rescue_respects_its_own_timeout(monkeypatch):
         return SimpleNamespace(complete=_slow)
 
     monkeypatch.setattr(inv, "_provider", _fake_provider)
-    monkeypatch.setenv("AUGHOR_SYNTH_FAST_TIMEOUT_S", "0.2")
+    monkeypatch.setenv("PRAMANYX_SYNTH_FAST_TIMEOUT_S", "0.2")
     t0 = time.monotonic()
     assert inv._fast_synthesis_rescue("sys", "user", _Synth) is None
     assert time.monotonic() - t0 < 1.5, "the rescue's timeout binds — the user already waited once"

@@ -20,22 +20,22 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-import aughor.connectors
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db import doors as D
-from aughor.db.connection import DatabaseConnection, DuckDBConnection
-from aughor.db.errors import classify_error
+import pramanyx.connectors
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db import doors as D
+from pramanyx.db.connection import DatabaseConnection, DuckDBConnection
+from pramanyx.db.errors import classify_error
 
 
 def _all_connection_classes() -> list[type]:
-    for mod in pkgutil.walk_packages(aughor.connectors.__path__, "aughor.connectors."):
+    for mod in pkgutil.walk_packages(pramanyx.connectors.__path__, "pramanyx.connectors."):
         importlib.import_module(mod.name)
 
     def walk(cls):
         for sub in cls.__subclasses__():
             yield sub
             yield from walk(sub)
-    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("aughor.")
+    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("pramanyx.")
                    and not inspect.isabstract(c)}, key=lambda c: c.__qualname__)
 
 
@@ -45,11 +45,11 @@ CLASSES = _all_connection_classes()
 # ── DE-3a ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_exasol_declares_itself_and_is_read_as_itself():
-    from aughor.connectors.warehouse.exasol import ExasolConnection
-    from aughor.db.capabilities import avoid_line, for_dialect
-    from aughor.db.connection import _validate
-    from aughor.db.dialects import known_dialect, native_sql, writer_rules
-    from aughor.sql.capability_check import capability_diagnostics
+    from pramanyx.connectors.warehouse.exasol import ExasolConnection
+    from pramanyx.db.capabilities import avoid_line, for_dialect
+    from pramanyx.db.connection import _validate
+    from pramanyx.db.dialects import known_dialect, native_sql, writer_rules
+    from pramanyx.sql.capability_check import capability_diagnostics
 
     assert ExasolConnection.dialect == "exasol" and known_dialect("exasol") == "exasol"
     conn = object.__new__(ExasolConnection)
@@ -169,7 +169,7 @@ def test_a_door_nested_in_a_door_retries_once_in_all():
 
 
 def test_the_pool_closes_a_lost_connection_and_hands_out_only_what_answers():
-    from aughor.db.pool import ConnectionPool
+    from pramanyx.db.pool import ConnectionPool
 
     class _Conn:
         poolable = True
@@ -236,7 +236,7 @@ def test_every_connection_class_answers_is_healthy():
 
 
 def test_mysql_answers_without_reconnecting():
-    from aughor.connectors.warehouse.mysql import MySQLConnection
+    from pramanyx.connectors.warehouse.mysql import MySQLConnection
 
     conn = object.__new__(MySQLConnection)
     pinged: list = []

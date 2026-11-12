@@ -1,8 +1,8 @@
 """Rec 4 · leverage #1 — recover generated SQL from task_history on the REAL path.
 
 Proves the eval-recovery contract end-to-end, not on a stub: the actual guarded
-executor (`aughor.sql.executor.execute_guarded`, the code every answer runs) emits
-a `sql.execute` span carrying the SQL, and `aughor.obs.task_history.recover_sql`
+executor (`pramanyx.sql.executor.execute_guarded`, the code every answer runs) emits
+a `sql.execute` span carrying the SQL, and `pramanyx.obs.task_history.recover_sql`
 reads it back — "SELECT what the agent did" instead of parsing logs. Hermetic: a
 temp DuckDB, the test-isolated ledger, no LLM.
 """
@@ -11,10 +11,10 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-import aughor.telemetry as tel
-from aughor.db.connection import DuckDBConnection
-from aughor.obs import task_history as th
-from aughor.sql.executor import execute_guarded
+import pramanyx.telemetry as tel
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.obs import task_history as th
+from pramanyx.sql.executor import execute_guarded
 
 
 @pytest.fixture

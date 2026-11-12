@@ -10,7 +10,7 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.evals import (
+from pramanyx.evals import (
     EvalCase,
     EvalObservation,
     reference_checker,
@@ -18,14 +18,14 @@ from aughor.evals import (
     run_suite,
     store,
 )
-from aughor.evals.store import FLAKY, STABLE_FAIL, STABLE_PASS
+from pramanyx.evals.store import FLAKY, STABLE_FAIL, STABLE_PASS
 
 
 @pytest.fixture(autouse=True)
 def _isolated_store(tmp_path, monkeypatch):
     """Point the evals DB at a tmp file per test. The module resolves its path at
     import, so the module-level constant is patched too."""
-    monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
+    monkeypatch.setenv("PRAMANYX_EVALS_DB", str(tmp_path / "evals.db"))
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
     yield
 
@@ -37,7 +37,7 @@ def db(tmp_path):
     con.execute("CREATE TABLE t(id INT, v INT)")
     con.execute("INSERT INTO t VALUES (1,10),(2,20),(3,30)")
     con.close()
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(str(path), connection_id="e3test")
     yield conn
     conn.close()
@@ -80,7 +80,7 @@ def test_delete_suite_cascades():
 
 
 def test_rows_are_org_scoped():
-    from aughor.org.context import reset_org_id, set_org_id
+    from pramanyx.org.context import reset_org_id, set_org_id
 
     sid = _suite_with([{"question": "mine", "artifact": "SELECT 1"}])
     token = set_org_id("someone-else")
@@ -165,7 +165,7 @@ def test_unstable_evaluator_is_singled_out(db):
         # a mutating statement only on the first iteration → readonly fires once
         return EvalObservation(sql="DELETE FROM t" if calls["n"] == 1 else "SELECT 1")
 
-    from aughor.trust import Scope
+    from pramanyx.trust import Scope
     def target(case):
         case.scope = Scope(conn=db, dialect="duckdb")
         return flapping(case)
@@ -251,7 +251,7 @@ def test_eval_suite_capability_now_gates_something(client, monkeypatch):
     """`eval.suite` was declared in the licensing table and sold as Enterprise
     while gating NOTHING — there was not one gate(Capability.EVAL_SUITE) call
     site. This is the test that it is real."""
-    from aughor.licensing import Capability
+    from pramanyx.licensing import Capability
 
     calls: list = []
 
@@ -259,7 +259,7 @@ def test_eval_suite_capability_now_gates_something(client, monkeypatch):
         calls.append(cap)
         return cap is not Capability.EVAL_SUITE
 
-    monkeypatch.setattr("aughor.licensing.deps.has_capability", deny)
+    monkeypatch.setattr("pramanyx.licensing.deps.has_capability", deny)
     r = client.get("/evals/suites")
     assert r.status_code == 402, r.text
     assert r.json()["detail"]["capability"] == "eval.suite"
@@ -285,7 +285,7 @@ def test_dead_eval_run_stub_is_gone(client):
 
 def test_run_a_suite_over_http(client, db, monkeypatch, tmp_path):
     """End-to-end through the API against a registered connection."""
-    from aughor.db import registry
+    from pramanyx.db import registry
 
     conn_id = registry.add_connection("evals-http", "duckdb", str(db._path))
     created = client.post("/evals/suites", json={
@@ -323,14 +323,14 @@ _CLEAN = {"run_id": "r1", "suite_id": "s1", "total": 3, "pass_rate": 1.0, "error
 
 
 def test_graduation_unknown_flag_is_blocked():
-    from aughor.evals.promotion import evaluate_graduation
+    from pramanyx.evals.promotion import evaluate_graduation
     d = evaluate_graduation("nope.flag", _CLEAN, registered_flags=_REG)
     assert not d.can_graduate
     assert any("not in the flag registry" in r for r in d.reasons)
 
 
 def test_graduation_needs_a_run():
-    from aughor.evals.promotion import evaluate_graduation
+    from pramanyx.evals.promotion import evaluate_graduation
     d = evaluate_graduation("demo.flag", None, registered_flags=_REG)
     assert not d.can_graduate
     assert any("no run" in r for r in d.reasons)
@@ -339,7 +339,7 @@ def test_graduation_needs_a_run():
 def test_graduation_blocked_by_errors_and_by_flaky():
     """A graduation cannot rest on a run that errored or that was flaky — flaky is
     E3's first-class verdict precisely so stability is not rounded away here."""
-    from aughor.evals.promotion import evaluate_graduation
+    from pramanyx.evals.promotion import evaluate_graduation
     err = evaluate_graduation("demo.flag", {**_CLEAN, "errors": 1}, registered_flags=_REG)
     assert not err.can_graduate and any("errored" in r for r in err.reasons)
     flaky = evaluate_graduation("demo.flag", {**_CLEAN, "flaky": 2}, registered_flags=_REG)
@@ -347,7 +347,7 @@ def test_graduation_blocked_by_errors_and_by_flaky():
 
 
 def test_graduation_is_judged_against_the_baseline():
-    from aughor.evals.promotion import evaluate_graduation
+    from pramanyx.evals.promotion import evaluate_graduation
     below = evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.60},
                                 registered_flags=_REG, baseline_pass_rate=0.65)
     assert not below.can_graduate and below.bar == 0.65
@@ -361,7 +361,7 @@ def test_graduation_is_judged_against_the_baseline():
     assert not unfloored.can_graduate
     assert any("no floor evidence" in r for r in unfloored.reasons)
 
-    from aughor.evals import fidelity as _FI
+    from pramanyx.evals import fidelity as _FI
     quiet = _FI.compare([{"pass_rate": 0.650, "total": 100}, {"pass_rate": 0.651, "total": 100}],
                         [{"pass_rate": 0.660, "total": 100}, {"pass_rate": 0.661, "total": 100}],
                         axis="pass_rate")
@@ -375,7 +375,7 @@ def test_graduation_is_judged_against_the_baseline():
 def test_graduation_without_a_baseline_demands_a_clean_run():
     """With no baseline to beat, min_pass_rate (default 1.0) is the bar — a candidate
     must be clean rather than merely non-regressive against nothing."""
-    from aughor.evals.promotion import evaluate_graduation
+    from pramanyx.evals.promotion import evaluate_graduation
     assert not evaluate_graduation("demo.flag", {**_CLEAN, "pass_rate": 0.99},
                                    registered_flags=_REG).can_graduate
     assert evaluate_graduation("demo.flag", _CLEAN, registered_flags=_REG).can_graduate
@@ -385,8 +385,8 @@ def test_graduate_a_real_flag_over_http_and_receipt_it(client, db, synthetic_fla
     """The E6 decision gate: graduate exactly one REAL flag through the gate, and prove
     the load-bearing property — graduation records receipted EVIDENCE and does NOT flip
     the flag (a ledger-on/code-off override is the very drift the 2026-07-22 audit removed)."""
-    from aughor.db import registry
-    from aughor.kernel.flags import flag_state
+    from pramanyx.db import registry
+    from pramanyx.kernel.flags import flag_state
 
     conn_id = registry.add_connection("evals-grad", "duckdb", str(db._path))
     sid = client.post("/evals/suites", json={

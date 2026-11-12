@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.monitors import runner
-from aughor.monitors.models import Monitor
+from pramanyx.monitors import runner
+from pramanyx.monitors.models import Monitor
 
 
 def _db(value):

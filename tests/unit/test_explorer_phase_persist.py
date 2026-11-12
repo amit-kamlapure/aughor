@@ -4,13 +4,13 @@ F-phase-sync: _save_state() mirrors the LIVE self._status.phase into the persist
   state on every save, so the exploration JSON reflects mid-run progress (it used to
   stay 'pending' until the terminal COMPLETE/FAILED write).
 F-concurrency: explore() is a thin concurrency-bounded wrapper over _explore_run(),
-  gated by a shared semaphore sized from AUGHOR_MAX_CONCURRENT_EXPLORERS.
+  gated by a shared semaphore sized from PRAMANYX_MAX_CONCURRENT_EXPLORERS.
 """
 import asyncio
 
-from aughor.explorer import agent as agent_mod
-from aughor.explorer.agent import SchemaExplorer, _get_explorer_semaphore
-from aughor.explorer.models import ExplorationPhase, ExplorationStatus
+from pramanyx.explorer import agent as agent_mod
+from pramanyx.explorer.agent import SchemaExplorer, _get_explorer_semaphore
+from pramanyx.explorer.models import ExplorationPhase, ExplorationStatus
 
 
 def _bare_explorer():
@@ -147,7 +147,7 @@ def test_budget_exceeded_in_context_is_handled_like_a_cancel(monkeypatch):
     land in the same handler as a cancel: status TERMINAL, progress saved, the reason
     recorded, and the error re-raised so the kernel can stamp the job CANCELLED."""
     import pytest
-    from aughor.kernel.metering import BudgetExceeded
+    from pramanyx.kernel.metering import BudgetExceeded
 
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex.connection_id = "c"
@@ -188,8 +188,8 @@ def test_manifest_nq_pops_cell_and_builds_deterministic_question():
     """Tier-1 #4 wiring: _manifest_nq pops the next uncovered manifest cell whose table is in
     scope and builds a deterministic next-question (zero LLM), marking it attempted so the run
     advances rather than repeats."""
-    from aughor.explorer.coverage_manifest import ManifestCell
-    from aughor.tools.profiler import ColumnProfile, TableProfile
+    from pramanyx.explorer.coverage_manifest import ManifestCell
+    from pramanyx.tools.profiler import ColumnProfile, TableProfile
 
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex._manifest_cells = [ManifestCell("amount", "orders", "headline", None, "profiled_measure")]
@@ -217,8 +217,8 @@ def test_manifest_nq_pops_cell_and_builds_deterministic_question():
 def test_manifest_coverage_skips_cells_covered_by_a_prior_run():
     """Tier-2: a cell already covered (seeded into _manifest_attempted from persisted state) is
     not re-attempted — re-runs skip the covered frontier and stay cheap."""
-    from aughor.explorer.coverage_manifest import ManifestCell
-    from aughor.tools.profiler import ColumnProfile, TableProfile
+    from pramanyx.explorer.coverage_manifest import ManifestCell
+    from pramanyx.tools.profiler import ColumnProfile, TableProfile
 
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex._manifest_cells = [ManifestCell("amount", "orders", "headline", None, "profiled_measure")]

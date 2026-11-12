@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The Semantic Layer — a connection's declared meaning, in five tabs, redone to `aughor-v2/CLARITY.md` (2026-10-12):
+ * The Semantic Layer — a connection's declared meaning, in five tabs, redone to `pramanyx-v2/CLARITY.md` (2026-10-12):
  *  1. Metrics     — governed definitions: what is approved and measured, what waits for review (the landing tab;
  *                   `MetricsPanel`)
  *  2. Annotations — what a table or column means, read into every prompt

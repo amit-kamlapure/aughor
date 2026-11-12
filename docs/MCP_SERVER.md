@@ -39,7 +39,7 @@ that fired. The answer is verified, not plausible.
 
 There is deliberately **no raw `query` tool**. The ledger API behind the last row is also served over
 REST under `/ledger/v1` (`docs/AGENT_CONTRACT.md` is the published contract), where an outside vendor's
-agent presents a **service principal** (`X-Aughor-Service`, `X-Aughor-Service-Key`, minted by a person
+agent presents a **service principal** (`X-Pramanyx-Service`, `X-Pramanyx-Service-Key`, minted by a person
 at `POST /ledger/v1/principals/service`) and is held to the same agent policy as this server.
 
 ### What each tool needs — and the organisation's agent policy (DE-2b)
@@ -55,8 +55,8 @@ staged acts. Which of the three an outside agent may do is the organisation's **
 | Default | `run`, set by nobody: today's exposure made explicit. `act` is given only by a person. |
 | Who sets it | `PUT /org-settings/agent-policy` `{"level": "read"\|"run"\|"act", "connections": [...]?, "tools": [...]?}` — a person with `ADMIN_MANAGE_ORG`. An agent that tries is refused with `AGENT_POLICY_NOT_SELF_SET`. `DELETE` returns to the default. |
 | Allowlists | `connections` (connection ids) and `tools` (tool names); `null` means all. |
-| Environment | `AUGHOR_AGENT_POLICY_LEVEL`, `AUGHOR_AGENT_POLICY_CONNECTIONS`, `AUGHOR_AGENT_POLICY_TOOLS` (server side) can only **narrow** what is saved, never widen it. |
-| Enforcement | Every call this client makes carries `X-Aughor-Agent: mcp` and `X-Aughor-Tool: <tool>`; the API checks the policy on those calls and refuses with a 403 whose `detail.code` is one of `AGENT_LEVEL_DENIED`, `AGENT_TOOL_DENIED`, `AGENT_CONNECTION_DENIED`, `AGENT_POLICY_NOT_SELF_SET`. The server also hides a disallowed tool from `tools/list` and refuses one called by name with the same code. |
+| Environment | `PRAMANYX_AGENT_POLICY_LEVEL`, `PRAMANYX_AGENT_POLICY_CONNECTIONS`, `PRAMANYX_AGENT_POLICY_TOOLS` (server side) can only **narrow** what is saved, never widen it. |
+| Enforcement | Every call this client makes carries `X-Pramanyx-Agent: mcp` and `X-Pramanyx-Tool: <tool>`; the API checks the policy on those calls and refuses with a 403 whose `detail.code` is one of `AGENT_LEVEL_DENIED`, `AGENT_TOOL_DENIED`, `AGENT_CONNECTION_DENIED`, `AGENT_POLICY_NOT_SELF_SET`. The server also hides a disallowed tool from `tools/list` and refuses one called by name with the same code. |
 | Audit | Every agent call, allowed or refused, is a `mcp.tool_call` event in the Ledger with its principal, tool, route, verdict and bounded arguments — listed on the governance feed under *data access*. |
 
 ## Architecture
@@ -68,10 +68,10 @@ in-process import of the app:
  Claude Desktop / Code / Cursor
         │  (stdio or streamable-HTTP, MCP protocol)
         ▼
- aughor.mcp.server  (FastMCP — eighteen governed tools plus the opted-in automations and
+ pramanyx.mcp.server  (FastMCP — eighteen governed tools plus the opted-in automations and
         │           the Spotlight roster; lists what the organisation's agent policy allows)
-        │  aughor.mcp.client.AughorClient  (httpx; SSE-folds /chat + /investigate)
-        ▼  HTTP  (AUGHOR_API_URL, X-Api-Key)
+        │  pramanyx.mcp.client.PramanyxClient  (httpx; SSE-folds /chat + /investigate)
+        ▼  HTTP  (PRAMANYX_API_URL, X-Api-Key)
  Pramanyx REST API  ──►  the real governed path
         (metering · agent budgets · capability gating · Trust Receipts — in the API process)
 ```
@@ -85,15 +85,15 @@ stateless and light (httpx only), so it starts fast under a stdio launcher.
 
 1. **Start the Pramanyx API** (the MCP server talks to it):
    ```bash
-   uv run uvicorn aughor.api:app --port 8000
+   uv run uvicorn pramanyx.api:app --port 8000
    ```
 2. **Run the MCP server** (usually your MCP client launches this for you — see below):
    ```bash
-   python -m aughor.mcp           # stdio  (Claude Desktop/Code/Cursor)
-   AUGHOR_MCP_TOKEN=… python -m aughor.mcp --http                  # streamable-HTTP on 127.0.0.1:8765
-   AUGHOR_MCP_TOKEN=… python -m aughor.mcp --http --host 0.0.0.0   # …served to other machines
+   python -m pramanyx.mcp           # stdio  (Claude Desktop/Code/Cursor)
+   PRAMANYX_MCP_TOKEN=… python -m pramanyx.mcp --http                  # streamable-HTTP on 127.0.0.1:8765
+   PRAMANYX_MCP_TOKEN=… python -m pramanyx.mcp --http --host 0.0.0.0   # …served to other machines
    ```
-   `--http` needs `AUGHOR_MCP_TOKEN` and refuses to start without it (DE-2a, ROADMAP §3.51): every HTTP
+   `--http` needs `PRAMANYX_MCP_TOKEN` and refuses to start without it (DE-2a, ROADMAP §3.51): every HTTP
    client presents it as `Authorization: Bearer <token>`, because the tools behind it call the API with this
    process's own key and principal. Make one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
    The transport security is built for the host actually served — before DE-2a a loopback-only allowlist was
@@ -105,10 +105,10 @@ stateless and light (httpx only), so it starts fast under a stdio launcher.
 ```json
 {
   "mcpServers": {
-    "aughor": {
+    "pramanyx": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/aughor", "run", "python", "-m", "aughor.mcp"],
-      "env": { "AUGHOR_API_URL": "http://127.0.0.1:8000" }
+      "args": ["--directory", "/absolute/path/to/pramanyx", "run", "python", "-m", "pramanyx.mcp"],
+      "env": { "PRAMANYX_API_URL": "http://127.0.0.1:8000" }
     }
   }
 }
@@ -116,8 +116,8 @@ stateless and light (httpx only), so it starts fast under a stdio launcher.
 
 **Claude Code**:
 ```bash
-claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
-  -- uv --directory /absolute/path/to/aughor run python -m aughor.mcp
+claude mcp add pramanyx --env PRAMANYX_API_URL=http://127.0.0.1:8000 \
+  -- uv --directory /absolute/path/to/pramanyx run python -m pramanyx.mcp
 ```
 
 **Cursor** — `.cursor/mcp.json` (same shape as Claude Desktop's `mcpServers` entry).
@@ -126,16 +126,16 @@ claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `AUGHOR_API_URL` | `http://127.0.0.1:8000` | The running Pramanyx API. |
-| `AUGHOR_API_KEY` | _(unset)_ | Sent as `X-Api-Key` when the API enforces one (`AUGHOR_API_KEY` on the server). |
-| `AUGHOR_MCP_TIMEOUT` | `60` | Timeout (s) for plain calls. |
-| `AUGHOR_MCP_DEEP_TIMEOUT` | `300` | Timeout (s) for the streaming `ask` / `deep_analysis` tools. A `deep_analysis` that exceeds it returns an `investigation_id` to poll with `get_investigation`. |
-| `AUGHOR_MCP_ORG` | _(unset)_ | The principal this server acts as when the API requires identity (`AUGHOR_REQUIRE_IDENTITY=1`) and no OIDC issuer is configured (the API then also needs `AUGHOR_IDENTITY_FROM_PROXY=1`, or it refuses every request): sent as `X-Aughor-Org`, with `AUGHOR_MCP_USER` (default `mcp`) as `X-Aughor-User`. Unset, every MCP call is refused with a 401 in identity mode (DE-2a). |
-| `AUGHOR_MCP_USER` | `mcp` | The user the server acts as, beside `AUGHOR_MCP_ORG`. |
-| `AUGHOR_MCP_BEARER` | _(unset)_ | An OIDC token for an API with an issuer configured, sent as `Authorization: Bearer …`. |
-| `AUGHOR_MCP_TOKEN` | _(unset)_ | **Server side, `--http` only.** The bearer every HTTP MCP client must present; `--http` refuses to start without it. |
-| `AUGHOR_AGENT_POLICY_LEVEL` | _(unset)_ | **API side (DE-2b).** Caps every organisation's agent policy at `read`, `run` or `act`; it can only narrow what an organisation saved. |
-| `AUGHOR_AGENT_POLICY_CONNECTIONS` / `AUGHOR_AGENT_POLICY_TOOLS` | _(unset)_ | **API side.** Comma-separated allowlists intersected with the organisation's own. |
+| `PRAMANYX_API_URL` | `http://127.0.0.1:8000` | The running Pramanyx API. |
+| `PRAMANYX_API_KEY` | _(unset)_ | Sent as `X-Api-Key` when the API enforces one (`PRAMANYX_API_KEY` on the server). |
+| `PRAMANYX_MCP_TIMEOUT` | `60` | Timeout (s) for plain calls. |
+| `PRAMANYX_MCP_DEEP_TIMEOUT` | `300` | Timeout (s) for the streaming `ask` / `deep_analysis` tools. A `deep_analysis` that exceeds it returns an `investigation_id` to poll with `get_investigation`. |
+| `PRAMANYX_MCP_ORG` | _(unset)_ | The principal this server acts as when the API requires identity (`PRAMANYX_REQUIRE_IDENTITY=1`) and no OIDC issuer is configured (the API then also needs `PRAMANYX_IDENTITY_FROM_PROXY=1`, or it refuses every request): sent as `X-Pramanyx-Org`, with `PRAMANYX_MCP_USER` (default `mcp`) as `X-Pramanyx-User`. Unset, every MCP call is refused with a 401 in identity mode (DE-2a). |
+| `PRAMANYX_MCP_USER` | `mcp` | The user the server acts as, beside `PRAMANYX_MCP_ORG`. |
+| `PRAMANYX_MCP_BEARER` | _(unset)_ | An OIDC token for an API with an issuer configured, sent as `Authorization: Bearer …`. |
+| `PRAMANYX_MCP_TOKEN` | _(unset)_ | **Server side, `--http` only.** The bearer every HTTP MCP client must present; `--http` refuses to start without it. |
+| `PRAMANYX_AGENT_POLICY_LEVEL` | _(unset)_ | **API side (DE-2b).** Caps every organisation's agent policy at `read`, `run` or `act`; it can only narrow what an organisation saved. |
+| `PRAMANYX_AGENT_POLICY_CONNECTIONS` / `PRAMANYX_AGENT_POLICY_TOOLS` | _(unset)_ | **API side.** Comma-separated allowlists intersected with the organisation's own. |
 
 ## Verification (2026-06-21, live on `workspace`/missimi)
 

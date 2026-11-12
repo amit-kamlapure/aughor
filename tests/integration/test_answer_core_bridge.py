@@ -40,7 +40,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.routers import investigations as inv
+from pramanyx.routers import investigations as inv
 
 
 def _frames(chunks: list[str]) -> list[tuple[str, dict]]:
@@ -79,7 +79,7 @@ def _stub_scope(monkeypatch) -> list:
         is_full_schema=True, eff_schema=None, schema_context="",
         open=lambda: db,
     )
-    import aughor.canvas.scope as scope_mod
+    import pramanyx.canvas.scope as scope_mod
     monkeypatch.setattr(scope_mod, "resolve_execution_scope", lambda *a, **k: scope)
     return closed
 
@@ -134,7 +134,7 @@ async def test_a_base_exception_is_not_swallowed_by_the_wrapper(monkeypatch):
     boundary or the `except` clause ate it, the budget would silently stop being enforced
     and the turn would end on a generic red line instead.
     """
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
 
     def core(*a, emit, **kw):
         emit("sql", {"sql": "SELECT 1"})
@@ -240,11 +240,11 @@ def test_a_disconnect_during_the_prelude_stops_before_any_provider_call(monkeypa
     closed = _stub_scope(monkeypatch)
     paid: list[str] = []
 
-    import aughor.llm.provider as prov
+    import pramanyx.llm.provider as prov
     monkeypatch.setattr(prov, "get_provider", lambda *a, **k: paid.append("provider"))
-    import aughor.semantic.answer_resolution as res
+    import pramanyx.semantic.answer_resolution as res
     monkeypatch.setattr(res, "resolve", lambda *a, **k: paid.append("resolve"))
-    import aughor.semantic.compiler as comp
+    import pramanyx.semantic.compiler as comp
     monkeypatch.setattr(comp, "compile_question", lambda *a, **k: paid.append("compile"))
 
     frames: list[str] = []
@@ -305,7 +305,7 @@ def test_a_preamble_failure_is_an_error_frame_and_a_200_not_an_escaping_exceptio
     renders the terminal `error` frame on a normal 200 stream — the same envelope every
     other failure gets. That widening is KEPT deliberately, and this test is what stops
     the next refactor from reverting it silently."""
-    import aughor.canvas.scope as scope_mod
+    import pramanyx.canvas.scope as scope_mod
 
     def _boom(*a, **k):
         raise RuntimeError("scope resolver fell over")
@@ -328,7 +328,7 @@ def _stub_providers_with_ungrounded_headline(monkeypatch):
     the exact contradiction `headline_grounding` exists to catch. The receipt test below
     used to run on a turn where NO guard fired, so its `len(...) == count(...)` equality
     held as 0 == 0 and proved nothing about the plumbing it names."""
-    import aughor.llm.provider as prov
+    import pramanyx.llm.provider as prov
     from tests.integration.test_stream_chat_transcript import _stub_providers
 
     _stub_providers(monkeypatch)
@@ -402,7 +402,7 @@ def test_an_interrupted_turn_persists_what_the_user_already_saw(monkeypatch, bui
     `complete` would both claim one and be counted as one by every reader that filters on
     it.
     """
-    from aughor.db.history import get_session_turns
+    from pramanyx.db.history import get_session_turns
 
     _stub_providers_with_ungrounded_headline(monkeypatch)
 
@@ -444,7 +444,7 @@ def test_a_turn_interrupted_before_it_produced_anything_is_not_persisted(
     History with empty questions that look like answers that failed, which is a worse lie
     than the one this change fixes.
     """
-    from aughor.db.history import get_session_turns
+    from pramanyx.db.history import get_session_turns
 
     _stub_providers_with_ungrounded_headline(monkeypatch)
 
@@ -473,7 +473,7 @@ def test_a_turn_that_already_saved_does_not_also_save_an_interrupted_copy(
     thought to pose it, because the window only exists between the last frame the user
     sees and the last line the function runs.
     """
-    from aughor.db.history import get_session_turns
+    from pramanyx.db.history import get_session_turns
 
     _stub_providers_with_ungrounded_headline(monkeypatch)
 

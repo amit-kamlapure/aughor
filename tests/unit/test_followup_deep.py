@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.routers.investigations import _followup_origin, InvestigateRequest
+from pramanyx.routers.investigations import _followup_origin, InvestigateRequest
 
 
 # ── _followup_origin — the base a follow-up composes on ──────────────────────────
@@ -54,8 +54,8 @@ def test_followup_origin_none_without_a_usable_base():
 # ── route_question preserves the seed for the direct branch ──────────────────────
 
 def test_route_question_preserves_prior_analyses_seed_on_direct(monkeypatch):
-    import aughor.agent.nodes as nodes
-    from aughor.agent.state import RouteDecision
+    import pramanyx.agent.nodes as nodes
+    from pramanyx.agent.state import RouteDecision
 
     # **_ so the double keeps matching classify_question's signature: it grew the
     # conn_id/trace_id/inv_id provenance kwargs, and a stub that refuses them fails with a
@@ -82,7 +82,7 @@ def test_soft_form_carries_the_spec_without_the_regex_gate():
     """CA-3, defect ⑦: `is_followup` missed "only focus on…", so the deep follow-up
     lost its metric and returned zero rows. The prior spec now ALWAYS rides — the
     soft form grants the MODEL the decision instead of the regex."""
-    from aughor.routers.investigations import _followup_origin
+    from pramanyx.routers.investigations import _followup_origin
 
     history = [{"question": "how did Direkteingabe traffic develop?",
                 "sql": "SELECT day, SUM(sessions) FROM traffic GROUP BY 1",

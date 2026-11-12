@@ -1,6 +1,6 @@
 """Track B2 (docs/TENX_PROGRAM_2026-11-05.md): a paused investigation resumes on another process.
 
-Measured 2026-11-06: with ``AUGHOR_DB_URL`` naming a Postgres every store moved there except the
+Measured 2026-11-06: with ``PRAMANYX_DB_URL`` naming a Postgres every store moved there except the
 LangGraph checkpointer, which kept a SQLite file on the local disk — a run paused on one host could
 only resume on that host, and a second process sharing the database saw no checkpoint at all. The
 exit, as the program wrote it: pause here, resume in a SECOND PROCESS pointed at the same database.
@@ -18,9 +18,9 @@ import uuid
 
 import pytest
 
-from aughor.agent import graph as G
+from pramanyx.agent import graph as G
 
-PG_URL = os.environ.get("AUGHOR_PG_TEST_URL", "postgres://postgres:aughor@localhost:5544/aughor")
+PG_URL = os.environ.get("PRAMANYX_PG_TEST_URL", "postgres://postgres:pramanyx@localhost:5544/pramanyx")
 
 
 def _pg_available() -> bool:
@@ -38,7 +38,7 @@ pytestmark = pytest.mark.skipif(not _pg_available(), reason="needs a live shared
 GRAPH_SRC = textwrap.dedent('''
     from typing import TypedDict
     from langgraph.graph import END, StateGraph
-    from aughor.agent.graph import _checkpointer
+    from pramanyx.agent.graph import _checkpointer
 
     class S(TypedDict):
         steps: list
@@ -57,7 +57,7 @@ GRAPH_SRC = textwrap.dedent('''
 
 @pytest.fixture
 def shared_db(monkeypatch):
-    monkeypatch.setenv("AUGHOR_DB_URL", PG_URL)
+    monkeypatch.setenv("PRAMANYX_DB_URL", PG_URL)
     yield
     for saver in list(G._PG_SAVERS.values()):
         saver.conn.close()
@@ -67,7 +67,7 @@ def shared_db(monkeypatch):
 def test_the_checkpointer_on_postgres_is_langgraphs_own_saver_in_the_stores_schema(shared_db):
     from langgraph.checkpoint.postgres import PostgresSaver
 
-    from aughor.db.backend import store_schema
+    from pramanyx.db.backend import store_schema
     saver = G._checkpointer()
     assert isinstance(saver, PostgresSaver)
     assert G._checkpointer() is saver                                      # one pool per process
@@ -92,7 +92,7 @@ def test_a_run_paused_here_resumes_in_a_second_process(shared_db):
 
     import psycopg2
 
-    from aughor.db.backend import store_schema
+    from pramanyx.db.backend import store_schema
     table = f'"{store_schema(G._CHECKPOINT_DB)}".checkpoints'
     with psycopg2.connect(PG_URL) as pg, pg.cursor() as cur:
         cur.execute("SELECT to_regclass(%s) IS NOT NULL", (table,))      # absent table = no rows, not a crash
@@ -109,7 +109,7 @@ def test_a_run_paused_here_resumes_in_a_second_process(shared_db):
 
     child = GRAPH_SRC + textwrap.dedent(f'''
         import json
-        from aughor.agent.graph import read_checkpoint_state
+        from pramanyx.agent.graph import read_checkpoint_state
         before = read_checkpoint_state({thread!r})
         if not before["exists"]:
             print(json.dumps({{"found": False, "values": {{}}, "done": []}})); raise SystemExit(0)
@@ -117,10 +117,10 @@ def test_a_run_paused_here_resumes_in_a_second_process(shared_db):
         print(json.dumps({{"found": True, "values": before["values"], "done": done["steps"]}}))
     ''')
     # The second process resolves the SAME store location — as two hosts on one database do, each at the
-    # default. Measured in the full suite: another test reloads `aughor.agent.graph` at a temp path and
+    # default. Measured in the full suite: another test reloads `pramanyx.agent.graph` at a temp path and
     # never reloads it back, so this process's `_CHECKPOINT_DB` (and so its schema) differed from a fresh
     # import's, and the child looked in the wrong schema.
-    env = {**os.environ, "AUGHOR_DB_URL": PG_URL, "AUGHOR_CHECKPOINTS_DB": str(G._CHECKPOINT_DB)}
+    env = {**os.environ, "PRAMANYX_DB_URL": PG_URL, "PRAMANYX_CHECKPOINTS_DB": str(G._CHECKPOINT_DB)}
     out = subprocess.run([sys.executable, "-c", child], env=env, capture_output=True, text=True, timeout=180)
     assert out.returncode == 0, out.stderr[-2000:]
     got = json.loads(out.stdout.strip().splitlines()[-1])
@@ -148,5 +148,5 @@ def test_without_the_extra_the_first_checkpoint_says_what_to_install(shared_db, 
 
 def test_sqlite_is_unchanged_when_no_database_is_named(monkeypatch):
     from langgraph.checkpoint.sqlite import SqliteSaver
-    monkeypatch.delenv("AUGHOR_DB_URL", raising=False)
+    monkeypatch.delenv("PRAMANYX_DB_URL", raising=False)
     assert isinstance(G._checkpointer(), SqliteSaver)

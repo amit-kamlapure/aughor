@@ -11,8 +11,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from aughor.integrations import broker, store
-from aughor.integrations.operations import extract, get_operation
+from pramanyx.integrations import broker, store
+from pramanyx.integrations.operations import extract, get_operation
 
 GMAIL = "https://www.googleapis.com/auth/gmail.readonly"
 SHEETS = "https://www.googleapis.com/auth/spreadsheets.readonly"

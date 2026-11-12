@@ -5,8 +5,8 @@ names a more specific permission (and a GET override can raise a read above open
 """
 from __future__ import annotations
 
-from aughor.rbac import Permission
-from aughor.rbac.policy import required_permission
+from pramanyx.rbac import Permission
+from pramanyx.rbac.policy import required_permission
 
 
 def test_reads_are_open_by_default():
@@ -57,9 +57,9 @@ def test_allowlisting_and_authority_changes_need_an_admin_and_each_key_names_a_r
     """Arc OC-6, D7 (the user's call, 2026-10-10): these fell to the write floor, so once RBAC was enforced any Editor
     could allowlist a high-risk action for a connection. A key that names no route gates nothing — so each is checked
     against the app's own routes."""
-    from aughor.api import app
-    from aughor.rbac.permissions import Permission as P
-    from aughor.rbac.policy import POLICY, required_permission
+    from pramanyx.api import app
+    from pramanyx.rbac.permissions import Permission as P
+    from pramanyx.rbac.policy import POLICY, required_permission
     real = {(m, r.path) for r in app.routes for m in getattr(r, "methods", None) or ()}
     governed = [k for k in POLICY if k[0] == "POST" and k[1].split("/")[1] in ("approvals", "authority")]
     assert len(governed) == 7 and all(POLICY[k] == P.ADMIN_MANAGE_ORG for k in governed)

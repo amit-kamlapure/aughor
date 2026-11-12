@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from aughor.obs import genai
+from pramanyx.obs import genai
 
 
 @pytest.fixture()
@@ -30,16 +30,16 @@ def spans(monkeypatch):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    monkeypatch.setattr(tel, "_otel_tracer", provider.get_tracer("aughor-test"))
+    monkeypatch.setattr(tel, "_otel_tracer", provider.get_tracer("pramanyx-test"))
     monkeypatch.setattr(tel, "_otel_provider", provider)
     monkeypatch.setattr(tel, "_otel_init_done", True)
     monkeypatch.setattr(tel, "_traces", {})
-    monkeypatch.setenv("AUGHOR_KERNEL_EVENTS", "0")
+    monkeypatch.setenv("PRAMANYX_KERNEL_EVENTS", "0")
     return exporter
 
 
@@ -53,8 +53,8 @@ def test_recording_a_model_call_exports_a_generation_span(spans):
     """THE seam test for this wave. `_record_llm_call` is the one chokepoint every
     backend funnels through; before VA-3 it wrote to the session log and stopped
     there, so an exported trace had no model calls in it at all."""
-    import aughor.telemetry as tel
-    from aughor.llm.provider import _record_llm_call
+    import pramanyx.telemetry as tel
+    from pramanyx.llm.provider import _record_llm_call
 
     with tel.bind_trace("inv-otlp"):
         _record_llm_call(backend="gemini", model="gemini-3.1-flash-lite",
@@ -75,8 +75,8 @@ def test_recording_a_model_call_exports_a_generation_span(spans):
 def test_a_failed_model_call_exports_its_error_class(spans):
     """A trace that shows only the calls that worked is the wrong half of the
     story — the one you open a trace viewer to find is the one that failed."""
-    import aughor.telemetry as tel
-    from aughor.llm.provider import _record_llm_call
+    import pramanyx.telemetry as tel
+    from pramanyx.llm.provider import _record_llm_call
 
     with tel.bind_trace("inv-otlp"):
         _record_llm_call(backend="openrouter", model="m", role="coder",
@@ -92,7 +92,7 @@ def test_a_failed_model_call_exports_its_error_class(spans):
 def test_a_model_call_outside_a_trace_exports_nothing(spans):
     """An uncorrelated span is noise that cannot be reconstructed into a run —
     the same posture the session log takes when it drops trace-less events."""
-    from aughor.llm.provider import _record_llm_call
+    from pramanyx.llm.provider import _record_llm_call
     _record_llm_call(backend="groq", model="m", role="fast",
                      prompt_tokens=1, completion_tokens=1, ms=5.0)
     assert spans.get_finished_spans() == ()
@@ -102,8 +102,8 @@ def test_export_carries_no_prompt_content_without_a_capture_window(spans):
     """The user's decision ④ companion: turning telemetry on must not, by itself,
     start shipping user text off-box. With no window open `capture_prompt` returns
     nothing, so there is nothing for the exporter to carry."""
-    import aughor.telemetry as tel
-    from aughor.llm.provider import _record_llm_call
+    import pramanyx.telemetry as tel
+    from pramanyx.llm.provider import _record_llm_call
 
     with tel.bind_trace("inv-otlp"):
         _record_llm_call(backend="groq", model="m", role="coder",
@@ -121,7 +121,7 @@ def test_a_tool_span_reaches_the_exporter(spans):
     """`mlflow_tool_span` drove three sinks and all three were local. Guarded SQL —
     the single most useful span in a slow run — was invisible to the tool you open
     to find out where the time went."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.bind_trace("inv-otlp"):
         with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 1"}):
             pass
@@ -134,7 +134,7 @@ def test_a_tool_span_reaches_the_exporter(spans):
 def test_a_delegation_hop_is_an_agent_invocation_not_a_tool_call(spans):
     """VA-2's hops. Collapsing another agent's whole run into `execute_tool` is
     what makes a delegation tree unreadable in an external viewer."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.bind_trace("inv-otlp"):
         with tel.mlflow_tool_span("delegate:Luxury Revenue Analyst", {"question": "q"},
                                   span_kind="delegation",
@@ -153,7 +153,7 @@ def test_a_tool_span_inside_a_node_span_is_its_CHILD(spans):
     """The difference between a tree and a flat list. Pinning every span to the
     trace's synthetic root — which unconditional `_otel_context` did — exported a
     run as N siblings and threw away parentage the local sinks had all along."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.span("inv-otlp", "cross_section", {}):
         with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 1"}):
             pass
@@ -167,7 +167,7 @@ def test_a_tool_span_inside_a_node_span_is_its_CHILD(spans):
 
 def test_a_body_exception_marks_the_tool_span_errored_and_still_propagates(spans):
     """Telemetry records the failure; it never swallows it."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     from opentelemetry.trace import StatusCode
     with pytest.raises(ValueError, match="boom"):
         with tel.bind_trace("inv-otlp"):
@@ -181,7 +181,7 @@ def test_an_unrelated_ambient_span_does_not_adopt_the_run(spans):
     """A web framework's request span is a valid active span on a DIFFERENT trace.
     Nesting into it would move the investigation's spans onto the request's trace
     and the run would stop being addressable by its investigation id."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     from opentelemetry import trace as _t
     tracer = _t.get_tracer("unrelated")
     with tracer.start_as_current_span("http.request"):
@@ -195,11 +195,11 @@ def test_an_unrelated_ambient_span_does_not_adopt_the_run(spans):
 # ── 3. the switch: off unless configured (decision ④) ─────────────────────────
 
 def _fresh(monkeypatch):
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     monkeypatch.setattr(tel, "_otel_init_done", False)
     monkeypatch.setattr(tel, "_otel_tracer", None)
     monkeypatch.setattr(tel, "_otel_provider", None)
-    for var in ("AUGHOR_OTLP_ENDPOINT", "AUGHOR_OTLP_HEADERS", "AUGHOR_OTLP_PROTOCOL",
+    for var in ("PRAMANYX_OTLP_ENDPOINT", "PRAMANYX_OTLP_HEADERS", "PRAMANYX_OTLP_PROTOCOL",
                 "OTEL_EXPORTER_OTLP_ENDPOINT", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"):
         monkeypatch.delenv(var, raising=False)
     return tel
@@ -213,9 +213,9 @@ def test_nothing_configured_means_no_export_and_zero_egress(monkeypatch):
     assert tel._otel() is None
 
 
-def test_aughor_endpoint_defaults_to_http_because_that_is_what_collectors_take(monkeypatch):
+def test_pramanyx_endpoint_defaults_to_http_because_that_is_what_collectors_take(monkeypatch):
     tel = _fresh(monkeypatch)
-    monkeypatch.setenv("AUGHOR_OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
+    monkeypatch.setenv("PRAMANYX_OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
     endpoint, headers, protocol, _ = tel._otlp_target()
     assert endpoint == "http://localhost:4318/v1/traces"
     assert protocol == "http"
@@ -224,22 +224,22 @@ def test_aughor_endpoint_defaults_to_http_because_that_is_what_collectors_take(m
 
 def test_grpc_is_reachable_but_only_when_asked_for(monkeypatch):
     tel = _fresh(monkeypatch)
-    monkeypatch.setenv("AUGHOR_OTLP_ENDPOINT", "localhost:4317")
-    monkeypatch.setenv("AUGHOR_OTLP_PROTOCOL", "grpc")
+    monkeypatch.setenv("PRAMANYX_OTLP_ENDPOINT", "localhost:4317")
+    monkeypatch.setenv("PRAMANYX_OTLP_PROTOCOL", "grpc")
     assert tel._otlp_target()[2] == "grpc"
 
 
 def test_headers_use_the_otel_format_so_a_pasted_line_works(monkeypatch):
     tel = _fresh(monkeypatch)
-    monkeypatch.setenv("AUGHOR_OTLP_ENDPOINT", "http://x/v1/traces")
-    monkeypatch.setenv("AUGHOR_OTLP_HEADERS", "authorization=Bearer abc, x-scope-org=acme")
+    monkeypatch.setenv("PRAMANYX_OTLP_ENDPOINT", "http://x/v1/traces")
+    monkeypatch.setenv("PRAMANYX_OTLP_HEADERS", "authorization=Bearer abc, x-scope-org=acme")
     assert tel._otlp_target()[1] == {"authorization": "Bearer abc", "x-scope-org": "acme"}
 
 
 def test_a_malformed_header_is_skipped_rather_than_taking_tracing_down(monkeypatch):
     tel = _fresh(monkeypatch)
-    monkeypatch.setenv("AUGHOR_OTLP_ENDPOINT", "http://x/v1/traces")
-    monkeypatch.setenv("AUGHOR_OTLP_HEADERS", "good=1,garbage,=novalue,also=2")
+    monkeypatch.setenv("PRAMANYX_OTLP_ENDPOINT", "http://x/v1/traces")
+    monkeypatch.setenv("PRAMANYX_OTLP_HEADERS", "good=1,garbage,=novalue,also=2")
     assert tel._otlp_target()[1] == {"good": "1", "also": "2"}
 
 
@@ -253,10 +253,10 @@ def test_the_standard_otel_variable_still_works_on_its_historical_transport(monk
     assert protocol == "grpc"
 
 
-def test_aughor_endpoint_wins_over_the_standard_one(monkeypatch):
+def test_pramanyx_endpoint_wins_over_the_standard_one(monkeypatch):
     tel = _fresh(monkeypatch)
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
-    monkeypatch.setenv("AUGHOR_OTLP_ENDPOINT", "http://chosen:4318/v1/traces")
+    monkeypatch.setenv("PRAMANYX_OTLP_ENDPOINT", "http://chosen:4318/v1/traces")
     assert tel._otlp_target()[0] == "http://chosen:4318/v1/traces"
 
 
@@ -269,7 +269,7 @@ def test_langfuse_keys_are_the_last_fallback_not_the_first_choice(monkeypatch):
     assert endpoint.endswith("/api/public/otel/v1/traces")
     assert headers["Authorization"].startswith("Basic ")
     # …and an explicit endpoint displaces it.
-    monkeypatch.setenv("AUGHOR_OTLP_ENDPOINT", "http://mine:4318/v1/traces")
+    monkeypatch.setenv("PRAMANYX_OTLP_ENDPOINT", "http://mine:4318/v1/traces")
     assert tel._otlp_target()[3] == "OpenTelemetry"
 
 
@@ -280,8 +280,8 @@ def test_a_model_call_is_a_CHILD_of_the_phase_that_made_it(spans):
     the trace's synthetic root and arrived as siblings of the phase they ran
     inside, so the exported tree said the model call and the phase were unrelated.
     Every assertion in this file passed while that was true."""
-    import aughor.telemetry as tel
-    from aughor.llm.provider import _record_llm_call
+    import pramanyx.telemetry as tel
+    from pramanyx.llm.provider import _record_llm_call
 
     with tel.span("inv-otlp", "cross_section", {}):
         _record_llm_call(backend="gemini", model="gemini-3.1-flash-lite", role="coder",
@@ -297,8 +297,8 @@ def test_a_delegates_model_call_hangs_under_the_hop_not_the_caller(spans):
     """Two levels down. If a delegate's generations parent to the outer phase, the
     exported tree cannot answer 'what did the sub-agent spend', which is the whole
     reason VA-2's hops carry depth."""
-    import aughor.telemetry as tel
-    from aughor.llm.provider import _record_llm_call
+    import pramanyx.telemetry as tel
+    from pramanyx.llm.provider import _record_llm_call
 
     with tel.span("inv-otlp", "phase", {}):
         with tel.mlflow_tool_span("delegate:Analyst", span_kind="delegation",
@@ -313,7 +313,7 @@ def test_a_delegates_model_call_hangs_under_the_hop_not_the_caller(spans):
 
 def test_a_plain_tool_span_does_not_restate_its_kind_as_a_type(spans):
     """`gen_ai.tool.type = "tool"` is noise; a real kind (`sql`, `eval`) is not."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.bind_trace("inv-otlp"):
         with tel.mlflow_tool_span("sql.execute"):
             pass
@@ -329,7 +329,7 @@ def test_an_oversized_attribute_is_capped_and_marked_on_the_export_path(spans):
     a trace with nothing to explain it. Marked rather than silently cut: a query
     that reads as complete but was truncated sends someone debugging the wrong
     thing."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     huge = "SELECT " + ("x" * 5000)
     with tel.bind_trace("inv-otlp"):
         with tel.mlflow_tool_span("sql.execute", {"sql": huge}):
@@ -342,7 +342,7 @@ def test_an_oversized_attribute_is_capped_and_marked_on_the_export_path(spans):
 
 def test_numeric_attributes_survive_as_numbers_not_strings(spans):
     """A token count or a row count stringified is a number no backend can chart."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.bind_trace("inv-otlp"):
         with tel.mlflow_tool_span("sql.execute", {"row_count": 17, "cached": False}):
             pass
@@ -356,10 +356,10 @@ def test_numeric_attributes_survive_as_numbers_not_strings(spans):
 def test_the_test_suite_is_never_configured_to_export(monkeypatch):
     """Hermeticity guard for the wave's own switch.
 
-    `aughor/api.py` used to call `load_dotenv()` unconditionally at import, so a
+    `pramanyx/api.py` used to call `load_dotenv()` unconditionally at import, so a
     developer's `.env` reached the test process the moment any test touched the app.
-    That door is now shut at the source (`AUGHOR_SKIP_DOTENV`, set by the conftest),
-    but this guard stays: `AUGHOR_OTLP_ENDPOINT` is one of the things `.env` can
+    That door is now shut at the source (`PRAMANYX_SKIP_DOTENV`, set by the conftest),
+    but this guard stays: `PRAMANYX_OTLP_ENDPOINT` is one of the things `.env` can
     carry, and a suite configured to export would POST every span it produces to
     whatever collector that developer runs — thousands of test spans in their real
     trace data, plus a connection attempt and retry backoff per batch when nothing
@@ -382,7 +382,7 @@ def test_the_test_suite_is_never_configured_to_export(monkeypatch):
     the obvious way — assert on the ambient env — it passed with the scrub deleted,
     because running this file alone never imports the app and so never loads `.env`:
     a probe that cannot fire and a true negative look identical."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     _dotenv = pytest.importorskip("dotenv", reason="python-dotenv is optional")
     from pathlib import Path
     values = _dotenv.dotenv_values(Path(tel.__file__).parent.parent / ".env")

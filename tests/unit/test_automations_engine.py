@@ -9,7 +9,7 @@ retry → fallback → record. Two properties carry most of the weight:
   with the AUTHORED message verbatim — the Wave-K property, inherited rather than re-implemented.
 
 Hermetic: both seams (probe, dispatch) are injected; the kinetic test fakes the ontology load so
-the real :func:`~aughor.actions.executor.execute_kinetic_action` runs unmocked.
+the real :func:`~pramanyx.actions.executor.execute_kinetic_action` runs unmocked.
 """
 from __future__ import annotations
 
@@ -17,13 +17,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.automations.engine import (
+from pramanyx.automations.engine import (
     ProbeUnavailable,
     evaluate_conditions,
     run_automation,
 )
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-from aughor.automations.store import get_runs, upsert_automation
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import get_runs, upsert_automation
 
 NOW = datetime(2026, 7, 23, 12, 0, tzinfo=timezone.utc)
 
@@ -348,7 +348,7 @@ def _graph_with(action):
 
 
 def _refund_action(**kw):
-    from aughor.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
+    from pramanyx.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
     base = dict(
         id="refund", kind="side_effect",
         params=[ActionParameter(name="amount", data_type="NUMERIC", required=True)],
@@ -366,10 +366,10 @@ def test_kinetic_effect_criterion_failure_returns_the_authored_message_verbatim(
     """The A↔K joint. The real executor runs; its authored message must reach the run history
     unparaphrased, and NOTHING may dispatch."""
     action = _refund_action()
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda conn_id, schema=None: _graph_with(action))
     dispatched = []
-    monkeypatch.setattr("aughor.actions.executor.default_dispatch",
+    monkeypatch.setattr("pramanyx.actions.executor.default_dispatch",
                         lambda a, p, s="", **_k: dispatched.append(a.id))
 
     a = _automation(effects=[Effect(kind="kinetic_action",
@@ -385,7 +385,7 @@ def test_kinetic_effect_criterion_failure_returns_the_authored_message_verbatim(
 
 def test_kinetic_effect_executes_when_the_criteria_hold(monkeypatch):
     action = _refund_action()
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda conn_id, schema=None: _graph_with(action))
     seen = []
 
@@ -393,7 +393,7 @@ def test_kinetic_effect_executes_when_the_criteria_hold(monkeypatch):
         seen.append((act.id, params, scope))
         return {"ok": True}
 
-    monkeypatch.setattr("aughor.actions.executor.default_dispatch", fake_dispatch)
+    monkeypatch.setattr("pramanyx.actions.executor.default_dispatch", fake_dispatch)
 
     a = _automation(conn_id="conn-kin",
                     effects=[Effect(kind="kinetic_action",
@@ -410,7 +410,7 @@ def test_kinetic_effect_naming_an_undeclared_action_is_a_terminal_dispatch_error
     """An unknown action id will never become known by waiting — so it must not consume the
     retry budget (the live run burned 48s of a scheduler thread doing exactly that)."""
     slept: list[float] = []
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda conn_id, schema=None: _graph_with(_refund_action()))
     a = _automation(max_retries=3, retry_backoff_seconds=30.0,
                     effects=[Effect(kind="kinetic_action", config={"action_id": "ghost"})])
@@ -432,7 +432,7 @@ def test_a_missing_schema_ontology_says_so_instead_of_blaming_the_declaration(mo
         g.schema_name = "main"
         return g
 
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", fake_load)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", fake_load)
     a = _automation(effects=[Effect(kind="kinetic_action",
                                     config={"action_id": "other", "schema_name": "default"})])
     run = run_automation(a, now=NOW, probe=_probe(True), persist=False)
@@ -448,8 +448,8 @@ def test_run_now_does_not_consult_the_schedule():
     asking the cron could only contradict them — and did: a daily automation replied
     `not_fired — next due tomorrow` at every hour except one, which reads as a broken
     button rather than a considered refusal."""
-    from aughor.automations.engine import run_automation
-    from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+    from pramanyx.automations.engine import run_automation
+    from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
     a = Automation(name="daily", conn_id="c",
                    conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
@@ -476,8 +476,8 @@ def test_run_now_still_asks_the_conditions_about_the_WORLD():
     """The asymmetry is the point. Nobody changed the metric by clicking a button, so a
     "when revenue drops" automation must not deliver an alert about a drop that did not
     happen."""
-    from aughor.automations.engine import run_automation
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.engine import run_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
 
     a = Automation(name="watch", conn_id="c",
                    conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"}),

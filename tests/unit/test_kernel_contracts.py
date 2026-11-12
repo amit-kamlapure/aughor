@@ -8,7 +8,7 @@ ratchets. Each test pins the current count — adding a new offence fails CI
 with directions; reducing the count means lowering the baseline here.
 
 The only legal exception swallow in kernel-managed code is
-``aughor.kernel.errors.tolerate`` (logs the reason + counts + journals).
+``pramanyx.kernel.errors.tolerate`` (logs the reason + counts + journals).
 """
 import ast
 import glob
@@ -32,7 +32,7 @@ REPO = Path(__file__).parent.parent.parent
 
 
 def _py_files():
-    return [f for f in glob.glob(str(REPO / "aughor/**/*.py"), recursive=True)
+    return [f for f in glob.glob(str(REPO / "pramanyx/**/*.py"), recursive=True)
             if "__pycache__" not in f]
 
 
@@ -51,14 +51,14 @@ def _silent_swallows(path):
 
 
 def _private_imports(path):
-    """`from aughor.x import _private` — reaching into another module's internals."""
+    """`from pramanyx.x import _private` — reaching into another module's internals."""
     out = []
     try:
         tree = ast.parse(open(path).read())
     except SyntaxError:
         return out
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("aughor"):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("pramanyx"):
             out.extend(node.lineno for a in node.names if a.name.startswith("_"))
     return out
 
@@ -90,7 +90,7 @@ class TestRatchets:
         assert total <= SILENT_SWALLOW_BASELINE, (
             f"{total} silent except-pass/continue blocks (baseline "
             f"{SILENT_SWALLOW_BASELINE}). A swallowed failure must go through "
-            f"aughor.kernel.errors.tolerate(exc, reason, counter=...) — it keeps the "
+            f"pramanyx.kernel.errors.tolerate(exc, reason, counter=...) — it keeps the "
             f"resilience but logs the reason, counts it, and journals it. "
             f"Newest offenders: "
             + ", ".join(f"{Path(f).name}:{ls}" for f, ls in hits.items() if ls)[-400:]
@@ -112,7 +112,7 @@ class TestRatchets:
         # `FLAG_ENV.get(name, "")` → `os.getenv("")` → None → default False — so the guarded code is
         # silently, permanently dead. This root-causes the class after explorer.manifest_driven shipped
         # consulted-but-unregistered (study E3): register in FLAG_ENV (+ FLAG_META) or drop the call.
-        from aughor.kernel.flags import FLAG_ENV
+        from pramanyx.kernel.flags import FLAG_ENV
         unregistered = {}
         for f in _py_files():
             for name, lineno in _flag_enabled_literals(f):
@@ -127,11 +127,11 @@ class TestRatchets:
 class TestTolerate:
     def test_tolerate_logs_counts_and_journals(self, tmp_path, monkeypatch, caplog):
         import logging
-        monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "sys.db"))
-        from aughor.kernel.ledger import Ledger
+        monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "sys.db"))
+        from pramanyx.kernel.ledger import Ledger
         Ledger._instances.clear()
-        from aughor.kernel.errors import tolerate
-        from aughor.stats import stats
+        from pramanyx.kernel.errors import tolerate
+        from pramanyx.stats import stats
 
         (stats.snapshot() if hasattr(stats, "snapshot") else {})
         with caplog.at_level(logging.WARNING):
@@ -143,6 +143,6 @@ class TestTolerate:
 
     def test_tolerate_never_raises(self, monkeypatch):
         # Even with the journal disabled and stats broken, tolerate must not raise.
-        monkeypatch.setenv("AUGHOR_KERNEL_EVENTS", "0")
-        from aughor.kernel.errors import tolerate
+        monkeypatch.setenv("PRAMANYX_KERNEL_EVENTS", "0")
+        from pramanyx.kernel.errors import tolerate
         tolerate(RuntimeError("x"), "reason")

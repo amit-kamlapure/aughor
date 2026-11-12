@@ -28,8 +28,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.notifications import sent_once
-from aughor.notifications.models import ActionPayload, ActionTrigger
+from pramanyx.notifications import sent_once
+from pramanyx.notifications.models import ActionPayload, ActionTrigger
 
 ROOT = Path(__file__).resolve().parents[2]
 TRANSPORTS = {"fire_action", "post_as_bot"}
@@ -91,7 +91,7 @@ def receiver():
 @pytest.fixture(autouse=True)
 def _local_targets_allowed(monkeypatch):
     # The SSRF guard refuses 127.0.0.1, which is the only place a test may send to.
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda url: True)
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda url: True)
 
 
 def _trigger(url: str) -> ActionTrigger:
@@ -111,8 +111,8 @@ def _key() -> str:
 # ── the transport: four outcomes ────────────────────────────────────────────────────────────
 
 def test_a_delivered_key_is_not_sent_again_and_answers_with_the_first_send(receiver):
-    from aughor.notifications.executor import fire_action
-    from aughor.notifications.store import list_logs
+    from pramanyx.notifications.executor import fire_action
+    from pramanyx.notifications.store import list_logs
     rx, key = receiver(), _key()
     trigger = _trigger(rx.url)
     first = fire_action(trigger, _payload(key))
@@ -127,7 +127,7 @@ def test_a_delivered_key_is_not_sent_again_and_answers_with_the_first_send(recei
 def test_a_send_that_did_not_arrive_releases_its_key_so_the_retry_sends(receiver):
     """A refusal left nothing behind, so the retry is free to send — the guard must never turn a
     message that did not arrive into one that never will."""
-    from aughor.notifications.executor import fire_action
+    from pramanyx.notifications.executor import fire_action
     flaky, key = receiver(status=400), _key()
     trigger = _trigger(flaky.url)
     assert fire_action(trigger, _payload(key)).status == "failed"
@@ -138,7 +138,7 @@ def test_a_send_that_did_not_arrive_releases_its_key_so_the_retry_sends(receiver
 
 
 def test_a_send_with_no_key_is_unchanged(receiver):
-    from aughor.notifications.executor import fire_action
+    from pramanyx.notifications.executor import fire_action
     rx = receiver()
     trigger = _trigger(rx.url)
     assert [fire_action(trigger, _payload("")).status for _ in range(2)] == ["ok", "ok"]
@@ -146,14 +146,14 @@ def test_a_send_with_no_key_is_unchanged(receiver):
 
 
 def test_two_processes_racing_one_key_get_one_claim(tmp_path):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     a, b = Ledger(str(tmp_path / "l.db")), Ledger(str(tmp_path / "l.db"))
     assert a.kv_put_if_absent("s", "k", {"by": "a"}) is True
     assert b.kv_put_if_absent("s", "k", {"by": "b"}) is False
     assert b.kv_get("s", "k") == {"by": "a"}
 
 
-_PG_URL = os.environ.get("AUGHOR_PG_TEST_URL", "postgres://postgres:aughor@localhost:5544/aughor")
+_PG_URL = os.environ.get("PRAMANYX_PG_TEST_URL", "postgres://postgres:pramanyx@localhost:5544/pramanyx")
 
 
 def _pg_available() -> bool:
@@ -169,8 +169,8 @@ def _pg_available() -> bool:
 def test_two_instances_on_one_shared_postgres_get_one_claim(tmp_path, monkeypatch):
     """Decision 2's deployment: two API processes on one Postgres. The claim is one statement there
     too, so of two instances racing for one key exactly one sends."""
-    from aughor.db import backend as B
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.db import backend as B
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setenv(B.DB_URL_ENV, _PG_URL)
     path = tmp_path / "system.db"             # unique per test → its own schema, both share it
     a, b = Ledger(path), Ledger(path)
@@ -180,7 +180,7 @@ def test_two_instances_on_one_shared_postgres_get_one_claim(tmp_path, monkeypatc
 
 
 def test_the_uncertain_sentence_is_one_sentence():
-    from aughor.automations.engine import UNCERTAIN_DELIVERY
+    from pramanyx.automations.engine import UNCERTAIN_DELIVERY
     assert UNCERTAIN_DELIVERY == sent_once.MAY_HAVE_ARRIVED
 
 
@@ -188,19 +188,19 @@ def test_the_uncertain_sentence_is_one_sentence():
 
 _WORKER = """
 import sys
-from aughor.util import url_guard
+from pramanyx.util import url_guard
 url_guard.is_safe_webhook_url = lambda url: True
 transport, url, key, trigger_id = sys.argv[1:5]
 print("ready", flush=True)
 if transport == "webhook":
-    from aughor.notifications.executor import fire_action
-    from aughor.notifications.models import ActionPayload, ActionTrigger
+    from pramanyx.notifications.executor import fire_action
+    from pramanyx.notifications.models import ActionPayload, ActionTrigger
     fire_action(ActionTrigger(id=trigger_id, name="c3 hook", type="webhook", url=url),
                 ActionPayload(investigation_id="c3", rec_index=0, recommendation="the same message",
                               metric_name="", headline="c3", trigger_id=trigger_id,
                               triggered_at="2026-11-06T00:00:00Z", delivery_key=key))
 else:
-    from aughor.slackbots import post
+    from pramanyx.slackbots import post
     post._POST_URL = url
     post.post_as_bot("test-token", "C1", "the same message", delivery_key=key)
 """
@@ -227,8 +227,8 @@ def _kill_mid_send(tmp_path, transport: str, url: str, key: str, trigger_id: str
 def test_a_worker_killed_mid_send_is_not_sent_again_by_its_retry(tmp_path, receiver, transport):
     """The program's exit test (Track C3). The first worker's message reached the receiver; the
     worker died before it heard back. Its retry does not send — it says the first may have arrived."""
-    from aughor.notifications.executor import fire_action
-    from aughor.slackbots import post
+    from pramanyx.notifications.executor import fire_action
+    from pramanyx.slackbots import post
     rx, key = receiver(hold=True), _key()
     trigger = _trigger(rx.url)
     _kill_mid_send(tmp_path, transport, rx.url, key, trigger.id, rx)
@@ -256,8 +256,8 @@ def test_a_worker_killed_mid_send_is_not_sent_again_by_its_retry(tmp_path, recei
 def test_each_send_in_a_run_has_its_own_key_and_its_retry_keeps_it():
     from datetime import datetime, timezone
 
-    from aughor.automations.engine import DELIVERY_KEY_KEY, run_automation
-    from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+    from pramanyx.automations.engine import DELIVERY_KEY_KEY, run_automation
+    from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
     seen: list[str] = []
 
     def failing(effect, automation):
@@ -284,9 +284,9 @@ def test_a_tick_killed_after_an_unattended_slack_post_does_not_post_the_period_a
     the post looked, to the next tick, like a period never run."""
     from datetime import datetime, timedelta, timezone
 
-    from aughor.automations.engine import run_automation
-    from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.automations.engine import run_automation
+    from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+    from pramanyx.kernel.ledger import Ledger
     led = Ledger(str(tmp_path / "claims.db"))
     monkeypatch.setattr(Ledger, "default", staticmethod(lambda: led))
     posts: list[str] = []
@@ -317,20 +317,20 @@ def _engine_sends(monkeypatch):
     do after a send (filing the link, drawing the chart) counted instead of done."""
     from types import SimpleNamespace
 
-    from aughor.automations import engine
+    from pramanyx.automations import engine
     after: list[str] = []
     monkeypatch.setattr(engine, "_gate_departure", lambda *a, **k: None)
     monkeypatch.setattr(engine, "_file_departure_link", lambda *a, **k: after.append("filed") or "link-1")
     monkeypatch.setattr(engine, "_attach_chart", lambda *a, **k: after.append("chart"))
-    monkeypatch.setattr("aughor.slackbots.store.get_bot", lambda bot_id: None)
-    monkeypatch.setattr("aughor.slackbots.store.get_bot_decrypted",
+    monkeypatch.setattr("pramanyx.slackbots.store.get_bot", lambda bot_id: None)
+    monkeypatch.setattr("pramanyx.slackbots.store.get_bot_decrypted",
                         lambda bot_id: SimpleNamespace(id=bot_id, name="c3 bot", bot_token="test-token", enabled=True))
     return engine, after
 
 
 def test_a_replayed_notify_is_not_filed_again(monkeypatch, receiver):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.notifications.store import save_trigger
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.notifications.store import save_trigger
     engine, after = _engine_sends(monkeypatch)
     rx = receiver()
     trigger = save_trigger(_trigger(rx.url))
@@ -344,8 +344,8 @@ def test_a_replayed_notify_is_not_filed_again(monkeypatch, receiver):
 
 
 def test_a_replayed_slack_post_draws_and_files_nothing_again(monkeypatch, receiver):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.slackbots import post
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.slackbots import post
     engine, after = _engine_sends(monkeypatch)
     rx = receiver()
     monkeypatch.setattr(post, "_POST_URL", rx.url)
@@ -385,10 +385,10 @@ class _OwnCalls(ast.NodeVisitor):
 
 
 def _sites() -> dict[str, bool]:
-    """``{"aughor/x.py::function": passes_a_key}`` for every function that calls a transport —
+    """``{"pramanyx/x.py::function": passes_a_key}`` for every function that calls a transport —
     the population the departure gate's exit ratchet discovers, never a hand-made list."""
     out: dict[str, bool] = {}
-    for path in sorted((ROOT / "aughor").rglob("*.py")):
+    for path in sorted((ROOT / "pramanyx").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=rel)):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

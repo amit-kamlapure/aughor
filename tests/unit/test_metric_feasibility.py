@@ -4,7 +4,7 @@ The class: a profitability question on cost-less TPC-H fabricated a 0% margin an
 "we are not losing money"; an efficiency question on a marketing table with no conversions
 asserted "TikTok worst efficiency" from a meaningless cost-per-row. These pin the gate: it
 must FLAG the unsupported case and stay SILENT when the required column class IS present."""
-from aughor.semantic.metric_feasibility import unsupported_metric_gap as gap
+from pramanyx.semantic.metric_feasibility import unsupported_metric_gap as gap
 
 
 class TestProfitability:

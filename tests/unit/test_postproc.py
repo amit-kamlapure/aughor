@@ -1,12 +1,12 @@
-"""Post-processing operators (aughor/tools/postproc.py) + their wiring into the
+"""Post-processing operators (pramanyx/tools/postproc.py) + their wiring into the
 stats surface (analyze_query_result): period-over-period and Pareto concentration
 now surface to the LLM, gated so only material/concentrated signals appear.
 """
-from aughor.tools.postproc import (
+from pramanyx.tools.postproc import (
     pct_changes, shares, rolling, cumulative,
     with_period_over_period, with_contribution, with_rolling, with_cumulative,
 )
-from aughor.tools.stats import analyze_query_result
+from pramanyx.tools.stats import analyze_query_result
 
 
 # ── series math ───────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ def test_analyze_stays_quiet_on_flat_even_distribution():
 # ── additivity gate: never claim a share-of-total for an average/rate/ratio ─────
 
 def test_is_additive_measure():
-    from aughor.tools.postproc import is_additive_measure
+    from pramanyx.tools.postproc import is_additive_measure
     # additive magnitudes
     assert is_additive_measure("revenue")
     assert is_additive_measure("order_count")

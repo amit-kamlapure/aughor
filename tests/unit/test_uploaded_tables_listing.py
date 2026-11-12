@@ -27,8 +27,8 @@ import json
 import duckdb
 import pytest
 
-from aughor.connectors.file.local_upload import LocalUploadConnection, uploaded_tables
-from aughor.control_plane import vending
+from pramanyx.connectors.file.local_upload import LocalUploadConnection, uploaded_tables
+from pramanyx.control_plane import vending
 
 
 @pytest.fixture(autouse=True)

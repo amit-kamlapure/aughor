@@ -9,7 +9,7 @@
  *                └── Table
  *
  * Left panel  : the collapsible tree (its look and behaviour unchanged by the 2026-10-12 redo).
- * Right panel : redone to `aughor-v2/CLARITY.md` from the approved `design-mockups/catalog.html` —
+ * Right panel : redone to `pramanyx-v2/CLARITY.md` from the approved `design-mockups/catalog.html` —
  *   nothing chosen → every catalog (`catalog/CatalogHome.tsx`)
  *   a catalog or a schema → its page (`catalog/CatalogScope.tsx`)
  *   a table → its page (`catalog/CatalogTable.tsx`)

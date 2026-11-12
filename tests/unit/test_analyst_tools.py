@@ -13,8 +13,8 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.agent import analyst as an
-from aughor.db.connection import DuckDBConnection
+from pramanyx.agent import analyst as an
+from pramanyx.db.connection import DuckDBConnection
 
 
 # ── the warehouse: the specimen's shape, minimally ───────────────────────────
@@ -175,13 +175,13 @@ def _patch_seams(monkeypatch, db, *, intake, synthesize=None, baseline=None):
     One helper names these dotted paths so the tests do not each repeat them — the
     node names are a persisted identity (they are what the graph registers), so the
     place to keep them down to one mention is here."""
-    node = "aughor.agent.investigate."
+    node = "pramanyx.agent.investigate."
     monkeypatch.setattr(node + "ada_intake", intake)
     if baseline is not None:
         monkeypatch.setattr(node + "ada_baseline", baseline)
     if synthesize is not None:
         monkeypatch.setattr(node + "ada_synthesize", synthesize)
-    monkeypatch.setattr("aughor.agent.analyst.build_analyst_context",
+    monkeypatch.setattr("pramanyx.agent.analyst.build_analyst_context",
                         lambda cid, q, **kw: (db, {
                             "connection_id": cid, "schema_context": db.get_schema(),
                             "scope_schema": "", "canvas_id": None,
@@ -193,7 +193,7 @@ def test_run_analyst_streams_phases_and_synthesizes(monkeypatch, traffic_db, fau
     (real, faux-scripted) chooses a phase tool, the phase (faked node) streams as
     `phase_complete`, the model's conclusion reaches synthesis, and the terminal
     `answer_report` carries the narrator's report."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     seen = {}
 
@@ -264,7 +264,7 @@ def test_a_persisted_report_writes_its_deep_receipt_so_its_conclusion_reaches_th
     """The decision-framework run (2026-10-26): an Analyst run wrote a receipt per query and none for its report, so
     nothing it concluded was booked as a claim and the decision taken on it could not cite it. Persisted, the report
     writes the deep report's receipt — the one that books its headline and findings — and says its id."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     def _baseline(state, conn):
         return {"investigation_phases": state.get("investigation_phases", []) + [{
@@ -279,8 +279,8 @@ def test_a_persisted_report_writes_its_deep_receipt_so_its_conclusion_reaches_th
                  baseline=_baseline,
                  synthesize=lambda state: {"answer_report": {"headline": "Sessions rose on direct traffic",
                                                              "phases": state.get("investigation_phases") or []}})
-    import aughor.db.history as H
-    import aughor.routers.investigations as R
+    import pramanyx.db.history as H
+    import pramanyx.routers.investigations as R
     monkeypatch.setattr(H, "create_investigation", lambda *a, **k: "inv-77")
     monkeypatch.setattr(H, "complete_investigation", lambda *a, **k: None)
     written = []
@@ -290,7 +290,7 @@ def test_a_persisted_report_writes_its_deep_receipt_so_its_conclusion_reaches_th
     an.run_analyst("conn-t", "why did sessions rise?", emit=lambda t, p: frames.append((t, p)))
     assert len(written) == 1, written
     w = written[0]
-    from aughor.kernel.ledger import DEEP_REPORT_KIND
+    from pramanyx.kernel.ledger import DEEP_REPORT_KIND
     assert w["kind"] == DEEP_REPORT_KIND and w["natural_key"] == "ada:conn-t:inv-77"
     assert w["headline"] == "Sessions rose on direct traffic" and w["payload_extra"]["investigation_id"] == "inv-77"
     assert w["sqls"] == ["SELECT SUM(sessions) FROM traffic"]
@@ -300,7 +300,7 @@ def test_a_persisted_report_writes_its_deep_receipt_so_its_conclusion_reaches_th
 def test_a_stop_over_flagged_rows_alone_goes_back_to_the_analyst_once(monkeypatch, traffic_db, faux_llm):
     """The run's loop carries the check (`_every_result_warned`): the first stop over a flagged result is handed
     back, and the second is the conclusion."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
     seen = {}
 
     def _flagged(state, conn):
@@ -359,15 +359,15 @@ class _Route:
     (False, _Route(depth="deep"), _Req(), False),                     # no tool calls → phase script
 ])
 def test_analyst_door(monkeypatch, tools, route, req, expect):
-    from aughor.routers.investigations import _analyst_eligible
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: tools)
+    from pramanyx.routers.investigations import _analyst_eligible
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: tools)
     assert _analyst_eligible(req, route) is expect
 
 
 def test_converse_eligible_still_refuses_deep(monkeypatch):
     """Plain converse keeps answering the narrow question; deep goes to the analyst."""
-    from aughor.routers.investigations import _converse_eligible
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
+    from pramanyx.routers.investigations import _converse_eligible
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: True)
     assert _converse_eligible(_Req(), _Route(depth="deep")) is False
     assert _converse_eligible(_Req(), _Route(depth="quick")) is True
 
@@ -378,7 +378,7 @@ def test_run_sql_evidence_reaches_the_reports_no_data_floor(monkeypatch, traffic
     floor counts phase findings, so it read that run as a total failure and printed
     "Every diagnostic query failed" above correct numbers (live, on flights per route).
     The rows the loop actually gathered have to reach the floor."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     seen = {}
 
@@ -401,7 +401,7 @@ def test_run_sql_evidence_reaches_the_reports_no_data_floor(monkeypatch, traffic
     _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
                  synthesize=_fake_synthesize)
     # The tool returns rows the way the real one does; only its plumbing is stubbed.
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql",
                         lambda cid, a, **kw: {"columns": ["route", "n"],
                                               "rows": [["ZRH-LHR", 28], ["GVA-LHR", 42]]})
 
@@ -423,7 +423,7 @@ def test_an_ad_hoc_query_reaches_the_report_as_a_drawable_phase(monkeypatch, tra
     """End to end through the runner: a turn answered by `run_sql` alone must arrive at
     synthesis with a phase carrying the rows, or the report has nothing to draw and deep
     renders thinner than quick for the same question."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     seen = {}
 
@@ -444,7 +444,7 @@ def test_an_ad_hoc_query_reaches_the_report_as_a_drawable_phase(monkeypatch, tra
         return {}
 
     _patch_seams(monkeypatch, traffic_db, intake=_fake_intake, synthesize=_fake_synthesize)
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql",
                         lambda cid, a, **kw: {"columns": ["route", "n"],
                                               "rows": [["GVA-FRA", 42], ["ZRH-BUD", 35]]})
 
@@ -473,7 +473,7 @@ def test_two_cuts_of_the_same_shape_get_distinguishable_titles():
     same name twice — different numbers, nothing saying which was which. An observation/comparison
     PAIR then reads as redundant compute (it did, to a reader who had not opened the WHERE clauses).
     Both queries are real and both belong in the report; only the label was ambiguous."""
-    from aughor.agent.analyst import _adhoc_title
+    from pramanyx.agent.analyst import _adhoc_title
 
     obs = ("SELECT inventory_items.product_brand, SUM(CASE WHEN order_items.status = 'Returned' "
            "THEN inventory_items.cost ELSE 0 END) as returned_cost FROM order_items "
@@ -492,7 +492,7 @@ def test_two_cuts_of_the_same_shape_get_distinguishable_titles():
 def test_a_scoping_filter_is_named_but_the_metric_definition_is_not():
     """A drill into one department must say so. The metric's OWN `status = 'Returned'` must not
     be echoed — it is in every query of the run and would title them all identically."""
-    from aughor.agent.analyst import _adhoc_title
+    from pramanyx.agent.analyst import _adhoc_title
 
     sql = ("SELECT inventory_items.product_category, SUM(CASE WHEN order_items.status = 'Returned' "
            "THEN inventory_items.cost ELSE 0 END) as returned_cost FROM order_items "
@@ -505,7 +505,7 @@ def test_a_scoping_filter_is_named_but_the_metric_definition_is_not():
 
 def test_a_query_with_no_scope_keeps_the_bare_title():
     """Fail-open: an unscoped or unparseable query yields exactly the old title."""
-    from aughor.agent.analyst import _adhoc_title
+    from pramanyx.agent.analyst import _adhoc_title
 
     assert _adhoc_title(["a", "b"], "q", "SELECT a, SUM(b) FROM t GROUP BY 1") == "B by a"
     assert _adhoc_title(["a", "b"], "q", "") == "B by a"
@@ -519,7 +519,7 @@ def test_a_query_with_no_scope_keeps_the_bare_title():
 # named, and a first draft that skipped pinned scans never ran them at all.
 
 def test_the_scan_tool_runs_the_declared_breakdowns_once_before_the_first_scan(traffic_db, monkeypatch):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     calls: list[str] = []
 
     def fake_frame_breakdowns(state, conn):
@@ -622,7 +622,7 @@ def test_the_analyst_is_handed_the_figure_code_measured(monkeypatch, traffic_db,
         return {"columns": ["units_sold"], "rows": [["7027"]], "row_count": 1, "caveats": []}
 
     _patch_seams(monkeypatch, traffic_db, intake=_fake_intake, synthesize=lambda state: {})
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", _run_sql)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql", _run_sql)
     faux_llm.set_responses(["July 2026: 7,027 units sold."])
 
     an.run_analyst("conn-t", Q1, persist=False, emit=lambda t, p: frames.append((t, p)))
@@ -654,7 +654,7 @@ def test_the_answer_carries_its_questions_shape(monkeypatch, traffic_db, faux_ll
 
     _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
                  synthesize=lambda state: {"answer_report": {"headline": "h", "phases": []}})
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", lambda cid, args, **kw: {
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql", lambda cid, args, **kw: {
         "columns": ["units_sold"], "rows": [["7027"]], "row_count": 1, "caveats": []})
     faux_llm.set_responses(["July 2026: 7,027 units sold."])
     an.run_analyst("conn-t", Q1, persist=False, emit=lambda t, p: frames.append((t, p)))
@@ -667,8 +667,8 @@ def test_the_route_frame_names_the_shape_the_analyst_serves():
     turn's route receipt, and the analyst is handed that same shape rather than reading the
     question again at its own door."""
     import inspect
-    from aughor.agent.ask_router import decide_ask_route
-    from aughor.routers import investigations
+    from pramanyx.agent.ask_router import decide_ask_route
+    from pramanyx.routers import investigations
     assert decide_ask_route("Do these keys really join?").to_event()["question_shape"] == "check"
     assert decide_ask_route("Why did revenue fall?", depth_override="deep").to_event()["question_shape"] == "diagnose"
     src = inspect.getsource(investigations)
@@ -715,7 +715,7 @@ def test_a_statement_that_reads_a_declared_rule_off_another_table_does_not_run(m
             f"SUM(CASE WHEN o.status = 'Complete' THEN oi.sale_price ELSE 0 END) AS revenue {join} GROUP BY 1")
     both = f"SELECT SUM(oi.sale_price) {join} WHERE o.status = 'Complete' AND oi.status = 'Complete'"
     # the statement that misreads the rule is refused, naming the rule; the run never reaches the warehouse
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", lambda *a, **k: (_ for _ in ()).throw(AssertionError("it ran")))
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql", lambda *a, **k: (_ for _ in ()).throw(AssertionError("it ran")))
     run = next(t for t in an.analyst_tools(turn, session_id="s", shape="describe") if t.name == "run_sql").run
     refused = run({"sql": items})
     assert refused["kind"] == "declared_rule" and "orders.status in ('Complete')" in refused["error"]
@@ -759,7 +759,7 @@ def test_the_agent_path_reads_the_schema_through_the_shared_cache(monkeypatch):
     time on theLook (BigQuery, 7 tables), measured 2026-10-04, and recorded nowhere. Two
     asks inside the cache's window read it once, and each turn carries its stage timings."""
     from types import SimpleNamespace
-    from aughor.routers._shared import invalidate_schema_cache
+    from pramanyx.routers._shared import invalidate_schema_cache
 
     reads: list[int] = []
 
@@ -773,8 +773,8 @@ def test_the_agent_path_reads_the_schema_through_the_shared_cache(monkeypatch):
     conn = _Conn()
     scope = SimpleNamespace(connection_id="conn-schema-cache", schema_context="",
                             eff_schema="", open=lambda: conn)
-    monkeypatch.setattr("aughor.canvas.scope.resolve_execution_scope", lambda *a, **k: scope)
-    monkeypatch.setattr("aughor.tools.data_catalog.build_data_catalog", lambda *a, **k: "")
+    monkeypatch.setattr("pramanyx.canvas.scope.resolve_execution_scope", lambda *a, **k: scope)
+    monkeypatch.setattr("pramanyx.tools.data_catalog.build_data_catalog", lambda *a, **k: "")
     invalidate_schema_cache("conn-schema-cache")
     try:
         _, first = an.build_analyst_context("conn-schema-cache", "how many orders?")
@@ -860,7 +860,7 @@ def test_a_question_with_no_pinned_window_states_the_period_its_statements_measu
 def test_the_agent_run_states_the_window_its_phase_ran_on(monkeypatch, traffic_db, faux_llm):
     """Through the runner: the spec reads August, the model runs the baseline on July, and
     the finished report says July — with the reason — rather than the spec's August."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     def _intake(state, conn=None):
         return {"_ada_intake": {
@@ -908,7 +908,7 @@ def test_the_agent_run_states_the_window_its_phase_ran_on(monkeypatch, traffic_d
 def test_a_check_runs_no_intake_and_keeps_the_engine_and_the_clock(monkeypatch, traffic_db, faux_llm):
     """A check frames no metric, no date and no window (2026-10-15): the intake is not called, the
     turn still knows its engine and clock, and synthesis sees the shape."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     seen = {}
 
@@ -921,7 +921,7 @@ def test_a_check_runs_no_intake_and_keeps_the_engine_and_the_clock(monkeypatch, 
         return {}
 
     _patch_seams(monkeypatch, traffic_db, intake=_no_intake, synthesize=_fake_synthesize)
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql",
                         lambda cid, a, **kw: {"columns": ["dupes"], "rows": [[0]]})
     faux_llm.set_responses([
         FauxToolCall(payload={"sql": "SELECT COUNT(*) - COUNT(DISTINCT route) AS dupes FROM traffic"},
@@ -952,7 +952,7 @@ def test_the_analyst_serves_the_shape_the_door_handed_it(monkeypatch, traffic_db
 
     _patch_seams(monkeypatch, traffic_db, intake=_fake_intake,
                  synthesize=lambda state: {"answer_report": {"headline": "h", "phases": []}})
-    monkeypatch.setattr("aughor.agent.converse_tools.run_sql", lambda cid, args, **kw: {
+    monkeypatch.setattr("pramanyx.agent.converse_tools.run_sql", lambda cid, args, **kw: {
         "columns": ["revenue"], "rows": [["7027"]], "row_count": 1, "caveats": []})
     faux_llm.set_responses(["August revenue: 7,027."])
     frames: list[tuple] = []

@@ -1,6 +1,6 @@
 """The arc's close-out, C6 — spend attributed to a mission, and L5: the agent that chooses among declared
-actions toward a mission inside its budget (`aughor/record/mission.mission_spend`, `aughor/actions/authority.
-evaluate_l5` / `grant_l5`, `aughor/actions/autonomy.py`).
+actions toward a mission inside its budget (`pramanyx/record/mission.mission_spend`, `pramanyx/actions/authority.
+evaluate_l5` / `grant_l5`, `pramanyx/actions/autonomy.py`).
 
 What these hold: the mission report counts the metered cost of the runs its inquiries ran — tokens from
 their receipts, a dollar floor from the session log with the unpriced calls said — and compares it to the
@@ -19,14 +19,14 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.actions import authority as A
-from aughor.actions import autonomy as AU
-from aughor.actions.executor import execute_kinetic_action
-from aughor.kernel.ledger import Ledger
-from aughor.ontology.models import ActionParameter, KineticAction, Undo, Verification
-from aughor.record import decisions as D
-from aughor.record import inquiry as I
-from aughor.record import mission as M
+from pramanyx.actions import authority as A
+from pramanyx.actions import autonomy as AU
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.ontology.models import ActionParameter, KineticAction, Undo, Verification
+from pramanyx.record import decisions as D
+from pramanyx.record import inquiry as I
+from pramanyx.record import mission as M
 
 NOW = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
 SPEC = {"metric_label": "gross margin", "metric_sql": "SUM(margin)", "metric_table": "shop.orders",
@@ -35,8 +35,8 @@ SPEC = {"metric_label": "gross margin", "metric_sql": "SUM(margin)", "metric_tab
 
 @pytest.fixture(autouse=True)
 def _own_departures(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
 
 
 def _conn():
@@ -70,7 +70,7 @@ def test_the_report_counts_what_the_missions_runs_cost_from_their_receipts_and_a
     q.runs.append(I.RunNote(run="run-old", verdict="answered", why="before the period", at=(NOW - timedelta(days=90)).isoformat()))
     q.runs.append(I.RunNote(run="run-noreceipt", verdict="tool_failed", why="x", at=(NOW - timedelta(days=1)).isoformat()))
     I._book(q)
-    monkeypatch.setattr("aughor.obs.session_log.recent_sessions",
+    monkeypatch.setattr("pramanyx.obs.session_log.recent_sessions",
                         lambda **kw: [{"investigation_id": "run-a", "cost_usd": 0.31, "unpriced_calls": 0, "llm_calls": 4},
                                       {"investigation_id": "run-b", "cost_usd": 0.20, "unpriced_calls": 1, "llm_calls": 4},
                                       {"investigation_id": "elsewhere", "cost_usd": 9.0, "unpriced_calls": 0, "llm_calls": 1}])
@@ -111,7 +111,7 @@ def _recorder():
 def _passing_warehouse(monkeypatch):
     def run_sql_for(connection_id, **kw):
         return lambda sql: (["one"], [[1]], None)
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", run_sql_for)
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", run_sql_for)
 
 
 def _earn_l4(action, conn, monkeypatch, *, runs: int):
@@ -202,7 +202,7 @@ def test_the_l5_agent_chooses_by_the_measured_effect_runs_once_a_period_with_the
     d = D.get_decision(out["decision"])
     assert d.source.kind == "autonomy" and d.decided_by == "agent:autonomy" and d.objective == m.id and d.actions == ["refund"] and d.chosen == "refund"
     assert {o.id for o in d.options} == {"refund", "discount", "note"} and d.expectation_claim and d.extra["level"] == 5
-    from aughor.record import claims as C
+    from pramanyx.record import claims as C
     pred = C.get(d.expectation_claim)
     assert pred.kind == "prediction" and pred.statement.metric == "gross margin" and pred.extra["low"] is not None
     entry = Ledger.default().artifact_by_id(out["entry"])["payload"]
@@ -217,7 +217,7 @@ def test_the_l5_agent_chooses_by_the_measured_effect_runs_once_a_period_with_the
     report = M.compose_report(after, run_sql_for=_warehouse(0.4), now=NOW + timedelta(days=1))
     assert report["autonomy"]["l5_actions"] == ["*"] and report["autonomy"]["acted"][0]["action"] == "refund"
     assert report["autonomy"]["acted"][0]["outcome"] == "not yet reviewed"
-    from aughor.record import mission as MM
+    from pramanyx.record import mission as MM
     assert "act_for_mission" in __import__("inspect").getsource(MM.report_due_missions)
     # a mission with no L5 ceiling has nothing to choose; a paused mission does not act
     plain = M.write_mission(_mission(conn, name="Plain " + uuid.uuid4().hex[:4]), by="user:ana")
@@ -234,7 +234,7 @@ def test_the_l5_agent_is_held_at_the_gate_without_a_standing_grant_and_runs_unde
                         by="user:ana")
     A.grant_l5(refund, conn, by="user:ana")
     _past_cases("refund", conn, [1.0, 1.2, 0.8])
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")                        # the gate is on
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")                        # the gate is on
     rec = _recorder()
     held = AU.act(M.latest(m.key), [refund], now=NOW, dispatch=rec)
     assert held["acted"] is False and held["status"] == "approval_required" and "held at the approval gate" in held["why"]
@@ -246,11 +246,11 @@ def test_the_l5_agent_is_held_at_the_gate_without_a_standing_grant_and_runs_unde
     assert out["acted"] is True and rec.calls == [("refund", {"order_id": "90"})]
     assert Ledger.default().artifact_by_id(out["entry"])["payload"]["grant_id"] == g.id
     # the doors
-    from aughor.routers import authority as RA
-    from aughor.routers import record as RR
+    from pramanyx.routers import authority as RA
+    from pramanyx.routers import record as RR
     monkeypatch.setattr(RA, "_actions", lambda c, s: {"refund": refund})
     assert RA.authority_l5_check("refund", connection_id=conn)["can_grant"] is True
     assert RA.authority_table(connection_id=conn)["l5_n"] == A.L5_N
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda c, s: type("G", (), {"declared_actions": lambda self: [refund]})())
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda c, s: type("G", (), {"declared_actions": lambda self: [refund]})())
     turn = RR.act_record_mission(m.id)
     assert turn["acted"] is False and "already acted on" in turn["why"]

@@ -1,6 +1,6 @@
 """Arc SV-1 — every store that migrates, found in the code, is copied before it migrates and keeps its rows.
 
-The population is READ FROM THE SOURCE — every ``run_migrations(..., store=...)`` call under ``aughor/`` — never listed
+The population is READ FROM THE SOURCE — every ``run_migrations(..., store=...)`` call under ``pramanyx/`` — never listed
 by hand. The test this joins (`test_migrations.py::test_converted_stores_migrate_cleanly`) names 5 of the 17 stores, and
 a hand-listed population cannot fail when one is missing.
 How to OPEN a store is per-store knowledge and lives in ``OPENERS``, keyed by module; a module found in the code with no
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def _migrating_stores() -> dict[str, tuple[str, str | None]]:
     """store → (module, the name of the migrations list it passes), from every call in the source."""
     found: dict[str, tuple[str, str | None]] = {}
-    for path in sorted((ROOT / "aughor").rglob("*.py")):
+    for path in sorted((ROOT / "pramanyx").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -59,23 +59,23 @@ def _init_then(conn_fn: str):
 
 
 OPENERS = {   # by module: two stores' persisted names carry a retired word (docs/GLOSSARY.md), the modules do not
-    "aughor.actions.grants": _ensured("_conn", "_ensure_schema"),
-    "aughor.actions.inbox": _ensured("_conn", "_ensure_schema"),
-    "aughor.actions.overlay": _ensured("_conn", "_ensure_schema"),
-    "aughor.automations.store": _init_then("_connect"),
-    "aughor.custom_agents.store": _ensured("_connect"),
-    "aughor.db.history": _ensured("_conn", "_ensure_schema"),
-    "aughor.db.registry": _ensured("_db"),
-    "aughor.evals.store": _ensured("_connect", "_ensure_schema"),
-    "aughor.feedback.verdicts": _ensured("_conn", "_ensure_schema"),
-    "aughor.kernel.ledger": lambda mod: mod.Ledger.default()._conn,
-    "aughor.metastore.store": _ensured("_conn", "_ensure_schema"),
-    "aughor.monitors.store": _init_then("_connect"),
-    "aughor.obs.agent_alert_store": _init_then("_connect"),
-    "aughor.packs.bindings": _ensured("_conn", "_ensure_schema"),
-    "aughor.security.audit": _ensured("_connect", "_ensure_schema"),
-    "aughor.semantic.ambiguity_ledger": _ensured("_conn", "_ensure_schema"),
-    "aughor.workspace.store": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.actions.grants": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.actions.inbox": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.actions.overlay": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.automations.store": _init_then("_connect"),
+    "pramanyx.custom_agents.store": _ensured("_connect"),
+    "pramanyx.db.history": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.db.registry": _ensured("_db"),
+    "pramanyx.evals.store": _ensured("_connect", "_ensure_schema"),
+    "pramanyx.feedback.verdicts": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.kernel.ledger": lambda mod: mod.Ledger.default()._conn,
+    "pramanyx.metastore.store": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.monitors.store": _init_then("_connect"),
+    "pramanyx.obs.agent_alert_store": _init_then("_connect"),
+    "pramanyx.packs.bindings": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.security.audit": _ensured("_connect", "_ensure_schema"),
+    "pramanyx.semantic.ambiguity_ledger": _ensured("_conn", "_ensure_schema"),
+    "pramanyx.workspace.store": _ensured("_conn", "_ensure_schema"),
 }
 STORES = _migrating_stores()
 
@@ -128,7 +128,7 @@ def _counts(conn: sqlite3.Connection) -> dict[str, int]:
 
 @pytest.mark.parametrize("store", sorted(STORES))
 def test_every_migrating_store_is_copied_before_it_migrates_and_keeps_its_rows(store, tmp_path, monkeypatch):
-    from aughor.db import migrations as M
+    from pramanyx.db import migrations as M
     monkeypatch.setattr(M, "_HELD_BACK", {})
     monkeypatch.setattr(M, "_BACKED_UP", [])
     module_name, migs_name = STORES[store]

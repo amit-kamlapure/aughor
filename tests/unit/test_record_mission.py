@@ -1,5 +1,5 @@
 """Phase 5 of the 2027 study, P5-1 and P5-2 — the mission as a ledger kind written by people
-(`aughor/record/mission.py`), triage's first term fed from it, the authority ceiling it sets, the
+(`pramanyx/record/mission.py`), triage's first term fed from it, the authority ceiling it sets, the
 interruptions it is charged, and the report it is judged by.
 
 What these hold: a mission written by an agent or the system is refused, one with no owner never
@@ -17,11 +17,11 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from aughor.govern import attention as A
-from aughor.govern.departure import HELD_BUDGET, gate_departure
-from aughor.record import decisions as D
-from aughor.record import mission as M
-from aughor.routers import record as R
+from pramanyx.govern import attention as A
+from pramanyx.govern.departure import HELD_BUDGET, gate_departure
+from pramanyx.record import decisions as D
+from pramanyx.record import mission as M
+from pramanyx.routers import record as R
 
 SPEC = {"metric_label": "gross margin", "metric_sql": "SUM(margin)", "metric_table": "shop.orders",
         "date_column": "shop.orders.created_at", "window_days": 30}
@@ -29,7 +29,7 @@ SPEC = {"metric_label": "gross margin", "metric_sql": "SUM(margin)", "metric_tab
 
 @pytest.fixture(autouse=True)
 def _own_departures(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
 
 
 def _conn():
@@ -139,7 +139,7 @@ def test_a_mission_is_charged_for_every_interruption_and_a_spent_one_is_held_and
     held = verdicts[2]
     assert "mission budget" in held.reason_sentence() and m.name in held.reason_sentence() and "2 interruptions a week" in held.reason_sentence()
     assert held.checks["mission"] == m.id
-    from aughor.govern.departure_store import held_bearing
+    from pramanyx.govern.departure_store import held_bearing
     assert [h["id"] for h in held_bearing(m.id)] == [held.record_id]
     # a message that bears on nothing is not charged to the mission
     free = gate_departure(kind="analysis", org_id="default", conn_id=conn, text="Signups were ordinary.", target=place,
@@ -150,8 +150,8 @@ def test_a_mission_is_charged_for_every_interruption_and_a_spent_one_is_held_and
 
 def test_the_ladder_is_capped_at_the_ceiling_an_active_mission_set():
     from types import SimpleNamespace
-    from aughor.actions import authority as AU
-    from aughor.ontology.models import Undo, Verification
+    from pramanyx.actions import authority as AU
+    from pramanyx.ontology.models import Undo, Verification
     conn = _conn()
     # the ladder reads a declaration's fields, so a declared side-effect action is its fields here
     action = SimpleNamespace(id="change_price", kind="side_effect", reversibility="compensable",
@@ -168,7 +168,7 @@ def test_the_ladder_is_capped_at_the_ceiling_an_active_mission_set():
 
 
 def test_an_inquiry_opened_from_a_signal_carries_the_mission_it_bears_on():
-    from aughor.record import inquiry as I
+    from pramanyx.record import inquiry as I
     conn = _conn()
     m = M.write_mission(_mission(conn), by="user:ana")
     assert I.mission_for(conn, "gross margin") == m.id and I.mission_for(conn, "signups") == ""
@@ -178,8 +178,8 @@ def test_an_inquiry_opened_from_a_signal_carries_the_mission_it_bears_on():
 
 
 def test_a_decision_on_a_metric_a_mission_bears_on_carries_the_mission(monkeypatch):
-    from aughor.playbook.outcomes import RecOutcome
-    from aughor.record.byproducts import decision_from_recommendation
+    from pramanyx.playbook.outcomes import RecOutcome
+    from pramanyx.record.byproducts import decision_from_recommendation
     conn = _conn()
     m = M.write_mission(_mission(conn), by="user:ana")
     o = RecOutcome(id="inv9_rec_0", inv_id="inv9", rec_index=0, rec_text="Raise prices on the slow sellers",
@@ -233,7 +233,7 @@ def test_the_report_leads_with_the_objective_against_its_own_history_and_says_no
 
 
 def test_a_report_with_nothing_measurable_says_so_and_counts_the_work_anyway():
-    from aughor.record import inquiry as I
+    from pramanyx.record import inquiry as I
     conn = _conn()
     m = M.write_mission(_mission(conn, objective=M.Objective(metric="brand love", direction="up", spec=None),
                                  constraints=[]), by="user:ana")
@@ -249,7 +249,7 @@ def test_a_report_is_booked_the_mission_advanced_and_an_owner_with_no_channel_is
     conn = _conn()
     m = M.write_mission(_mission(conn), by="user:ana")
     prior = {start: v for start, v in zip(_windows(NOW), [0.38, 0.375, 0.385, 0.38, 0.39, 0.37])}
-    import aughor.rbac.routing as routing
+    import pramanyx.rbac.routing as routing
     monkeypatch.setattr(routing, "route", lambda securable, **kw: [])
     out = M.report_now(m, run_sql_for=_warehouse(prior, default=0.385), now=NOW)
     assert out["report_id"] and out["delivery"]["status"] == "not_sent" and "no channel bound" in out["delivery"]["note"]
@@ -264,16 +264,16 @@ def test_a_report_is_booked_the_mission_advanced_and_an_owner_with_no_channel_is
 
 
 def test_the_heartbeat_reports_the_missions_whose_date_has_come(monkeypatch):
-    from aughor.automations import scheduler as S
+    from pramanyx.automations import scheduler as S
     conn = _conn()
     due = M.write_mission(_mission(conn, review=M.Review(cadence="weekly", next_report_on="2026-10-01")), by="user:ana")
     M.write_mission(_mission(conn, name="Later " + uuid.uuid4().hex[:4],
                              review=M.Review(cadence="weekly", next_report_on="2099-01-01")), by="user:ana")
     # the ledger is shared across the suite: the missions due are read on this test's own connection
     assert [x.id for x in M.due_reports(NOW) if conn in x.scope.connections] == [due.id]
-    import aughor.rbac.routing as routing
+    import pramanyx.rbac.routing as routing
     monkeypatch.setattr(routing, "route", lambda securable, **kw: [])
-    import aughor.db.measure as measure
+    import pramanyx.db.measure as measure
     monkeypatch.setattr(measure, "run_sql_for", _warehouse({}, default=0.4))
     monkeypatch.setattr(S, "_last_mission_check", 0.0)
     assert S.report_due_missions_hourly(now=1_900_000_000.0) >= 1
@@ -283,8 +283,8 @@ def test_the_heartbeat_reports_the_missions_whose_date_has_come(monkeypatch):
 
 
 def test_a_governed_metric_resolves_to_the_report_s_measurable_definition(monkeypatch):
-    import aughor.semantic.metrics as SM
-    from aughor.semantic.metrics import MetricDefinition
+    import pramanyx.semantic.metrics as SM
+    from pramanyx.semantic.metrics import MetricDefinition
     gm = MetricDefinition(name="gross_margin", label="Gross margin", sql="SUM(margin) / SUM(revenue)",
                           tables=["shop.orders"], time_column="created_at", unit="%", status="approved")
     monkeypatch.setattr(SM, "get_metric", lambda name, path=None, connection_id=None: gm if name == "gross_margin" else None)
@@ -304,8 +304,8 @@ def test_a_whole_statement_whose_date_is_on_its_subquery_s_table_is_reported(mon
     metric the period compiler can measure is measured by it — the path the Briefing and a review read."""
     import duckdb
 
-    import aughor.semantic.metrics as SM
-    from aughor.semantic.metrics import MetricDefinition
+    import pramanyx.semantic.metrics as SM
+    from pramanyx.semantic.metrics import MetricDefinition
     con = duckdb.connect()
     con.execute("CREATE TABLE customers (customer_id INT)")
     con.execute("CREATE TABLE orders (order_id INT, customer_id INT, order_date DATE)")

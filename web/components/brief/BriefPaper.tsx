@@ -6,7 +6,7 @@
  * for my decision-making in the morning"*. The approved mockup is `design-mockups/briefing.html`.
  *
  * Presentational pieces only — `BriefingPanel` owns the state and the reads. The lead story is the
- * narrator's; the three columns are the desk's (`aughor/briefing/desk.py`: records, never a model);
+ * narrator's; the three columns are the desk's (`pramanyx/briefing/desk.py`: records, never a model);
  * every claim on the page carries a numbered source, listed at the foot.
  */
 import { Fragment, type ReactNode } from "react";

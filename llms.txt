@@ -45,7 +45,7 @@ own queries:
 - Agent skill: `SKILL.md` — the operational guide for a coding agent using a running
   Pramanyx: how to connect (MCP or REST), the governed tool workflow, how to read what
   comes back.
-- Connector catalog: `aughor/connectors/catalog.json` — every connector type, its config
+- Connector catalog: `pramanyx/connectors/catalog.json` — every connector type, its config
   fields with secrets flagged, the driver modules it imports, and the pip extra that
   provides them. The live variant, `GET /connectors/types`, adds per-install driver
   availability.

@@ -82,7 +82,7 @@
   --r-composer: 22px;  /* the chat composer input */
 
   /* ── Tokens the theme layer re-declares ───────────────────────────────────
-     These carry PRE-THEME values so `aughor-v2/theme/tokens-v2.css` can be
+     These carry PRE-THEME values so `pramanyx-v2/theme/tokens-v2.css` can be
      un-imported and still leave every var() resolving — the revert contract its
      README states. Without them a revert leaves --scrim and --blue-solid
      undefined, and every scrim and primary button loses its colour. */
@@ -112,7 +112,7 @@
 
   /* ── Chart palette (M23) ──
      The six brand series colours (--chart-1..6) are defined ONCE in the active theme
-     aughor-v2/theme/tokens-v2.css (REC-U4 — one palette source), which is imported
+     pramanyx-v2/theme/tokens-v2.css (REC-U4 — one palette source), which is imported
      after this file and is authoritative. Both the ECharts theme and the card-chrome
      palettes (lib/palette.ts) derive from those tokens. */
   --chart-threshold-warn:   #BD8800;

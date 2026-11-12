@@ -8,7 +8,7 @@
  * ("Window · 14 days"). Wiring is by name, never by expression: each is a literal string the rules check resolves.
  *
  * ONE home for what a set reads. The browser asks the object door with it; the server runs the same function through
- * the validator bundle and compiles each set before a dashboard is kept (`aughor/dashboards/pieces.py`), so the two cannot
+ * the validator bundle and compiles each set before a dashboard is kept (`pramanyx/dashboards/pieces.py`), so the two cannot
  * come to read a set differently.
  */
 import {
@@ -426,7 +426,7 @@ export function readerSet(spec: WireSpec, name: string, sent: Record<string, unk
   return { entity: r.entity, segment: r.segment, filters: read.filters, label: r.label };
 }
 
-/** One condition of a rule, as `POST /ontology/rules` declares it (`aughor/ontology/business_rules.py`). */
+/** One condition of a rule, as `POST /ontology/rules` declares it (`pramanyx/ontology/business_rules.py`). */
 export interface RuleCondition { path: string; op: string; value?: unknown; values?: unknown[] }
 /** The most conditions one rule holds (`business_rules._MAX_CONDITIONS`). */
 export const MAX_RULE_CONDITIONS = 10;

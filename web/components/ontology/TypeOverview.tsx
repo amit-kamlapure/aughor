@@ -2,7 +2,7 @@
 
 /**
  * An entity's panel, read first — laid out as the approved mockup lays it out (`design-mockups/ontology-tab.html`,
- * 2026-10-10: "one panel that did not end" became one panel and six tabs; the law is `aughor-v2/CLARITY.md`).
+ * 2026-10-10: "one panel that did not end" became one panel and six tabs; the law is `pramanyx-v2/CLARITY.md`).
  *
  * The four figures under the name; what needs a person, in amber, with its buttons on the row; each process the entity
  * goes through as a funnel — stage · bar · count — with every promise on one line and its overdue count a button; the

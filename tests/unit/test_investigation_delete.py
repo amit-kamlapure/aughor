@@ -14,8 +14,8 @@ import pytest
 
 @pytest.fixture
 def stores(tmp_path, monkeypatch):
-    from aughor.db import history
-    from aughor.evidence import store as evidence_store
+    from pramanyx.db import history
+    from pramanyx.evidence import store as evidence_store
 
     monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
     monkeypatch.setattr(evidence_store, "_DB_PATH", tmp_path / "evidence.db")
@@ -23,7 +23,7 @@ def stores(tmp_path, monkeypatch):
 
 
 def _claim(evidence_store, inv_id: str):
-    from aughor.evidence.models import EvidenceClaim
+    from pramanyx.evidence.models import EvidenceClaim
     evidence_store.append_claim(
         EvidenceClaim(investigation_id=inv_id, claim_text="x declined 12%", confidence=0.8)
     )
@@ -31,7 +31,7 @@ def _claim(evidence_store, inv_id: str):
 
 def test_delete_one_cascades_row_and_evidence(stores):
     history, evidence_store = stores
-    from aughor.db.purge import purge_investigation_artifacts
+    from pramanyx.db.purge import purge_investigation_artifacts
 
     keep = history.create_investigation("keep me", "conn1")
     drop = history.create_investigation("drop me", "conn1")
@@ -51,13 +51,13 @@ def test_delete_one_cascades_row_and_evidence(stores):
 
 def test_delete_missing_is_a_noop(stores):
     history, _ = stores
-    from aughor.db.purge import purge_investigation_artifacts
+    from pramanyx.db.purge import purge_investigation_artifacts
     assert purge_investigation_artifacts("nope").get("investigations") == 0
 
 
 def test_bulk_clear_all(stores):
     history, evidence_store = stores
-    from aughor.db.purge import purge_investigations_bulk
+    from pramanyx.db.purge import purge_investigations_bulk
 
     a = history.create_investigation("q1", "conn1")
     b = history.create_investigation("q2", "conn2")
@@ -73,7 +73,7 @@ def test_bulk_clear_all(stores):
 
 def test_bulk_clear_scoped_to_connections(stores):
     history, evidence_store = stores
-    from aughor.db.purge import purge_investigations_bulk
+    from pramanyx.db.purge import purge_investigations_bulk
 
     a = history.create_investigation("q1", "conn1")
     b = history.create_investigation("q2", "conn2")
@@ -91,5 +91,5 @@ def test_bulk_clear_scoped_to_connections(stores):
 
 
 def test_bulk_clear_empty_is_noop(stores):
-    from aughor.db.purge import purge_investigations_bulk
+    from pramanyx.db.purge import purge_investigations_bulk
     assert purge_investigations_bulk(None) == {}

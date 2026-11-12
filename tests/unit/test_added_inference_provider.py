@@ -20,10 +20,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm import coordination as C
-from aughor.llm import models as M
-from aughor.llm import org_config as OC
-from aughor.llm import provider as P
+from pramanyx.llm import coordination as C
+from pramanyx.llm import models as M
+from pramanyx.llm import org_config as OC
+from pramanyx.llm import provider as P
 
 SECRET = "sk-added-provider-SECRET-0042"
 OTHER_SECRET = "sk-second-provider-SECRET-0077"
@@ -135,8 +135,8 @@ def cfg(tmp_path, monkeypatch):
     M.clear_cache()
     P._refused_params.clear()
     C.set_default(None)
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "1")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     for org in ("acme", "default"):
         OC.clear_org_config(org)
     yield path
@@ -232,7 +232,7 @@ def test_test_connection_reaches_the_added_provider_and_no_other(stubs, client):
 
 
 def test_an_added_providers_privacy_is_said_in_the_direction_that_cannot_mislead(stubs):
-    from aughor.control_plane.inference import capability_for
+    from pramanyx.control_plane.inference import capability_for
     stub = stubs()
     P.add_provider("On this box", stub.url)
     P.add_provider("xAI", "https://api.x.ai/v1", api_key=SECRET)
@@ -243,7 +243,7 @@ def test_an_added_providers_privacy_is_said_in_the_direction_that_cannot_mislead
 # ── the fallback reaches it ───────────────────────────────────────────────────
 
 def test_the_fallback_chain_reaches_an_added_provider(stubs, monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)     # the Settings choice, not the suite's pin
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)     # the Settings choice, not the suite's pin
     primary, second = stubs(reply="spent"), stubs()
     P.add_provider("Primary Co", primary.url, api_key=SECRET)
     P.add_provider("Second Co", second.url, api_key=OTHER_SECRET)
@@ -262,7 +262,7 @@ def test_the_fallback_chain_reaches_an_added_provider(stubs, monkeypatch):
 
 
 def test_a_keyed_added_provider_joins_the_default_order_and_a_keyless_one_waits_to_be_chosen(stubs, monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
     P.add_provider("Keyed Co", stubs().url, api_key=SECRET)
     P.add_provider("Keyless Co", stubs().url)
     chain = P._fallback_backends()
@@ -273,8 +273,8 @@ def test_a_keyed_added_provider_joins_the_default_order_and_a_keyless_one_waits_
 
 
 def test_a_byok_org_never_reaches_the_operators_added_provider(stubs, monkeypatch):
-    from aughor.org.context import using_org
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    from pramanyx.org.context import using_org
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
     P.add_provider("Operator Co", stubs().url, api_key=SECRET)
     _bind("ollama", "local-model")
     P.set_config({"fallback": {"backend": "operator-co", "model": "m"}})
@@ -371,7 +371,7 @@ def test_a_built_in_provider_is_not_edited_or_removed_here(client):
 # ── remove ────────────────────────────────────────────────────────────────────
 
 def test_removing_one_clears_what_named_it_and_says_so(stubs, monkeypatch):
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
     first, second = stubs(), stubs()
     P.add_provider("First Co", first.url, api_key=SECRET, models=["f-model"])
     P.add_provider("Second Co", second.url, api_key=OTHER_SECRET)
@@ -484,10 +484,10 @@ def test_no_reader_outside_the_provider_asks_the_built_in_tuple_whether_a_provid
 def test_each_refused_parameter_is_a_row_of_its_own_before_the_answer(stubs, monkeypatch):
     """Every attempt is a row (the model-call log, 2026-11-09): the two requests the binding refused for a parameter
     are each in the log as refused, billed nothing, named `parameter_refused` — then the one that answered."""
-    from aughor import telemetry
-    from aughor.kernel.ledger import Ledger
-    from aughor.obs import session_log
-    from aughor.obs import usage as U
+    from pramanyx import telemetry
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.obs import session_log
+    from pramanyx.obs import usage as U
 
     monkeypatch.setattr(U, "ensure_catalogue_prices", lambda **_k: 0)
     Ledger.default().session_events_clear()

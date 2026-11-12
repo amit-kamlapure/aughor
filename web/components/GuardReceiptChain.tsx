@@ -27,7 +27,7 @@ import type { GuardReceipt } from "@/lib/chatTurn";
 /** Human labels per guard id — the backend names the mechanism; the surface
  *  names what the reader gains. Unknown guards fall back to their raw id, so a
  *  new backend guard is visible before this map learns its nice name.
- *  ONE vocabulary: `aughor/answer/receipts.py` carries the same maps for the export and the
+ *  ONE vocabulary: `pramanyx/answer/receipts.py` carries the same maps for the export and the
  *  other Python doors, and `tests/unit/test_guard_receipt_vocabulary.py` holds the two equal. */
 const GUARD_LABEL: Record<string, string> = {
   fanout_defan: "Join over-count prevented",

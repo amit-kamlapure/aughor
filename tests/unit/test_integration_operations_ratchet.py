@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.integrations.operations import (
+from pramanyx.integrations.operations import (
     OPERATIONS, ResultShape, build_request, extract, get_operation,
 )
-from aughor.integrations.providers import PROVIDERS
+from pramanyx.integrations.providers import PROVIDERS
 
 
 def test_the_guard_actually_parsed_something():

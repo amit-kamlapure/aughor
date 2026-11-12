@@ -1,6 +1,6 @@
 /**
  * The dashboard's values a query of the person's own reads (Arc AP-8): written `{{name}}` in the statement, sent as the
- * page holds them now, and bound by the engine — never pasted into the statement (`aughor/dashboards/queries.py` `bind`).
+ * page holds them now, and bound by the engine — never pasted into the statement (`pramanyx/dashboards/queries.py` `bind`).
  */
 import { ISO_DAY, MAX_LIST } from "@/lib/dashboards/catalog";
 import type { ValueNow } from "@/lib/dashboards/sets";

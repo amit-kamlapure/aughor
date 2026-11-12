@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor.db.query_history import PREREQUISITES, QueryHistory, Readiness, check_query_history, unsupported
+from pramanyx.db.query_history import PREREQUISITES, QueryHistory, Readiness, check_query_history, unsupported
 
 
 class _Result:
@@ -39,7 +39,7 @@ def test_an_engine_that_keeps_none_is_not_a_gap():
 
 
 def test_ready_says_what_is_on_record():
-    from aughor.db.query_history import HistoryRow
+    from pramanyx.db.query_history import HistoryRow
     h = QueryHistory(engine="postgres", supported=True, source="public.pg_stat_statements",
                      rows=[HistoryRow(ended_at="t", sql="SELECT 1", calls=546)])
     r = check_query_history(_Conn("postgres", history=h))
@@ -94,7 +94,7 @@ def test_every_engine_with_a_reader_has_its_prerequisite_in_words():
 # ── the Postgres probe and the one DDL the platform writes ───────────────────────────────
 
 def _pg(monkeypatch, answers):
-    from aughor.db import connection as C
+    from pramanyx.db import connection as C
     pg = C.PostgresConnection.__new__(C.PostgresConnection)
     seen = []
     def fake_bounded(label, sql, limit, *, sql_dialect=None, internal=False):
@@ -151,8 +151,8 @@ def test_enable_creates_the_extension_once_preloaded_and_is_idempotent(monkeypat
 
 def test_the_enable_door_is_gated_by_the_organisations_setting(monkeypatch):
     import asyncio
-    from aughor.orgsettings import allows as A
-    from aughor.routers import connections as R
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import connections as R
     monkeypatch.setattr(A, "allows", lambda s: False)
     with pytest.raises(HTTPException) as exc:
         asyncio.run(R.enable_connection_prerequisite("c1"))
@@ -161,8 +161,8 @@ def test_the_enable_door_is_gated_by_the_organisations_setting(monkeypatch):
 
 def test_the_enable_door_provisions_journals_and_reports_the_readiness_after(monkeypatch):
     import asyncio
-    from aughor.orgsettings import allows as A
-    from aughor.routers import connections as R
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import connections as R
     monkeypatch.setattr(A, "allows", lambda s: s == "read_query_history")
     calls = {"enabled": 0}
     class PG:
@@ -183,7 +183,7 @@ def test_the_enable_door_provisions_journals_and_reports_the_readiness_after(mon
     class L:
         def emit(self, kind, payload, **kw):
             emitted.append((kind, payload, kw))
-    import aughor.kernel.ledger as LM
+    import pramanyx.kernel.ledger as LM
     monkeypatch.setattr(LM.Ledger, "default", staticmethod(lambda: L()))
     out = asyncio.run(R.enable_connection_prerequisite("c1"))
     assert out["ok"] and out["enabled"] and out["query_history"]["ok"] and calls["enabled"] == 1
@@ -192,8 +192,8 @@ def test_the_enable_door_provisions_journals_and_reports_the_readiness_after(mon
 
 def test_the_enable_door_on_an_engine_the_platform_cannot_provision_says_the_admins_step(monkeypatch):
     import asyncio
-    from aughor.orgsettings import allows as A
-    from aughor.routers import connections as R
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import connections as R
     monkeypatch.setattr(A, "allows", lambda s: True)
     bq = _Conn("bigquery", history=QueryHistory(engine="bigquery", supported=True, source="x", error="403 Access Denied: jobs.list"))
     monkeypatch.setattr(R, "open_connection_for", lambda cid: bq)
@@ -203,13 +203,13 @@ def test_the_enable_door_on_an_engine_the_platform_cannot_provision_says_the_adm
 
 def test_the_test_button_carries_the_readiness_only_while_the_organisation_reads_history(monkeypatch):
     import asyncio
-    from aughor.orgsettings import allows as A
-    from aughor.routers import connections as R
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import connections as R
     class PG(_Conn):
         def test(self):
             return True, "PostgreSQL 16.14"
     pg = PG("postgres", history=QueryHistory(engine="postgres", supported=True, source="public.pg_stat_statements",
-                                             rows=[__import__("aughor.db.query_history", fromlist=["HistoryRow"]).HistoryRow("t", "SELECT 1", calls=70)]))
+                                             rows=[__import__("pramanyx.db.query_history", fromlist=["HistoryRow"]).HistoryRow("t", "SELECT 1", calls=70)]))
     monkeypatch.setattr(R, "open_connection_for", lambda cid: pg)
     monkeypatch.setattr(A, "allows", lambda s: False)
     out = asyncio.run(R.test_connection("c1"))
@@ -221,16 +221,16 @@ def test_the_test_button_carries_the_readiness_only_while_the_organisation_reads
 
 
 def test_the_candidate_door_says_the_fix_when_the_history_is_not_readable(monkeypatch):
-    from aughor.orgsettings import allows as A
-    from aughor.routers import ontology as R
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import ontology as R
+    from pramanyx.ontology.models import OntologyGraph
     monkeypatch.setattr(A, "allows", lambda s: True)
     monkeypatch.setattr(R, "_served_scope", lambda cid, s: "main")
     monkeypatch.setattr(R, "_get_ontology_graph",
                         lambda cid, s=None: OntologyGraph(connection_id="c1", schema_name="main", schema_fingerprint="fp"))
     bq = _Conn("bigquery", history=QueryHistory(engine="bigquery", supported=True, source="x",
                                                 error="403 Access Denied: ('bigquery.jobs.list' permission(s) at the project level)"))
-    import aughor.db.connection as C
+    import pramanyx.db.connection as C
     monkeypatch.setattr(C, "open_connection_for_with_schema", lambda cid, s=None: bq)
     out = R.mine_ontology_candidates(None, connection_id="c1")
     assert out["mined"] == 0 and out["readiness"]["fix"].startswith("the connection's service account granted `bigquery.jobs.list`")

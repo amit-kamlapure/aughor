@@ -17,7 +17,7 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.evals import (
+from pramanyx.evals import (
     EvalCase,
     EvalObservation,
     deterministic_evaluators,
@@ -26,7 +26,7 @@ from aughor.evals import (
     run_all,
     run_evaluator,
 )
-from aughor.trust import BLOCK, Scope
+from pramanyx.trust import BLOCK, Scope
 
 _TABLE_COLS = {
     "orders": ["order_id", "customer_id", "amount"],
@@ -46,7 +46,7 @@ def db(tmp_path_factory):
     con.execute("INSERT INTO items VALUES (1,1,2),(2,1,3),(3,2,1),(4,3,5)")
     con.close()
 
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(str(path), connection_id="evaltest")
     yield conn
     conn.close()
@@ -86,7 +86,7 @@ def test_no_evaluator_skips_on_a_signature_error(db):
 
 
 def test_every_registered_evaluator_satisfies_the_protocol():
-    from aughor.evals.evaluator import REQUIREMENTS, Evaluator
+    from pramanyx.evals.evaluator import REQUIREMENTS, Evaluator
 
     for name in registered_evaluators():
         ev = get_evaluator(name)
@@ -148,7 +148,7 @@ def test_denylist_is_dialect_sensitive(db):
     duckdb sqlglot resolves it to a known builtin and it slips through. Changing
     that is a detection-logic decision, which this PR deliberately does not make
     — but it should not be discovered by surprise later either."""
-    from aughor.sql.readonly import disallowed_functions
+    from pramanyx.sql.readonly import disallowed_functions
 
     assert disallowed_functions("SELECT version()") == {"VERSION"}
     assert disallowed_functions("SELECT version()", "duckdb") == set()
@@ -204,8 +204,8 @@ def test_findings_with_set_fields_stay_json_safe(db):
     """composite_key findings carry sets, which json.dumps rejects outright."""
     import json
 
-    from aughor.evals.adapters import _detail_of
-    from aughor.sql.composite_key import KeyIssue
+    from pramanyx.evals.adapters import _detail_of
+    from pramanyx.sql.composite_key import KeyIssue
 
     detail = _detail_of(KeyIssue(left_table="a", right_table="b",
                                    used={"x"}, missing={"y", "z"}))
@@ -216,8 +216,8 @@ def test_findings_with_set_fields_stay_json_safe(db):
 def test_a_raising_evaluator_is_skipped_not_failed(db):
     """The guards' own contract is fail-open; a suite that turned a guard's
     internal error into a red test would punish the case, not the bug."""
-    from aughor.evals.adapters import HintEvaluator, sql_only
-    from aughor.evals.registry import register_evaluator
+    from pramanyx.evals.adapters import HintEvaluator, sql_only
+    from pramanyx.evals.registry import register_evaluator
 
     def _boom(sql):
         raise RuntimeError("guard exploded")
@@ -229,7 +229,7 @@ def test_a_raising_evaluator_is_skipped_not_failed(db):
         assert score.passed is True
         assert "RuntimeError" in score.rationale
     finally:
-        from aughor.evals.registry import _EVALUATORS
+        from pramanyx.evals.registry import _EVALUATORS
         _EVALUATORS.pop("guard.__boom", None)
 
 
@@ -242,12 +242,12 @@ def test_covers_everything_query_validate_finds(db):
     ``Verifier.scan`` stops at the first hit per query, while the library runs
     every detector, so the library legitimately reports more.
     """
-    from aughor.agent.verifier import Verifier
-    from aughor.sql.grain_guard import detect_fanout
-    from aughor.sql.join_guard import check_filter_value_domains, check_join_value_domains
-    from aughor.sql.trust_checks import run_trust_checks
+    from pramanyx.agent.verifier import Verifier
+    from pramanyx.sql.grain_guard import detect_fanout
+    from pramanyx.sql.join_guard import check_filter_value_domains, check_join_value_domains
+    from pramanyx.sql.trust_checks import run_trust_checks
 
-    from aughor.evals.probe import probe_fn_for
+    from pramanyx.evals.probe import probe_fn_for
 
     corpus = [
         "SELECT customer_id, SUM(amount) FROM orders GROUP BY customer_id",
@@ -285,8 +285,8 @@ def test_covers_everything_query_validate_finds(db):
 
 
 def test_registry_clear_and_restore():
-    from aughor.evals import register_builtins
-    from aughor.evals.registry import clear
+    from pramanyx.evals import register_builtins
+    from pramanyx.evals.registry import clear
 
     before = registered_evaluators()
     clear()

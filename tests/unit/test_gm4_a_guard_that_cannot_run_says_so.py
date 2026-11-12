@@ -17,10 +17,10 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db.connection import DatabaseConnection, DuckDBConnection
-from aughor.sql.guard_run import GuardRun
-from aughor.sql.join_guard import filter_domain_check, join_domain_check
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db.connection import DatabaseConnection, DuckDBConnection
+from pramanyx.sql.guard_run import GuardRun
+from pramanyx.sql.join_guard import filter_domain_check, join_domain_check
 
 #: The spelling the model and theLook's cards write — a hyphenated project in backticks. The guards' neutral reading
 #: could not parse it; they now read a statement in its own engine's dialect.
@@ -140,7 +140,7 @@ def test_a_value_in_no_column_whose_sibling_search_fails_is_said():
 # ── the grain guard ─────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_grain_guard_says_what_it_could_not_probe(shop):
-    from aughor.sql.grain_guard import grain_check
+    from pramanyx.sql.grain_guard import grain_check
 
     refused = lambda s: (False, None, "400 Unrecognized name: order_id")  # noqa: E731
     run = grain_check("SELECT SUM(o.num) FROM orders o JOIN items i ON o.order_id = i.order_id", refused, "duckdb")
@@ -185,7 +185,7 @@ _TEMPLATE = "{dialect}{sql}{error}{schema}{kb_patterns_section}{metrics_section}
 @pytest.mark.parametrize("fix_probe, accepted", [("404", False), ([["5", "5"]], True)],
                          ids=["the fix's join cannot be re-checked", "control: the fix's join re-checks clean"])
 def test_a_fix_the_join_guard_cannot_recheck_is_not_accepted(fix_probe, accepted):
-    from aughor.sql.executor import execute_guarded
+    from pramanyx.sql.executor import execute_guarded
 
     wh = _Warehouse({'"users"': [["5", "0"]], '"customers"': fix_probe})
     fix = "SELECT c.name, COUNT(*) FROM orders o JOIN customers c ON o.user_id = c.id GROUP BY 1"
@@ -199,7 +199,7 @@ def test_a_fix_the_join_guard_cannot_recheck_is_not_accepted(fix_probe, accepted
 # ── the battery's receipt and its caveats ───────────────────────────────────────────────────────────────────────
 
 def test_the_battery_says_unchecked_and_the_caveat_travels():
-    from aughor.sql.executor import execute_guarded
+    from pramanyx.sql.executor import execute_guarded
 
     r = execute_guarded(_Warehouse(), UNREADABLE, query_id="answer")
     assert not r.error
@@ -210,7 +210,7 @@ def test_the_battery_says_unchecked_and_the_caveat_travels():
 
 
 def test_the_validate_route_never_passes_a_statement_a_guard_could_not_read(shop):
-    from aughor.sql.validation import validate_sql
+    from pramanyx.sql.validation import validate_sql
 
     v = validate_sql("gm4", NATIVE, db=_Warehouse())
     assert v["passed"] is False and v["issue_count"] == 0
@@ -220,7 +220,7 @@ def test_the_validate_route_never_passes_a_statement_a_guard_could_not_read(shop
 
 
 def test_the_trust_verdict_carries_what_it_could_not_check():
-    from aughor.trust import Scope, verify
+    from pramanyx.trust import Scope, verify
 
     checks = [c for c in verify(BARE, Scope(conn=_Warehouse(), dialect="bigquery")).checks if c.name == "join_domain"]
     assert [(c.ok, c.severity, c.detail) for c in checks] == [(False, "info", {"unchecked": True})]
@@ -228,7 +228,7 @@ def test_the_trust_verdict_carries_what_it_could_not_check():
 
 
 def test_the_receipt_says_unchecked_in_plain_words():
-    from aughor.db.doors import describe
+    from pramanyx.db.doors import describe
 
     assert describe(["unchecked:join-domain"]) == [
         "NOT checked by the join value-domain guard: it could not run on this statement"]
@@ -252,7 +252,7 @@ class _Counts:
 
 
 def test_a_fingerprint_that_cannot_cover_every_table_is_no_version():
-    from aughor.db.snapshot import data_version
+    from pramanyx.db.snapshot import data_version
 
     assert data_version(_Counts({"orders": 3}), ["orders"]).startswith("fp:")
     assert data_version(_Counts({"orders": 3}), ["orders", "gone"]) is None, \
@@ -260,8 +260,8 @@ def test_a_fingerprint_that_cannot_cover_every_table_is_no_version():
 
 
 def test_revalidation_says_a_pinned_version_could_not_be_read():
-    from aughor.explorer.grounding import numeric_cells_block
-    from aughor.explorer.revalidate import revalidate_finding
+    from pramanyx.explorer.grounding import numeric_cells_block
+    from pramanyx.explorer.revalidate import revalidate_finding
 
     class _Moved(_Counts):
         def execute(self, label, sql, *, sql_dialect=None, internal=False):
@@ -276,7 +276,7 @@ def test_revalidation_says_a_pinned_version_could_not_be_read():
 
 
 def test_a_column_the_warehouse_refused_is_not_a_confirmed_absence():
-    from aughor.semantic.answer_resolution import _db_find_value
+    from pramanyx.semantic.answer_resolution import _db_find_value
 
     schema = "TABLE: orders\n  status_label STRING\n"
     assert _db_find_value(_Warehouse(), schema, "Complete") is None          # every probe refused → cannot tell
@@ -288,7 +288,7 @@ def test_a_column_the_warehouse_refused_is_not_a_confirmed_absence():
 
 
 def test_a_reading_that_could_not_run_leaves_ambiguity_undecided():
-    from aughor.agent.ambiguity_probe import CandidateReading, assess_structural_ambiguity
+    from pramanyx.agent.ambiguity_probe import CandidateReading, assess_structural_ambiguity
 
     readings = [CandidateReading("by units", "SELECT 1"), CandidateReading("by revenue", "SELECT 2")]
     v = assess_structural_ambiguity("top products", readings,
@@ -326,7 +326,7 @@ def test_a_native_fragment_is_never_declared_duckdb():
                           "`bigquery-public-data.thelook_ecommerce.orders`) SELECT o.status FROM "
                           "`bigquery-public-data.thelook_ecommerce.orders` o "
                           "JOIN m ON DATE_TRUNC(DATE(o.created_at), MONTH) = m.mo")
-    derived = [(sql, declared) for sql, declared in wh.sent if "_aughor_side_a" in sql]
+    derived = [(sql, declared) for sql, declared in wh.sent if "_pramanyx_side_a" in sql]
     assert len(derived) == 2 and all(declared is None for _, declared in derived)
     assert all("DATE_TRUNC(DATE(created_at), MONTH)" in sql for sql, _ in derived), "the CTE was not carried as written"
 
@@ -348,7 +348,7 @@ def test_a_join_to_a_cte_or_on_an_expression_is_probed(shop):
 def test_a_lagged_self_join_is_not_a_mismatch(shop):
     """Period-over-period joins a CTE to itself on a shifted key; it overlaps only partly by design. theLook's own
     year-over-year statement read as a 14% 'different entities' mismatch before self-joins of a CTE were skipped."""
-    from aughor.sql.join_guard import _join_sides, _parse
+    from pramanyx.sql.join_guard import _join_sides, _parse
 
     lagged = ("WITH m AS (SELECT order_id AS k, SUM(num) AS n FROM orders GROUP BY 1) "
               "SELECT cur.k, cur.n - prev.n FROM m cur LEFT JOIN m prev ON prev.k = cur.k - 1")
@@ -393,7 +393,7 @@ def test_a_sibling_search_cut_short_is_not_a_confirmed_absence():
 def test_a_refused_existence_probe_binds_nothing():
     """A high-cardinality column's existence probe the warehouse refused read as 'absent', and the literal —
     which may be right — was bound to its nearest neighbour."""
-    from aughor.sql.join_guard import _highcard_bind_warnings
+    from pramanyx.sql.join_guard import _highcard_bind_warnings
 
     class _Refuses:
         _connection_id = ""
@@ -409,7 +409,7 @@ def test_a_refused_existence_probe_binds_nothing():
 
 
 def test_a_reconciliation_is_said_in_the_engines_spelling():
-    from aughor.sql.join_guard import _in_engine_spelling
+    from pramanyx.sql.join_guard import _in_engine_spelling
 
     duck = "regexp_replace(CAST(\"a\" AS VARCHAR), '[^0-9]', '', 'g')"
     said = _in_engine_spelling(duck, "bigquery")
@@ -418,7 +418,7 @@ def test_a_reconciliation_is_said_in_the_engines_spelling():
 
 
 def test_the_authored_dialect_is_the_engines_only_when_it_runs_sql_as_written():
-    from aughor.db.dialects import authored_dialect
+    from pramanyx.db.dialects import authored_dialect
     from unittest.mock import MagicMock
 
     class _Native:
@@ -453,7 +453,7 @@ class _Warehouse2Rows:
 
 
 def _watch(**over):
-    from aughor.monitors.models import Monitor
+    from pramanyx.monitors.models import Monitor
     base = dict(id="gm4-watch", conn_id="gm4-conn", name="Units watch", alert_on="threshold_cross",
                 custom_sql="SELECT COUNT(*) FROM orders", warning_threshold=10.0, threshold_direction="below")
     base.update(over)
@@ -461,7 +461,7 @@ def _watch(**over):
 
 
 def test_a_refused_monitor_query_is_a_failed_run_not_a_quiet_one():
-    from aughor.monitors.runner import check_monitor, run_monitor
+    from pramanyx.monitors.runner import check_monitor, run_monitor
 
     run = check_monitor(_watch(), _Warehouse2Rows(), suppress=False)
     assert run.alert is None and run.failed.startswith("404 Not found")
@@ -469,16 +469,16 @@ def test_a_refused_monitor_query_is_a_failed_run_not_a_quiet_one():
 
 
 def test_the_effect_records_the_failure_and_alerts_once_then_once_on_recovery(monkeypatch):
-    from aughor.automations.adopt import monitor_as_automation
-    from aughor.automations.engine import _dispatch_monitor
-    from aughor.automations.models import Effect
-    from aughor.monitors.runner import QUERY_FAILING, QUERY_RUNS_AGAIN
-    from aughor.monitors.store import get_alerts, upsert_monitor
+    from pramanyx.automations.adopt import monitor_as_automation
+    from pramanyx.automations.engine import _dispatch_monitor
+    from pramanyx.automations.models import Effect
+    from pramanyx.monitors.runner import QUERY_FAILING, QUERY_RUNS_AGAIN
+    from pramanyx.monitors.store import get_alerts, upsert_monitor
 
     watch = _watch()
     upsert_monitor(watch)
     wh = _Warehouse2Rows()
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: wh)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: wh)
     wh.close = lambda: None
 
     def tick():
@@ -498,14 +498,14 @@ def test_the_effect_records_the_failure_and_alerts_once_then_once_on_recovery(mo
 
 
 def test_a_condition_on_a_monitor_that_cannot_run_cannot_be_read(monkeypatch):
-    from aughor.automations.engine import ProbeUnavailable, default_probe
-    from aughor.automations.models import Condition
-    from aughor.monitors.store import upsert_monitor
+    from pramanyx.automations.engine import ProbeUnavailable, default_probe
+    from pramanyx.automations.models import Condition
+    from pramanyx.monitors.store import upsert_monitor
 
     upsert_monitor(_watch(id="gm4-cond"))
     wh = _Warehouse2Rows()
     wh.close = lambda: None
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: wh)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: wh)
     with pytest.raises(ProbeUnavailable, match="could not run"):
         default_probe(Condition(kind="metric", config={"monitor_id": "gm4-cond"}), None)
 
@@ -513,9 +513,9 @@ def test_a_condition_on_a_monitor_that_cannot_run_cannot_be_read(monkeypatch):
 def test_an_alert_about_running_is_never_a_reading():
     """After a failure and a recovery, a change monitor compares with the last VALUE it read, not with the
     alerts about whether it could run."""
-    from aughor.monitors.models import MonitorAlert
-    from aughor.monitors.runner import QUERY_FAILING, QUERY_RUNS_AGAIN, _last_alert_value
-    from aughor.monitors.store import append_alert
+    from pramanyx.monitors.models import MonitorAlert
+    from pramanyx.monitors.runner import QUERY_FAILING, QUERY_RUNS_AGAIN, _last_alert_value
+    from pramanyx.monitors.store import append_alert
 
     for kind, value in (("any_change", 7.0), (QUERY_FAILING, None), (QUERY_RUNS_AGAIN, None)):
         append_alert(MonitorAlert(monitor_id="gm4-reading", triggered_at="2026-09-29T10:00:00Z",
@@ -524,7 +524,7 @@ def test_an_alert_about_running_is_never_a_reading():
 
 
 def test_a_filter_repair_holds_only_without_a_finding_it_should_have_removed():
-    from aughor.sql.join_guard import FilterDomainWarning, filter_repair_holds
+    from pramanyx.sql.join_guard import FilterDomainWarning, filter_repair_holds
 
     def w(value, *, novel=False, suggestion=None):
         return FilterDomainWarning("customers", "region", value, ["EMEA"], suggestion, novel=novel)

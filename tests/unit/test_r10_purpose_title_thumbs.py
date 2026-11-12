@@ -10,7 +10,7 @@ Hermetic: history/drills stores ride the conftest temp overrides.
 """
 from __future__ import annotations
 
-from aughor.db.history import create_investigation, get_investigation, save_chat_turn
+from pramanyx.db.history import create_investigation, get_investigation, save_chat_turn
 
 
 # ── purpose persistence ──────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ def test_canvas_explicit_name_always_wins(client):
 # ── THUMBS→priors ────────────────────────────────────────────────────────────
 
 def test_helpful_thumbs_bumps_table_priors(client):
-    from aughor.overview.drills import load_priors
+    from pramanyx.overview.drills import load_priors
     turn_id = save_chat_turn(
         question="revenue by brand?", connection_id="connT", headline="…",
         sql="SELECT 1", tables_used=["main.sales", "orders"])
@@ -74,7 +74,7 @@ def test_helpful_thumbs_bumps_table_priors(client):
 
 
 def test_unhelpful_thumbs_never_decrements(client):
-    from aughor.overview.drills import load_priors
+    from pramanyx.overview.drills import load_priors
     turn_id = save_chat_turn(
         question="q", connection_id="connU", headline="…",
         sql="SELECT 1", tables_used=["sales"])

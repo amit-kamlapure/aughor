@@ -13,10 +13,10 @@ from datetime import date, timedelta
 import duckdb
 import pytest
 
-import aughor.knowledge.briefing as briefing_mod
-import aughor.llm.provider as prov
-from aughor.briefing import ranges, recipes
-from aughor.knowledge.briefing import BriefingNarrative
+import pramanyx.knowledge.briefing as briefing_mod
+import pramanyx.llm.provider as prov
+from pramanyx.briefing import ranges, recipes
+from pramanyx.knowledge.briefing import BriefingNarrative
 
 SEP26 = date(2026, 9, 26)
 
@@ -66,15 +66,15 @@ def _run(con):
 
 @pytest.fixture
 def revenue(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    from aughor.semantic.metrics import MetricDefinition, get_metric, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, get_metric, save_metric
     save_metric(MetricDefinition(name="revenue", connection="c1", label="Revenue", sql="SUM(amount)",
                                  tables=["orders"], dimensions=["region", "customer_id", "sku", "created_at"],
                                  unit="USD", status="approved", approved_by="test",
                                  time_kind="flow", time_column="created_at",
                                  time_source="set automatically: test"))
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
-    monkeypatch.setattr("aughor.tools.profile_cache.merged_profile_entry", lambda cid: PROFILE)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.merged_profile_entry", lambda cid: PROFILE)
     return get_metric("revenue", connection_id="c1")
 
 
@@ -104,7 +104,7 @@ def test_why_links_the_standing_finding_that_names_the_mover_and_ignores_tiny_na
 
 def test_the_day_reads_the_days_still_settling_as_early(con, revenue):
     """…and leaves a cohort out: a return rate a few days old says nothing yet."""
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     returns = MetricDefinition(name="rr", connection="c1", label="Return rate", tables=["orders"],
                                sql="SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / COUNT(*)",
                                status="approved", time_kind="cohort", time_column="created_at",
@@ -138,7 +138,7 @@ class FakeNarrator:
 def test_the_day_is_built_by_its_recipe_and_the_narrator_is_told_so(con, revenue, monkeypatch, tmp_path):
     fake = FakeNarrator()
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fake)
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
     store = KeyedJsonStore(tmp_path / "briefing_cache.json")
     monkeypatch.setattr(briefing_mod, "_store", lambda: store)
 
@@ -158,8 +158,8 @@ def test_the_day_is_built_by_its_recipe_and_the_narrator_is_told_so(con, revenue
 
 
 def test_a_figure_from_a_table_that_has_not_settled_is_provisional_whatever_its_age():
-    from aughor.semantic import metric_time as mt
-    from aughor.semantic.metric_time import Window
+    from pramanyx.semantic import metric_time as mt
+    from pramanyx.semantic.metric_time import Window
     w = Window("current", date(2026, 8, 17), date(2026, 8, 27))
     flow = {"time_kind": "flow"}
     assert mt.figure_status(flow, w, as_of=SEP26, lag_days=15) == "final"
@@ -186,7 +186,7 @@ class CitesEverything:
     def complete(self, *, system, user, response_model, temperature=0.1):
         import re
 
-        from aughor.knowledge.briefing import BriefingCitation
+        from pramanyx.knowledge.briefing import BriefingCitation
         refs = re.findall(r"^\[(\d+)\]", user, flags=re.M)
         return BriefingNarrative(narrative=" ".join(f"Claim [{r}]." for r in refs), headline_theme="t",
                                  citations=[BriefingCitation(ref=r, insight_id=r, domain="d", finding="f") for r in refs])
@@ -197,7 +197,7 @@ def test_a_range_cites_its_segment_moves_and_standing_findings_by_the_query_that
     """2026-10-11: a range's segment moves and the standing findings linked to them were offered to the narrator with
     no query — so a sentence citing one opened onto nothing."""
     monkeypatch.setattr(prov, "get_provider", lambda role=None: CitesEverything())
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
     store = KeyedJsonStore(tmp_path / "briefing_cache.json")
     monkeypatch.setattr(briefing_mod, "_store", lambda: store)
 

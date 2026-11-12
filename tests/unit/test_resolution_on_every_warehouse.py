@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.semantic import answer_resolution as ar
+from pramanyx.semantic import answer_resolution as ar
 
 INLINE = ("TABLE: cars (120 rows) [car_id INTEGER, make STRING, model STRING]\n"
           "TABLE: sales (4000 rows) [sale_id INTEGER, car_id INTEGER, revenue FLOAT64]\n"
@@ -38,9 +38,9 @@ def cached(monkeypatch):
     samples = {("cars", "make"): ["Ferrari", "Fiat", "Ford"],
                ("dealers", "make"): ["Ferrari"]}                     # a table not in scope
     top = {("customers", "country"): ["Germany", "France", "Italy"]}
-    monkeypatch.setattr("aughor.tools.profile_cache.load_value_samples", lambda cid: samples)
-    monkeypatch.setattr("aughor.tools.profile_cache.load_top_values", lambda cid: top)
-    monkeypatch.setattr("aughor.ontology.column_config.load_index_disabled", lambda cid: set())
+    monkeypatch.setattr("pramanyx.tools.profile_cache.load_value_samples", lambda cid: samples)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.load_top_values", lambda cid: top)
+    monkeypatch.setattr("pramanyx.ontology.column_config.load_index_disabled", lambda cid: set())
 
 
 def test_the_inline_form_parses_to_tables_with_columns():
@@ -72,10 +72,10 @@ def test_an_uncached_value_on_the_inline_form_is_never_called_absent(cached):
 
 
 def test_a_binding_names_the_table_as_the_schema_spells_it(monkeypatch):
-    monkeypatch.setattr("aughor.tools.profile_cache.load_value_samples",
+    monkeypatch.setattr("pramanyx.tools.profile_cache.load_value_samples",
                         lambda cid: {("cars", "make"): ["Ferrari"]})
-    monkeypatch.setattr("aughor.tools.profile_cache.load_top_values", lambda cid: {})
-    monkeypatch.setattr("aughor.ontology.column_config.load_index_disabled", lambda cid: set())
+    monkeypatch.setattr("pramanyx.tools.profile_cache.load_top_values", lambda cid: {})
+    monkeypatch.setattr("pramanyx.ontology.column_config.load_index_disabled", lambda cid: set())
     schema = "TABLE: showroom.cars (120 rows) [car_id INTEGER, make STRING]"
 
     r = ar.resolve("revenue from Ferrari", schema=schema, db=_NoProbes(), connection_id="c1")
@@ -84,7 +84,7 @@ def test_a_binding_names_the_table_as_the_schema_spells_it(monkeypatch):
 
 
 def test_the_top_values_reader_is_read_only_and_keyed_like_the_samples(monkeypatch):
-    from aughor.tools import profile_cache
+    from pramanyx.tools import profile_cache
     monkeypatch.setattr(profile_cache, "_load", lambda: {
         "c1:fp1": {"columns": {"customers.country": {"table": "customers", "column": "country",
                                                      "top_values": ["Germany", "France"]},

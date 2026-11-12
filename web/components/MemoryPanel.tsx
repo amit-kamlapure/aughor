@@ -1,6 +1,6 @@
 "use client";
 /* ── Memory — what the closed loop has learned ─────────────────────────────────────────────────────────────────────
-   Laid out to CLARITY (`aughor-v2/CLARITY.md`) as a page that reads like a document, not a board: one line of what it
+   Laid out to CLARITY (`pramanyx-v2/CLARITY.md`) as a page that reads like a document, not a board: one line of what it
    holds, the trusted queries waiting on a person under "Needs you", then one sheet of headed sections in short lines —
    the readings it remembers, the queries it trusts, and side by side what reviewers said and the training corpus their
    verdicts become.
@@ -55,7 +55,7 @@ const GATE_WHAT: Record<string, string> = {
   guard_days: "Days of guard data on real traffic",
 };
 
-/** The dataset each kind is exported as — `aughor/learning/exporters.py`'s default names. The inspector asked for the
+/** The dataset each kind is exported as — `pramanyx/learning/exporters.py`'s default names. The inspector asked for the
  *  kind itself ("sft") and the registry, which keys by name ("nl2sql-sft"), never found one: every corpus read as
  *  "no exported version yet" while the gates counted its rows. Keep in step with the exporters' defaults. */
 const DATASET_OF: Record<string, string> = {

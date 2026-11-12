@@ -3,7 +3,7 @@
 /**
  * OverviewReportView — the "interesting facts" TOUR.
  *
- * Renders the backend's deterministic `overview_report` (aughor/overview/build.py) as a
+ * Renders the backend's deterministic `overview_report` (pramanyx/overview/build.py) as a
  * scannable GRID of diverse fact cards — the default first-look at a schema
  * ("Show me interesting facts about this dataset"). NOT a vertical timeline: the facts are
  * already notability-ranked and diversity-selected across seven lenses, so the grid lets the

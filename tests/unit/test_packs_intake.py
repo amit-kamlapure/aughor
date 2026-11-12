@@ -1,16 +1,16 @@
 """Intake injection hook — a pack steering a run (flag-gated, pinned-binding-gated, 2026-06-27).
 
 Steering requires the flag ON, an active pack that owns the question, AND a human-confirmed
-PINNED binding on the connection (auto-proposals are deploy-UI only). See aughor/packs/intake.py.
+PINNED binding on the connection (auto-proposals are deploy-UI only). See pramanyx/packs/intake.py.
 """
 from pathlib import Path
 
 import pytest
 
-import aughor.packs.intake as intake
-import aughor.packs.bindings as bnd
-from aughor.packs import load_pack, save_binding
-from aughor.org.context import using_org
+import pramanyx.packs.intake as intake
+import pramanyx.packs.bindings as bnd
+from pramanyx.packs import load_pack, save_binding
+from pramanyx.org.context import using_org
 
 REPO = Path(__file__).resolve().parents[2]
 Q = "How is retention trending by cohort?"
@@ -69,7 +69,7 @@ def test_no_steer_without_pinned_binding(env):
 
 # test_flag_off_never_steers was DELETED with its flag (flag endgame Wave 2,
 # 2026-08-06): steering's control is the three data gates, proven by the tests
-# above and by aughor/evals/specialist_packs_receipt.py.
+# above and by pramanyx/evals/specialist_packs_receipt.py.
 
 
 def test_off_topic_question_does_not_steer(env):

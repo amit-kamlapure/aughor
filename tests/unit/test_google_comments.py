@@ -1,5 +1,5 @@
 """Comments on a Google file, read onto a decision (the decision-framework study §3.2; the user's call of 2026-10-27;
-`aughor/record/google_comments.py`, `POST /record/decisions/{id}/google-file`).
+`pramanyx/record/google_comments.py`, `POST /record/decisions/{id}/google-file`).
 
 What these hold, with Google's answer faked at the call seam: a Sheets, Slides, Docs or Drive link names a file and
 nothing else does; while the install has no Google OAuth client, or the person no grant that may read comments, the
@@ -14,11 +14,11 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from aughor.integrations.call import CallResult
-from aughor.record import byproducts as B
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import google_comments as G
+from pramanyx.integrations.call import CallResult
+from pramanyx.record import byproducts as B
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import google_comments as G
 
 FILE = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abc"
 LINK = f"https://docs.google.com/spreadsheets/d/{FILE}/edit#gid=0"
@@ -44,7 +44,7 @@ def calls(monkeypatch):
         if state["status"] != "executed":
             return CallResult(state["status"], "insufficient permissions for this file")
         return CallResult("executed", "", {"items": state["items"], "count": len(state["items"]), "next_page_token": ""})
-    import aughor.integrations.call as call_mod
+    import pramanyx.integrations.call as call_mod
     monkeypatch.setattr(call_mod, "call_operation", fake)
     return seen, state
 
@@ -63,8 +63,8 @@ def test_a_link_names_a_google_file_and_nothing_else_does():
 
 
 def test_the_comments_card_asks_for_the_scope_the_read_needs():
-    from aughor.integrations.operations import get_operation
-    from aughor.integrations.providers import PROVIDERS
+    from pramanyx.integrations.operations import get_operation
+    from pramanyx.integrations.providers import PROVIDERS
     card = PROVIDERS["google"].product("comments")
     assert card is not None and get_operation(G.OPERATION).scopes == (card.scopes,)
 
@@ -103,8 +103,8 @@ NO_GRANT = "Connect the Google Drive comments card first, in Operations → Inte
 
 
 def test_what_is_missing_is_said_the_client_first_then_the_grant(monkeypatch):
-    import aughor.integrations.store as store
-    from aughor.integrations.models import ProviderApp
+    import pramanyx.integrations.store as store
+    from pramanyx.integrations.models import ProviderApp
     apps: dict = {}
     monkeypatch.setattr(store, "get_app", lambda provider_id: apps.get(provider_id))
     monkeypatch.setattr(G, "grant_for", lambda user_id: None)
@@ -138,7 +138,7 @@ def test_no_client_no_grant_no_file_and_googles_refusal_are_each_said(calls, mon
 
 
 def test_the_decision_says_what_is_missing_and_the_route_refuses_with_it_then_reads(calls, monkeypatch):
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     d = _decision()
     monkeypatch.setattr(R, "_who", lambda principal: "user:amit")
     monkeypatch.setattr(R, "_visible", lambda conn_id: True)

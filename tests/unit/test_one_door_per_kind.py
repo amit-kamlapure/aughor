@@ -12,8 +12,8 @@ from __future__ import annotations
 import ast
 import pathlib
 
-from aughor.db.query_history import HistoryRow, QueryHistory, not_platform_statement
-from aughor.db.signing import SIGNATURE, is_signed, sign
+from pramanyx.db.query_history import HistoryRow, QueryHistory, not_platform_statement
+from pramanyx.db.signing import SIGNATURE, is_signed, sign
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -24,26 +24,26 @@ def test_sign_is_a_leading_comment_applied_once():
     assert sign("SELECT 1") == f"{SIGNATURE} SELECT 1"
     assert sign(sign("SELECT 1")) == f"{SIGNATURE} SELECT 1"
     assert sign("   ") == "   " and sign("") == ""
-    assert is_signed(f"{SIGNATURE} SELECT 1") and is_signed("  /* aughor */ select 1") and not is_signed("SELECT 1")
-    assert not is_signed("SELECT '/* aughor */' FROM t WHERE x > " + "1" * 300)   # only at the head
+    assert is_signed(f"{SIGNATURE} SELECT 1") and is_signed("  /* pramanyx */ select 1") and not is_signed("SELECT 1")
+    assert not is_signed("SELECT '/* pramanyx */' FROM t WHERE x > " + "1" * 300)   # only at the head
 
 
 def test_every_warehouse_driver_call_is_signed_and_the_result_keeps_the_statement_as_written():
     """A capability added to one connector misses the others (ROADMAP §7): each engine with a history signs at its
     driver call. DuckDB and the file connectors keep no history and are left alone."""
     sites = {
-        "aughor/db/connection.py": 2,                        # Postgres: the bound and the plain branch
-        "aughor/connectors/warehouse/dbapi.py": 2,           # ClickHouse, the lakehouse connector and the DB-API family
-        "aughor/connectors/warehouse/snowflake.py": 2,
-        "aughor/connectors/warehouse/bigquery.py": 2,        # execute and the typed read
-        "aughor/connectors/warehouse/trino.py": 1,
-        "aughor/connectors/warehouse/mysql.py": 2,
-        "aughor/connectors/warehouse/exasol.py": 1,
+        "pramanyx/db/connection.py": 2,                        # Postgres: the bound and the plain branch
+        "pramanyx/connectors/warehouse/dbapi.py": 2,           # ClickHouse, the lakehouse connector and the DB-API family
+        "pramanyx/connectors/warehouse/snowflake.py": 2,
+        "pramanyx/connectors/warehouse/bigquery.py": 2,        # execute and the typed read
+        "pramanyx/connectors/warehouse/trino.py": 1,
+        "pramanyx/connectors/warehouse/mysql.py": 2,
+        "pramanyx/connectors/warehouse/exasol.py": 1,
     }
     for rel, n in sites.items():
         src = (ROOT / rel).read_text()
         assert src.count("sign(") >= n, (rel, src.count("sign("))
-        assert "from aughor.db.signing import sign" in src, rel
+        assert "from pramanyx.db.signing import sign" in src, rel
         # the signature goes to the driver alone: no QueryResult is built from a signed statement
         assert "sql=sign(" not in src and "QueryResult(hypothesis_id=hypothesis_id, sql=sign" not in src, rel
 
@@ -54,9 +54,9 @@ def test_the_postgres_reader_reads_signed_statements_so_it_can_count_them():
     """Live, 2026-11-05: the first signed statement never reached the reader — its `ILIKE 'select%'` filter let the engine
     hide every statement that opens with the comment, so `ours` read 0 while the engine held one."""
     import inspect
-    from aughor.db import connection as C
+    from pramanyx.db import connection as C
     src = inspect.getsource(C.PostgresConnection.__dict__["query_history"])
-    assert "OR s.query LIKE '/* aughor */%'" in src
+    assert "OR s.query LIKE '/* pramanyx */%'" in src
 
 def test_the_history_reader_leaves_signed_statements_out_and_counts_them():
     h = QueryHistory(engine="postgres", supported=True, source="pg_stat_statements", rows=[
@@ -73,7 +73,7 @@ def test_the_history_reader_leaves_signed_statements_out_and_counts_them():
 def test_a_history_row_is_parsed_once_and_counted_by_its_weight():
     """Live: 1,403 aggregated rows repeated up to a hundred times each put 140,000 statements through the parser and
     the door did not come back in two minutes. A weight is one parse."""
-    from aughor.sql.query_log_miner import mine_query_log
+    from pramanyx.sql.query_log_miner import mine_query_log
     h = QueryHistory(engine="postgres", supported=True, source="s", rows=[
         HistoryRow("t", "SELECT SUM(gmv_eur) AS gmv FROM orders", "a", calls=300),
         HistoryRow("t", "SELECT SUM(gmv_eur) AS gmv FROM orders WHERE status = $1", "a", calls=7),
@@ -106,7 +106,7 @@ class _Map:
 
 
 def test_formula_key_folds_literals_parameters_whitespace_and_case():
-    from aughor.semantic.coverage_proposals import formula_key
+    from pramanyx.semantic.coverage_proposals import formula_key
     a = formula_key("SUM(gmv_eur) / NULLIF(COUNT(DISTINCT order_id), 0)", "postgres")
     b = formula_key("sum(gmv_eur)  /  nullif(count(distinct order_id), $1)", "postgres")
     assert a == b
@@ -114,14 +114,14 @@ def test_formula_key_folds_literals_parameters_whitespace_and_case():
 
 
 def test_known_formulas_read_through_the_same_miner_as_the_history():
-    from aughor.semantic.coverage_proposals import formula_key, known_formula_keys
+    from pramanyx.semantic.coverage_proposals import formula_key, known_formula_keys
     keys = known_formula_keys([_Metric("aov", "SELECT SUM(o.gmv_eur) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS aov_eur FROM orders o")],
                               "postgres")
     assert formula_key("SUM(orders.gmv_eur) / NULLIF(COUNT(DISTINCT orders.order_id), $2)", "postgres") in keys
 
 
 def test_the_from_clause_is_carried_with_aliases_resolved_and_filters_dropped():
-    from aughor.semantic.coverage_proposals import from_clause_of
+    from pramanyx.semantic.coverage_proposals import from_clause_of
     sql = ("SELECT SUM(oi.quantity * oi.unit_price_eur) AS merch FROM order_items oi JOIN orders o ON o.order_id = oi.order_id "
            "WHERE o.status = 'paid' GROUP BY 1")
     assert from_clause_of(sql, "postgres") == ("FROM order_items JOIN orders ON orders.order_id = order_items.order_id",
@@ -130,8 +130,8 @@ def test_the_from_clause_is_carried_with_aliases_resolved_and_filters_dropped():
 
 
 def test_history_proposals_skip_ours_known_and_platform_aliases_and_propose_the_rest(monkeypatch):
-    from aughor.semantic import coverage_proposals as CP
-    from aughor.semantic import metric_coverage as MC
+    from pramanyx.semantic import coverage_proposals as CP
+    from pramanyx.semantic import metric_coverage as MC
     monkeypatch.setattr(MC, "tables_of", lambda cid, s: [])
     rows = [
         HistoryRow("t", f"{SIGNATURE} SELECT SUM(gmv_eur) AS gmv_eur FROM orders", "lux", calls=300),         # ours
@@ -154,8 +154,8 @@ def test_history_proposals_skip_ours_known_and_platform_aliases_and_propose_the_
 def test_what_the_live_run_taught_is_refused_before_the_gates(monkeypatch):
     """LuxExperience, 2026-11-05: 95 proposals, 92 failed the gates — projections that aggregate nothing, a program's
     aliases as metric names, an alias no table resolves, formulas over CTEs, and holes where values had been."""
-    from aughor.semantic import coverage_proposals as CP
-    from aughor.semantic import metric_coverage as MC
+    from pramanyx.semantic import coverage_proposals as CP
+    from pramanyx.semantic import metric_coverage as MC
     monkeypatch.setattr(MC, "tables_of", lambda cid, s: [])
     rows = [
         HistoryRow("t", 'SELECT CAST("status" AS TEXT) AS v FROM "orders"', "a", calls=9),                        # no aggregate, machine alias
@@ -175,8 +175,8 @@ def test_what_the_live_run_taught_is_refused_before_the_gates(monkeypatch):
 
 
 def test_a_formula_with_a_hole_is_listed_as_needs_formula_and_never_gated(monkeypatch):
-    from aughor.semantic import coverage_proposals as CP
-    from aughor.semantic import metric_catalogue as MCat
+    from pramanyx.semantic import coverage_proposals as CP
+    from pramanyx.semantic import metric_catalogue as MCat
     monkeypatch.setattr(CP, "stored", lambda cid, s=None: [{
         "name": "gmv_ex_cancelled", "label": "Gmv ex cancelled", "source": CP.SOURCE_QUERY_HISTORY, "runs": 9,
         "sql": "SELECT SUM(CASE WHEN status <> $1 THEN gmv_eur END) AS gmv_ex_cancelled FROM orders", "tables": ["orders"],
@@ -188,8 +188,8 @@ def test_a_formula_with_a_hole_is_listed_as_needs_formula_and_never_gated(monkey
 
 
 def test_history_proposals_say_nothing_when_the_engine_keeps_none_or_everything_was_ours(monkeypatch):
-    from aughor.semantic import coverage_proposals as CP
-    from aughor.semantic import metric_coverage as MC
+    from pramanyx.semantic import coverage_proposals as CP
+    from pramanyx.semantic import metric_coverage as MC
     monkeypatch.setattr(MC, "tables_of", lambda cid, s: [])
     class Duck:
         dialect = "duckdb"
@@ -199,7 +199,7 @@ def test_history_proposals_say_nothing_when_the_engine_keeps_none_or_everything_
 
 
 def test_the_coverage_run_asks_the_organisation_before_reading_the_history():
-    from aughor.semantic import coverage_proposals as CP
+    from pramanyx.semantic import coverage_proposals as CP
     src = pathlib.Path(CP.__file__).read_text()
     run_src = src[src.index("def run("):]
     assert 'allows("read_query_history")' in run_src and "history_proposals(" in run_src
@@ -208,8 +208,8 @@ def test_the_coverage_run_asks_the_organisation_before_reading_the_history():
 
 
 def test_the_catalogue_says_where_a_history_proposal_came_from(monkeypatch):
-    from aughor.semantic import coverage_proposals as CP
-    from aughor.semantic import metric_catalogue as MCat
+    from pramanyx.semantic import coverage_proposals as CP
+    from pramanyx.semantic import metric_catalogue as MCat
     monkeypatch.setattr(CP, "stored", lambda cid, s=None: [{
         "name": "merch_value", "label": "Merch value", "source": CP.SOURCE_QUERY_HISTORY, "runs": 3,
         "sql": "SELECT 1", "tables": ["order_items"], "state": CP.STATE_PROPOSED}])
@@ -221,9 +221,9 @@ def test_the_catalogue_says_where_a_history_proposal_came_from(monkeypatch):
 # ── Attention takes no formula ────────────────────────────────────────────────────────────
 
 def test_a_measure_candidate_is_not_staged_in_attention_and_the_answer_says_where_it_goes():
-    from aughor.ontology.candidates import Candidate
-    from aughor.ontology.models import OntologyGraph
-    from aughor.routers.ontology import stage_candidates
+    from pramanyx.ontology.candidates import Candidate
+    from pramanyx.ontology.models import OntologyGraph
+    from pramanyx.routers.ontology import stage_candidates
     c = Candidate(connection_id="c1", kind="measure", subject="orders", proposal="SUM(gmv_eur)", origin="query_log",
                   source_rank="mined", evidence="computed as `gmv_eur` over orders in 3 of 9 runs", bound=True)
     g = OntologyGraph(connection_id="c1", schema_name="main", schema_fingerprint="fp", table_to_entity={"orders": "Order"})

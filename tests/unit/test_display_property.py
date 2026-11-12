@@ -15,10 +15,10 @@ import duckdb
 import pytest
 import yaml
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.display import (
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.display import (
     NAMES_MIN_DISTINCT,
     NAMES_MIN_NON_NULL,
     apply_display_measurements,
@@ -26,8 +26,8 @@ from aughor.ontology.display import (
     measure_override_display_properties,
     verdict,
 )
-from aughor.ontology.models import DisplayProperty, EntityProperty, OntologyEntity, OntologyGraph
-from aughor.semantic.object_instances import get_object, title_column
+from pramanyx.ontology.models import DisplayProperty, EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.semantic.object_instances import get_object, title_column
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 
@@ -182,7 +182,7 @@ def test_re_declaring_the_same_property_keeps_its_measurement(db, graph, tree):
 
 
 def test_the_file_tree_round_trips_the_display_property_as_its_name(graph, tmp_path):
-    from aughor.ontology.filetree import export_tree, import_tree
+    from pramanyx.ontology.filetree import export_tree, import_tree
     export_tree(tmp_path, graph)
     assert import_tree(tmp_path, graph) == []
     path = tmp_path / "entities" / "Customer.yaml"

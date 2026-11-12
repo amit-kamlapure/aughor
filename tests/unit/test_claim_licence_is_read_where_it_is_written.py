@@ -21,7 +21,7 @@ The recorded line is the same fact `govern.departure_basis.analysis_claim_facts`
 the stored report. Reading it here is what makes the gate's verdict and the writer's
 instruction come from one source.
 """
-from aughor.agent.investigate import _claim_licence_section, _recorded_claim_licence
+from pramanyx.agent.investigate import _claim_licence_section, _recorded_claim_licence
 
 NOTES = ("CLAIM LICENCE: descriptive — this is a period-over-period description of "
          "observational data. Some other note.")
@@ -59,7 +59,7 @@ def test_the_synthesis_directive_now_reaches_the_prompt():
 def test_the_shipped_headline_would_now_be_caught():
     """End to end on the sentence that reached Slack: licence recovered from the record,
     fed to the check, check fires."""
-    from aughor.agent.report_checks import check_claim_type
+    from pramanyx.agent.report_checks import check_claim_type
     prose = ("Revenue Analysis: September 10, 2026, Shows 8.9% Increase Driven by "
              "Processing Order Volume. The growth was primarily driven by a 2,031.64 "
              "increase in 'Processing' status revenue.")

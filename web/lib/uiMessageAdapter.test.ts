@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { AughorToUIMessage, adaptFrames, isDeclaredDataPart } from "./uiMessageAdapter";
+import { PramanyxToUIMessage, adaptFrames, isDeclaredDataPart } from "./uiMessageAdapter";
 
 /** Concatenate every text-delta for a given part id, in order. */
 function textFor(chunks: ReturnType<typeof adaptFrames>["chunks"], id?: string): string {
@@ -107,7 +107,7 @@ describe("terminal invariants", () => {
   });
 
   it("emits nothing after a terminal frame", () => {
-    const a = new AughorToUIMessage();
+    const a = new PramanyxToUIMessage();
     a.feed({ event: "done", data: {} });
     const after = a.feed({ event: "narrative_delta", data: { narrative: "late" } });
     expect(after.chunks).toEqual([]);
@@ -137,7 +137,7 @@ describe("terminal invariants", () => {
   });
 
   it("abort leaves a dropped turn well-formed", () => {
-    const a = new AughorToUIMessage();
+    const a = new PramanyxToUIMessage();
     a.feed({ event: "narrative_delta", data: { narrative: "half a sent" } });
     const k = a.abort("connection lost").map((c) => c.type);
     expect(k).toContain("text-end");
@@ -206,8 +206,8 @@ describe("the payload the text channel cannot carry (CA-1)", () => {
     ]);
     const channels = chunks
       .filter((c) => c.type === "text-start")
-      .map((c) => (c as { providerMetadata?: { aughor?: { channel?: string } } })
-        .providerMetadata?.aughor?.channel);
+      .map((c) => (c as { providerMetadata?: { pramanyx?: { channel?: string } } })
+        .providerMetadata?.pramanyx?.channel);
     expect(channels).toEqual(["headline", "narrative", "report"]);
   });
 

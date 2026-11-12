@@ -1,9 +1,9 @@
 """The builtin 'fixture' demo connection: seeded on request, and never advertised
 before it is.
 
-`data/aughor.duckdb` is gitignored, so a fresh install / CI run has no file behind the
+`data/pramanyx.duckdb` is gitignored, so a fresh install / CI run has no file behind the
 builtin connection and opening a missing file read-only raises. That used to be papered
-over by seeding on boot; the demo is now opt-in (`aughor seed` / `ensure_fixture_db`)
+over by seeding on boot; the demo is now opt-in (`pramanyx seed` / `ensure_fixture_db`)
 and the registry only offers the connection once the file exists.
 """
 from __future__ import annotations
@@ -12,9 +12,9 @@ import duckdb
 
 
 def test_ensure_fixture_db_creates_openable_db(monkeypatch, tmp_path):
-    from aughor.demo import setup
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
     assert not fake.exists()
 
@@ -45,9 +45,9 @@ def test_fixture_db_has_a_real_discoverable_signal(monkeypatch, tmp_path):
     `region`, so the first-run Briefing narrated a non-finding. Assert the three
     properties that make the demo honest: a dated outage event, a real failure
     spike confined to APAC/SMB on that day, and no plan≡region collinearity."""
-    from aughor.demo import setup
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
     setup.ensure_fixture_db()
 
@@ -95,8 +95,8 @@ def test_fixture_db_has_a_real_discoverable_signal(monkeypatch, tmp_path):
 
 
 def test_seed_scenario_db_overwrite_contract(tmp_path):
-    """`aughor seed` replaces an existing file; the auto-seed path never may."""
-    from aughor.demo.scenario import seed_scenario_db
+    """`pramanyx seed` replaces an existing file; the auto-seed path never may."""
+    from pramanyx.demo.scenario import seed_scenario_db
 
     target = tmp_path / "demo.duckdb"
     summary = seed_scenario_db(target, overwrite=False)
@@ -126,16 +126,16 @@ def test_boot_does_not_create_a_demo_dataset(monkeypatch, tmp_path):
     """
     import asyncio
 
-    from aughor import api
-    from aughor.demo import setup
+    from pramanyx import api
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
 
     asyncio.run(api._report_demo_data())
 
     assert not fake.exists(), (
-        "startup created a demo dataset — nothing may seed on boot; `aughor seed` is the "
+        "startup created a demo dataset — nothing may seed on boot; `pramanyx seed` is the "
         "opt-in path")
 
 
@@ -143,10 +143,10 @@ def test_the_demo_connection_is_not_advertised_until_it_is_seeded(monkeypatch, t
     """W4b. The registry listed the demo connection unconditionally, which auto-seeding
     made true by accident. Without a file behind it, opening it read-only raises — so an
     unseeded fixture must not appear in the connection list at all."""
-    from aughor.db import registry
-    from aughor.demo import setup
+    from pramanyx.db import registry
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
 
     listed = {c["id"] for c in registry.list_connections()}
@@ -164,9 +164,9 @@ def test_seeding_the_demo_is_fast_enough_to_be_opt_in(monkeypatch, tmp_path):
     works if opting in is quick, so hold the line well inside the old cost."""
     import time
 
-    from aughor.demo import setup
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
 
     started = time.monotonic()
@@ -182,11 +182,11 @@ def test_seeding_the_demo_is_fast_enough_to_be_opt_in(monkeypatch, tmp_path):
 # ── The demo dataset is reachable without a terminal ──────────────────────────
 
 def test_demo_endpoint_seeds_and_then_offers_the_connection(client, monkeypatch, tmp_path):
-    """`aughor seed` is the opt-in, but a user who never opens a terminal cannot find
+    """`pramanyx seed` is the opt-in, but a user who never opens a terminal cannot find
     it — so the first-run funnel needs the same act over HTTP."""
-    from aughor.demo import setup
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
     assert "fixture" not in {c["id"] for c in client.get("/connections").json()}
 
@@ -209,9 +209,9 @@ def test_demo_endpoint_seeds_and_then_offers_the_connection(client, monkeypatch,
 def test_demo_endpoint_is_idempotent_and_never_clobbers(client, monkeypatch, tmp_path):
     """A second click must not re-seed. `ensure_fixture_db` only writes when the file is
     absent, so a user who has edited the demo keeps their edits."""
-    from aughor.demo import setup
+    from pramanyx.demo import setup
 
-    fake = tmp_path / "aughor.duckdb"
+    fake = tmp_path / "pramanyx.duckdb"
     monkeypatch.setattr(setup, "FIXTURE_PATH", fake)
 
     assert client.post("/connections/demo").json()["seeded"] is True
@@ -226,8 +226,8 @@ def test_demo_endpoint_is_idempotent_and_never_clobbers(client, monkeypatch, tmp
 def test_seeding_the_demo_requires_the_permission_that_adding_a_connection_does():
     """It writes a file and makes a connection appear — the same act as POST
     /connections, so it must not fall to the write floor a viewer clears."""
-    from aughor.rbac.permissions import Permission
-    from aughor.rbac.policy import required_permission
+    from pramanyx.rbac.permissions import Permission
+    from pramanyx.rbac.policy import required_permission
 
     assert required_permission("POST", "/connections/demo") == Permission.CONNECTION_CREATE
     assert (required_permission("POST", "/connections/demo")

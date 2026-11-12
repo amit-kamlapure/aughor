@@ -25,7 +25,7 @@ answer — and it lets us **DELETE** post-hoc guards rather than add a sixth. "F
 
 ## What's built
 
-**`aughor/semantic/answer_resolution.py`** — `resolve(question, *, schema, db, connection_id, eff_schema)
+**`pramanyx/semantic/answer_resolution.py`** — `resolve(question, *, schema, db, connection_id, eff_schema)
 -> Resolution` (deterministic, never raises; degrades to `answerable`). **Measure-first** (this is the
 load-bearing correction — see the real-data bug below): resolve WHAT the question is about (the measure
 noun → column synonyms), compute the tables that carry it, then bind the entity and read the grain from
@@ -42,7 +42,7 @@ ONLY those tables.
 - Exposes `.feasibility` (`answerable` | `answerable_with_caveat` | `not_answerable`), `.caveat`,
   `.prompt_constraints` (the hard constraints handed to the generator).
 
-**Wiring in `_stream_chat`** (`aughor/routers/investigations.py`, flag `ask.resolve_first`, default off,
+**Wiring in `_stream_chat`** (`pramanyx/routers/investigations.py`, flag `ask.resolve_first`, default off,
 byte-identical off): run `resolve()` once before the coder `.complete`; if `not_answerable` → **abstain
 honestly** (emit headline+followups, save turn, return — NO empty query); else prepend `prompt_constraints`;
 the single `caveat` leads the narrator too. **Phase 3 (first deletion):** when resolution ran, SKIP the
@@ -85,7 +85,7 @@ false confidence.**
 
 ## How to resume
 
-`git checkout ground-first-resolution`; read this doc + `aughor/semantic/answer_resolution.py`; run
+`git checkout ground-first-resolution`; read this doc + `pramanyx/semantic/answer_resolution.py`; run
 `pytest tests/unit/test_answer_resolution.py tests/integration/test_resolve_first_runtime.py`. To re-validate
 on real data, `resolve(...)` against `open_connection_for("workspace")` (read-only). Plan file:
 `~/.claude/plans/agile-leaping-cosmos.md`.

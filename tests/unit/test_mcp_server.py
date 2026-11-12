@@ -1,7 +1,7 @@
 """R5 — the governed-intelligence MCP server.
 
 Two layers of coverage:
-  * **Mock** — drive the AughorClient against an httpx.MockTransport so the SSE-folding
+  * **Mock** — drive the PramanyxClient against an httpx.MockTransport so the SSE-folding
     (ask / deep_analysis) and the read tools are tested without a live API or LLM.
   * **Real path** — drive the client against the actual FastAPI app in-process via
     httpx.ASGITransport, proving the wiring end-to-end (MCP client → real router → real
@@ -15,8 +15,8 @@ import json
 import httpx
 import pytest
 
-from aughor.mcp.client import AughorClient, AughorError
-from aughor.mcp.server import mcp
+from pramanyx.mcp.client import PramanyxClient, PramanyxError
+from pramanyx.mcp.server import mcp
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────────
@@ -25,15 +25,15 @@ def _sse(events: list[dict]) -> str:
     return "".join(f"data: {json.dumps(e)}\n\n" for e in events)
 
 
-def _client(routes: dict) -> AughorClient:
-    """An AughorClient whose transport answers from `routes` (path -> httpx.Response or
+def _client(routes: dict) -> PramanyxClient:
+    """A PramanyxClient whose transport answers from `routes` (path -> httpx.Response or
     a callable(request) -> httpx.Response)."""
     def handler(request: httpx.Request) -> httpx.Response:
         resp = routes.get(request.url.path)
         if resp is None:
             return httpx.Response(404, json={"detail": f"no mock route for {request.url.path}"})
         return resp(request) if callable(resp) else resp
-    return AughorClient(base_url="http://test", transport=httpx.MockTransport(handler))
+    return PramanyxClient(base_url="http://test", transport=httpx.MockTransport(handler))
 
 
 def _run(coro):
@@ -122,7 +122,7 @@ def test_ask_raises_on_error_event_without_answer():
     routes = {"/chat": httpx.Response(200, content=_sse([
         {"type": "error", "message": "Answer stopped — token budget exceeded"},
     ]))}
-    with pytest.raises(AughorError) as e:
+    with pytest.raises(PramanyxError) as e:
         _run(_client(routes).ask("q", "c"))
     assert "token budget" in str(e.value)
 
@@ -200,7 +200,7 @@ def test_get_metric_lists_when_no_name():
 
 def test_get_metric_unknown_name_raises():
     routes = {"/metrics": httpx.Response(200, json=[{"name": "x", "sql": "1"}])}
-    with pytest.raises(AughorError) as e:
+    with pytest.raises(PramanyxError) as e:
         _run(_client(routes).get_metric(name="nope", connection="c"))
     assert "no governed metric" in str(e.value)
 
@@ -249,14 +249,14 @@ def test_list_jobs_passthrough():
 # ── error surfacing ──────────────────────────────────────────────────────────────
 def test_capability_lock_surfaces_cleanly():
     routes = {"/investigate": httpx.Response(402, json={"detail": "Upgrade to Pro for Deep Analysis"})}
-    with pytest.raises(AughorError) as e:
+    with pytest.raises(PramanyxError) as e:
         _run(_client(routes).deep_analysis("q", "c"))
     assert "capability locked" in str(e.value)
 
 
 def test_not_found_surfaces_cleanly():
     routes = {"/jobs/missing": httpx.Response(404, json={"detail": "No such job"})}
-    with pytest.raises(AughorError) as e:
+    with pytest.raises(PramanyxError) as e:
         _run(_client(routes).get_job("missing"))
     assert "not found" in str(e.value).lower()
 
@@ -268,7 +268,7 @@ def test_dropped_none_query_params():
         seen["query"] = str(request.url.query)
         return httpx.Response(200, json={"insights": []})
 
-    client = AughorClient(base_url="http://test", transport=httpx.MockTransport(handler))
+    client = PramanyxClient(base_url="http://test", transport=httpx.MockTransport(handler))
     _run(client.list_findings("conn1", schema=None, limit=5))
     # schema=None must NOT be sent as ?schema=None
     assert b"schema" not in (request_query := seen["query"].encode())
@@ -276,9 +276,9 @@ def test_dropped_none_query_params():
 
 
 # ── real path: drive the actual app in-process (no LLM, no live server) ──────────
-def _real_client() -> AughorClient:
-    from aughor.api import app
-    return AughorClient(base_url="http://test", transport=httpx.ASGITransport(app=app))
+def _real_client() -> PramanyxClient:
+    from pramanyx.api import app
+    return PramanyxClient(base_url="http://test", transport=httpx.ASGITransport(app=app))
 
 
 def test_real_path_list_connections_and_jobs():
@@ -292,6 +292,6 @@ def test_real_path_list_connections_and_jobs():
 def test_real_path_metric_value_endpoint_404():
     # Proves the new GET /metrics/{name}/value route is wired into the live app.
     client = _real_client()
-    with pytest.raises(AughorError) as e:
+    with pytest.raises(PramanyxError) as e:
         _run(client._get("/metrics/__no_such_metric__/value", params={"conn_id": "x"}))
     assert "not found" in str(e.value).lower()

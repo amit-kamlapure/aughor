@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-import aughor.explorer.continuous as cont
-from aughor.explorer.models import ExplorationPhase
+import pramanyx.explorer.continuous as cont
+from pramanyx.explorer.models import ExplorationPhase
 
 _NOW = datetime(2026, 7, 12, tzinfo=timezone.utc)
 ASKS = frozenset({"structure", "questions", "time"})
@@ -119,18 +119,18 @@ def test_an_interrupted_run_resumes_on_its_own_only_where_the_layer_asks():
 # ── the planner: every dataset, not the first one ─────────────────────────────
 
 def _planner(monkeypatch, states, *, layers, spent_out=False, fps=None):
-    from aughor.explorer import budget as B
-    from aughor.explorer import program as P
-    from aughor.routers import _shared
-    monkeypatch.setattr("aughor.db.registry.list_connections", lambda *a, **k: [{"id": "wh"}])
+    from pramanyx.explorer import budget as B
+    from pramanyx.explorer import program as P
+    from pramanyx.routers import _shared
+    monkeypatch.setattr("pramanyx.db.registry.list_connections", lambda *a, **k: [{"id": "wh"}])
     monkeypatch.setattr(_shared, "explorer_refusal", lambda cid: "")
     monkeypatch.setattr(cont, "_scout_enabled", lambda cid: True)
     monkeypatch.setattr(_shared, "schemas_of_connection", lambda cid: sorted(states))
-    monkeypatch.setattr("aughor.routers.exploration.interrupted_runs", lambda cid: [])
+    monkeypatch.setattr("pramanyx.routers.exploration.interrupted_runs", lambda cid: [])
     monkeypatch.setattr(_shared, "connection_has_business", lambda cid: "business" in layers.values())
     monkeypatch.setattr(_shared, "layer_scope", lambda cid, sch: sch)
-    monkeypatch.setattr("aughor.ontology.dataset_layers.layer_of", lambda cid, sch, table="": layers.get(sch, ""))
-    monkeypatch.setattr("aughor.explorer.store.load", lambda key: states[key.split("__", 1)[1]])
+    monkeypatch.setattr("pramanyx.ontology.dataset_layers.layer_of", lambda cid, sch, table="": layers.get(sch, ""))
+    monkeypatch.setattr("pramanyx.explorer.store.load", lambda key: states[key.split("__", 1)[1]])
     monkeypatch.setattr(P, "load", lambda key: _prog(_ran(ended=_NOW - timedelta(days=2))))
     monkeypatch.setattr(cont, "dataset_fingerprint", lambda cid, sch: (fps or {}).get(sch, "abc"))
     monkeypatch.setattr(cont, "_approved_count", lambda cid, sch: {"marts": 4, "sales": 1}.get(sch, 0))
@@ -181,7 +181,7 @@ def test_a_spent_budget_holds_the_model_runs_and_says_so(monkeypatch):
 def test_a_turned_off_dataset_is_never_planned(monkeypatch):
     states = {"marts": _complete("old"), "stage": _complete("old")}
     _planner(monkeypatch, states, layers={"marts": "business"}, fps={"marts": "new", "stage": "new"})
-    monkeypatch.setattr("aughor.ontology.visibility.excluded",
+    monkeypatch.setattr("pramanyx.ontology.visibility.excluded",
                         lambda cid, sch, table="": object() if sch == "stage" else None)
     runs, _ = cont.plan_jobs(now=_NOW)
     assert [r["schema"] for r in runs] == ["marts"]
@@ -199,10 +199,10 @@ def test_the_tick_starts_each_job_as_planned_and_records_it(monkeypatch):
         calls.append((cid, kw))
         return {"ok": True, "job_id": "j1"}
 
-    monkeypatch.setattr("aughor.routers._shared.spawn_explorer", spawn)
+    monkeypatch.setattr("pramanyx.routers._shared.spawn_explorer", spawn)
     taken: list = []
-    monkeypatch.setattr("aughor.explorer.program.take_reopen", lambda key: taken.append(key))
-    monkeypatch.setattr("aughor.explorer.program.clear_hold", lambda key: None)
+    monkeypatch.setattr("pramanyx.explorer.program.take_reopen", lambda key: taken.append(key))
+    monkeypatch.setattr("pramanyx.explorer.program.clear_hold", lambda key: None)
     emits: list = []
     monkeypatch.setattr(cont, "_emit", lambda kind, payload, conn_id: emits.append((kind, payload)))
 
@@ -222,7 +222,7 @@ def test_a_declined_start_records_nothing(monkeypatch):
     async def spawn(cid, **kw):
         return {"ok": False, "reason": "already running"}
 
-    monkeypatch.setattr("aughor.routers._shared.spawn_explorer", spawn)
+    monkeypatch.setattr("pramanyx.routers._shared.spawn_explorer", spawn)
     emits: list = []
     monkeypatch.setattr(cont, "_emit", lambda kind, payload, conn_id: emits.append((kind, payload)))
     assert asyncio.run(cont.run_continuous_tick()) == 0
@@ -232,17 +232,17 @@ def test_a_declined_start_records_nothing(monkeypatch):
 # ── 6c: the governance skip is surfaced, not silent ───────────────────────────
 
 def test_kickoff_auto_skip_emits_ledger_event(monkeypatch):
-    from aughor.routers import _shared
+    from pramanyx.routers import _shared
 
-    monkeypatch.setattr("aughor.kernel.agents.is_enabled", lambda agent, ws: False)
-    monkeypatch.setattr("aughor.workspace.store.workspace_for_connection", lambda cid: "ws1")
+    monkeypatch.setattr("pramanyx.kernel.agents.is_enabled", lambda agent, ws: False)
+    monkeypatch.setattr("pramanyx.workspace.store.workspace_for_connection", lambda cid: "ws1")
     emits: list = []
 
     class _L:
         def emit(self, kind, payload, **kw):
             emits.append((kind, payload))
 
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", classmethod(lambda cls: _L()))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", classmethod(lambda cls: _L()))
 
     assert _shared.kickoff_exploration("c1", auto=True) is False
     assert any(k == "exploration.skipped" and p.get("reason") == "scout_disabled" for k, p in emits)
@@ -252,5 +252,5 @@ def test_continuous_flag_is_gone_for_good():
     """Flag endgame Wave 4 (2026-08-06): the loop is always on for an always-on
     process; the spend controls are the per-dataset gates in this module, not a
     process-wide boolean. A re-registered flag would be the boolean growing back."""
-    from aughor.kernel.flags import FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_ENV
     assert "explorer.continuous" not in FLAG_ENV

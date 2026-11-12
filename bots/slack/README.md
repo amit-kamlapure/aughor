@@ -1,12 +1,12 @@
 # Pramanyx in Slack
 
-A deliberately thin TypeScript transport that puts `@aughor` in a Slack thread.
+A deliberately thin TypeScript transport that puts `@pramanyx` in a Slack thread.
 The loop, the guards, tenancy and metering all stay in the Python API; this
 process carries a question in and streams the governed answer — with its
 progress, its chart and its table — back out.
 
 ```
-@aughor why did revenue dip?
+@pramanyx why did revenue dip?
         │
         ├─ POST /ask (depth "auto", session_id = the Slack thread id)
         │     └─ SSE frames ──► prose (suffix-folded) + task cards
@@ -69,13 +69,13 @@ Copy `.env.local.example` to `.env.local` and fill it in.
 | `SLACK_APP_TOKEN` | `xapp-…` with `connections:write`, for Socket Mode |
 | `SLACK_SIGNING_SECRET` | from Basic Information |
 | `SLACK_AGENT_VIEW` | `1` once the app is in Agents & AI Apps mode. Left off, the adapter uses the legacy compatibility path. Turning it on against an app that is NOT in agent mode makes `stopStream` send a parameter that app cannot accept, which costs the final message of every answer — hence a flag, not a default. |
-| `AUGHOR_MANAGED_BY_API` | Set by the API's host (`aughor/slackbots/managed.py`), never by hand. Managed, the process stays up with ZERO bots and picks the first one up on the next reconcile, and its output goes to `<AUGHOR_SLACKBOTS_DIR>/supervisor.log`; standalone, a run with no bots says so and exits. |
-| `SLACK_REHEARSE` | Single-bot mode only (registry bots read `rehearse` off their row). `1` answers a channel mention in the asker's DM first — the DM says where it was asked and what the reactions do; their ✅ there posts the answer in the channel thread (and records the accept), ❌ drops it, once. The channel gets an ephemeral note to the asker and nothing public. A mention already in a DM is answered in place. Rehearsals persist beside the turn maps (`.aughor-turns.<bot>.rehearsals.json`), so a ✅ after a restart still promotes. |
-| `AUGHOR_API_URL` | defaults to `http://127.0.0.1:8000` |
-| `AUGHOR_RUNTIME_KEY` | **required for the multi-bot supervisor.** `GET /slack-bots/runtime` is the one route that returns raw `xoxb-`/`xapp-` tokens, so it refuses an unauthenticated caller. Generate the key in the app — **Integrations → Slack → Supervisor key** — and paste the line it gives you here. Single-bot mode (the three `SLACK_*` vars above) does not read that route and needs no key. |
-| `AUGHOR_API_KEY` | when the API requires one org-wide. It also satisfies the runtime route, so a deployment that already sets it needs no separate runtime key. |
-| `AUGHOR_CONNECTION_ID` | which connection to answer from; defaults to `workspace` |
-| `AUGHOR_WEB_URL` | where "Open in Pramanyx →" points. Unset, answers simply carry no link — a wrong host is worse than none. |
+| `PRAMANYX_MANAGED_BY_API` | Set by the API's host (`pramanyx/slackbots/managed.py`), never by hand. Managed, the process stays up with ZERO bots and picks the first one up on the next reconcile, and its output goes to `<PRAMANYX_SLACKBOTS_DIR>/supervisor.log`; standalone, a run with no bots says so and exits. |
+| `SLACK_REHEARSE` | Single-bot mode only (registry bots read `rehearse` off their row). `1` answers a channel mention in the asker's DM first — the DM says where it was asked and what the reactions do; their ✅ there posts the answer in the channel thread (and records the accept), ❌ drops it, once. The channel gets an ephemeral note to the asker and nothing public. A mention already in a DM is answered in place. Rehearsals persist beside the turn maps (`.pramanyx-turns.<bot>.rehearsals.json`), so a ✅ after a restart still promotes. |
+| `PRAMANYX_API_URL` | defaults to `http://127.0.0.1:8000` |
+| `PRAMANYX_RUNTIME_KEY` | **required for the multi-bot supervisor.** `GET /slack-bots/runtime` is the one route that returns raw `xoxb-`/`xapp-` tokens, so it refuses an unauthenticated caller. Generate the key in the app — **Integrations → Slack → Supervisor key** — and paste the line it gives you here. Single-bot mode (the three `SLACK_*` vars above) does not read that route and needs no key. |
+| `PRAMANYX_API_KEY` | when the API requires one org-wide. It also satisfies the runtime route, so a deployment that already sets it needs no separate runtime key. |
+| `PRAMANYX_CONNECTION_ID` | which connection to answer from; defaults to `workspace` |
+| `PRAMANYX_WEB_URL` | where "Open in Pramanyx →" points. Unset, answers simply carry no link — a wrong host is worse than none. |
 | `LOG_LEVEL` | `debug` shows every incoming envelope, and the adapter's own streaming decisions ("using fallback stream — …"). The difference between "Slack never sent the event" and "it arrived and nothing matched" is invisible at `info`. |
 
 ## Running
@@ -114,7 +114,7 @@ exactly as healthy as one that draws nothing.
 
 | File | What it owns |
 |---|---|
-| `src/aughor.ts` | one `/ask` turn → an `AsyncIterable` of prose and cards; artifacts out; cancel on abandon |
+| `src/pramanyx.ts` | one `/ask` turn → an `AsyncIterable` of prose and cards; artifacts out; cancel on abandon |
 | `src/progress.ts` | Pramanyx's progress frames → Slack `task_update` cards |
 | `src/artifacts.ts` | the grid → an inline table, a CSV, or both; the deep link |
 | `src/chart.ts` | `/charts/svg` → PNG |
@@ -124,7 +124,7 @@ exactly as healthy as one that draws nothing.
 ## Two things worth knowing before changing it
 
 **Pramanyx partials are REPLACE-semantic** — every `*_delta` frame carries the
-full text so far — while a posted stream **appends** each yield. `src/aughor.ts`
+full text so far — while a posted stream **appends** each yield. `src/pramanyx.ts`
 tracks what it has already emitted per channel and yields suffixes only. Undo
 that and every answer stutters its own prefix.
 

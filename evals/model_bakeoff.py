@@ -5,12 +5,12 @@ scored deterministically, logged to MLflow as directly comparable evaluation run
 The instrument that turns P7 ("pin a frontier coder model") into an
 evidence-based decision: one MLflow evaluation run per candidate — execution
 accuracy × guard verdicts × latency × tokens — compared in the MLflow UI
-(runs of the ``aughor-bakeoff`` experiment) or the printed table.
+(runs of the ``pramanyx-bakeoff`` experiment) or the printed table.
 
 Usage::
 
     # one arm per candidate model, each in its OWN subprocess (the provider
-    # resolves AUGHOR_CODER_MODEL at binding time and caches per process —
+    # resolves PRAMANYX_CODER_MODEL at binding time and caches per process —
     # env-per-subprocess is the only clean isolation):
     uv run --extra observability python -m evals.model_bakeoff \
         --models "glm-5.2:cloud,qwen3-coder-next:cloud" --limit 20
@@ -24,10 +24,10 @@ Generation reuses ``evals.run_golden``'s live pipeline verbatim (mode ``full`` =
 the intelligence-injected production mirror; ``raw`` = schema-only prompt), so
 the eval measures real platform quality, not a re-implementation.
 
-Tracking: ``AUGHOR_MLFLOW_TRACKING_URI`` if set (share the compose ``obs``
+Tracking: ``PRAMANYX_MLFLOW_TRACKING_URI`` if set (share the compose ``obs``
 server with the ``obs.mlflow`` runtime traces), else a local
 ``evals/bakeoff_out/mlruns`` file store. Requires
-``uv sync --extra observability``, a seeded connection (``aughor seed``), and
+``uv sync --extra observability``, a seeded connection (``pramanyx seed``), and
 live LLM credentials for the arms.
 """
 from __future__ import annotations
@@ -140,7 +140,7 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
     registry like every other eval harness.
     """
     model = args.model
-    os.environ["AUGHOR_CODER_MODEL"] = model
+    os.environ["PRAMANYX_CODER_MODEL"] = model
     # One scorer worker: determinism + the DuckDB connection in the scorer
     # closure is not safe for concurrent use.
     os.environ.setdefault("MLFLOW_GENAI_EVAL_MAX_WORKERS", "1")
@@ -148,21 +148,21 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
     import mlflow
 
     # Importing run_golden also loads .env (its module-level load_dotenv) — but
-    # AUGHOR_CODER_MODEL was exported above and load_dotenv never overrides
+    # PRAMANYX_CODER_MODEL was exported above and load_dotenv never overrides
     # existing env, so the arm's model pin survives. That load is now skipped when
-    # AUGHOR_SKIP_DOTENV is set, which is the test suite and nothing else: a bakeoff run
+    # PRAMANYX_SKIP_DOTENV is set, which is the test suite and nothing else: a bakeoff run
     # from a shell still gets `.env`, a test importing this module no longer does.
     from evals import run_golden
     from evals.mlflow_scorers import exec_success, make_execution_accuracy, trust_verify
     from evals.sql_accuracy import _safe_exec
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
 
     records = load_records(args.dataset, args.limit)
     if db is None:
-        from aughor.db.connection import open_connection_for
+        from pramanyx.db.connection import open_connection_for
         db = open_connection_for(args.connection)
     schema = db.get_schema() if args.mode == "raw" else ""
-    from aughor.db.dialects import writer_rules
+    from pramanyx.db.dialects import writer_rules
     dialect_rules = writer_rules(db)
 
     out_dir = Path(args.output_dir)
@@ -170,10 +170,10 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
     # Default to a local FILE store — mlflow-skinny ships without SQLAlchemy
     # (no sqlite:/// URIs), and MLflow ≥3.14 gates the filesystem backend
     # behind this env opt-out. A real deployment points
-    # AUGHOR_MLFLOW_TRACKING_URI at the compose `obs` server instead.
+    # PRAMANYX_MLFLOW_TRACKING_URI at the compose `obs` server instead.
     os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(args.tracking_uri
-                            or os.getenv("AUGHOR_MLFLOW_TRACKING_URI")
+                            or os.getenv("PRAMANYX_MLFLOW_TRACKING_URI")
                             or str(out_dir / "mlruns"))
     mlflow.set_experiment(args.experiment)
 
@@ -238,7 +238,7 @@ def run_all(args: argparse.Namespace) -> list[dict]:
     arms = []
     for model in models:
         cmd = arm_command("evals.model_bakeoff", args, model)
-        env = {**os.environ, "AUGHOR_CODER_MODEL": model}
+        env = {**os.environ, "PRAMANYX_CODER_MODEL": model}
         proc = subprocess.run(cmd, env=env)
         out_path = Path(args.output_dir) / f"{sanitize_model_id(model)}.json"
         if out_path.exists():
@@ -264,9 +264,9 @@ def main() -> int:
                         help="full = production-mirror pipeline; raw = schema-only prompt")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--tracking-uri", default="",
-                        help="MLflow tracking URI (default: AUGHOR_MLFLOW_TRACKING_URI "
+                        help="MLflow tracking URI (default: PRAMANYX_MLFLOW_TRACKING_URI "
                              "or a local file store under --output-dir)")
-    parser.add_argument("--experiment", default="aughor-bakeoff")
+    parser.add_argument("--experiment", default="pramanyx-bakeoff")
     parser.add_argument("--output-dir", default=_DEFAULT_OUT)
     args = parser.parse_args()
 

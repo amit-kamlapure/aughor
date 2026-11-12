@@ -11,8 +11,8 @@ import copy
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.impacts import (
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.impacts import (
     MIN_GROUP,
     declared_impact,
     impact_entry,
@@ -23,7 +23,7 @@ from aughor.ontology.impacts import (
     measure_impact,
     resolve_impact,
 )
-from aughor.ontology.overrides import OntologyOverride, apply_overrides
+from pramanyx.ontology.overrides import OntologyOverride, apply_overrides
 from tests.unit.test_object_bindings import ints
 from tests.unit.test_object_processes import FULFILMENT, db, declare, door, fresh_graph  # noqa: F401 — the warehouse
 
@@ -145,7 +145,7 @@ def test_it_is_kept_in_the_tree_and_read_back_with_its_measurement_and_worded_as
     assert (read.objects, read.rate_when_broke, read.verified) == (measured.objects, measured.rate_when_broke,
                                                                    measured.verified)
     assert [i.id for i in impacts_into(served, "fulfilment_days", "delivery")] == ["late_dispatch_late_delivery"]
-    from aughor.agent.claim_type import sentence_claims
+    from pramanyx.agent.claim_type import sentence_claims
     read.verified = True
     words = impact_words(served, read)
     assert words.startswith("where the dispatch promise of Fulfilment in days was broken, the delivery promise")
@@ -158,8 +158,8 @@ def test_it_is_kept_in_the_tree_and_read_back_with_its_measurement_and_worded_as
 # ── the frame reads it first ────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_question_about_late_delivery_starts_from_the_measured_impact_before_any_dimension(db, graph):  # noqa: F811 — the warehouse fixture, by name
-    from aughor.agent.investigate import _frame_breakdowns
-    from aughor.ontology.framing import frame_question, render_frame_block
+    from pramanyx.agent.investigate import _frame_breakdowns
+    from pramanyx.ontology.framing import frame_question, render_frame_block
     from tests.unit.test_object_bindings import rows
     declare(graph, db, WINDOWS)
     fields = _resolved(graph, "fulfilment_days.dispatch", "fulfilment_days.delivery")
@@ -181,7 +181,7 @@ def test_a_question_about_late_delivery_starts_from_the_measured_impact_before_a
 
 
 def test_an_impact_the_data_does_not_bear_out_is_no_driver(db, graph):  # noqa: F811 — the warehouse fixture, by name
-    from aughor.ontology.framing import frame_question
+    from pramanyx.ontology.framing import frame_question
     declare(graph, db, WINDOWS)
     fields = _resolved(graph, "fulfilment_days.dispatch", "fulfilment_days.delivery")
     impact = measure_impact(db, graph, "x", fields)
@@ -191,12 +191,12 @@ def test_an_impact_the_data_does_not_bear_out_is_no_driver(db, graph):  # noqa: 
 
 
 def test_the_briefing_reads_a_moved_promise_beside_what_is_measured_upstream_of_it(db, graph, monkeypatch):  # noqa: F811 — the warehouse fixture, by name
-    from aughor.knowledge import promise_chains
+    from pramanyx.knowledge import promise_chains
     declare(graph, db, WINDOWS)
     fields = _resolved(graph, "fulfilment_days.dispatch", "fulfilment_days.delivery")
     impact = measure_impact(db, graph, "late_dispatch_late_delivery", fields)
     graph.impacts[impact.id] = impact
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda conn, schema=None: graph)
     impact.verified = True
     said = promise_chains._upstream("c1", "fulfilment_days.delivery")
     assert said == impact_words(graph, impact) and said.startswith("where the dispatch promise")
@@ -208,8 +208,8 @@ def test_the_briefing_reads_a_moved_promise_beside_what_is_measured_upstream_of_
 # ── what a link carries, and the objects a stage touches ────────────────────────────────────────────────────────────
 
 def test_a_link_carries_the_promise_kept_through_it_and_a_stage_names_its_lead_object(db, graph):  # noqa: F811 — the warehouse fixture, by name
-    from aughor.ontology.purpose import link_purposes, stage_roles
-    from aughor.semantic.object_types import object_type_map
+    from pramanyx.ontology.purpose import link_purposes, stage_roles
+    from pramanyx.semantic.object_types import object_type_map
     declare(graph, db, FULFILMENT)
     process = graph.processes["order_fulfilment"]
     via = process.stages[1].promise.via
@@ -230,7 +230,7 @@ def test_a_link_carries_the_promise_kept_through_it_and_a_stage_names_its_lead_o
 # ── moves between stages, and every timestamp checked ───────────────────────────────────────────────────────────────
 
 def test_the_moves_the_data_makes_are_counted_and_set_against_those_declared(db, graph):  # noqa: F811 — the warehouse fixture, by name
-    from aughor.ontology.processes import process_spec_problem
+    from pramanyx.ontology.processes import process_spec_problem
     spec = {**WINDOWS, "id": "moves", "leaves": {"property": "status", "values": ["cancelled", "refunded"]},
             "transitions": [{"from": "placed", "to": "shipped"}, {"from": "shipped", "to": "delivered"},
                             {"from": "delivered", "to": "left"}]}
@@ -262,7 +262,7 @@ def test_the_moves_the_data_makes_are_counted_and_set_against_those_declared(db,
     ([{"from": "placed", "to": "shipped"}, {"from": "placed", "to": "shipped"}], "declared twice"),
 ])
 def test_a_transition_that_names_no_stage_is_refused(transitions, says):
-    from aughor.ontology.processes import process_spec_problem
+    from pramanyx.ontology.processes import process_spec_problem
     assert says in process_spec_problem({**WINDOWS, "transitions": transitions})
 
 

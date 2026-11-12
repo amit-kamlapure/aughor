@@ -3,7 +3,7 @@
  * card shows, one type as the entity-type panel shows it, and the paths from one type to another; plus the writes the
  * panel offers — declare a display property, bind or remove a further source (ON-1b), and measure what was declared.
  *
- * The shapes mirror `aughor/semantic/object_types.py` and `aughor/ontology/display.py`. The routes return plain
+ * The shapes mirror `pramanyx/semantic/object_types.py` and `pramanyx/ontology/display.py`. The routes return plain
  * dicts, so `api.gen.ts` types their paths but not their bodies — these do. A refusal is an answer, not an error.
  */
 import { DECLARED_ACTIONS, type DEEP_ANALYSIS_EFFECT } from "@/lib/api";

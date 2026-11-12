@@ -15,10 +15,10 @@ const sent: { session: string; text: string }[] = [];
 const stores = new Map<string, unknown[]>();
 const rendered = new Set<string>();     // every session the panel has drawn
 
-vi.mock("@/lib/useAughorChat", () => ({
+vi.mock("@/lib/usePramanyxChat", () => ({
   // The real hook builds one Chat per session id, and that Chat's sendMessage writes into ITS conversation —
   // so a send bound to an earlier session lands where the screen no longer looks. This double keeps that binding.
-  useAughorChat: ({ sessionId }: { sessionId: string }) => {
+  usePramanyxChat: ({ sessionId }: { sessionId: string }) => {
     const [, bump] = useReducer((n: number) => n + 1, 0);
     rendered.add(sessionId);
     return {

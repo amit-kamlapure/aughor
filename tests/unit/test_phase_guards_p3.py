@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace as NS
 
-import aughor.agent.investigate as I
-from aughor.agent import prompts_investigate as P
+import pramanyx.agent.investigate as I
+from pramanyx.agent import prompts_investigate as P
 
 DECLARED = ["status <> 'Cancelled'"]
 CLEAN = "SELECT category, SUM(sale_price) AS rev FROM order_items WHERE created_at >= '2026-08-01' AND created_at < '2026-09-01' AND status <> 'Cancelled' GROUP BY 1"
@@ -107,7 +107,7 @@ def test_the_planners_read_one_paragraph_on_a_capable_binding_and_the_long_block
 
 
 def test_the_shared_grounding_rides_only_a_baseline_planner(monkeypatch):
-    import aughor.llm.profile as PR
+    import pramanyx.llm.profile as PR
     monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=True))
     assert I._sql_grounding() == "" and I._sql_rules_for("decompose") is P._SQL_RULES_ASK
     monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=False))
@@ -167,7 +167,7 @@ def test_every_phase_stamps_the_slice_note_on_its_cards():
 
 def test_the_lens_grounding_is_tiered_like_the_planners(monkeypatch):
     """Seven lens prompts appended the long block on every tier and carried no ask."""
-    import aughor.llm.profile as PR
+    import pramanyx.llm.profile as PR
     monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=True))
     assert I._lens_sql_grounding().strip() == P._SQL_RULES_ASK.strip()
     monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=False))
@@ -194,7 +194,7 @@ def test_the_interpreter_system_line_and_the_synthesis_sentence_are_tiered(monke
         base, cap = I._cross_section_interpret_system(ratio, False), I._cross_section_interpret_system(ratio, True)
         assert base.startswith(cap) and len(cap) < len(base)
         assert "weak" in base and "weak" not in cap
-    import aughor.llm.profile as PR
+    import pramanyx.llm.profile as PR
     monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=True))
     assert I._interpreter_capable() and I._narrator_capable()
     monkeypatch.setattr(PR, "profile_for", lambda role: NS(capable=False))

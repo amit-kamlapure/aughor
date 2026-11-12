@@ -11,7 +11,7 @@ import duckdb
 import pytest
 from fastapi import HTTPException
 
-from aughor.routers import ontology as R
+from pramanyx.routers import ontology as R
 
 TABLE = "olist.olist_order_items_dataset"
 

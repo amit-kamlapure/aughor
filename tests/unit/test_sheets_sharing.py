@@ -1,7 +1,7 @@
 """Arc SH, SH-8 — a sheet shared with chosen people and groups, and a stale write that says who (ROADMAP §3.64).
 
 Run against the real stores — the ledger, the edit layer, the projection, the RBAC store — each at a temporary path.
-Who is asking is set as the install's operator (``AUGHOR_LOCAL_USER``), the person every request without a sign-in
+Who is asking is set as the install's operator (``PRAMANYX_LOCAL_USER``), the person every request without a sign-in
 acts for, so each person below is a real request through the real routes.
 
 The falsifier is a row of a sheet not shared with someone reaching them: through the sheet's routes, the Sheets
@@ -26,25 +26,25 @@ b0830fb4,campinas
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
-    from aughor.rbac import store as rbac_store
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
+    from pramanyx.rbac import store as rbac_store
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     monkeypatch.setattr(rbac_store, "_DB_PATH", tmp_path / "rbac.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _as(monkeypatch, person: str) -> None:
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", person)
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", person)
 
 
 def _make(env, name="Olist orders", text=ORDERS, file="olist_orders_dataset.csv"):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / file
     path.write_text(text)
     return service.create_from_file(files.stage(path, path.name), name=name, by="user:ana")
@@ -54,14 +54,14 @@ def _client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.routers import sheets as sheets_router
     app = FastAPI()
     app.include_router(sheets_router.router)
     return TestClient(app)
 
 
 def _share(sheet, shares, by="user:ana"):
-    from aughor.sheets import model, sharing
+    from pramanyx.sheets import model, sharing
     return sharing.set_sharing(model.get(sheet.id), "chosen", shares, by=by)
 
 
@@ -73,8 +73,8 @@ BO_READS_CY_EDITS = [{"kind": "person", "id": "bo", "level": "view"}, {"kind": "
 def test_a_sheet_never_shared_keeps_its_definition_as_it_was_and_is_listed_as_the_workspaces(env):
     """A sheet never shared stores no sharing in its definition; its home and the sheet say it is the workspace's, and
     what the reader may do."""
-    from aughor.kernel.ledger import Ledger
-    from aughor.sheets import model
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.sheets import model
     sheet = _make(env)
     for art in Ledger.default().artifacts_of_kind(model.KIND, conn_id=model.SHEETS_CONNECTION, org_id="default"):
         body = art["payload"]["_body"]
@@ -87,13 +87,13 @@ def test_a_sheet_never_shared_keeps_its_definition_as_it_was_and_is_listed_as_th
 
 
 def test_shared_back_with_the_workspace_the_definition_is_plain_again(env):
-    from aughor.sheets import model, sharing
+    from pramanyx.sheets import model, sharing
     sheet = _make(env)
     _share(sheet, BO_READS_CY_EDITS)
     back = sharing.set_sharing(model.get(sheet.id), "workspace", [], by="user:ana")
     assert back.sharing == "workspace" and back.shared_with == []
     assert back.change.what == "shared with everyone in the workspace"
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     newest = max(Ledger.default().artifacts_of_kind(model.KIND, conn_id=model.SHEETS_CONNECTION, org_id="default"),
                  key=lambda a: a["version"])
     assert "sharing" not in newest["payload"]["_body"]
@@ -102,7 +102,7 @@ def test_shared_back_with_the_workspace_the_definition_is_plain_again(env):
 # ── who may do what ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_maker_owns_the_workspace_edits_and_the_chosen_get_what_they_were_given(env):
-    from aughor.sheets import model, sharing
+    from pramanyx.sheets import model, sharing
     sheet = _make(env)
     assert sharing.level_of(sheet, "user:ana").level == "own"
     assert sharing.level_of(sheet, "user:dee").level == "edit"          # the workspace's, as every sheet was
@@ -114,9 +114,9 @@ def test_the_maker_owns_the_workspace_edits_and_the_chosen_get_what_they_were_gi
 
 
 def test_a_group_reaches_its_members_and_a_role_its_holders(env):
-    from aughor.rbac.groups import add_member, upsert_group
-    from aughor.rbac.store import assign_role
-    from aughor.sheets import model, sharing
+    from pramanyx.rbac.groups import add_member, upsert_group
+    from pramanyx.rbac.store import assign_role
+    from pramanyx.sheets import model, sharing
     sheet = _make(env)
     upsert_group("default", "finance", "Finance")
     add_member("default", "finance", "user:eve")
@@ -130,7 +130,7 @@ def test_a_group_reaches_its_members_and_a_role_its_holders(env):
 
 
 def test_what_cannot_be_shared_is_refused_by_name(env):
-    from aughor.sheets import model, service, sharing
+    from pramanyx.sheets import model, service, sharing
     sheet = _make(env)
     with pytest.raises(service.Refused, match="there is no group 'nobody' here"):
         _share(sheet, [{"kind": "group", "id": "nobody", "level": "view"}])
@@ -210,7 +210,7 @@ def test_an_editor_changes_it_but_only_its_maker_reshares_or_removes_it(env, mon
 
 def test_the_sheets_connection_refuses_a_sheet_not_shared_with_the_person_it_runs_for(env, monkeypatch):
     """The SQL Editor, dashboards and every answer read sheets through this one connection."""
-    from aughor.sheets.connection import SheetsConnection
+    from pramanyx.sheets.connection import SheetsConnection
     sheet = _make(env)
     other = _make(env, "Olist customers", CUSTOMERS, "olist_customers_dataset.csv")
     _share(sheet, BO_READS_CY_EDITS)
@@ -227,17 +227,17 @@ def test_the_sheets_connection_refuses_a_sheet_not_shared_with_the_person_it_run
 
 
 def test_a_statement_whose_tables_cannot_be_read_is_held_to_the_names_it_says(env, monkeypatch):
-    from aughor.sheets import sharing
+    from pramanyx.sheets import sharing
     sheet = _make(env)
     _share(sheet, BO_READS_CY_EDITS)
-    monkeypatch.setattr("aughor.sql.tables.extract_tables", lambda sql, dialect=None: set())
+    monkeypatch.setattr("pramanyx.sql.tables.extract_tables", lambda sql, dialect=None: set())
     assert "was not shared with you" in sharing.refusal_for_statement(f"SELECT 1 FROM {sheet.table}", "user:dee")
     assert sharing.refusal_for_statement("SELECT 1", "user:dee") == ""
 
 
 def test_the_schema_a_model_is_handed_carries_no_values_of_a_sheet_shared_with_chosen_people(env):
-    from aughor.db.schema_render import SAMPLE_MARK
-    from aughor.sheets.connection import SheetsConnection
+    from pramanyx.db.schema_render import SAMPLE_MARK
+    from pramanyx.sheets.connection import SheetsConnection
     sheet = _make(env)
     other = _make(env, "Olist customers", CUSTOMERS, "olist_customers_dataset.csv")
     _share(sheet, BO_READS_CY_EDITS)
@@ -253,7 +253,7 @@ def test_the_schema_a_model_is_handed_carries_no_values_of_a_sheet_shared_with_c
 
 
 def test_the_chats_tools_refuse_a_sheet_not_shared_with_the_person_asking(env, monkeypatch):
-    from aughor.sheets import answer, chat
+    from pramanyx.sheets import answer, chat
     sheet = _make(env)
     _share(sheet, BO_READS_CY_EDITS)
     _as(monkeypatch, "dee")
@@ -306,7 +306,7 @@ def test_a_stale_write_says_who_changed_the_cell(env, monkeypatch):
 def test_the_chat_cannot_propose_or_apply_a_link_to_a_sheet_not_shared_with_the_person(env, monkeypatch):
     """Whoever applies a proposal may not be who asked for it: both are held to the other sheet's sharing — a proposal
     through the preview it is checked by (combining's own gate), an application through the sheet it reads."""
-    from aughor.sheets import chat, projection, sharing
+    from pramanyx.sheets import chat, projection, sharing
     orders = _make(env)
     customers = _make(env, "Olist customers", CUSTOMERS, "olist_customers_dataset.csv")
     _share(customers, [{"kind": "person", "id": "bo", "level": "view"}])
@@ -325,8 +325,8 @@ def test_the_chat_cannot_propose_or_apply_a_link_to_a_sheet_not_shared_with_the_
 
 
 def test_a_person_reached_twice_holds_the_most_either_gives(env):
-    from aughor.rbac.groups import add_member, upsert_group
-    from aughor.sheets import model, sharing
+    from pramanyx.rbac.groups import add_member, upsert_group
+    from pramanyx.sheets import model, sharing
     sheet = _make(env)
     upsert_group("default", "finance", "Finance")
     add_member("default", "finance", "user:bo")
@@ -337,7 +337,7 @@ def test_a_person_reached_twice_holds_the_most_either_gives(env):
 
 
 def test_a_proposal_is_read_and_applied_only_as_its_sheet_is_shared(env, monkeypatch):
-    from aughor.sheets import chat
+    from pramanyx.sheets import chat
     sheet = _make(env)
     _share(sheet, [{"kind": "person", "id": "bo", "level": "view"}])
     staged = {"id": "p1", "sheet": sheet.id, "state": "staged", "changes": []}
@@ -359,8 +359,8 @@ def test_the_result_cache_never_keeps_or_serves_a_sheets_rows(env, monkeypatch):
     """The cache sits in front of the door: a sheet's rows kept for one reader were served to the next, to whom the
     sheet was not shared (found on a scratch API 2026-10-27) — and stale after any edit. A sheet is live: every read of
     it goes to its door."""
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.db import matcache
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.db import matcache
     rows = QueryResult(hypothesis_id="t", sql="SELECT 1", columns=["n"], rows=[["3"]], row_count=1)
     never = matcache._never_cached
     # never kept: with the read side's guard lifted, nothing was written to read back
@@ -378,7 +378,7 @@ def test_the_result_cache_never_keeps_or_serves_a_sheets_rows(env, monkeypatch):
 def test_a_stale_version_on_a_cell_nobody_changed_never_names_someone(env):
     """Found on the live receipt 2026-10-28: a version the cell never had, on a cell with no change on record, was said as
     "Someone changed order_status…" — a change that never happened."""
-    from aughor.sheets import service
+    from pramanyx.sheets import service
     sheet = _make(env)
     status = sheet.column("order_status").id
     with pytest.raises(service.Conflict) as refused:
@@ -392,9 +392,9 @@ def test_a_stale_version_on_a_cell_nobody_changed_never_names_someone(env):
 def test_no_profile_or_ontology_is_built_over_the_sheets(env, monkeypatch):
     """The heavy pass writes value profiles everyone reads: over sheets it would carry a chosen sheet's values to people
     it was not shared with, stale after the next edit. The Sheets connection hands back its fast schema instead."""
-    from aughor.db.schema_render import SAMPLE_MARK
-    from aughor.kernel.registries import schema_annotators
-    from aughor.sheets.connection import SheetsConnection
+    from pramanyx.db.schema_render import SAMPLE_MARK
+    from pramanyx.kernel.registries import schema_annotators
+    from pramanyx.sheets.connection import SheetsConnection
     sheet = _make(env)
     _share(sheet, BO_READS_CY_EDITS)
     real = schema_annotators.run_annotators

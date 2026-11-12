@@ -1,5 +1,5 @@
 """Arc FA, FA-6 (ROADMAP §3.60) — packs as products: the installed version, what a pack offered, and the upgrade
-(`aughor/packs/upgrade.py`).
+(`pramanyx/packs/upgrade.py`).
 
 What these hold. A bind records the MANIFEST's version (never the caller's), who bound it and a snapshot of what the pack offered. The
 diff against a newer version lists what was added, changed and removed, each item a person declined marked with the
@@ -19,11 +19,11 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.actions import inbox
-from aughor.ontology import vocabulary as V
-from aughor.packs import bindings as B
-from aughor.packs import upgrade as U
-from aughor.packs.models import (
+from pramanyx.actions import inbox
+from pramanyx.ontology import vocabulary as V
+from pramanyx.packs import bindings as B
+from pramanyx.packs import upgrade as U
+from pramanyx.packs.models import (
     ExpectedLink, ExpectedObject, ExpectedProcess, ExpectedStage, MetricBinds, Pack, PackManifest, PackMetric,
     PackMonitorPrior, PackOntology,
 )
@@ -61,10 +61,10 @@ def _pack(version: int, *, aliases=("nim", "margin on earning assets"), low=0.02
 def _registered(monkeypatch):
     metric = SimpleNamespace(name="net_interest_margin", label="NIM", status="approved", sql="SUM(a) / SUM(b)",
                              tables=["bank.quarterly"], filters=[], unit="ratio")
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric",
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric",
                         lambda name, path=None, connection_id=None: metric if name == "net_interest_margin" else None)
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [("bank.quarterly", "as_of", 400)])
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: None)
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [("bank.quarterly", "as_of", 400)])
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: None)
 
 
 def _bind(pack: Pack, conn: str, by: str = "user:ana") -> dict:
@@ -75,7 +75,7 @@ def _bind(pack: Pack, conn: str, by: str = "user:ana") -> dict:
 
 
 def _client() -> TestClient:
-    from aughor.routers.packs import router
+    from pramanyx.routers.packs import router
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -98,10 +98,10 @@ def test_a_save_without_an_install_record_writes_the_row_exactly_as_before():
 # ── the bind records the manifest's version ──────────────────────────────────────────────────
 
 def test_the_bind_records_the_manifests_version_who_bound_it_and_what_the_pack_offered(monkeypatch):
-    monkeypatch.setattr("aughor.routers.connections.open_connection_for",
+    monkeypatch.setattr("pramanyx.routers.connections.open_connection_for",
                         lambda cid: (_ for _ in ()).throw(RuntimeError("unreachable")))
-    from aughor.packs.loader import load_pack
-    from aughor.packs.roots import pack_dir
+    from pramanyx.packs.loader import load_pack
+    from pramanyx.packs.roots import pack_dir
     banking = load_pack(pack_dir("banking"))
     conn = _conn()
     client = _client()
@@ -142,7 +142,7 @@ def test_the_diff_lists_added_changed_and_removed_and_marks_each_declined_item_w
     v1 = _pack(1)
     install = _bind(v1, conn)
     # the bind proposed v1's terms and alerts; a person declined one term and the alert below the band
-    from aughor.packs.connect import alert_proposals_for, propose_terms
+    from pramanyx.packs.connect import alert_proposals_for, propose_terms
     propose_terms(v1, conn)
     staged = alert_proposals_for(v1, conn, run_sql=_series, today=TODAY)["staged"]
     below = next(s for s in staged if s["side"] == "below")
@@ -183,7 +183,7 @@ def test_the_upgrade_proposes_only_the_new_and_changed_and_never_an_unchanged_de
     conn = _conn()
     v1 = _pack(1)
     install = _bind(v1, conn)
-    from aughor.packs.connect import alert_proposals_for, propose_terms
+    from pramanyx.packs.connect import alert_proposals_for, propose_terms
     propose_terms(v1, conn)
     staged = alert_proposals_for(v1, conn, run_sql=_series, today=TODAY)["staged"]
     by_side = {s["side"]: s["proposal_id"] for s in staged}
@@ -227,7 +227,7 @@ def test_a_binding_made_before_versions_were_recorded_says_so_and_its_upgrade_of
     conn = _conn()
     v1 = _pack(1)
     B.save_binding(v1.id, conn, {}, version=1)            # as every binding was before installed versions
-    from aughor.packs.connect import alert_proposals_for, propose_terms
+    from pramanyx.packs.connect import alert_proposals_for, propose_terms
     propose_terms(v1, conn)
     first = alert_proposals_for(v1, conn, run_sql=_series, today=TODAY)["staged"]
     # a person declined a term and the band's high side before anything recorded which version offered them
@@ -255,9 +255,9 @@ def test_a_binding_made_before_versions_were_recorded_says_so_and_its_upgrade_of
 # ── the structure a person withdrew, from the explorer's record ──────────────────────────────
 
 def test_a_withdrawn_structure_proposal_with_the_packs_provenance_is_read_as_declined_in_its_version():
-    from aughor.ontology.drafts import DraftProposal, OntologyDraft, save_draft
-    from aughor.ontology.models import OntologyEntity, OntologyGraph
-    from aughor.packs.drafter import link_reason
+    from pramanyx.ontology.drafts import DraftProposal, OntologyDraft, save_draft
+    from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+    from pramanyx.packs.drafter import link_reason
     conn = _conn()
     pack = _pack(1)
     graph = OntologyGraph(connection_id=conn, schema_name="bank", schema_fingerprint="fp")

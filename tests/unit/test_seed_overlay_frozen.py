@@ -83,11 +83,11 @@ def test_G1_the_baseline_is_a_byte_copy_of_what_the_legacy_file_shipped_as(legac
 def test_G5_nothing_reads_the_catalogue_file_but_the_store():
     """schema_linker read `data/metrics.json` directly — past the test isolation and, after the
     overlay, past every row an install writes. A path literal outside the store is that bypass."""
-    allowed = {REPO / "aughor" / "semantic" / "metrics.py",
-               REPO / "aughor" / "db" / "home.py",           # an entry NAME in AUTHORED_ENTRIES
-               REPO / "aughor" / "db" / "state_classes.py"}  # an entry NAME in the state-class table (B3), never opened
+    allowed = {REPO / "pramanyx" / "semantic" / "metrics.py",
+               REPO / "pramanyx" / "db" / "home.py",           # an entry NAME in AUTHORED_ENTRIES
+               REPO / "pramanyx" / "db" / "state_classes.py"}  # an entry NAME in the state-class table (B3), never opened
     offenders = []
-    for py in sorted((REPO / "aughor").rglob("*.py")):
+    for py in sorted((REPO / "pramanyx").rglob("*.py")):
         if py in allowed:
             continue
         for node in ast.walk(ast.parse(py.read_text())):
@@ -101,11 +101,11 @@ def test_G5_nothing_reads_the_catalogue_file_but_the_store():
 def test_G5_nothing_reads_the_glossary_file_but_the_store():
     """Every glossary read goes through `glossary._load_raw` today; a path literal elsewhere is a
     read past the overlay — and past the test isolation."""
-    allowed = {REPO / "aughor" / "semantic" / "glossary.py",
-               REPO / "aughor" / "db" / "home.py",           # an entry NAME in AUTHORED_ENTRIES
-               REPO / "aughor" / "db" / "state_classes.py"}  # an entry NAME in the state-class table (B3), never opened
+    allowed = {REPO / "pramanyx" / "semantic" / "glossary.py",
+               REPO / "pramanyx" / "db" / "home.py",           # an entry NAME in AUTHORED_ENTRIES
+               REPO / "pramanyx" / "db" / "state_classes.py"}  # an entry NAME in the state-class table (B3), never opened
     offenders = []
-    for py in sorted((REPO / "aughor").rglob("*.py")):
+    for py in sorted((REPO / "pramanyx").rglob("*.py")):
         if py in allowed:
             continue
         for node in ast.walk(ast.parse(py.read_text())):

@@ -98,13 +98,13 @@ export function noticeMaybe402(res: Response): void {
  */
 export function installUpsellInterceptor(): void {
   if (typeof window === "undefined") return;
-  const w = window as unknown as { __aughorUpsellPatched?: boolean; fetch: typeof fetch };
-  if (w.__aughorUpsellPatched) return;
+  const w = window as unknown as { __pramanyxUpsellPatched?: boolean; fetch: typeof fetch };
+  if (w.__pramanyxUpsellPatched) return;
   const orig = w.fetch.bind(window);
   w.fetch = async (...args: Parameters<typeof fetch>): Promise<Response> => {
     const res = await orig(...args);
     if (res.status === 402) noticeMaybe402(res);
     return res;
   };
-  w.__aughorUpsellPatched = true;
+  w.__pramanyxUpsellPatched = true;
 }

@@ -17,7 +17,7 @@ import re
 import duckdb
 import pytest
 
-from aughor.routers import investigations as inv
+from pramanyx.routers import investigations as inv
 
 
 def test_the_words_type_and_the_number_waits():
@@ -35,7 +35,7 @@ def shop(tmp_path):
     con.execute("CREATE TABLE orders AS SELECT DATE '2026-09-20' - (i % 30)::INT AS order_date, "
                 "(20 + i % 50)::DOUBLE AS amount FROM range(0, 600) t(i)")
     con.close()
-    from aughor.db.registry import add_connection
+    from pramanyx.db.registry import add_connection
     return add_connection("item22 shop", "duckdb", str(path))
 
 
@@ -47,7 +47,7 @@ def test_a_streamed_headline_never_shows_a_number_the_rows_have_not_given(shop, 
         {"narrative": "There are 600 orders.", "anomalies": [], "trend": "", "confidence": "high",
          "follow_ups": []},
     ])
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
     real_complete = LLMProvider.complete
 
     def typed(self, system, user, response_model, text_field, on_text, temperature=0.1):

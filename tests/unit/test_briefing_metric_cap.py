@@ -12,7 +12,7 @@ from types import SimpleNamespace as N
 
 import pytest
 
-from aughor.briefing import ranges
+from pramanyx.briefing import ranges
 
 
 class _M:
@@ -30,15 +30,15 @@ SPEC = ranges.RangeSpec(preset="custom", start=date(2026, 8, 1), end=date(2026, 
 
 @pytest.fixture
 def retail(monkeypatch):
-    from aughor.business_profile import metric_kb
-    from aughor.semantic import metric_coverage
+    from pramanyx.business_profile import metric_kb
+    from pramanyx.semantic import metric_coverage
     monkeypatch.setattr(metric_kb, "industry_scope", lambda *a, **k: "retail")
     monkeypatch.setattr(metric_coverage, "tables_of", lambda *a, **k: [])
 
 
 def _measure(monkeypatch, governed):
-    from aughor.semantic import metric_time as mt
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: governed)
+    from pramanyx.semantic import metric_time as mt
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: governed)
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "declared", lambda m: True)
     monkeypatch.setattr(mt, "run_measure", lambda *a, **k: ([], "measured elsewhere"))
@@ -54,7 +54,7 @@ def test_it_measures_up_to_twenty_four_and_names_only_what_is_past_them(monkeypa
 
 
 def test_a_workspace_sets_its_own_cap(monkeypatch):
-    from aughor.orgsettings import store as org_store
+    from pramanyx.orgsettings import store as org_store
     monkeypatch.setattr(org_store, "effective_settings", lambda ws=None: N(briefing_metric_cap=6))
     assert ranges.metric_cap("c") == 6
 
@@ -63,8 +63,8 @@ def test_the_metrics_read_by_area_in_the_maps_order(monkeypatch, retail):
     governed = [_M("session_conversion_rate", "Session Conversion Rate"), _M("repeat_purchase_rate",
                                                                             "Repeat Purchase Rate"),
                 _M("item_return_rate", "Item Return Rate"), _M("gmv", "GMV")]
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: governed)
-    from aughor.briefing import reading_order as RO
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: governed)
+    from pramanyx.briefing import reading_order as RO
     monkeypatch.setattr(RO, "industry_reading", lambda conn_id: ([], []))
     got = [m.name for m in ranges.governed_metrics("c")]
     areas = ranges.areas_of("c", governed)

@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.engine import resume_run, run_automation
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.automations.store import get_run, upsert_automation
+from pramanyx.automations.engine import resume_run, run_automation
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.automations.store import get_run, upsert_automation
 
 
 @pytest.fixture(autouse=True)
@@ -34,8 +34,8 @@ def _slack_stub(monkeypatch):
         posts.append({"channel": channel, "message": message, "thread_ts": thread_ts})
         return True, {"ts": f"ts{len(posts)}", "channel": channel}
 
-    monkeypatch.setattr("aughor.slackbots.store.get_bot_decrypted", lambda bid: _Bot())
-    monkeypatch.setattr("aughor.slackbots.post.post_as_bot", _post)
+    monkeypatch.setattr("pramanyx.slackbots.store.get_bot_decrypted", lambda bid: _Bot())
+    monkeypatch.setattr("pramanyx.slackbots.post.post_as_bot", _post)
     return posts
 
 
@@ -57,8 +57,8 @@ def _run(a):
 
 
 def test_the_hold_helper_marks_a_drafted_slack_post():
-    from aughor.automations.dataflow import DECLARED_WRITE_KIND
-    from aughor.automations.propose import _hold_drafted_writes
+    from pramanyx.automations.dataflow import DECLARED_WRITE_KIND
+    from pramanyx.automations.propose import _hold_drafted_writes
     from types import SimpleNamespace
     drafted = SimpleNamespace(effects=[
         SimpleNamespace(kind="slack_post", config={}),
@@ -77,7 +77,7 @@ def test_a_hand_built_post_never_parks(_slack_stub):
 
 
 def test_a_drafted_post_parks_and_accept_sends_once(_slack_stub):
-    from aughor.actions.inbox import accept_proposal, proposals_for_run
+    from pramanyx.actions.inbox import accept_proposal, proposals_for_run
 
     a = _chain(drafted=True)
     run = _run(a)
@@ -99,7 +99,7 @@ def test_a_drafted_post_parks_and_accept_sends_once(_slack_stub):
 
 
 def test_always_allow_mints_a_send_grant_and_the_next_run_is_unattended(_slack_stub):
-    from aughor.actions.inbox import accept_proposal, proposals_for_run
+    from pramanyx.actions.inbox import accept_proposal, proposals_for_run
 
     a = _chain(drafted=True)
     run = _run(a)
@@ -118,8 +118,8 @@ def test_always_allow_mints_a_send_grant_and_the_next_run_is_unattended(_slack_s
 
 def test_the_grant_is_bound_to_the_channel_not_blanket(_slack_stub):
     """always-allow for #ops does not authorize a post to #general — the target is exact."""
-    from aughor.actions import grants
-    from aughor.actions.inbox import accept_proposal, proposals_for_run
+    from pramanyx.actions import grants
+    from pramanyx.actions.inbox import accept_proposal, proposals_for_run
 
     a = _chain(drafted=True)
     run = _run(a)
@@ -134,7 +134,7 @@ def test_a_parked_send_carries_the_answer_it_was_bound_to(_slack_stub):
     would post — the envelope rendered — and the accept posts exactly that. The raw
     `message` was frozen before (2026-10-04), so an envelope-bound send reached the card,
     and then the channel, as nothing."""
-    from aughor.actions.inbox import accept_proposal, proposals_for_run
+    from pramanyx.actions.inbox import accept_proposal, proposals_for_run
 
     a = upsert_automation(Automation(
         name="revenue delivery", conn_id="conn-send",
@@ -160,11 +160,11 @@ def test_an_accepted_send_draws_its_chart_and_files_its_thread(_slack_stub, monk
     every reply under an accepted send as "not filed on any object" before. Pressed at the
     DOOR: the after-steps live in the accept route, because the inbox may not import the
     engine (`test_the_inbox_never_imports_the_automation_engine`)."""
-    from aughor.actions.inbox import proposals_for_run
-    from aughor.automations import engine
-    from aughor.hub.links import list_links
+    from pramanyx.actions.inbox import proposals_for_run
+    from pramanyx.automations import engine
+    from pramanyx.hub.links import list_links
 
-    monkeypatch.setattr("aughor.automations.engine.resume_run", lambda rid, **kw: None)
+    monkeypatch.setattr("pramanyx.automations.engine.resume_run", lambda rid, **kw: None)
 
     grid = {"columns": ["region", "revenue"], "rows": [["East", 12], ["West", 9]]}
     monkeypatch.setattr(engine, "chart_grid", lambda effect, context: dict(grid))

@@ -4,14 +4,14 @@ Four things under test, one per section: the store itself (a record round-trips 
 failed write costs a counter, never a turn), the three wired sites (the tool loop, the
 route classifier, the definition chooser — each records what its decider actually saw),
 and the exporter (deterministic, disjoint train/golden split, -1 rows excluded).
-Hermetic via AUGHOR_DECISIONS_DB in conftest's allowlist — same commit as the store.
+Hermetic via PRAMANYX_DECISIONS_DB in conftest's allowlist — same commit as the store.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from aughor.learning import decisions
+from pramanyx.learning import decisions
 
 
 def _wipe():
@@ -75,9 +75,9 @@ def test_context_and_options_are_capped():
 
 def test_the_tool_loop_records_each_executed_choice_with_its_menu():
     _wipe()
-    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
     params = {"type": "object", "properties": {}}
     tools = [
@@ -104,9 +104,9 @@ def test_the_tool_loop_records_each_executed_choice_with_its_menu():
 
 def test_a_single_tool_roster_is_not_a_choice_and_records_nothing():
     _wipe()
-    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
     set_responses([FauxToolCall(payload={}, name="only"), "done"])
     run_tool_loop(LLMProvider(backend="faux", role="coder"), "sys", "q",
@@ -126,9 +126,9 @@ def test_the_route_classifier_records_the_final_shape_not_the_raw_pick(monkeypat
     against a different one. An overridden shape is therefore `rule` with no probability —
     the pick was the platform's, not the model's."""
     _wipe()
-    import aughor.agent.nodes as nodes
-    from aughor.agent.question_shape import SHAPES
-    from aughor.agent.state import ShapeDecision
+    import pramanyx.agent.nodes as nodes
+    from pramanyx.agent.question_shape import SHAPES
+    from pramanyx.agent.state import ShapeDecision
 
     class _Stub:
         def complete(self, **kw):
@@ -152,7 +152,7 @@ def test_a_shape_code_decided_records_as_a_rule_with_no_model_asked(monkeypatch)
     """Most turns never reach the model: the shape rules read the question, and the record says
     so — `rule`, no probability — so the corpus never credits a model with a choice code made."""
     _wipe()
-    import aughor.agent.nodes as nodes
+    import pramanyx.agent.nodes as nodes
     monkeypatch.setattr(nodes, "get_provider",
                         lambda role: (_ for _ in ()).throw(AssertionError("no model for a clear question")))
     effective, decision = nodes.classify_question("Why did revenue drop in August?")
@@ -163,9 +163,9 @@ def test_a_shape_code_decided_records_as_a_rule_with_no_model_asked(monkeypatch)
 
 def test_the_definition_chooser_records_the_listing_it_showed(monkeypatch):
     _wipe()
-    from aughor.ontology.models import OntologyGraph
-    import aughor.agent.framing as AF
-    from aughor.ontology.framing import frame_question
+    from pramanyx.ontology.models import OntologyGraph
+    import pramanyx.agent.framing as AF
+    from pramanyx.ontology.framing import frame_question
 
     repo = Path(__file__).resolve().parents[2]
     graph = OntologyGraph.model_validate(json.loads(
@@ -205,12 +205,12 @@ def test_export_splits_disjointly_and_skips_unchosen_rows():
     _wipe()
     _seed(40)
     decisions.record_decision("test.export", "picked nothing", ["a", "b"], chosen="zzz")
-    from aughor.learning import exporters
+    from pramanyx.learning import exporters
     out = exporters.export_decisions(site="test.export")["test.export"]
     total = out["choice"]["row_count"] + out["golden"]["row_count"]
     assert total == 40                                    # the -1 row is excluded
     assert out["choice"]["kind"] == "choice" and out["golden"]["kind"] == "choice_golden"
-    from aughor.learning import store
+    from pramanyx.learning import store
     for row in store.rows_of(out["choice"]):
         assert set(row) == {"context", "options", "label", "task"}
         assert row["task"] == "decision:test.export"
@@ -220,7 +220,7 @@ def test_export_splits_disjointly_and_skips_unchosen_rows():
 def test_export_is_deterministic_and_idempotent():
     _wipe()
     _seed(12)
-    from aughor.learning import exporters
+    from pramanyx.learning import exporters
     first = exporters.export_decisions(site="test.export")["test.export"]
     again = exporters.export_decisions(site="test.export")["test.export"]
     assert first["choice"]["data_id"] == again["choice"]["data_id"]
@@ -238,9 +238,9 @@ def test_each_tool_loop_caller_files_under_its_own_site():
     segmented by decider at all, which is what every judgment measurement over it needs.
     """
     _wipe()
-    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
     params = {"type": "object", "properties": {}}
     tools = [ToolSpec(name="run_sql", description="d", parameters=params, run=lambda a: "1"),
@@ -262,9 +262,9 @@ def test_the_default_site_is_unchanged_so_an_un_updated_caller_keeps_its_label()
     under a new name for callers nobody updated, which is the same unsegmentable corpus in a
     different spelling."""
     _wipe()
-    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
     params = {"type": "object", "properties": {}}
     set_responses([FauxToolCall(payload={}, name="a"), "done"])
@@ -285,23 +285,23 @@ import pytest as _pytest  # noqa: E402
 def closed_window():
     """Every capture test starts and ends with the window CLOSED — the product's default, and
     the state a test that forgot to close one would otherwise leak into the next."""
-    from aughor.obs import prompt_window as PW
+    from pramanyx.obs import prompt_window as PW
     PW.close_window()
     yield PW
     PW.close_window()
 
 
 def _loop(tools, responses, **kw):
-    from aughor.agent.tool_loop import run_tool_loop
-    from aughor.llm.faux import set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.agent.tool_loop import run_tool_loop
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.llm.provider import LLMProvider
     set_responses(responses)
     return run_tool_loop(LLMProvider(backend="faux", role="coder"), "THE SYSTEM PROMPT", "q",
                          tools, **kw)
 
 
 def _two_tools():
-    from aughor.agent.tool_loop import ToolSpec
+    from pramanyx.agent.tool_loop import ToolSpec
     params = {"type": "object", "properties": {}}
     return [ToolSpec(name="run_sql", description="d", parameters=params, run=lambda a: "1"),
             ToolSpec(name="baseline", description="d", parameters=params, run=lambda a: "2")]
@@ -311,7 +311,7 @@ def test_every_decision_carries_a_digest_of_what_the_decider_was_shown(closed_wi
     """ALWAYS written, window or no window: a sha256 cannot be reversed into the prompt, so it
     is metadata under §6 item 4. It is what lets a later rebuild PROVE it produced the same
     input before a token is spent."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
     _wipe()
     _loop(_two_tools(), [FauxToolCall(payload={}, name="run_sql"), "done"])
     [r] = decisions.list_decisions(site="converse.tool")
@@ -322,8 +322,8 @@ def test_every_decision_carries_a_digest_of_what_the_decider_was_shown(closed_wi
 def test_no_replay_payload_is_captured_while_the_window_is_closed(closed_window, monkeypatch):
     """The DEFAULT. The builder's arguments carry the user's question and prior answers — a
     payload — so nothing is emitted, and no operator's budget is spent, unless a window is open."""
-    from aughor.llm.faux import FauxToolCall
-    from aughor.obs import session_log
+    from pramanyx.llm.faux import FauxToolCall
+    from pramanyx.obs import session_log
     emitted = []
     monkeypatch.setattr(session_log, "emit", lambda kind, **kw: emitted.append((kind, kw)))
     _wipe()
@@ -336,8 +336,8 @@ def test_an_open_window_captures_the_first_turn_only(closed_window, monkeypatch)
     """A mid-loop decision saw a tool-result history persisted nowhere, so its arguments could
     not rebuild its prompt — capturing them would spend an operator's budget on a row no replay
     can use. Only the FIRST decision of a turn is captured."""
-    from aughor.llm.faux import FauxToolCall
-    from aughor.obs import session_log
+    from pramanyx.llm.faux import FauxToolCall
+    from pramanyx.obs import session_log
     emitted = []
     monkeypatch.setattr(session_log, "emit", lambda kind, **kw: emitted.append((kind, kw)))
     closed_window.open_window(calls=10, minutes=5, opened_by="t", reason="jd-4 test")
@@ -371,8 +371,8 @@ def test_a_replay_capture_costs_exactly_one_unit_of_the_operators_budget(closed_
     by exactly one unit. Not zero (the capture would be free, so unbounded) and not two (it would
     double-spend the operator's window).
     """
-    from aughor.llm.faux import FauxToolCall
-    from aughor.obs import session_log
+    from pramanyx.llm.faux import FauxToolCall
+    from pramanyx.obs import session_log
     monkeypatch.setattr(session_log, "emit", lambda kind, **kw: None)
     responses = [FauxToolCall(payload={}, name="run_sql"), "done"]
 
@@ -394,7 +394,7 @@ def test_a_replay_capture_costs_exactly_one_unit_of_the_operators_budget(closed_
 def test_a_truncated_argument_is_marked_so_the_battery_can_refuse_it(closed_window, monkeypatch):
     """A capped intake rebuilds a DIFFERENT prompt. Marking it is what lets a replay refuse it
     instead of silently measuring a different question."""
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     monkeypatch.setattr(session_log, "_prompt_cap", lambda: 10)
     closed_window.open_window(calls=5, minutes=5)
     out = session_log.capture_replay({"intake": "x" * 50, "budget": 6})
@@ -428,7 +428,7 @@ def _counter(key):
     """Counters live under `snapshot()["counters"]`, not at the top level. The first draft read
     the top level, so every "before" was 0 and the next read raised KeyError — a test killed for
     the wrong reason — and guarded itself with `hasattr` checks that could only skip, not fail."""
-    from aughor.stats import stats
+    from pramanyx.stats import stats
     return stats.snapshot()["counters"].get(key, 0)
 
 def test_a_flood_stops_at_the_cap_and_counts_what_it_dropped(monkeypatch):
@@ -464,8 +464,8 @@ def test_a_row_a_person_labelled_is_never_pruned_and_never_counts_toward_the_cap
 
 
 def test_the_age_window_is_off_by_default_because_the_corpus_must_accumulate(monkeypatch):
-    monkeypatch.delenv("AUGHOR_DECISIONS_KEEP_DAYS", raising=False)
-    monkeypatch.delenv("AUGHOR_DECISIONS_MAX_ROWS", raising=False)
+    monkeypatch.delenv("PRAMANYX_DECISIONS_KEEP_DAYS", raising=False)
+    monkeypatch.delenv("PRAMANYX_DECISIONS_MAX_ROWS", raising=False)
     _wipe()
     decisions.record_decision("converse.tool", "old", ["a", "b"], chosen="a", outcome="ok")
     assert decisions.prune() == 0
@@ -481,8 +481,8 @@ def test_a_truncated_field_is_counted_not_silently_clipped():
 def test_a_turn_that_began_with_a_preface_captures_no_replay(closed_window, monkeypatch):
     """Its first decision read results code measured before it; a rebuild from the question alone would
     put a different input in front of the decider, so it is not captured (2026-10-02)."""
-    from aughor.llm.faux import FauxToolCall
-    from aughor.obs import session_log
+    from pramanyx.llm.faux import FauxToolCall
+    from pramanyx.obs import session_log
     emitted = []
     monkeypatch.setattr(session_log, "emit", lambda kind, **kw: emitted.append((kind, kw)))
     closed_window.open_window(calls=10, minutes=5, opened_by="t", reason="preface test")
@@ -512,7 +512,7 @@ def _row(decision_id: str) -> dict:
 
 def test_old_typed_words_expire_and_the_record_stays(monkeypatch):
     _wipe()
-    monkeypatch.delenv("AUGHOR_DECISIONS_PAYLOAD_DAYS", raising=False)
+    monkeypatch.delenv("PRAMANYX_DECISIONS_PAYLOAD_DAYS", raising=False)
     old = decisions.record_decision("converse.tool", "why did returns jump last week", ["sql", "chart"],
                                     chosen="sql", conn_id="c1", trace_id="t1", inv_id="i1")
     labelled = decisions.record_decision("converse.tool", "what about the north region", ["sql", "chart"],
@@ -558,7 +558,7 @@ def test_the_sweep_runs_on_a_clock_not_a_write_count(monkeypatch):
 
 def test_a_window_of_zero_keeps_the_words(monkeypatch):
     _wipe()
-    monkeypatch.setenv("AUGHOR_DECISIONS_PAYLOAD_DAYS", "0")
+    monkeypatch.setenv("PRAMANYX_DECISIONS_PAYLOAD_DAYS", "0")
     old = decisions.record_decision("converse.tool", "kept on purpose", ["sql", "chart"], chosen="sql")
     _backdate(old, 400)
     assert decisions.expire_payloads() == 0 and _row(old)["context"] == "kept on purpose"

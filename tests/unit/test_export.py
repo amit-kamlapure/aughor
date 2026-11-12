@@ -4,10 +4,10 @@ import pytest
 import shutil as _shutil
 from pathlib import Path as _Path
 
-from aughor.export import build_export_doc, export_report
-from aughor.export.echarts import render_chart_svg, render_charts_svg
+from pramanyx.export import build_export_doc, export_report
+from pramanyx.export.echarts import render_chart_svg, render_charts_svg
 
-_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "pramanyx" / "export" / "chart_ssr.bundle.mjs"
 _ssr = pytest.mark.skipif(not _shutil.which("node") or not _SSR_BUNDLE.exists(),
                           reason="chart SSR needs node + chart_ssr.bundle.mjs")
 
@@ -124,7 +124,7 @@ def test_render_charts_svg_batch_aligns_index_for_index():
 
 def test_render_chart_svg_fails_open_without_node(monkeypatch):
     # No node on PATH → None, never an exception (the document falls back to tables).
-    from aughor.export import echarts as E
+    from pramanyx.export import echarts as E
     monkeypatch.setattr(E, "_node_bin", lambda: None)
     assert E.render_chart_svg(["c", "v"], [["a", 1], ["b", 2]], "bar", "t") is None
 
@@ -179,15 +179,15 @@ def test_every_figure_links_back_to_its_receipt(monkeypatch):
 
     inv = _ada_inv()
     inv["report"]["envelope"] = {"headline": "AOV rose 2% MoM", "provenance": {"receipt_id": "r123abc"}}
-    monkeypatch.delenv("AUGHOR_WEB_URL", raising=False)
+    monkeypatch.delenv("PRAMANYX_WEB_URL", raising=False)
     doc = build_export_doc(inv)
     assert (doc.source_text(), doc.source_url) == ("Source: Pramanyx receipt r123abc", "")
 
-    monkeypatch.setenv("AUGHOR_WEB_URL", "https://aughor.example.com/")
+    monkeypatch.setenv("PRAMANYX_WEB_URL", "https://pramanyx.example.com/")
     pdf, _, _ = export_report(inv, "pdf")
-    assert pdf.count(b"/URI (https://aughor.example.com/receipt/r123abc)") >= 2   # a figure, and the footer
+    assert pdf.count(b"/URI (https://pramanyx.example.com/receipt/r123abc)") >= 2   # a figure, and the footer
     deck = zipfile.ZipFile(io.BytesIO(export_report(inv, "pptx")[0]))
-    assert any(b"https://aughor.example.com/receipt/r123abc" in deck.read(n)
+    assert any(b"https://pramanyx.example.com/receipt/r123abc" in deck.read(n)
                for n in deck.namelist() if n.startswith("ppt/slides/_rels/"))
 
 
@@ -196,7 +196,7 @@ def test_a_chat_answers_chart_is_captioned_by_its_grid_and_its_title_reads_clean
     figure it ran off the edge and squeezed the plot until its axis labels collided, and a deck
     wrote it, `**` included, as the slide's title. The grid's columns name what it shows, and
     the title drops its markdown markers."""
-    from aughor.export.pdf import _unmarked
+    from pramanyx.export.pdf import _unmarked
 
     inv = {"id": "e1", "kind": "chat", "question": "top categories?", "connection_id": "demo",
            "report": {"envelope": {

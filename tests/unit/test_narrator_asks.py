@@ -8,8 +8,8 @@ live (5b6fb57c) the narrator wrote one story over two measurements of revenue, o
 result the analyst had not cited."""
 from __future__ import annotations
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import (
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import (
     SynthesisAsk,
     ADASynthesisModel,
     AnswerRecommendationModel,
@@ -54,7 +54,7 @@ def test_below_a_causal_licence_the_section_no_longer_lectures_about_a_field_not
 
 
 def test_an_analyst_turn_declares_no_plan_and_reconciles_none():
-    from aughor.agent.analyst import _base_state
+    from pramanyx.agent.analyst import _base_state
     state = _base_state("q", "c1", "inv", "schema", origin_finding=None, scope_schema="", canvas_id=None,
                         canvas_schema_context="", data_catalog="")
     assert state["analyst_turn"] is True

@@ -26,15 +26,15 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.dataflow import (
+from pramanyx.automations.dataflow import (
     list_published_keys, published_keys, validate_chain,
 )
-from aughor.automations.engine import _dispatch_integration, run_automation
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-from aughor.automations.store import upsert_automation
-from aughor.integrations import call as callmod
-from aughor.integrations import store as istore
-from aughor.integrations.models import Connection
+from pramanyx.automations.engine import _dispatch_integration, run_automation
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import upsert_automation
+from pramanyx.integrations import call as callmod
+from pramanyx.integrations import store as istore
+from pramanyx.integrations.models import Connection
 
 
 @pytest.fixture(autouse=True)
@@ -245,7 +245,7 @@ def test_a_dead_grant_makes_the_step_terminal_not_retriable(wire):
 
 
 def test_a_usage_cap_leaves_the_step_retriable(grants, wire, monkeypatch):
-    from aughor.govern import outbound
+    from pramanyx.govern import outbound
 
     class _Decision:
         allowed = False
@@ -305,7 +305,7 @@ def test_two_integration_steps_do_not_draw_as_the_same_node():
     nodes both labelled "Use an integration", with nothing on either to say which. The
     operation is what tells them apart — and it is safe to put on a picture BY
     CONSTRUCTION, because it is an id from the closed roster rather than authored text."""
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
 
     chain = _automation(
         _read(alias="inbox"),
@@ -321,7 +321,7 @@ def test_the_node_face_never_carries_the_account_or_the_message():
     """The allowlist's own rule. An account's email address on a picture that is read on
     screen and exported is the spill this labeller exists to prevent, and a message body
     is the other half of it."""
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
 
     chain = _automation(Effect(
         kind="integration_call", alias="tell",
@@ -336,7 +336,7 @@ def test_a_binding_into_params_still_draws_as_a_data_edge():
     """`BINDABLE_FIELDS` names `params`, so the reference lives one level down. An edge
     the engine follows and the canvas does not draw is a picture that under-claims — the
     mirror of the failure this module exists to prevent."""
-    from aughor.automations.graph import build_graph, data_edges_only
+    from pramanyx.automations.graph import build_graph, data_edges_only
 
     chain = _automation(
         _read(alias="inbox"),
@@ -362,16 +362,16 @@ def _post(alias="tell", **params) -> Effect:
 
 @pytest.fixture
 def gate_on(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
 
 
 def _proposals(run_id):
-    from aughor.actions.inbox import proposals_for_run
+    from pramanyx.actions.inbox import proposals_for_run
     return proposals_for_run(run_id)
 
 
 def test_a_gated_write_parks_the_run_instead_of_failing_it(grants, wire, gate_on):
-    from aughor.automations.store import get_run
+    from pramanyx.automations.store import get_run
 
     run = _run(_automation(_read(alias="inbox"), _post()), Dispatcher())
 
@@ -399,8 +399,8 @@ def test_the_params_frozen_on_the_proposal_are_the_RESOLVED_ones(grants, wire, g
 
 
 def test_accepting_it_performs_the_write_and_resumes_the_same_run(grants, wire, gate_on):
-    from aughor.actions.inbox import accept_proposal
-    from aughor.automations.engine import resume_run
+    from pramanyx.actions.inbox import accept_proposal
+    from pramanyx.automations.engine import resume_run
 
     wire["queue"].append((200, {"messages": [{"id": "m1"}]}))
     parked = _run(_automation(_read(alias="inbox"), _post()), Dispatcher())
@@ -424,7 +424,7 @@ def test_accepting_it_performs_the_write_and_resumes_the_same_run(grants, wire, 
 def test_the_accept_does_not_ask_the_gate_a_second_time(grants, wire, gate_on):
     """The human's accept IS the approval. Asking again would refuse it forever — the
     proposal is not allowlisted, and nothing about accepting it makes it so."""
-    from aughor.actions.inbox import accept_proposal
+    from pramanyx.actions.inbox import accept_proposal
 
     parked = _run(_automation(_post()), Dispatcher())
     wire["queue"].append((200, {"ok": True, "ts": "1.1", "channel": "C1"}))
@@ -435,8 +435,8 @@ def test_the_accept_does_not_ask_the_gate_a_second_time(grants, wire, gate_on):
 def test_the_accept_still_re_asks_everything_that_is_not_the_gate(grants, wire, gate_on):
     """An approval is permission, not a promise that the world stood still: a proposal can
     sit for days and the account behind it can be revoked in the meantime."""
-    from aughor.actions.inbox import accept_proposal
-    from aughor.integrations.models import Connection
+    from pramanyx.actions.inbox import accept_proposal
+    from pramanyx.integrations.models import Connection
 
     parked = _run(_automation(_post()), Dispatcher())
     istore.save_connection(Connection(id="ic_s", provider="slack", scopes="chat:write",
@@ -447,8 +447,8 @@ def test_the_accept_still_re_asks_everything_that_is_not_the_gate(grants, wire, 
 
 
 def test_rejecting_it_skips_the_step_and_the_chain_finishes(grants, wire, gate_on):
-    from aughor.actions.inbox import reject_proposal
-    from aughor.automations.engine import resume_run
+    from pramanyx.actions.inbox import reject_proposal
+    from pramanyx.automations.engine import resume_run
 
     wire["queue"].append((200, {"messages": []}))
     parked = _run(_automation(_read(alias="inbox"), _post()), Dispatcher())
@@ -469,7 +469,7 @@ def test_a_read_never_parks(grants, wire, gate_on):
 
 
 def test_an_allowlisted_write_does_not_park_at_all(grants, wire, gate_on):
-    from aughor.govern import actions as govern
+    from pramanyx.govern import actions as govern
 
     action = "integration.slack.slack.chat.postMessage"
     govern.allow(action, "ic_s", actor="amit")
@@ -489,8 +489,8 @@ def test_an_accepted_write_whose_transport_broke_is_uncertain_not_executed(
         grants, wire, gate_on, monkeypatch):
     """One approved post becoming two is what this status exists to prevent, and the
     resumed run has to carry the word rather than flatten it to `failed`."""
-    from aughor.actions.inbox import accept_proposal, get_proposal
-    from aughor.automations.engine import resume_run
+    from pramanyx.actions.inbox import accept_proposal, get_proposal
+    from pramanyx.automations.engine import resume_run
 
     parked = _run(_automation(_post()), Dispatcher())
     pid = _proposals(parked.id)[0].id

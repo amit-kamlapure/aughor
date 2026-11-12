@@ -14,8 +14,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -64,8 +64,8 @@ def test_a_one_table_statement_carries_sources_too_and_the_shape_is_unchanged_ot
 
 
 def test_output_sources_read_the_lineage_rows_the_receipt_writes():
-    from aughor.routers.query import _output_sources
-    from aughor.trust.lineage_edges import RELATION
+    from pramanyx.routers.query import _output_sources
+    from pramanyx.trust.lineage_edges import RELATION
     rows = [
         (RELATION, "column:orders.order_id", json.dumps({"roles": ["output"], "confidence": "certain", "as": ["order_id"]})),
         (RELATION, "column:customers.name", json.dumps({"roles": ["output", "filter"], "confidence": "likely", "as": ["who"]})),
@@ -92,7 +92,7 @@ def test_output_sources_read_the_lineage_rows_the_receipt_writes():
     ("LOWER(name)", False), ("", False),
 ])
 def test_an_output_is_the_column_or_an_expression_over_it(expression, bare):
-    from aughor.sql.lineage import is_bare_column
+    from pramanyx.sql.lineage import is_bare_column
     assert is_bare_column(expression) is bare
 
 

@@ -7,7 +7,7 @@
  * called to fill it — and each says when it has nothing, rather than showing a copy of another page.
  *
  * Laid out as the approved mockup lays it out (design-mockups/home.html, 2026-10-10; the law is
- * `aughor-v2/CLARITY.md`): the lead figure and what needs the person side by side, then the standing
+ * `pramanyx-v2/CLARITY.md`): the lead figure and what needs the person side by side, then the standing
  * questions, then the week ahead beside what is between them and Pramanyx. Figures first, facts as chips,
  * one muted line for an empty section, and no paragraph under any title — 1,076 words on theLook became
  * about 250.
@@ -30,7 +30,7 @@ import {
 } from "@/lib/home";
 import { declareDecision, listClaims, listDecisions, type Claim, type Decision, type ExpectationIn } from "@/lib/record";
 
-const LAST_SEEN_KEY = "aughor_home_last_seen";
+const LAST_SEEN_KEY = "pramanyx_home_last_seen";
 
 const card: CSSProperties = {
   background: "var(--bg-2)", border: "1px solid var(--card-edge)", borderRadius: "var(--r3)", padding: "12px 14px", minWidth: 0,

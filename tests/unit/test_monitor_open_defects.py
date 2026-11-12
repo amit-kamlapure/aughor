@@ -21,9 +21,9 @@ import duckdb
 import pytest
 from fastapi import HTTPException
 
-import aughor.monitors.store as store
-from aughor.monitors import runner
-from aughor.monitors.models import Monitor
+import pramanyx.monitors.store as store
+from pramanyx.monitors import runner
+from pramanyx.monitors.models import Monitor
 
 
 @pytest.fixture()
@@ -79,10 +79,10 @@ def test_a_grace_period_reads_back_as_it_was_set(monitors):
 
 
 def test_the_routes_carry_the_grace_period(monitors, monkeypatch):
-    from aughor.routers import monitors as routes
+    from pramanyx.routers import monitors as routes
 
-    monkeypatch.setattr("aughor.security.authz.check_owner", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.security.authz.get_principal", lambda _r: None)
+    monkeypatch.setattr("pramanyx.security.authz.check_owner", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.security.authz.get_principal", lambda _r: None)
     monkeypatch.setattr(routes, "_validate_custom_sql", lambda *a: None)
     made = routes.create_monitor(routes.CreateMonitorRequest(
         conn_id="c1", name="m", custom_sql="SELECT 1", grace_period_hours=1.5), request=None)
@@ -94,12 +94,12 @@ def test_the_routes_carry_the_grace_period(monitors, monkeypatch):
 # ── 3 · a channel names a destination ───────────────────────────────────────────
 
 def test_a_channel_that_names_no_trigger_is_refused(monitors, monkeypatch):
-    from aughor.routers import monitors as routes
+    from pramanyx.routers import monitors as routes
 
-    monkeypatch.setattr("aughor.security.authz.check_owner", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.security.authz.get_principal", lambda _r: None)
+    monkeypatch.setattr("pramanyx.security.authz.check_owner", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.security.authz.get_principal", lambda _r: None)
     monkeypatch.setattr(routes, "_validate_custom_sql", lambda *a: None)
-    monkeypatch.setattr("aughor.notifications.store.get_trigger",
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger",
                         lambda tid: SimpleNamespace(id=tid) if tid == "trg-1" else None)
     for word in ("slack", "email"):
         with pytest.raises(HTTPException) as exc:
@@ -114,9 +114,9 @@ def test_a_channel_that_names_no_trigger_is_refused(monitors, monkeypatch):
 def test_a_monitor_saved_before_the_check_can_still_be_edited(monitors, monkeypatch):
     """Refused where it is chosen, not wherever it is carried: an edit that leaves a stored "slack" alone goes through,
     and the form shows the person that it names no destination."""
-    from aughor.routers import monitors as routes
+    from pramanyx.routers import monitors as routes
 
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: None)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: None)
     m = Monitor(conn_id="c1", name="old", custom_sql="SELECT 1", notification_channel="slack")
     monitors.upsert_monitor(m)
     out = routes.update_monitor(m.id, routes.UpdateMonitorRequest(name="renamed", notification_channel="slack"))
@@ -126,7 +126,7 @@ def test_a_monitor_saved_before_the_check_can_still_be_edited(monitors, monkeypa
 # ── 4 · a metric's value is read through its statement ──────────────────────────
 
 def test_an_undated_metric_monitor_reads_a_value(monkeypatch):
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
 
     metric = MetricDefinition(name="units", label="Units", sql="SUM(qty)", tables=["sales"],
                               filters=["status <> 'void'"], connection="c1")
@@ -150,14 +150,14 @@ def test_an_undated_metric_monitor_reads_a_value(monkeypatch):
 # ── 5 · Run now shows its verdict and files nothing ─────────────────────────────
 
 def test_run_now_files_and_sends_nothing(monitors, monkeypatch):
-    from aughor.monitors import scheduler
+    from pramanyx.monitors import scheduler
 
     m = Monitor(conn_id="c1", name="Always", custom_sql="SELECT 1", alert_on="threshold_cross",
                 threshold_direction="above", warning_threshold=0.0)
     monitors.upsert_monitor(m)
     sent: list = []
-    monkeypatch.setattr("aughor.monitors.notify.dispatch_alert", lambda *a, **k: sent.append(a))
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    monkeypatch.setattr("pramanyx.monitors.notify.dispatch_alert", lambda *a, **k: sent.append(a))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda _c: SimpleNamespace(scalar=lambda *a, **k: 5.0, close=lambda: None))
     alert, said = scheduler.trigger_now_read(m.id)
     assert alert is not None and alert.severity == "warning" and "read 5" in said
@@ -167,8 +167,8 @@ def test_run_now_files_and_sends_nothing(monitors, monkeypatch):
 # ── 6 · a chain checks a monitor on the monitor's own cadence ───────────────────
 
 def test_a_metric_condition_is_checked_on_its_monitors_cron(monitors, monkeypatch):
-    from aughor.automations import engine
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations import engine
+    from pramanyx.automations.models import Automation, Condition, Effect
 
     m = Monitor(conn_id="c1", name="Hourly", custom_sql="SELECT 1", check_cron="0 * * * *")
     monitors.upsert_monitor(m)
@@ -198,9 +198,9 @@ def test_a_metric_condition_is_checked_on_its_monitors_cron(monitors, monkeypatc
 # ── 8 · the Hub map lists monitors ──────────────────────────────────────────────
 
 def test_the_hub_map_lists_monitors(monitors, monkeypatch):
-    from aughor.hub.map import hub_map
+    from pramanyx.hub.map import hub_map
 
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: None)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: None)
     on = Monitor(conn_id="ed0-hub", name="GMV floor", custom_sql="SELECT 1")
     off = Monitor(conn_id="ed0-hub", name="Old watch", custom_sql="SELECT 1", enabled=False,
                   notification_channel="slack")

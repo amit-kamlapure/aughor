@@ -7,7 +7,7 @@ and forbids the profitability verdict profit-less data cannot support.
 """
 from __future__ import annotations
 
-from aughor.agent.loss_signals import (
+from pramanyx.agent.loss_signals import (
     LOSS_INTENT_RE,
     classify_contra_columns,
     contra_amount_directive,
@@ -110,7 +110,7 @@ def test_lifecycle_columns_are_detected_qualified():
 
 
 def test_lifecycle_column_scan_ignores_words_that_merely_contain_state():
-    from aughor.agent.loss_signals import LIFECYCLE_COL_RE
+    from pramanyx.agent.loss_signals import LIFECYCLE_COL_RE
     for col in ("status", "segment_status", "order_state", "lifecycle_stage"):
         assert LIFECYCLE_COL_RE.search(col), col
     for col in ("real_estate", "estate_id", "statement_date"):
@@ -209,7 +209,7 @@ def test_directive_is_empty_when_inapplicable():
 
 
 def test_lens_specs_cover_what_the_primary_metric_leaves_uncovered():
-    from aughor.agent.loss_signals import lens_specs
+    from pramanyx.agent.loss_signals import lens_specs
     sig = {"contra_revenue": ["refund_chf", "refunds"], "capacity": ["total_seats"]}
     # Primary = revenue ranking → BOTH loss lenses are owed.
     both = lens_specs(sig, "net revenue SUM(bookings.total_fare_chf)")
@@ -225,7 +225,7 @@ def test_lens_specs_cover_what_the_primary_metric_leaves_uncovered():
 
 
 def test_lens_specs_carry_the_grain_guards_and_honesty():
-    from aughor.agent.loss_signals import lens_specs
+    from pramanyx.agent.loss_signals import lens_specs
     sig = {"contra_revenue": ["refund_chf"], "capacity": ["total_seats"]}
     leak, util = lens_specs(sig, "net revenue")
     # Ratio-of-sums + own-grain aggregation — the fan-out prevention, in the prompt.
@@ -239,7 +239,7 @@ def test_lens_specs_carry_the_grain_guards_and_honesty():
 
 
 def test_starter_question_names_the_loss_lenses():
-    from aughor.starters import STARTERS
+    from pramanyx.starters import STARTERS
     q = next(s.question for s in STARTERS if s.id == "where_are_we_losing_money")
     for token in ("refunds", "share of gross", "utilization", "profitable"):
         assert token in q, token

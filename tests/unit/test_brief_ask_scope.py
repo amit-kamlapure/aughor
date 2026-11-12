@@ -43,15 +43,15 @@ class _Scope:
 
 @pytest.fixture
 def workspace(monkeypatch):
-    from aughor.canvas import scope as scope_mod
-    from aughor.db import connection as conn_mod
+    from pramanyx.canvas import scope as scope_mod
+    from pramanyx.db import connection as conn_mod
     monkeypatch.setattr(conn_mod, "open_connection_for", lambda cid: _Db(WORKSPACE_ALL))
     monkeypatch.setattr(scope_mod, "resolve_execution_scope",
                         lambda cid, canvas_id=None, *, schema_scope=None, **kw: _Scope(schema_scope))
 
 
 def test_list_tables_lists_only_the_schema_in_scope(workspace):
-    from aughor.agent.converse_tools import list_tables
+    from pramanyx.agent.converse_tools import list_tables
     out = list_tables("workspace", {}, schema_scope="uber_ncr")
     assert "uber_ncr.rides" in out["tables"]
     assert "luxexperience" not in out["tables"] and "data_co" not in out["tables"]
@@ -59,7 +59,7 @@ def test_list_tables_lists_only_the_schema_in_scope(workspace):
 
 
 def test_an_unscoped_turn_still_sees_the_whole_connection(workspace):
-    from aughor.agent.converse_tools import list_tables
+    from pramanyx.agent.converse_tools import list_tables
     out = list_tables("workspace", {})
     # A MANIFEST of the whole connection — every table, its row count, its columns and types —
     # not the schema text itself (`test_list_tables_manifest.py` has the size case).
@@ -70,14 +70,14 @@ def test_an_unscoped_turn_still_sees_the_whole_connection(workspace):
 
 
 def test_describe_table_cannot_reach_another_dataset(workspace):
-    from aughor.agent.converse_tools import describe_table
+    from pramanyx.agent.converse_tools import describe_table
     out = describe_table("workspace", {"table": "data_co.data_co_supplychain"}, schema_scope="uber_ncr")
     assert out.get("error") == "no such table"
     assert out["available"] == ["uber_ncr.rides"]
 
 
 def test_every_data_tool_is_bound_to_the_turns_scope(monkeypatch):
-    from aughor.agent import converse_tools as ct
+    from pramanyx.agent import converse_tools as ct
     names = ("answer_question", "run_sql", "list_tables", "describe_table", "deep_analysis")
     seen: dict = {}
 
@@ -96,8 +96,8 @@ def test_every_data_tool_is_bound_to_the_turns_scope(monkeypatch):
 
 
 def test_answer_question_hands_the_scope_to_the_quick_body(monkeypatch):
-    from aughor.agent import converse_tools as ct
-    from aughor.routers import investigations as inv
+    from pramanyx.agent import converse_tools as ct
+    from pramanyx.routers import investigations as inv
     got: dict = {}
 
     class _Done(Exception):
@@ -114,7 +114,7 @@ def test_answer_question_hands_the_scope_to_the_quick_body(monkeypatch):
 
 
 def test_run_sql_executes_on_the_scoped_connection(monkeypatch):
-    from aughor.agent import converse_tools as ct
+    from pramanyx.agent import converse_tools as ct
     got: dict = {}
 
     class _Done(Exception):
@@ -134,9 +134,9 @@ def test_run_sql_executes_on_the_scoped_connection(monkeypatch):
 
 def _drive(monkeypatch, **kwargs) -> dict:
     """Run one converse turn up to the loop call and return what the loop was handed."""
-    from aughor.agent import converse_tools as ct
-    from aughor.knowledge import brief_context as bc
-    from aughor.routers import investigations as inv
+    from pramanyx.agent import converse_tools as ct
+    from pramanyx.knowledge import brief_context as bc
+    from pramanyx.routers import investigations as inv
 
     captured: dict = {}
 
@@ -173,7 +173,7 @@ def test_a_briefing_ask_threads_the_scope_and_reads_the_open_period(monkeypatch)
     args, kw = got["brief_call"]
     assert args[:2] == ("workspace", "uber_ncr")
     # 2026-11-09: and the scope the edition is KEPT under, by the edition routes' one resolver
-    from aughor.routers.exploration import edition_scope
+    from pramanyx.routers.exploration import edition_scope
     assert kw == {"period_key": key, "from_briefing": True,
                   "scope_key": edition_scope("workspace", "uber_ncr", None)[1]}
 
@@ -190,7 +190,7 @@ def test_the_ask_door_threads_scope_and_period_to_both_quick_bodies():
     exact shape of this defect (the converse body never got `schema_scope`)."""
     import inspect
 
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     src = inspect.getsource(inv._stream_ask)
     assert src.count("schema_scope=req.schema_name") >= 2
     assert src.count("brief_period=req.brief_period") >= 2
@@ -198,8 +198,8 @@ def test_the_ask_door_threads_scope_and_period_to_both_quick_bodies():
 
 def test_the_loop_entry_binds_its_tools_to_the_scope(monkeypatch):
     """`converse()` builds the tool set; the scope must reach it, not stop at the loop."""
-    from aughor.agent import converse_tools as ct
-    from aughor.agent import tool_loop
+    from pramanyx.agent import converse_tools as ct
+    from pramanyx.agent import tool_loop
     got: dict = {}
 
     def tools(connection_id, **kw):

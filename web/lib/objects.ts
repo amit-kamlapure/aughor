@@ -2,7 +2,7 @@
  * ON-3 — the object plane's read doors (ROADMAP §3.15): one object by type and key, one page of
  * the objects a link reaches from it, and the catalog of object types.
  *
- * The shapes mirror `aughor/semantic/object_instances.py` and `object_context.py`. The object
+ * The shapes mirror `pramanyx/semantic/object_instances.py` and `object_context.py`. The object
  * routes return plain dicts, so `api.gen.ts` types their paths but not their bodies — these do.
  * A refusal and a 404 are answers here, not errors: the page renders what they say.
  */
@@ -511,7 +511,7 @@ export async function listObjects(
   return res.json();
 }
 
-/** An object query in the door's shape (`ObjectQuery` in `aughor/semantic/object_query.py`). */
+/** An object query in the door's shape (`ObjectQuery` in `pramanyx/semantic/object_query.py`). */
 export interface ObjectQueryRequest {
   object_type: string;
   /** A segment of the entity — a rule's, a process's, a verified one (Arc AP-2: a set keeps one). */

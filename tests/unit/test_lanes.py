@@ -7,14 +7,14 @@ import asyncio
 
 import pytest
 
-from aughor.db.lanes import LaneConfig, WorkspaceLane, lane_for_workspace, lane_for_connection, reset_lanes
+from pramanyx.db.lanes import LaneConfig, WorkspaceLane, lane_for_workspace, lane_for_connection, reset_lanes
 
 
 @pytest.fixture(autouse=True)
 def _clean_lanes(monkeypatch):
     # neutralise env so defaults are deterministic; clear the memoized registry
-    for k in ("AUGHOR_LANE_MAX_CONCURRENCY", "AUGHOR_MAX_CONCURRENT_EXPLORERS",
-              "AUGHOR_LANE_MEMORY_LIMIT", "AUGHOR_LANE_THREADS"):
+    for k in ("PRAMANYX_LANE_MAX_CONCURRENCY", "PRAMANYX_MAX_CONCURRENT_EXPLORERS",
+              "PRAMANYX_LANE_MEMORY_LIMIT", "PRAMANYX_LANE_THREADS"):
         monkeypatch.delenv(k, raising=False)
     reset_lanes()
     yield
@@ -30,8 +30,8 @@ def test_default_envelope_is_a_noop():
 
 
 def test_configured_envelope_emits_pragmas(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LANE_MEMORY_LIMIT", "2GB")
-    monkeypatch.setenv("AUGHOR_LANE_THREADS", "4")
+    monkeypatch.setenv("PRAMANYX_LANE_MEMORY_LIMIT", "2GB")
+    monkeypatch.setenv("PRAMANYX_LANE_THREADS", "4")
     cfg = LaneConfig.default()
     assert cfg.pragmas() == ["SET memory_limit='2GB'", "SET threads=4"]
 
@@ -127,8 +127,8 @@ def test_lane_for_connection_resolves_workspace_override(monkeypatch):
         id = "wsHeavy"
         settings_override = {"compute": {"memory_limit": "16GB", "max_concurrency": 1}}
 
-    monkeypatch.setattr("aughor.workspace.store.workspace_for_connection", lambda cid: _WS() if cid == "c1" else None)
-    monkeypatch.setattr("aughor.workspace.store.get_workspace", lambda wid: _WS() if wid == "wsHeavy" else None)
+    monkeypatch.setattr("pramanyx.workspace.store.workspace_for_connection", lambda cid: _WS() if cid == "c1" else None)
+    monkeypatch.setattr("pramanyx.workspace.store.get_workspace", lambda wid: _WS() if wid == "wsHeavy" else None)
     reset_lanes()
     lane = lane_for_connection("c1")
     assert lane.workspace_id == "wsHeavy"
@@ -138,7 +138,7 @@ def test_lane_for_connection_resolves_workspace_override(monkeypatch):
 def test_lane_for_connection_is_fail_open_to_global(monkeypatch):
     def _boom(_cid):
         raise RuntimeError("store down")
-    monkeypatch.setattr("aughor.workspace.store.workspace_for_connection", _boom)
+    monkeypatch.setattr("pramanyx.workspace.store.workspace_for_connection", _boom)
     reset_lanes()
     lane = lane_for_connection("c1")
     assert lane.workspace_id == "__global__"   # never raises — global default lane

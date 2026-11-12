@@ -25,26 +25,26 @@ def _section() -> str:
 
 
 class TestEveryCommandResolves:
-    def test_the_aughor_subcommands_it_shows_exist(self):
-        from aughor.cli import cli
-        shown = set(re.findall(r"^aughor ([a-z-]+)", _section(), re.M))
-        assert shown, "probe failed: the section shows no aughor commands"
+    def test_the_pramanyx_subcommands_it_shows_exist(self):
+        from pramanyx.cli import cli
+        shown = set(re.findall(r"^pramanyx ([a-z-]+)", _section(), re.M))
+        assert shown, "probe failed: the section shows no pramanyx commands"
         available = set(cli.commands)
         assert shown <= available, {"documented but absent": sorted(shown - available)}
 
     def test_the_installer_flags_it_documents_exist(self):
         """Parsed in `installer.py`'s argparse — `install.sh` only forwards them, which is why
         the first version of this test looked in the wrong file and failed."""
-        parser_source = (REPO / "aughor" / "installer.py").read_text(encoding="utf-8")
+        parser_source = (REPO / "pramanyx" / "installer.py").read_text(encoding="utf-8")
         for flag in ("--industries", "--no-start"):
             assert f'"{flag}"' in parser_source, (
                 f"{flag} is documented in the README and is not an installer argument")
 
     def test_the_env_vars_it_documents_are_read_somewhere(self):
         script = (REPO / "install.sh").read_text(encoding="utf-8")
-        assert "AUGHOR_DIR" in script
-        assert "AUGHOR_INDUSTRIES" in script or "AUGHOR_INDUSTRIES" in (
-            REPO / "aughor" / "installer.py").read_text(encoding="utf-8")
+        assert "PRAMANYX_DIR" in script
+        assert "PRAMANYX_INDUSTRIES" in script or "PRAMANYX_INDUSTRIES" in (
+            REPO / "pramanyx" / "installer.py").read_text(encoding="utf-8")
 
 
 class TestItClaimsOnlyWhatIsMeasured:
@@ -63,10 +63,10 @@ class TestItClaimsOnlyWhatIsMeasured:
             "the section claims CI runs on every commit; install.yml is path-filtered")
 
     def test_the_node_major_it_names_is_the_one_installed(self):
-        from aughor.installer import NODE_LTS_MAJOR
+        from pramanyx.installer import NODE_LTS_MAJOR
         assert f"Node {NODE_LTS_MAJOR}" in _section()
 
     def test_the_proxy_variables_match_the_installers_own_hint(self):
-        from aughor.installer import _PROXY_HINT
+        from pramanyx.installer import _PROXY_HINT
         for var in ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS"):
             assert var in _section() and var in _PROXY_HINT

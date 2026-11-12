@@ -9,17 +9,17 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-from aughor.llm.faux import FauxToolCall, set_responses
-from aughor.llm.provider import LLMProvider
+from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+from pramanyx.llm.faux import FauxToolCall, set_responses
+from pramanyx.llm.provider import LLMProvider
 
 _PARAMS = {"type": "object", "properties": {"sql": {"type": "string"}}}
 
 
 @pytest.fixture
 def provider(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
     return LLMProvider(backend="faux", role="coder")
 
 
@@ -79,7 +79,7 @@ def test_a_tool_that_raises_becomes_a_value_the_model_can_use(provider):
 def test_the_failure_text_is_actually_shown_to_the_model(provider):
     """Recording the failure is not the same as telling the model about it — the value
     has to reach the next prompt or the recovery is imaginary."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([
         FauxToolCall(payload={"sql": "bad"}, name="run_sql"),
@@ -96,7 +96,7 @@ def test_the_failure_text_is_actually_shown_to_the_model(provider):
 def test_an_unknown_tool_name_is_answered_with_the_real_ones(provider):
     """Models hallucinate tool names. Naming the real ones back costs one turn and
     almost always corrects; raising costs the whole question."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([
         FauxToolCall(payload={}, name="run_sqll"),
@@ -172,7 +172,7 @@ def test_the_closing_request_carries_no_tools(provider):
 def test_the_last_steps_are_told_how_many_remain(provider):
     """The budget was invisible to the model: it chose its eighth step exactly as it chose
     its first. Stated only near the ceiling — a countdown from step one reads as pressure."""
-    from aughor.agent.tool_loop import _budget_note
+    from pramanyx.agent.tool_loop import _budget_note
 
     assert _budget_note(1, 8) == ""                  # step 1 of 8 — nothing said
     assert _budget_note(5, 8) == ""                  # still room to look around
@@ -183,8 +183,8 @@ def test_the_last_steps_are_told_how_many_remain(provider):
 
 def test_the_budget_comes_from_the_model_profile_not_a_constant(provider, monkeypatch):
     """ModelProfile exists so capability knobs stop coming back as module constants."""
-    import aughor.agent.tool_loop as loop_mod
-    from aughor.llm.profile import profile_for
+    import pramanyx.agent.tool_loop as loop_mod
+    from pramanyx.llm.profile import profile_for
 
     assert profile_for("coder").tool_loop_steps >= 1
     monkeypatch.setattr(loop_mod, "_budget", lambda p: 1)
@@ -200,7 +200,7 @@ def test_each_step_echoes_its_tool_call_so_the_wire_stays_legal(provider):
     """An OpenAI-compatible backend rejects a `role="tool"` message that answers no
     call, so a loop that sends only results dies on the SECOND turn — invisible in a
     one-step test."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([
         FauxToolCall(payload={"sql": "a"}, name="run_sql"),
@@ -221,7 +221,7 @@ def test_each_step_echoes_its_tool_call_so_the_wire_stays_legal(provider):
 def test_the_model_sees_what_it_already_learned(provider):
     """Without history the model re-decides from the same two messages and picks the
     same tool forever — the loop that spends its budget re-running one query."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([
         FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"),
@@ -287,7 +287,7 @@ def test_a_second_silence_ends_the_turn_as_silent_not_as_budget(provider):
 
 def test_an_answer_the_caller_refuses_is_handed_back_once_with_its_draft(provider):
     """The analyst stopped with every result flagged and answered from one of them (2026-10-01, 22:37)."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
     set_responses(["Chicago is slowest", FauxToolCall(payload={"sql": "SELECT 2"}, name="run_sql"),
                    "no centre stands out", *["held again"] * 8])
     why = "Every result you have carries a guard's warning."
@@ -331,7 +331,7 @@ _SIGNED = {"google": {"thought_signature": "Ci8BgOe...opaque"}}
 def test_a_signed_call_is_replayed_with_its_signature(provider):
     """The signature must come back verbatim on the echoed call — the whole reason the
     second request is refused without it."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([
         FauxToolCall(payload={"sql": "a"}, name="run_sql", extra_content=_SIGNED),
@@ -349,7 +349,7 @@ def test_a_signed_call_is_replayed_with_its_signature(provider):
 def test_an_unsigned_call_gains_no_empty_field(provider):
     """A backend that signs nothing must see the message it always saw — an
     `extra_content: null` invented for it is a new, untested wire shape."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([FauxToolCall(payload={"sql": "a"}, name="run_sql"), "412"])
 
@@ -369,7 +369,7 @@ def test_a_call_the_model_never_made_is_not_invented(provider, scripted, why):
     the feedback had something to answer. That call carries no signature — because the
     model never made it — so on Gemini the invented call fails the same 400 the real
     fix prevents. The feedback is a user message instead."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([scripted, "412"])
 
@@ -389,7 +389,7 @@ def test_a_call_the_model_never_made_is_not_invented(provider, scripted, why):
 def test_a_preface_rides_the_question_and_invents_no_call(provider):
     """Read with the question, as results — never as a call the model did not make (Gemini refuses one
     that carries no signature of its own)."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses(["7,027 units"])
     run_tool_loop(provider, "sys", "how many units?", [_tool()], preface="run_sql: SELECT … → 7027")
@@ -403,7 +403,7 @@ def test_a_preface_rides_the_question_and_invents_no_call(provider):
 
 
 def test_a_spent_budget_still_writes_up_with_the_preface(provider):
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "7,027 units"])
     run_tool_loop(provider, "sys", "how many units?", [_tool()], max_steps=1, preface="measured: 7027")

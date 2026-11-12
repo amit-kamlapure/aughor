@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.feedback.verdicts import record_verdict
-from aughor.learning import exporters, store
+from pramanyx.feedback.verdicts import record_verdict
+from pramanyx.learning import exporters, store
 
 
 def _asked(question: str, sql: str, connection_id: str = "conn-1") -> str:
@@ -19,7 +19,7 @@ def _asked(question: str, sql: str, connection_id: str = "conn-1") -> str:
     here used to name answers that did not exist, with a headline phrased like a question, which is what hid the
     exporter prompting with the headline; and a verdict's SQL now counts only when its answer ran it (PENDING
     item 23)."""
-    from aughor.db.history import save_chat_turn
+    from pramanyx.db.history import save_chat_turn
     return save_chat_turn(question=question, connection_id=connection_id, headline="an answer", sql=sql,
                           columns=["n"], rows=[[1]])
 
@@ -96,7 +96,7 @@ def test_provenance_walks_a_dataset_back_to_the_verdicts_that_fed_it():
 def test_a_golden_set_shows_up_in_the_evals_plane():
     """`golden` in our own store proves only that we wrote one. The evals plane is where
     promotion gates are enforced."""
-    from aughor.evals import store as evals_store
+    from pramanyx.evals import store as evals_store
 
     _seed(60)                       # enough that the 1-in-10 hold-out is non-empty
     node = exporters.export_golden(name="gold-set")
@@ -170,7 +170,7 @@ def test_agent_goldens_feed_the_golden_set_whole_and_never_sft():
     (question, reference_sql) pairs — and they ARE each agent's own eval suite, so they
     enter the golden set WHOLE (no tenth-split) and must never appear in SFT, or an
     adapter would train on the very cases its agent is measured by."""
-    from aughor.custom_agents.store import add_golden, create_agent
+    from pramanyx.custom_agents.store import add_golden, create_agent
 
     agent = create_agent("Golden Feeder", instructions="answers golden questions")
     for i in range(3):
@@ -333,7 +333,7 @@ def test_a_re_exported_corpus_is_counted_once():
 
 
 def test_the_gate_report_checks_all_four_gates_and_never_gates_on_machine_grades(monkeypatch):
-    from aughor.security import audit
+    from pramanyx.security import audit
     monkeypatch.setattr(audit.GuardVerdicts, "first_live_fire",
                         classmethod(lambda cls, org_id=None: "2026-08-01T00:00:00+00:00"))
     gates = exporters.gate_status()
@@ -352,7 +352,7 @@ def test_a_verdict_whose_sql_the_answer_never_ran_is_left_out():
 
 def test_a_verdict_on_another_organisations_answer_is_left_out():
     """History is read by id, not by organisation; the corpus is one organisation's."""
-    from aughor.org.context import using_org
+    from pramanyx.org.context import using_org
     question = _trained_on("whose answer is this?")
     with using_org("org-other"):
         other = _asked(question, "SELECT 'theirs' FROM t")
@@ -365,14 +365,14 @@ def test_a_verdict_on_another_organisations_answer_is_left_out():
 def _thumbs(turn_id: str, verdict: str = "helpful", conn: str = "conn-1") -> dict:
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     res = TestClient(app).post("/chat/feedback", json={"conn_id": conn, "turn_id": turn_id, "verdict": verdict})
     assert res.status_code == 200, res.text
     return res.json()
 
 
 def test_a_thumbs_up_in_the_chat_is_an_accept_carrying_the_sql_the_turn_ran():
-    from aughor.feedback.verdicts import latest_verdict
+    from pramanyx.feedback.verdicts import latest_verdict
     question = _trained_on("how many returns came back in May?")
     turn = _asked(question, "SELECT COUNT(*) AS returns FROM returns WHERE month = 5")
     assert _thumbs(turn)["accepted"] is True
@@ -382,7 +382,7 @@ def test_a_thumbs_up_in_the_chat_is_an_accept_carrying_the_sql_the_turn_ran():
 
 
 def test_a_second_thumbs_up_records_nothing_more_and_a_thumbs_down_records_no_verdict():
-    from aughor.feedback.verdicts import list_verdicts
+    from pramanyx.feedback.verdicts import list_verdicts
     turn = _asked(_trained_on("how many refunds were issued?"), "SELECT COUNT(*) FROM refunds")
     mine = lambda: [v for v in list_verdicts("conn-1", 500) if v["investigation_id"] == turn]  # noqa: E731
     _thumbs(turn), _thumbs(turn)
@@ -402,7 +402,7 @@ def test_a_thumbs_up_names_the_turn_and_its_connection_or_records_nothing():
 
 def _turn(question: str, sql: str, *, receipts=(), caveats=(), rechecks=(), rows=((1,),)) -> str:
     """A chat answer as the quick path files it: the turn, then its envelope (CP-4) — the receipts the guards made."""
-    from aughor.db.history import _conn, attach_envelope, save_chat_turn
+    from pramanyx.db.history import _conn, attach_envelope, save_chat_turn
     turn = save_chat_turn(question=question, connection_id="conn-1", headline="h", sql=sql,
                           columns=["n"], rows=[list(r) for r in rows])
     attach_envelope(turn, {"question": question, "headline": "h", "caveats": list(caveats),
@@ -442,7 +442,7 @@ def test_bronze_is_what_ran_clean_and_nobody_rejected():
 
 
 def test_bronze_cannot_vouch_for_an_answer_filed_before_envelopes():
-    from aughor.db.history import save_chat_turn
+    from pramanyx.db.history import save_chat_turn
     question = _trained_on("bronze: an answer from before CP-4")
     save_chat_turn(question=question, connection_id="conn-1", headline="h", sql="SELECT 1 AS old",
                    columns=["n"], rows=[[1]])
@@ -472,8 +472,8 @@ def test_every_guard_rewrite_is_a_pair_and_a_cut_one_is_not():
 def test_a_history_row_carries_the_trace_it_was_answered_under():
     """The guard log keeps each fire's trace id; the bridge from a trace to its question was the session log, swept
     after 14 days. The row itself now carries it, so the join outlives the sweep."""
-    from aughor.db.history import create_investigation, get_investigation
-    from aughor.telemetry import bind_trace
+    from pramanyx.db.history import create_investigation, get_investigation
+    from pramanyx.telemetry import bind_trace
     with bind_trace("trace-item23"):
         turn = _asked("under a trace", "SELECT 1")                       # a quick answer's row
         run = create_investigation("a deep run under a trace", "conn-1")  # a deep run's row

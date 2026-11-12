@@ -1,6 +1,6 @@
 /**
  * A figure drafted from a file, written as its statement says it is: money, a percent, or a plain number
- * (`aughor/dashboards/queries.py`, `Shown.format` and `Beside.format`).
+ * (`pramanyx/dashboards/queries.py`, `Shown.format` and `Beside.format`).
  */
 import { formatCount, formatWholeMoney, pct } from "@/lib/format";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";

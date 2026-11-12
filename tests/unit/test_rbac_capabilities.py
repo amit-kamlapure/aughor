@@ -1,9 +1,9 @@
 """RBAC P2 — role-aware capability resolution (tier ∩ role ceiling)."""
 from __future__ import annotations
 
-from aughor.licensing.capabilities import Capability, capabilities_for
-from aughor.licensing.capabilities import Tier
-from aughor.rbac import (
+from pramanyx.licensing.capabilities import Capability, capabilities_for
+from pramanyx.licensing.capabilities import Tier
+from pramanyx.rbac import (
     ANALYST,
     OWNER,
     VIEWER,
@@ -12,7 +12,7 @@ from aughor.rbac import (
     role_ceiling,
     role_has_capability,
 )
-from aughor.security.authz import Principal
+from pramanyx.security.authz import Principal
 
 
 def test_owner_ceiling_is_everything():
@@ -53,7 +53,7 @@ def test_effective_caps_localhost_is_the_full_tier():
 
 
 def test_effective_caps_intersect_tier_and_role(monkeypatch):
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")  # RBAC_SSO present → ceiling applies
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")  # RBAC_SSO present → ceiling applies
     p = Principal(user_id="v", org_id="caps-org-1")   # unassigned → default viewer
     caps = effective_capabilities(p)
     assert Capability.CATALOG in caps
@@ -65,7 +65,7 @@ def test_effective_caps_intersect_tier_and_role(monkeypatch):
 def test_the_ceiling_applies_at_every_tier(monkeypatch):
     """Track A3: the role ceiling once lifted on a tier without RBAC_SSO, so a viewer on a free
     plan got the whole tier set. A plan decides what the org may use, never whether a role is read."""
-    monkeypatch.setenv("AUGHOR_TIER", "free")
+    monkeypatch.setenv("PRAMANYX_TIER", "free")
     p = Principal(user_id="v", org_id="caps-org-2")    # a default viewer
     caps = effective_capabilities(p)
     assert caps < frozenset(capabilities_for(Tier.FREE))   # strictly less: the ceiling bit

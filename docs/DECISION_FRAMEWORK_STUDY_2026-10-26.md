@@ -1,6 +1,6 @@
 # Pramanyx as the centre piece of an organisation's decision intelligence — the framework, and a run (2026-10-25/26)
 
-The user opened this as a conversation, not a build: *"how making Aughor truly a center piece of an organisation's
+The user opened this as a conversation, not a build: *"how making Pramanyx truly a center piece of an organisation's
 decision intelligence"*, then *"Scan the web for more advanced decision intelligence platform[s] and what are they doing
 and how"*, then *"an advanced decision flow — forwards & backwards with loops where every decision and their 'why' is
 readable if the user wishes to.. let's think big"*, then: *"let's not haste into building something.. rather we should

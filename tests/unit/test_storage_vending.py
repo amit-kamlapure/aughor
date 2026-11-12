@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.org import using_org
-from aughor.control_plane import vending
-from aughor.control_plane.vending import (
+from pramanyx.org import using_org
+from pramanyx.control_plane import vending
+from pramanyx.control_plane.vending import (
     StorageCapability,
     migrate_uploads_to_org_layout,
     vend_storage,
@@ -111,7 +111,7 @@ class TestMigration:
 
 class TestConnectorUsesVendedPath:
     def test_upload_dir_is_tenant_scoped(self, storage_root):
-        from aughor.connectors.file.local_upload import LocalUploadConnection
+        from pramanyx.connectors.file.local_upload import LocalUploadConnection
         with using_org("acme"):
             conn = LocalUploadConnection(connection_id="c1")
         assert conn._upload_dir == storage_root / "acme" / "c1"

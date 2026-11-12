@@ -8,7 +8,7 @@ Build is gated slice-by-slice in §10; nothing here ships until a v1 slice is pi
 > `relates_to` card↔finding edges of Slice 4) was **removed from the product**: it did not
 > help readers reach the conclusion, and a brief that argues one thing should have one
 > reading order. Deleted: `web/components/brief/ArgumentGraph.tsx`,
-> `aughor/knowledge/argument_graph.py`, `POST /cards/relations`, the `graph` field on the
+> `pramanyx/knowledge/argument_graph.py`, `POST /cards/relations`, the `graph` field on the
 > briefing response, and `tests/unit/test_argument_graph.py`. **The cockpit (Slices 0–2, 4's
 > watch→monitor graduation) is unaffected and still ships** — it keeps `@xyflow/react`.
 > Everything below about the graph is retained as design history, not current behaviour.
@@ -90,37 +90,37 @@ This is the credibility section: the feasibility grades below rest on it. Paths 
 ### 3.1 The big enablers
 
 - **The argument graph is emitted then orphaned.** Synthesis operators
-  `share/tension/concentration/confound/chain` are defined at `aughor/explorer/synthesis.py:31`
+  `share/tension/concentration/confound/chain` are defined at `pramanyx/explorer/synthesis.py:31`
   (`OPERATORS`; eligibility `_eligible_operators:101`). A synthesized insight persists its edge:
-  `composition_type` + `parents:[id,id]` at `aughor/explorer/agent.py:3878-3879`, and drill children
+  `composition_type` + `parents:[id,id]` at `pramanyx/explorer/agent.py:3878-3879`, and drill children
   carry `drill_of` at `agent.py:3548`. The state is `json.dumps`-ed opaquely at
-  `aughor/explorer/store.py:50`. **Grep confirms zero read sites** for `composition_type`
+  `pramanyx/explorer/store.py:50`. **Grep confirms zero read sites** for `composition_type`
   (as a stored key), `parents`, or `drill_of` — the edges exist in data and are never traversed,
   serialized, or rendered.
 - **The prose→finding edge is already serialized:** the `citations` list in
-  `aughor/knowledge/briefing.py` (built ~`:411-422`) maps each `[N]` prose marker to a finding id;
+  `pramanyx/knowledge/briefing.py` (built ~`:411-422`) maps each `[N]` prose marker to a finding id;
   the front end already parses and renders it (`BriefingPanel.tsx` `BriefProse`).
 - **A ready-made card body exists:** `web/components/charts/ResultChartCard.tsx:123`
   (`{columns, rows, title, chartType, chartConfig, custom, heightScale, onSelect}`) with an internal
   chart/table/pivot toggle — no persistence prop today, but it is the natural "card" a pin produces.
 - **The chart engine is one seam:** `web/components/Chart.tsx:98-431`. Its props
   (`columns, rows, chartType, chartConfig, custom, columnUnits, exhibit`) ARE the de-facto render
-  spec a card carries. Export mirror in `aughor/export/charts.py` (kept in sync with `exhibit.ts`).
+  spec a card carries. Export mirror in `pramanyx/export/charts.py` (kept in sync with `exhibit.ts`).
 - **Drill / evidence wiring keys off `insight.id`:** `_build_origin_finding`
-  (`aughor/routers/investigations.py:2252`, raw-seed fallback), `get_insight_receipt`
-  (`aughor/routers/exploration.py:1089`), `ground_briefing_number` (`exploration.py:1117`),
-  signed receipts (`aughor/trust/receipt.py`). A graph node's click-actions are these handlers.
+  (`pramanyx/routers/investigations.py:2252`, raw-seed fallback), `get_insight_receipt`
+  (`pramanyx/routers/exploration.py:1089`), `ground_briefing_number` (`exploration.py:1117`),
+  signed receipts (`pramanyx/trust/receipt.py`). A graph node's click-actions are these handlers.
 - **The explorer-steering feedback loop is fully closed:** `record_drill`
-  (`aughor/overview/drills.py:51`, captured at `routers/query.py:896`) →
-  `load_priors` (`drills.py:72`) → `build_overview(priors=…)` (`aughor/overview/build.py:664`,
+  (`pramanyx/overview/drills.py:51`, captured at `routers/query.py:896`) →
+  `load_priors` (`drills.py:72`) → `build_overview(priors=…)` (`pramanyx/overview/build.py:664`,
   read at `routers/investigations.py:3387-3400`). A declared watch is a strong prior for this loop.
 
 ### 3.2 Reuse map by subsystem
 
 | Need | Reuse | Location | Notes |
 |---|---|---|---|
-| Persist a card's query | `SavedQuery` | `aughor/savedquery/models.py:14`, store `store.py` | **GAP:** persists `id, connection_id, name, sql, spec` only — **no refresh/schedule** |
-| Governed metric / KPI | `MetricDefinition` | `aughor/semantic/metrics.py:39`; `build_metrics_block:464` | carries target/warning/critical thresholds + governance lifecycle |
+| Persist a card's query | `SavedQuery` | `pramanyx/savedquery/models.py:14`, store `store.py` | **GAP:** persists `id, connection_id, name, sql, spec` only — **no refresh/schedule** |
+| Governed metric / KPI | `MetricDefinition` | `pramanyx/semantic/metrics.py:39`; `build_metrics_block:464` | carries target/warning/critical thresholds + governance lifecycle |
 | KPI strip (briefing) | `IndustryKpiStrip` | `web/components/brief/IndustryKpiStrip.tsx:295` | driven by **business-profile `north_star_metrics`** (`value_sql` + `chart_sql`) — a *different* store from `MetricDefinition` |
 | Chart render | `Chart` / `EChart` / builders | `web/components/Chart.tsx`; `charts/echarts/` | ECharts only (Vega removed, dead refs) |
 | Encoding overlay | `ExhibitSpec` | `web/components/charts/exhibit.ts:33` | **not** the render spec — just color/ref-lines/quadrant/order over a chart |
@@ -128,11 +128,11 @@ This is the credibility section: the feasibility grades below rest on it. Paths 
 | Query Builder charting + save | `QueryBuilder` | `web/components/QueryBuilder.tsx:938` (chart), `:1441` `buildSpec()`, `:1668` Save | "Pin to dashboard" hooks beside Save |
 | Per-finding action menu | `FindingActions` | `web/components/BriefingPanel.tsx:763-901` | Monitor/Promote/Share/Evidence/Dismiss; "Promote"=org intel, **not** dashboard |
 | Metric authoring UI | `MetricsPanel` | `web/components/MetricsPanel.tsx` | full CRUD + governance (draft→approved→deprecated) |
-| SQL trust guards | `execute_guarded` | `aughor/sql/executor.py:123` | battery: fan-out `grain_guard.py:75`, join `join_guard.py:329`, ratio `ratio_grain.py:74`, E1 `trust_checks.py:93` |
-| Trust plane (blockable) | `verify(...)` | `aughor/trust/__init__.py:43` | `trust.verify_live`-gated verdict |
-| Unit/100× guard | `verify_finding` | `aughor/explorer/grounding.py:164` | **answer path, not `sql/`** |
-| Monitor (graduation) | `Monitor` + create | `aughor/monitors/models.py:14`; `routers/monitors.py:145` | resolves `metric_name` OR `custom_sql` + thresholds; `reanchor_window` was built for briefing-finding monitors |
-| Grounding receipt | dossier | `aughor/explorer/dossier.py:93` (`build_dossier`; `update_dossier:70`) | **not** `knowledge/dossier.py` (does not exist) |
+| SQL trust guards | `execute_guarded` | `pramanyx/sql/executor.py:123` | battery: fan-out `grain_guard.py:75`, join `join_guard.py:329`, ratio `ratio_grain.py:74`, E1 `trust_checks.py:93` |
+| Trust plane (blockable) | `verify(...)` | `pramanyx/trust/__init__.py:43` | `trust.verify_live`-gated verdict |
+| Unit/100× guard | `verify_finding` | `pramanyx/explorer/grounding.py:164` | **answer path, not `sql/`** |
+| Monitor (graduation) | `Monitor` + create | `pramanyx/monitors/models.py:14`; `routers/monitors.py:145` | resolves `metric_name` OR `custom_sql` + thresholds; `reanchor_window` was built for briefing-finding monitors |
+| Grounding receipt | dossier | `pramanyx/explorer/dossier.py:93` (`build_dossier`; `update_dossier:70`) | **not** `knowledge/dossier.py` (does not exist) |
 | Graph engine | — | **greenfield** | React 19.2.4 / Next 16.2.6 / ECharts ^6.1.0; **no react-flow/xyflow/tldraw present** |
 
 ### 3.3 Gaps (net-new work, called out honestly)
@@ -344,7 +344,7 @@ Each slice is independently shippable, flag-gated, and verified on a real briefi
   clean cards appeared on the exact `scope=connection` list `PinnedCards` reads. The new Pin
   button renders in the live Query Builder toolbar next to Save.
 - **✅ Slice 3 — argument-graph lens. DONE.** Un-orphan the edges + render the map as a React
-  Flow lens (linear stays default). New deterministic `aughor/knowledge/argument_graph.py`
+  Flow lens (linear stays default). New deterministic `pramanyx/knowledge/argument_graph.py`
   (`build_argument_graph`) projects the SAME impact-ranked drivers the prose uses + the explorer's
   OWN typed edges (`composition_type`+`parents` → chain/tension/confound/concentration/share;
   `drill_of` → explains_why; ranking → `supports`; citations → `cited`) into a `{nodes, edges}`
@@ -426,7 +426,7 @@ Frontend: `Chart.tsx:98` · `charts/echarts/` (`EChart.tsx`, `builders.ts`, `ind
 `charts/exhibit.ts:33` · `charts/ResultChartCard.tsx:123` · `brief/BriefingDashboard.tsx:130` ·
 `brief/IndustryKpiStrip.tsx:295` · `brief/GroundedNumber`, `brief/Sparkline` ·
 `BriefingPanel.tsx:763-901,2103-2120` · `QueryBuilder.tsx:938,1441,1668` · `MetricsPanel.tsx` ·
-`SemanticLayerPanel.tsx`. Export mirror: `aughor/export/charts.py`.
+`SemanticLayerPanel.tsx`. Export mirror: `pramanyx/export/charts.py`.
 
 Stack: React 19.2.4 · Next 16.2.6 · ECharts ^6.1.0 · **no** react-flow/xyflow/tldraw (graph lens
 greenfield).
@@ -467,6 +467,6 @@ Slices 0–4 shipped; a run of UX polish followed, all on `2026-07-18-briefing-c
   on mount): Briefing → Regenerate brief / Start exploration; cockpit → Tidy cockpit; Query Builder →
   Run query / Pin to cockpit.
 
-**Ops note.** `.claude/launch.json` `aughor-api` had `--reload` **removed** — rapid multi-file edits
+**Ops note.** `.claude/launch.json` `pramanyx-api` had `--reload` **removed** — rapid multi-file edits
 thrash uvicorn's reloader and wedge its event loop (symptom: data views render empty while the web
-:3000 stays 200). Backend `.py` changes now need a manual `preview_stop`+`preview_start aughor-api`.
+:3000 stays 200). Backend `.py` changes now need a manual `preview_stop`+`preview_start pramanyx-api`.

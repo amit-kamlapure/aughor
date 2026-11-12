@@ -15,16 +15,16 @@ import duckdb
 import pytest
 import sqlglot
 
-from aughor.connectors import declarations as D
-from aughor.connectors.declarations import METADATA_FACTS
-from aughor.db.metadata import (
+from pramanyx.connectors import declarations as D
+from pramanyx.connectors.declarations import METADATA_FACTS
+from pramanyx.db.metadata import (
     DeclaredKey,
     MetadataRead,
     declared_join_candidates,
     engine_type_of,
     read_declared_metadata,
 )
-from aughor.tools.schema import compute_join_map
+from pramanyx.tools.schema import compute_join_map
 
 STATUSES = {"supported", "unsupported", "unknown"}
 
@@ -38,7 +38,7 @@ def test_every_engine_states_all_four_facts_and_why(decl):
     if any(v != "supported" for v in decl.metadata_facts.values()):
         assert decl.metadata_detail, f"{decl.type}: a fact that is not supported says why"
     # A read the declaration calls supported must have a recipe for its dialect.
-    from aughor.db.metadata import _RECIPES
+    from pramanyx.db.metadata import _RECIPES
     if any(decl.metadata_facts[f] == "supported" for f in ("primary_keys", "foreign_keys", "comments")):
         assert decl.dialect in _RECIPES, f"{decl.type} declares a supported read with no recipe"
 
@@ -59,7 +59,7 @@ def test_the_coverage_rows_are_in_the_catalog_and_the_web_map():
 
 @pytest.fixture
 def duck(tmp_path):
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     path = tmp_path / "keys.duckdb"
     con = duckdb.connect(str(path))
     con.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY, country TEXT)")
@@ -106,7 +106,7 @@ def test_a_declared_key_no_name_would_find_leads_the_join_map(duck):
 
 
 def test_join_map_for_reads_the_engine_and_falls_back_to_names_when_it_cannot(duck):
-    from aughor.tools.schema import join_map_for
+    from pramanyx.tools.schema import join_map_for
     table_cols = {"customers": ["id", "country"], "orders": ["id", "buyer", "status"]}
     jmap = join_map_for(duck, table_cols, cache_key="de3c-duck")
     assert jmap["joins"][0]["match"] == "declared"
@@ -129,7 +129,7 @@ def test_a_declared_fk_matched_by_bare_name_when_the_schema_text_is_qualified(du
 # ── SQLite, live ─────────────────────────────────────────────────────────────────────
 
 def test_sqlite_reads_keys_and_says_comments_are_not_a_thing(tmp_path):
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
     path = tmp_path / "k.sqlite"
     con = sqlite3.connect(str(path))
     con.executescript("""
@@ -156,7 +156,7 @@ def test_sqlite_reads_keys_and_says_comments_are_not_a_thing(tmp_path):
 def test_unsupported_and_unknown_are_said_not_implied():
     class Upload:
         dialect = "duckdb"
-    from aughor.connectors.file.local_upload import LocalUploadConnection
+    from pramanyx.connectors.file.local_upload import LocalUploadConnection
     assert engine_type_of(LocalUploadConnection.__new__(LocalUploadConnection)) == "local_upload"
     # A class with no declaration: unknown, and it says so.
     read = read_declared_metadata(Upload())
@@ -166,7 +166,7 @@ def test_unsupported_and_unknown_are_said_not_implied():
         dialect = "duckdb"
         def execute(self, *a, **k):
             raise RuntimeError("catalog unreachable")
-    from aughor.db import metadata as M
+    from pramanyx.db import metadata as M
     M._TYPE_BY_CLASS["Lost"] = "duckdb"
     try:
         read = read_declared_metadata(Lost())
@@ -179,7 +179,7 @@ def test_unsupported_and_unknown_are_said_not_implied():
 def test_postgres_and_mysql_recipes_parse_in_their_dialects():
     """Short of a live engine: the statements the recipes run are valid SQL for the engine."""
     import inspect
-    from aughor.db import metadata as M
+    from pramanyx.db import metadata as M
     for fn, dialect in ((M._read_postgres, "postgres"), (M._read_mysql, "mysql")):
         src = inspect.getsource(fn)
         statements = [s for s in src.split('"""')[1::2] if "SELECT" in s]
@@ -192,8 +192,8 @@ def test_postgres_and_mysql_recipes_parse_in_their_dialects():
 
 def test_a_declared_edge_the_values_dispute_is_kept_with_its_overlap():
     from types import SimpleNamespace
-    from aughor.ontology.builder import apply_join_verifications
-    from aughor.sql.join_guard import VerifiedJoin, render_verified_joins
+    from pramanyx.ontology.builder import apply_join_verifications
+    from pramanyx.sql.join_guard import VerifiedJoin, render_verified_joins
 
     rel_declared = SimpleNamespace(from_table="orders", from_col="buyer", to_table="customers", to_col="id",
                                    from_entity="order", to_entity="customer", join_confidence="declared", value_overlap=None)

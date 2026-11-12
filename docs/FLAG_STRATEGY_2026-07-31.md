@@ -40,10 +40,10 @@ The visible Settings surface drops from 91 toggles to ~22 decisions.
 `agents.user_defined` graduated ON (#241). Wave H4 (#237) shipped hire-an-analyst-from-a-pack.
 But on a fresh clone the feature is **half dead**:
 
-- The hire path (`aughor/custom_agents/templates.py::create_from_template`,
+- The hire path (`pramanyx/custom_agents/templates.py::create_from_template`,
   `routers/agents.py` `_validate_agent_packs`) **never consults `specialist_packs`** — hiring
   works, the pack binds, validation passes.
-- The steering path (`aughor/packs/intake.py:55` `injection_for_question`) returns `None` when
+- The steering path (`pramanyx/packs/intake.py:55` `injection_for_question`) returns `None` when
   `specialist_packs` is off — so the bound pack's metric recipes, anti-patterns and stance
   **never inject into a run**.
 
@@ -56,7 +56,7 @@ deployment, so default-ON adds zero un-consented behaviour. This is the highest-
 in the registry.
 
 **✅ EXECUTED 2026-07-31** — receipt `452a6fcebba4`, run `c84f1e75a50c` of
-`aughor/evals/specialist_packs_receipt.py` (8/8 stable ×3 iterations, 0 errors, 0 flaky, bar
+`pramanyx/evals/specialist_packs_receipt.py` (8/8 stable ×3 iterations, 0 errors, 0 flaky, bar
 1.0, no baseline). Verified while building it: the gate is sound because `save_binding`'s ONLY
 product caller is the deploy endpoint behind `govern.guard("pack.bind")` — a binding row IS a
 recorded human act — and the repo's one shipped pack is `status: draft`, so a fresh clone holds
@@ -65,7 +65,7 @@ zero active packs and the flip's whole observable effect is `GET /packs` reporti
 
 **Second gap found while verifying (tracked separately, NOT a flag question):** steering reaches
 the **explore path only** — `injection_for_question` has exactly one caller
-(`aughor/agent/explore.py`). Deep-Analysis investigations and quick answers never consult it,
+(`pramanyx/agent/explore.py`). Deep-Analysis investigations and quick answers never consult it,
 so a hired analyst's pack steers only exploration runs even with the flag on. The persona stance
 still reaches all paths (copied into the agent's instructions at hire time); what is
 explore-only is the live injection of metric recipes and diagnostics. Wiring it into
@@ -83,7 +83,7 @@ investigate/quick-ask is its own work item.
 | **Migration flag** | Old path vs new path | A completion date; then delete |
 
 Plus two legitimate residues: **integration switches** (should self-gate on config presence, e.g.
-MLflow on `AUGHOR_MLFLOW_TRACKING_URI` being set) and **deliberate opt-ins** (privacy/cost:
+MLflow on `PRAMANYX_MLFLOW_TRACKING_URI` being set) and **deliberate opt-ins** (privacy/cost:
 `obs.prompt_capture`, `ai_sql`) — the only category that should stay a manual toggle forever.
 
 ## 4. Dispositions — all 61 default-OFF flags
@@ -91,7 +91,7 @@ MLflow on `AUGHOR_MLFLOW_TRACKING_URI` being set) and **deliberate opt-ins** (pr
 ### A. Graduate now — decidable by construction, zero grid budget (9)
 
 **✅ EXECUTED 2026-07-31** — all nine default-ON, one suite
-(`aughor/evals/flag_batch_a_receipt.py`, run `d006bec663a0`, 12/12 stable ×3, 0 errors,
+(`pramanyx/evals/flag_batch_a_receipt.py`, run `d006bec663a0`, 12/12 stable ×3, 0 errors,
 0 flaky), nine per-flag graduation receipts (ids in `FLAG_DEFAULT`). The flip simulation
 surfaced exactly the predicted test-debt class: two tests reaching "off" by never setting
 the flag (`test_flag_overrides` re-pointed to `ai_sql`; `test_starters` now forces `=0` —
@@ -118,7 +118,7 @@ receipt kinds). Direct hits on the stated axes:
 
 ### B. Graduate on the data-gated receipt — the #241 playbook (11)
 
-**✅ EXECUTED 2026-07-31 (with §C)** — one suite (`aughor/evals/flag_batch_b_receipt.py`,
+**✅ EXECUTED 2026-07-31 (with §C)** — one suite (`pramanyx/evals/flag_batch_b_receipt.py`,
 run `cbb2e91c7f26`, 15/15 stable ×3), fourteen receipts. Two premise checks moved scope:
 `federation.planner` was queued as invocation-gated but ALSO auto-federates fresh `/ask`
 auto-depth turns (`_federation_eligible`) — an LLM-bearing routing change, moved to
@@ -126,7 +126,7 @@ EXPERIMENT; and `lifecycle.publish`'s viewer precondition dissolved on reading t
 stores — they journal ALONGSIDE the live row, reads never route through `resolve()`, so
 default-on cannot hide anything. Conversions in the same commit: `ask.conversation_context`
 → AUTO (trigger: the turn is a follow-up), `obs.mlflow` → DELETED, MLflow self-gates on
-`AUGHOR_MLFLOW_TRACKING_URI` (registry 90 → 89); `agui.endpoint` + `federation.remote_join`
+`PRAMANYX_MLFLOW_TRACKING_URI` (registry 90 → 89); `agui.endpoint` + `federation.remote_join`
 graduated invocation-gated; and `semantic.contract_live` flipped as a MIGRATION on a proven
 byte-equality over real metric stores (its remaining obligation is deleting the legacy
 CanonicalMetric path). The graph and birth BUNDLES stay queued deliberately — `graph.build`
@@ -154,7 +154,7 @@ overhead on real brief ticks; no LLM grid needed, just a cost number.
 
 - `ask.conversation_context` → `AUTO_ELIGIBLE`, trigger: "the turn is a follow-up"
   (`ask.resolve_first` is already auto).
-- `obs.mlflow` → self-gate on `AUGHOR_MLFLOW_TRACKING_URI` being set; delete the flag. A
+- `obs.mlflow` → self-gate on `PRAMANYX_MLFLOW_TRACKING_URI` being set; delete the flag. A
   default-ON with no server is a no-op; a set URI with the flag off is silent frustration.
 - `agui.endpoint`, `federation.remote_join`, `federation.planner` → invocation-gated surfaces:
   the route 404s off and does nothing unless explicitly POSTed. Calling it is the consent
@@ -173,7 +173,7 @@ model and what does not:
 
 **✅ `search.rrf` SETTLED OFF** — not a hunch, a measurement. An honest known-item retrieval eval
 over the real 282-entry `data/kb/` corpus (definitional labels from each entry's own fields, real
-local embeddings, `aughor/evals/rrf_retrieval_eval.py`) found RRF ranks **worse** than the α-blend
+local embeddings, `pramanyx/evals/rrf_retrieval_eval.py`) found RRF ranks **worse** than the α-blend
 default — MRR 0.964 vs 0.977, recall@1 0.931 vs 0.957, consistent across the title and usage query
 regimes. The "the evals are the grid" note was optimistic (no labeled KB-retrieval suite existed);
 this built one with construction-honest labels and got a clean negative. RRF's target regime
@@ -191,7 +191,7 @@ keep. Moved from the queue to `INTENTIONALLY_OFF` with the measured reason.
   declared actions) — grid only where that data exists; the off-state no-op is already unit-proven.
 
 **✅ `snapshot_receipts` GRADUATED** (receipt `2dee7a36c03f`, run `11de013bb901` of
-`aughor/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3) — its exit was decidable without a
+`pramanyx/evals/snapshot_receipts_receipt.py`, 5/5 stable ×3) — its exit was decidable without a
 model. Cost: one metadata `COUNT(*)` per finding table, size-independent on DuckDB (row counts
 are metadata), measured **median ~0.2ms** for a 3-table finding vs E1's 5ms bar. Reconcile: already
 one mechanism — `kernel/freeze.py` imports `data_version` *from* `db/snapshot.py`, so a frozen
@@ -256,7 +256,7 @@ All stalled since ~2026-07-05 — a month of maintaining two code paths each:
 ### Bundles — many flags, one decision each
 
 **✅ EXECUTED 2026-07-31 (batch C)** — both bundles default-ON plus the last two migration
-flips, one suite (`aughor/evals/flag_batch_c_receipt.py`, run `2dbff8c60c10`, 11/11 ×3),
+flips, one suite (`pramanyx/evals/flag_batch_c_receipt.py`, run `2dbff8c60c10`, 11/11 ×3),
 eleven receipts. `plan.program` did NOT flip: the premise check found `_program_eligible`
 auto-routes fresh `/ask` auto-depth turns — the same disease as `federation.planner` — so it
 moved to EXPERIMENT (test-pinned). `semantic.resolve_live` flipped on a proven equality (the
@@ -265,10 +265,10 @@ on its single-route gate. **The GRADUATION_QUEUE and MIGRATION sets are now EMPT
 registered flag is graduated, auto, an opt-in, an experiment, or in the performance profile,
 and the ratchet test asserts the empties stay honest.
 
-**Defect found by the flip itself:** the doc-tree store (`aughor/ontology/doctree.py`) was
+**Defect found by the flip itself:** the doc-tree store (`pramanyx/ontology/doctree.py`) was
 hardcoded to `data/ontology_docs/` with no env override — the one store without the isolation
 seam, invisible while `ontology.autodoc` was off. The suite started writing real doc trees the
-moment the default flipped (the matcache hole, rediscovered). Fixed: `AUGHOR_ONTOLOGY_DOCS_DIR`
+moment the default flipped (the matcache hole, rediscovered). Fixed: `PRAMANYX_ONTOLOGY_DOCS_DIR`
 read at call time + the conftest isolation list.
 
 - **Knowledge Graph** (5 → 1): `graph.build` + `graph.freshness` + `graph.surface` +
@@ -287,7 +287,7 @@ read at call time + the conftest isolation list.
    `AUTO_ELIGIBLE` / `INTENTIONALLY_OFF{reason}` / `EXPERIMENT{measure-by}` /
    `MIGRATION{delete-by}`. A new flag that declares no exit fails CI. This converts "off" from an
    accident into a decision, permanently.
-   **✅ BUILT 2026-07-31** — seven declared sets in `aughor/kernel/flags.py` (the two above
+   **✅ BUILT 2026-07-31** — seven declared sets in `pramanyx/kernel/flags.py` (the two above
    plus `COST_LATENCY_PROFILE` and `GRADUATION_QUEUE`), partition enforced by
    `tests/unit/test_flag_dispositions.py` (a failure names the flag), deleted flags pinned as
    tombstones, and `list_flags()` now carries `disposition` + `disposition_note` so the
@@ -327,12 +327,12 @@ read at call time + the conftest isolation list.
    or moves it to INTENTIONALLY_OFF with the measured reason.
    🔶 **Free tier done 2026-08-01 (batch D):** `snapshot_receipts` GRADUATED (cost measured, no
    grid — receipt `2dee7a36c03f`); `search.rrf` SETTLED OFF on a measured negative
-   (`aughor/evals/rrf_retrieval_eval.py`: RRF MRR 0.964 < α-blend 0.977 on the real KB) → moved to
+   (`pramanyx/evals/rrf_retrieval_eval.py`: RRF MRR 0.964 < α-blend 0.977 on the real KB) → moved to
    INTENTIONALLY_OFF. **12 flags remain — all budget-bound LLM grids or coupled decisions**
    (see §D); none started (no request budget spent). `ada.causal_drill` rides the perf-profile
    call; `explore.route_wide` routing is settled, only its answer-quality delta is open.
 
-Discipline per flip (hard-won): simulate with `AUGHOR_<VAR>=1 pytest` BEFORE editing
+Discipline per flip (hard-won): simulate with `PRAMANYX_<VAR>=1 pytest` BEFORE editing
 `FLAG_DEFAULT` (off-state tests reach "off" several ways — `delenv`, never-setting — nothing to
 grep); then force both states explicitly; snapshot `data/` before full runs; the graduation
 ratchet already refuses on contradicting live overrides. **Match CI exactly from the start:

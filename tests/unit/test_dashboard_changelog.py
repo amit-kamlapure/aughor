@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 
-from aughor.dashboards import changelog
+from pramanyx.dashboards import changelog
 
 
 def _desk() -> dict:

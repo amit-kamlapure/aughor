@@ -14,13 +14,13 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-import aughor.agent.framing as AF
-import aughor.agent.investigate as I
-from aughor.agent.investigate import ada_intake as run_intake, framed_rules
-from aughor.agent.prompts_investigate import IntakeOutput
-from aughor.ontology.framing import frame_question
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic import enforcement as E
+import pramanyx.agent.framing as AF
+import pramanyx.agent.investigate as I
+from pramanyx.agent.investigate import ada_intake as run_intake, framed_rules
+from pramanyx.agent.prompts_investigate import IntakeOutput
+from pramanyx.ontology.framing import frame_question
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic import enforcement as E
 
 REPO = Path(__file__).resolve().parents[2]
 OLIST = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_olist_business_ontology.json").read_text()))
@@ -56,8 +56,8 @@ class _Grounding:
 def intake(monkeypatch):
     model = _Intake()
     monkeypatch.setattr(I, "_provider", lambda role: model)
-    import aughor.agent.explore as ex
-    import aughor.semantic.data_understanding as du
+    import pramanyx.agent.explore as ex
+    import pramanyx.semantic.data_understanding as du
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
     monkeypatch.setattr(du, "build_data_understanding", lambda *a, **k: _Grounding())
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: ("", ""))
@@ -91,11 +91,11 @@ def test_a_declared_definition_leads_the_intake_rides_every_phase_and_is_kept_fo
 
 
 def test_a_question_that_reaches_nothing_declared_leaves_the_intake_byte_identical(monkeypatch, intake):
-    from aughor.agent.prompts_investigate import INTAKE_PROMPT
+    from pramanyx.agent.prompts_investigate import INTAKE_PROMPT
     question = "How many sellers are there in each state?"
     framed, framed_prompt = _run(monkeypatch, intake, question, framed=True)
     bare, bare_prompt = _run(monkeypatch, intake, question, framed=False)
-    from aughor.agent.sql_context import sql_context
+    from pramanyx.agent.sql_context import sql_context
     written = INTAKE_PROMPT.format(question=question, schema=SCHEMA, scan_context="", events_section="",
                                    sql_context=sql_context(object()),   # the engine and the clock, as the intake states them
                                    origin_finding_section=I._render_origin_finding_section(None))
@@ -163,7 +163,7 @@ def test_the_deep_intake_takes_it_where_it_used_to_fall_back_and_lose_the_rule(m
     monkeypatch.setattr(I, "_provider", lambda role: model)
     monkeypatch.setattr(AF, "frame_from_state", lambda state, dialect="duckdb", provider=None: frame)
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: ("", ""))
-    import aughor.agent.explore as ex
+    import pramanyx.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
     schema = "TABLE: thelook.order_items\n  id INT64\n  sale_price FLOAT64\n  status STRING\n  created_at TIMESTAMP\n"
     with E.answering(question):

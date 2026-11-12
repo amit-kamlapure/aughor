@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.business_profile.store as profile_store
-import aughor.orgsettings as orgsettings
-from aughor.business_profile.metric_kb import (
+import pramanyx.business_profile.store as profile_store
+import pramanyx.orgsettings as orgsettings
+from pramanyx.business_profile.metric_kb import (
     _UNCURATED_INDUSTRY_TERMS,
     _words,
     industry_id,
@@ -77,7 +77,7 @@ def _entry_ids(data) -> list[str]:
 def test_every_kb_file_an_industry_claims_is_carried_by_that_industrys_package():
     """IP-1 — ownership is by place: an industry's `kb_files` are exactly the files its package carries,
     no file is carried twice, and the resolver finds nothing structurally wrong."""
-    from aughor.packs.knowledge import kb_files, problems
+    from pramanyx.packs.knowledge import kb_files, problems
 
     assert problems() == ()
     carried: dict[str, set[str]] = {}
@@ -93,7 +93,7 @@ def test_every_kb_file_an_industry_claims_is_carried_by_that_industrys_package()
 def test_a_shared_kb_file_carries_no_industry_prefix():
     """An ec_*.json a function or the analytics base carried would reach every industry's playbook. The
     prefixes come from the industry packages' own entry ids, so the check holds no list of its own."""
-    from aughor.packs.knowledge import iter_kb_payloads
+    from pramanyx.packs.knowledge import iter_kb_payloads
 
     payloads = list(iter_kb_payloads())
     prefixes = {i.split("_")[0] + "_" for f, data in payloads if f.industry for i in _entry_ids(data)}

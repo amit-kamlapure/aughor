@@ -16,16 +16,16 @@ import inspect
 
 import pytest
 
-from aughor.agent import grounding as G
-from aughor.semantic import instructions as I
+from pramanyx.agent import grounding as G
+from pramanyx.semantic import instructions as I
 
 
 @pytest.fixture
 def stores(tmp_path, monkeypatch):
     """Point both instruction stores at this test's own temp files (paths are
     resolved per call, so setenv wins without a module reload)."""
-    monkeypatch.setenv("AUGHOR_INSTRUCTIONS_FILE", str(tmp_path / "instructions.json"))
-    monkeypatch.setenv("AUGHOR_CANVAS_INSTRUCTIONS_FILE", str(tmp_path / "canvas_instructions.json"))
+    monkeypatch.setenv("PRAMANYX_INSTRUCTIONS_FILE", str(tmp_path / "instructions.json"))
+    monkeypatch.setenv("PRAMANYX_CANVAS_INSTRUCTIONS_FILE", str(tmp_path / "canvas_instructions.json"))
     return tmp_path
 
 
@@ -86,7 +86,7 @@ def test_what_the_endpoints_store_is_what_the_prompt_gets(stores):
     """End to end through the API: the text a user PUTs is the text the grounding
     producer injects — the endpoint existing is not the feature; this is."""
     from fastapi.testclient import TestClient
-    from aughor.api import app
+    from pramanyx.api import app
     client = TestClient(app)
 
     r = client.put("/connections/conn_a/instructions",
@@ -110,7 +110,7 @@ def test_what_the_endpoints_store_is_what_the_prompt_gets(stores):
 def test_quick_answer_path_prepends_the_instructions_block():
     """Wiring guard (the schema-scope idiom): the gap this feature closes was a
     store nothing consumed, so pin the consumption site itself."""
-    from aughor.routers.investigations import _answer_core
+    from pramanyx.routers.investigations import _answer_core
     src = inspect.getsource(_answer_core)
     assert "custom_instructions" in src
     assert "prompt = _instr_sec + prompt" in src
@@ -118,6 +118,6 @@ def test_quick_answer_path_prepends_the_instructions_block():
 
 def test_receipt_endpoint_forwards_the_canvas_scope():
     """GET /ask/context must stay in sync: the same producer, fed the same canvas."""
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     src = inspect.getsource(inv.ask_context_endpoint)
     assert "canvas_id=canvas" in src

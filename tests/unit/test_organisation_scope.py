@@ -17,9 +17,9 @@ import pytest
 import yaml
 from fastapi import HTTPException
 
-from aughor.semantic import glossary as G
-from aughor.semantic import metrics as M
-from aughor.semantic.metrics import GLOBAL_CONNECTION, MetricDefinition
+from pramanyx.semantic import glossary as G
+from pramanyx.semantic import metrics as M
+from pramanyx.semantic.metrics import GLOBAL_CONNECTION, MetricDefinition
 
 
 def _metric(name, sql, connection=GLOBAL_CONNECTION):
@@ -43,7 +43,7 @@ def orgs(monkeypatch):
 
 
 def _identity_on(monkeypatch, org: str, visible: set[str]):
-    from aughor.security import authz
+    from pramanyx.security import authz
     monkeypatch.setattr(authz, "tenant_scope", lambda: org)
     monkeypatch.setattr(authz, "org_visible_conn_ids", lambda: set(visible))
 
@@ -78,7 +78,7 @@ def test_the_unscoped_list_is_one_organisations_when_identity_is_on_and_unchange
     assert M.organisation_visible(rows) == rows                                   # identity off: byte-identical
     _identity_on(monkeypatch, "acme", {"conn_a"})
     assert [m.name for m in M.organisation_visible(rows)] == ["g", "mine", "a"]
-    from aughor.routers import metrics as R
+    from pramanyx.routers import metrics as R
     monkeypatch.setattr(R, "list_metrics", lambda connection_id=None: rows)
     assert [m["name"] for m in R.get_metrics()] == ["g", "mine", "a"]
     assert len(R.get_metrics(connection_id="conn_a")) == 5                        # a scoped read is the store's own resolution
@@ -136,7 +136,7 @@ def test_the_whole_glossary_shows_one_organisation_its_own_when_identity_is_on(t
     seen = G.organisation_visible(data)
     assert list(seen[G.ORGANISATIONS_KEY]) == ["acme"] and list(seen[G.CONNECTIONS_KEY]) == ["conn_a"]
     assert seen["tables"] == data["tables"]
-    from aughor.routers import knowledge as K
+    from pramanyx.routers import knowledge as K
     monkeypatch.setattr(K, "load_glossary", lambda: data)
     assert list(K.get_glossary()[G.ORGANISATIONS_KEY]) == ["acme"]
     assert K._organisation_for_write(False) is None and K._organisation_for_write(True) == "default"
@@ -145,8 +145,8 @@ def test_the_whole_glossary_shows_one_organisation_its_own_when_identity_is_on(t
 # ── the Briefing ───────────────────────────────────────────────────────────────────────────
 
 def test_the_organisations_briefing_folds_every_visible_connections_latest_kept_one_and_says_which_has_none(monkeypatch):
-    from aughor.briefing import organisation as O
-    from aughor.briefing import versions as V
+    from pramanyx.briefing import organisation as O
+    from pramanyx.briefing import versions as V
     cid, empty = "conn-" + uuid.uuid4().hex[:6], "conn-" + uuid.uuid4().hex[:6]
     key = dict(scope_key=cid, range_key="2026-09-01..2026-09-30", recipe="month")
     V.record(cid, {"narrative": "Returns rose.\n\nThe detail follows.", "headline_theme": "Returns rising",
@@ -161,7 +161,7 @@ def test_the_organisations_briefing_folds_every_visible_connections_latest_kept_
     assert kept["figures"] == {"return_rate": 5.2} and kept["as_of"] and kept["connection_name"] == "Shop"
     none = next(r for r in out["briefings"] if r["connection_id"] == empty)
     assert none["briefing"] is None and "no Briefing kept" in none["note"]
-    from aughor.routers import briefs as B
+    from pramanyx.routers import briefs as B
     assert B.get_organisation_briefing()["connections"] == 2
     # a Briefing's history is its organisation's: another organisation reading the same key sees nothing
     assert len(V.history(cid, **key)) == 2

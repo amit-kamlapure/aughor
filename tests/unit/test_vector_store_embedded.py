@@ -1,7 +1,7 @@
 """S1 — the embedded Qdrant backend: semantic search with no second process.
 
 The receipt §3.6 asks for, as tests: with nothing pinned and no Postgres, the seam
-opens qdrant-client's in-process local mode at AUGHOR_QDRANT_PATH and a write→read
+opens qdrant-client's in-process local mode at PRAMANYX_QDRANT_PATH and a write→read
 roundtrip works — no server, no port, no env var beyond the suite's own isolation.
 
 Real local mode on a temp path rather than fakes, for the same reason the pgvector
@@ -15,14 +15,14 @@ import pytest
 
 pytest.importorskip("qdrant_client")
 
-from aughor.semantic import vector_store as V  # noqa: E402
+from pramanyx.semantic import vector_store as V  # noqa: E402
 
 
 @pytest.fixture()
 def embedded(monkeypatch, tmp_path):
     """The unpinned-laptop shape: no server URL, no Postgres, a fresh index dir."""
     monkeypatch.delenv(V.QDRANT_URL_ENV, raising=False)
-    monkeypatch.delenv("AUGHOR_DB_URL", raising=False)
+    monkeypatch.delenv("PRAMANYX_DB_URL", raising=False)
     monkeypatch.setenv(V.QDRANT_PATH_ENV, str(tmp_path / "qdrant"))
     assert V.backend() == "qdrant" and V.available()
     return tmp_path / "qdrant"
@@ -49,7 +49,7 @@ def _seed():
 def test_unpinned_local_shape_runs_embedded_not_a_server(embedded):
     client = V._client()
     assert isinstance(client, V._Serialized), (
-        "with no AUGHOR_QDRANT_URL the client must be the embedded singleton — a "
+        "with no PRAMANYX_QDRANT_URL the client must be the embedded singleton — a "
         "server client here means a fresh clone is back to needing docker compose")
 
 
@@ -58,7 +58,7 @@ def test_a_pinned_url_still_means_a_server(monkeypatch):
     monkeypatch.setenv(V.QDRANT_URL_ENV, "http://localhost:6333")
     client = V._client()
     assert isinstance(client, QdrantClient) and not isinstance(client, V._Serialized), (
-        "an explicit AUGHOR_QDRANT_URL pins the server backend — deployments with "
+        "an explicit PRAMANYX_QDRANT_URL pins the server backend — deployments with "
         "an existing Qdrant (and their vectors) must keep exactly today's behaviour")
 
 
@@ -74,10 +74,10 @@ def test_the_embedded_client_is_one_per_path(embedded, monkeypatch, tmp_path):
 
 
 def test_the_default_path_rides_the_state_dir(monkeypatch, tmp_path):
-    """Unset, the index lives under state_dir() — so the suite's AUGHOR_STATE_DIR
+    """Unset, the index lives under state_dir() — so the suite's PRAMANYX_STATE_DIR
     isolation and any whole-deployment data/ move carry it along."""
     monkeypatch.delenv(V.QDRANT_PATH_ENV, raising=False)
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
     assert V._embedded_path() == str(tmp_path / "state" / "qdrant")
 
 
@@ -131,8 +131,8 @@ def test_org_intelligence_list_and_delete_ride_the_seam(embedded, monkeypatch):
     """The end-to-end that was impossible before: promote → list (with id) → delete
     by that id, all against the embedded index. The old bespoke clients talked to
     localhost:6333 regardless of where the real index lived."""
-    from aughor.knowledge import org_intelligence as OI
-    monkeypatch.setattr("aughor.semantic.embedder.embed_one", lambda text: _vec(1.0))
+    from pramanyx.knowledge import org_intelligence as OI
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", lambda text: _vec(1.0))
 
     OI.promote_to_org("i1", "revenue dips on Sundays", "retail", 4, "cv1",
                       connection_id="c1")

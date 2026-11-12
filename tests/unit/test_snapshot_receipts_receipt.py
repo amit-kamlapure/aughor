@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.evaluator import EvalCase
-from aughor.evals.snapshot_receipts_receipt import FLAG, SCENARIOS, receipt_target
+from pramanyx.evals.evaluator import EvalCase
+from pramanyx.evals.snapshot_receipts_receipt import FLAG, SCENARIOS, receipt_target
 
 
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
@@ -37,7 +37,7 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
 
 def test_the_flag_stayed_deleted():
     """Hardwired by flag endgame Wave 2 (2026-08-06); the registry must stay empty of it."""
-    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
     assert FLAG not in FLAG_ENV
     assert FLAG not in FLAG_DEFAULT

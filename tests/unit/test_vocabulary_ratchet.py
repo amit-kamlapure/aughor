@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[2]
 #: Where retired vocabulary is enforced. `docs/` is deliberately absent: study documents and
 #: wave arcs are historical records, and rewriting history to match today's names would
 #: destroy the reason the code looks like it does.
-CODE_ROOTS = ("aughor", "web", "tests", "scripts", "evals")
+CODE_ROOTS = ("pramanyx", "web", "tests", "scripts", "evals")
 
 _SKIP_PARTS = {"__pycache__", "node_modules", ".next", ".git", "dist", "build"}
 _SKIP_FILES = {
@@ -51,7 +51,7 @@ _SKIP_FILES = {
     # requires. A new `evals/ablation_*_ontology.json` goes here in the same commit.
     "evals/ablation_samples_ecommerce_ontology.json",
     "evals/ablation_luxexperience_ontology.json",
-    # …and the same graphs after `aughor.ontology.cardinality` measured their joins (ON-0a).
+    # …and the same graphs after `pramanyx.ontology.cardinality` measured their joins (ON-0a).
     "evals/ablation_samples_ecommerce_ontology_measured.json",
     "evals/ablation_luxexperience_ontology_measured.json",
     # ON-10's falsifier fixture: the served Olist graph (`baef6c3e/ecommerce`) with its declared process and rules —
@@ -79,7 +79,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # the part NAMES a closed, checkable set, so it must spell them exactly as the
         # wire does — renaming one here would silently stop matching the frame it is
         # meant to declare, which is the failure the map was added to prevent.
-        ("web/lib/aughorUIDataTypes.ts",
+        ("web/lib/pramanyxUIDataTypes.ts",
          # P4's narrator tests (2026-10-14) drive the synthesis node end to end, and the node's
          # name is the one the graph, the telemetry spans and the replay records carry; the
          # module under test speaks 'narrator' and 'synthesis' everywhere the word is its own.
@@ -109,7 +109,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # CI-2's findings tool reads the explorer store, whose frozen state key is the
          # retired term; the test constructs fake states carrying the same key. Both
          # already speak 'findings' everywhere the word is theirs to choose.
-         "aughor/agent/platform_tools.py",
+         "pramanyx/agent/platform_tools.py",
          "tests/unit/test_platform_tools.py",
          # BR-7's re-ask test (2026-09-26) constructs the same fake explorer states, keyed
          # by the store's frozen `insights`; the module under test speaks 'findings'.
@@ -124,7 +124,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # ON-0's prompt-reach audit builds a fixture graph with every renderer gate open;
          # its one hit is the model field `exploration_insights`, filled so the walk can
          # measure whether that field reaches a block. Its own output says 'findings'.
-         "aughor/ontology/prompt_reach.py",
+         "pramanyx/ontology/prompt_reach.py",
          # CB-7 (2026-09-23): its fixtures are BriefingCitation rows, and the type requires the wire
          # field `insight_id` — the same ground as api.ts; renaming it in a fixture stops testing the wire.
          "web/components/brief/BriefActions.test.tsx",
@@ -132,7 +132,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # written with VERBATIM, and `exploration.first_insight` / `exploration.insight` are frozen wire
          # kinds the explorer already emits and the UI subscribes to; a catalogue that respelled them
          # would publish kinds the journal does not carry. Its prose says 'finding'.
-         "aughor/kernel/events.py",),
+         "pramanyx/kernel/events.py",),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
@@ -155,14 +155,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # Phase 4 of the 2027 study (2026-10-05), the same ground as RC-3's expiry suite: every
          # hit in the authority suite is an identifier from the existing API — the `KineticAction`
          # class its fixtures build and `execute_kinetic_action`, the one executor it drives. Its
-         # own prose, and `aughor/actions/authority.py`, say "declared action" throughout.
+         # own prose, and `pramanyx/actions/authority.py`, say "declared action" throughout.
          "tests/unit/test_action_authority.py",
          # The close-out's C5 (2026-10-05), the same ground: the undo-and-gateway-writes suite builds
          # `KineticAction` fixtures and drives `execute_kinetic_action`, the one executor; and
          # `actions/authority.py` now IMPORTS that executor to fire a declared undo through the same
          # governed pipeline — one identifier from the existing API, no prose. Both say "action".
          "tests/unit/test_action_undo_and_gateway_writes.py",
-         "aughor/actions/authority.py",
+         "pramanyx/actions/authority.py",
          # Arc OC-4 (2026-10-09), the same ground: the dashboard pieces' suite and the listing suite build
          # `KineticAction` fixtures on the graph's `kinetic_actions`, monkeypatch `routers.kinetic`'s graph and
          # press the frozen `/kinetic-actions/{id}/execute` door — identifiers of the existing API, no prose. The
@@ -173,7 +173,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # the one executor, `execute_kinetic_action`, to run the action it chose through the governed
          # pipeline, and its suite builds `KineticAction` fixtures and drives that executor. Both say
          # "declared action" in every line a reader sees.
-         "aughor/actions/autonomy.py",
+         "pramanyx/actions/autonomy.py",
          "tests/unit/test_mission_spend_and_l5.py",
          # The delivery suite (2026-10-09), the same ground: every hit is `execute_kinetic_action`, the one
          # executor whose dispatch-error boundary it drives, or the `KineticAction` class its fixture builds.
@@ -199,7 +199,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # `KineticAction` fixtures, drive `execute_kinetic_action`, reuse `test_kinetic_inbox`'s fixtures by name, and
          # the RBAC suite names the frozen `/kinetic-actions/{action_id}/execute` door. Every line a reader sees says
          # "declared action" and "call"; the OC-6 doors themselves live under `/actions/`.
-         "aughor/actions/outbox.py",
+         "pramanyx/actions/outbox.py",
          "tests/unit/test_action_outbox.py",
          "tests/unit/test_edit_layer.py",
          "tests/unit/test_authority_at_execution.py",
@@ -222,13 +222,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # uses — `graph.kinetic_actions` and the `KineticAction` class — never
          # reader-facing prose. Renaming the attribute is a separate migration; aliasing
          # it here would hide the real name from the code that reads it.
-         "aughor/agent/action_tools.py",
+         "pramanyx/agent/action_tools.py",
          "tests/unit/test_agent_action_grants.py",
          # tool_grants (2026-09-02), same ground again: the grants validator reads
          # `graph.kinetic_actions` (the real attribute), the store test fakes that same
          # attribute, and api.ts spells the frozen `/ontology/kinetic-actions` route.
          # Everything reader-facing in all three says 'actions'.
-         "aughor/routers/agents.py",
+         "pramanyx/routers/agents.py",
          "tests/unit/test_user_agents.py",
          "web/lib/api.ts",
          # ON-0's prompt-reach audit and its test, same ground: every hit is a name the
@@ -237,7 +237,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # and `build_kinetic_actions_section`, the product's own renderer the audit calls.
          # Its block is `actions_declared`, its census `action_census`, its prose says
          # 'declared actions'.
-         "aughor/ontology/prompt_reach.py",
+         "pramanyx/ontology/prompt_reach.py",
          "tests/unit/test_ontology_prompt_reach.py",
          # B1, same ground again: the effect KIND is the wire literal "kinetic_action",
          # and these files spell the wire — the vocabulary tables (PUBLISHED_KEYS /
@@ -245,12 +245,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # construct Effects of that kind. Prose in all of them says "declared action";
          # only the identifiers remain, and an identifier cannot be reworded without
          # hiding the real name from the code that reads it.
-         "aughor/automations/dataflow.py",
+         "pramanyx/automations/dataflow.py",
          "tests/unit/test_automations_dataflow.py",
          # DS-8, same ground once more. Three hits survive in the durable-pause suite and
          # every one is a name the running system uses: the effect kind `kinetic_action`,
          # the live route `/kinetic-actions/inbox/{id}/reject` that the reject test presses,
-         # and `aughor.routers.kinetic`, the module the resume door lives in. Its prose says
+         # and `pramanyx.routers.kinetic`, the module the resume door lives in. Its prose says
          # "governed write" throughout — the helper that builds one is `_governed`, and the
          # imported router is bound as `actions_router` — so what is left cannot be reworded
          # without spelling the wire differently from the way the wire is spelled.
@@ -264,7 +264,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # DS-11's completion, same ground once more. Every hit in this file is a name the
          # running system uses and none is prose: `KineticAction` (the ontology model the
          # fixtures build), `graph.kinetic_actions` (the attribute the loader reads),
-         # `AUGHOR_KINETIC_INBOX_DB` (the env var, registered in conftest's redirect loop),
+         # `PRAMANYX_KINETIC_INBOX_DB` (the env var, registered in conftest's redirect loop),
          # and the two audited action names `gov_action_of` actually returns. Its own
          # prose says "declared action" and "governed write" throughout.
          "tests/unit/test_kinetic_inbox.py",
@@ -272,7 +272,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # the same ground: this file is the HTTP suite for that router, so every hit is the
          # frozen route it presses (`/kinetic-actions/annotations/{id}`, `…/inbox/{id}/accept`,
          # `…/grants/{id}/revoke`), the `KineticAction` model its fixtures build, the
-         # `kinetic_actions` attribute its fake graph carries, or `aughor.routers.kinetic`,
+         # `kinetic_actions` attribute its fake graph carries, or `pramanyx.routers.kinetic`,
          # the module it patches. A test of a route has to press the route as it is spelled.
          "tests/unit/test_kinetic_inbox_api.py",
          # Same door, its web half. Every hit is the component's own name — `KineticPanel`,
@@ -291,7 +291,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # wire literal. Its prose says "declared action" throughout, and its test names
          # the kind NOWHERE — it derives it as "the one kind whose published keys are
          # open", so the file is exempt for a single identifier.
-         "aughor/automations/palette.py",
+         "pramanyx/automations/palette.py",
          # W1, the same ground once more: `effectsForWire` branches on the wire literal
          # `kinetic_action` — it is the ONE branch that rebuilds `config`, so it is the
          # one that could drop a step's guard on save. A test of that branch has to name
@@ -325,7 +325,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # ontology graph's attribute of declared writes is a real attribute this module
          # reads by `getattr`. Both are spelled the way the running system spells them.
          # Every sentence in either file says "declared write" or "declared action".
-         "aughor/components/registry.py",
+         "pramanyx/components/registry.py",
          "tests/unit/test_component_registry.py",
          # DS-13, the widest version of the same ground and the one file that could not
          # avoid it: this module DEFINES `KineticAction`, `KineticResult` and
@@ -336,11 +336,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # prose says "declared action" throughout. Aliasing the type to dodge the pattern
          # is the trade this file's neighbours already refused: readable code for a
          # passing count.
-         "aughor/actions/executor.py",
+         "pramanyx/actions/executor.py",
          # Track B3's table of the state folder names each store by its FROZEN on-disk file name
          # (`kinetic_grants.db`, `kinetic_inbox.db`); a classification that renamed the file would classify
          # a file that does not exist. Its prose says "declared action" and "proposals".
-         "aughor/db/state_classes.py",
+         "pramanyx/db/state_classes.py",
          # DS-13's suite, for the narrowest version: eight hits, every one the constructor
          # or the exception `pytest.raises` matches on. A test of the executor's refusals
          # has to name the exception the executor raises.
@@ -383,7 +383,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # spell the path. The reason string already grants the routes their freeze; this
         # exempts the two places that cannot avoid naming them, and nothing else.
         r"(?i)control[\s_-]room", CODE_ROOTS,
-        ("aughor/routers/control_room.py", "tests/unit/test_agent_ops_endpoints.py",
+        ("pramanyx/routers/control_room.py", "tests/unit/test_agent_ops_endpoints.py",
          "tests/unit/test_agent_ops_data_plane.py",
          # Same reason as its two siblings: it calls `/control-room/needs-human`, which
          # is one of the frozen routes, and a test cannot assert against a path it is
@@ -423,7 +423,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # is left is what a rename must not touch — every one of them read back by name: the stored names in the
         # glossary's frozen list (the Ledger kind `cockpit` and its natural keys, the spec's root key "cockpit" and its
         # element type "Cockpit", the proposal kinds `cockpit_draft` / `cockpit_publish`, the audit names, the
-        # `cockpit-images` volume, the Briefing-switches section id, the browser keys `aughor:cockpit:*`), the data's
+        # `cockpit-images` volume, the Briefing-switches section id, the browser keys `pramanyx:cockpit:*`), the data's
         # field names that stored rows carry (`cockpit`, `cockpit_id`, `cockpits`), the flag aliases in `RENAMED` /
         # `RETIRED_ENV`, the old-path middleware, and links to the studies and mockups filed under the old name.
         r"(?i)cockpit", CODE_ROOTS, (),
@@ -455,7 +455,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # user-facing strings around them say "deep analysis" / "Investigate" as the
          # roster label the glossary allows.
          "web/lib/automationFlow", "web/components/AutomationGraph.tsx",
-         "web/lib/aughorUIDataTypes.ts", "web/app/api/chat/",
+         "web/lib/pramanyxUIDataTypes.ts", "web/app/api/chat/",
          # The Overview receives the shell's `onOpenInvestigation` prop (shared with three
          # other panels) and reads `resolve.investigation_id` off a needs-human row — a
          # wire field. Its own prose says "deep analysis"; renaming either would break the
@@ -515,13 +515,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         r"(?i)databricks", CODE_ROOTS,
         # Where we genuinely integrate, since 2026-11-03: the connector, its declaration, the two files generated from that, its
         # driver's name, and the two suites that list the declared engines.
-        ("aughor/connectors/warehouse/databricks.py", "aughor/connectors/declarations.py", "aughor/connectors/catalog.json",
-         "aughor/connectors/registry.py", "web/lib/connectors.gen.ts", "tests/unit/test_connector_capabilities.py",
+        ("pramanyx/connectors/warehouse/databricks.py", "pramanyx/connectors/declarations.py", "pramanyx/connectors/catalog.json",
+         "pramanyx/connectors/registry.py", "web/lib/connectors.gen.ts", "tests/unit/test_connector_capabilities.py",
          "tests/unit/test_de3b_one_declaration.py",
          # 2026-11-04, Arc NV-3: the third suite that lists the declared engines — the four whose query history is read.
          "tests/unit/test_query_history_candidates.py",
          # 2026-11-04, Arc NV-5: the engine's dialect is the key of its prerequisite, and the suite that lists them.
-         "aughor/db/query_history.py", "tests/unit/test_query_history_prerequisites.py"),
+         "pramanyx/db/query_history.py", "tests/unit/test_query_history_prerequisites.py"),
         "keep it only where we genuinely integrate; elsewhere describe the behaviour",
     ),
     "copilotkit": (r"(?i)copilotkit", CODE_ROOTS, (), "the protocol we speak is AG-UI"),
@@ -590,18 +590,18 @@ BASELINE: dict[str, int] = {
     "charter": 3,
     # 2026-10-23: measured after R1–R3 and the comment pass (6,268 occurrences across the repo before the rename).
     # 973 → 971 the same day: the Question piece (PENDING 54) added the API's field names it must read, and paid for
-    # them by correcting the old paths comments still named (lib/cockpit/, aughor/cockpit/) to where the code lives.
+    # them by correcting the old paths comments still named (lib/cockpit/, pramanyx/cockpit/) to where the code lives.
     # 971 → 966 (ED-4, 2026-10-24): an App's versions read the stored field names they must, and paid for them with
     # nine comments that still said cockpit for a dashboard.
     # 966 → 927 (2026-10-28, ROADMAP §3.65): the dashboard flags were made unconditional — their nine `cockpit.*` aliases,
-    # their nine `AUGHOR_COCKPIT_*` variables and the off paths that said the word went with them.
+    # their nine `PRAMANYX_COCKPIT_*` variables and the off paths that said the word went with them.
     "cockpit": 893,
     "control_room": 25,
     # 2026-11-11: 4 → 0, by the same cleanup.
     "copilotkit": 0,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
     # outside CODE_ROOTS); Wave 2d removed the last one in a FLAG_META description.
-    # 2026-09-13: 46 → 45. Instrument rewrote `web/aughor-v2/theme/tokens-v2.css`, which held one.
+    # 2026-09-13: 46 → 45. Instrument rewrote `web/pramanyx-v2/theme/tokens-v2.css`, which held one.
     # 2026-11-03: 45 → 44. The connector is exempt above; `brandMarks.ts` still names its logo.
     # 2026-11-11: 44 → 3. The reference cleanup described the behaviour wherever a comment named the product; the
     # three left are the connector's SQL-dialect facts and its brand mark.
@@ -654,7 +654,7 @@ BASELINE: dict[str, int] = {
     "investigation_in_web": 544,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
-    # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
+    # `pramanyx/actions/executor.py` and its own suite, where every hit is a type name, an
     # exception the tests match on, or a wire literal the approval gate keys grants by.
     # The number below is what remains COUNTED after both — measured, not added up.
     # 2026-09-02: 358 → 348. api.ts joined the exempt list (every hit is a frozen wire
@@ -854,7 +854,7 @@ def test_every_alias_resolves_to_a_registered_flag():
     """P0 shipped this layer inert; P3 filled it with the `ada.*` family. Every retired
     name must land on a name that actually exists, or the alias silently resolves to
     nothing and the flag reads as off."""
-    from aughor.kernel.flags import FLAG_ENV, RENAMED, RETIRED_ENV
+    from pramanyx.kernel.flags import FLAG_ENV, RENAMED, RETIRED_ENV
 
     for old, new in RENAMED.items():
         assert new in FLAG_ENV, f"{old} -> {new}, which is not registered"
@@ -863,7 +863,7 @@ def test_every_alias_resolves_to_a_registered_flag():
 
 
 def test_canonical_is_identity_for_current_names():
-    from aughor.kernel.flags import FLAG_ENV, _canonical
+    from pramanyx.kernel.flags import FLAG_ENV, _canonical
 
     for name in FLAG_ENV:
         assert _canonical(name) == name
@@ -874,7 +874,7 @@ def test_no_ada_flag_survives_in_the_registry():
     only means something while its target lives (the last three `ada.*` aliases left
     2026-08-06 with Wave 5's hardwires) — every surviving alias must point at a
     REGISTERED flag, or `_canonical` resolves the old name to a dead one."""
-    from aughor.kernel.flags import FLAG_ENV, RENAMED
+    from pramanyx.kernel.flags import FLAG_ENV, RENAMED
 
     assert not [n for n in FLAG_ENV if n.startswith("ada.")]
     dangling = {old: new for old, new in RENAMED.items() if new not in FLAG_ENV}
@@ -882,48 +882,48 @@ def test_no_ada_flag_survives_in_the_registry():
 
 
 def test_a_renamed_flag_resolves_through_its_old_name(monkeypatch):
-    from aughor.kernel import flags
+    from pramanyx.kernel import flags
 
     monkeypatch.setitem(flags.RENAMED, "ada.legacy_probe", "deep_analysis.legacy_probe")
-    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "AUGHOR_DA_LEGACY_PROBE")
+    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "PRAMANYX_DA_LEGACY_PROBE")
 
     assert flags._canonical("ada.legacy_probe") == "deep_analysis.legacy_probe"
-    monkeypatch.setenv("AUGHOR_DA_LEGACY_PROBE", "1")
+    monkeypatch.setenv("PRAMANYX_DA_LEGACY_PROBE", "1")
     assert flags.flag_enabled("ada.legacy_probe") is True
     assert flags.flag_enabled("deep_analysis.legacy_probe") is True
 
 
 def test_a_retired_env_var_still_works_until_the_operator_migrates(monkeypatch):
     """An operator's existing .env must not silently stop working on the day we rename."""
-    from aughor.kernel import flags
+    from pramanyx.kernel import flags
 
-    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "AUGHOR_DA_LEGACY_PROBE")
-    monkeypatch.setitem(flags.RETIRED_ENV, "AUGHOR_ADA_LEGACY_PROBE", "deep_analysis.legacy_probe")
+    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "PRAMANYX_DA_LEGACY_PROBE")
+    monkeypatch.setitem(flags.RETIRED_ENV, "PRAMANYX_ADA_LEGACY_PROBE", "deep_analysis.legacy_probe")
 
-    monkeypatch.delenv("AUGHOR_DA_LEGACY_PROBE", raising=False)
-    monkeypatch.setenv("AUGHOR_ADA_LEGACY_PROBE", "1")
+    monkeypatch.delenv("PRAMANYX_DA_LEGACY_PROBE", raising=False)
+    monkeypatch.setenv("PRAMANYX_ADA_LEGACY_PROBE", "1")
     assert flags.flag_enabled("deep_analysis.legacy_probe") is True
     # …and flag_state must agree, or the UI shows "off" beside a flag that is on.
     assert flags.flag_state("deep_analysis.legacy_probe") == "on"
 
 
 def test_the_current_env_var_wins_over_a_retired_one(monkeypatch):
-    from aughor.kernel import flags
+    from pramanyx.kernel import flags
 
-    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "AUGHOR_DA_LEGACY_PROBE")
-    monkeypatch.setitem(flags.RETIRED_ENV, "AUGHOR_ADA_LEGACY_PROBE", "deep_analysis.legacy_probe")
+    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "PRAMANYX_DA_LEGACY_PROBE")
+    monkeypatch.setitem(flags.RETIRED_ENV, "PRAMANYX_ADA_LEGACY_PROBE", "deep_analysis.legacy_probe")
 
-    monkeypatch.setenv("AUGHOR_ADA_LEGACY_PROBE", "1")
-    monkeypatch.setenv("AUGHOR_DA_LEGACY_PROBE", "0")
+    monkeypatch.setenv("PRAMANYX_ADA_LEGACY_PROBE", "1")
+    monkeypatch.setenv("PRAMANYX_DA_LEGACY_PROBE", "0")
     assert flags.flag_enabled("deep_analysis.legacy_probe") is False
 
 
 def test_flag_overrides_accepts_a_retired_name(monkeypatch):
     """A script pinned to the old name must keep running, not raise UnknownFlagError."""
-    from aughor.kernel import flags
+    from pramanyx.kernel import flags
 
     monkeypatch.setitem(flags.RENAMED, "ada.legacy_probe", "deep_analysis.legacy_probe")
-    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "AUGHOR_DA_LEGACY_PROBE")
+    monkeypatch.setitem(flags.FLAG_ENV, "deep_analysis.legacy_probe", "PRAMANYX_DA_LEGACY_PROBE")
 
     with flags.flag_overrides({"ada.legacy_probe": True}):
         assert flags.flag_enabled("deep_analysis.legacy_probe") is True
@@ -931,7 +931,7 @@ def test_flag_overrides_accepts_a_retired_name(monkeypatch):
 
 def test_an_unregistered_flag_still_raises(monkeypatch):
     """The alias layer must not weaken the typo guard it routes through."""
-    from aughor.kernel import flags
+    from pramanyx.kernel import flags
 
     with pytest.raises(flags.UnknownFlagError):
         with flags.flag_overrides({"totally.made.up": True}):
@@ -941,7 +941,7 @@ def test_an_unregistered_flag_still_raises(monkeypatch):
 def test_a_retired_name_never_reregisters():
     """A rename that quietly reappears in FLAG_ENV would resurrect two live names for one
     flag — the exact drift this layer exists to prevent."""
-    from aughor.kernel.flags import FLAG_ENV, RENAMED
+    from pramanyx.kernel.flags import FLAG_ENV, RENAMED
 
     clashes = sorted(set(RENAMED) & set(FLAG_ENV))
     assert not clashes, f"retired flag names re-registered in FLAG_ENV: {clashes}"

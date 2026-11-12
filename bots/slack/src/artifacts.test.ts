@@ -16,7 +16,7 @@ describe("createTableRenderer", () => {
   it("asks the platform with Slack's encodings, and posts what it formatted", async () => {
     let seen: { url: string; body: Record<string, unknown> } | null = null;
     const render = createTableRenderer(
-      { AUGHOR_API_URL: "http://api.test/", AUGHOR_API_KEY: "k", AUGHOR_CONNECTION_ID: "thelook" },
+      { PRAMANYX_API_URL: "http://api.test/", PRAMANYX_API_KEY: "k", PRAMANYX_CONNECTION_ID: "thelook" },
       async (url, init) => {
         seen = { url: String(url), body: JSON.parse(String(init?.body)) };
         expect((init?.headers as Record<string, string>)["x-api-key"]).toBe("k");

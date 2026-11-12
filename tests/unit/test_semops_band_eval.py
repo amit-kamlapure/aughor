@@ -193,7 +193,7 @@ def test_the_jev_arm_speaks_the_documented_shape_and_banding_still_decides():
 
 
 def test_a_rate_limit_is_retried_and_a_dead_call_is_an_unavailable_answer(monkeypatch):
-    from aughor.judgment.seam import Noul
+    from pramanyx.judgment.seam import Noul
     monkeypatch.setattr("evals.semops_band_eval.time.sleep", lambda s: None)
     tries = []
 

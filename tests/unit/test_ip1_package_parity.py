@@ -54,8 +54,8 @@ def _as_moved_payload(data):
 def as_moved():
     """Every knowledge reader in this module sees the packages as they were moved: the edits
     recorded since are put back, in place, so order and everything else stay as they are."""
-    from aughor.business_profile import metric_kb
-    from aughor.packs import knowledge
+    from pramanyx.business_profile import metric_kb
+    from pramanyx.packs import knowledge
 
     live_industries, live_payloads = knowledge.industry_kbs, knowledge.iter_kb_payloads
     with pytest.MonkeyPatch.context() as mp:
@@ -78,7 +78,7 @@ def _sha(lines) -> str:
 
 @pytest.fixture(scope="module")
 def plays():
-    from aughor.playbook import builder
+    from pramanyx.playbook import builder
     out = []
     for entry in builder._load_all_kb():
         if builder._has_causal_data(entry):
@@ -87,8 +87,8 @@ def plays():
 
 
 def test_the_seeder_builds_the_same_plays(plays):
-    from aughor.business_profile.metric_kb import kb_entry_industry
-    from aughor.playbook.retriever import is_data_quality
+    from pramanyx.business_profile.metric_kb import kb_entry_industry
+    from pramanyx.playbook.retriever import is_data_quality
 
     by = Counter()
     content = []
@@ -105,7 +105,7 @@ def test_the_seeder_builds_the_same_plays(plays):
 
 
 def test_the_retriever_indexes_the_same_entries():
-    from aughor.semantic.kb_loader import load_package_kb_entries
+    from pramanyx.semantic.kb_loader import load_package_kb_entries
 
     entries = load_package_kb_entries()
     assert len(entries) == BASELINE["retriever_entries"]
@@ -119,7 +119,7 @@ def test_the_retriever_indexes_the_same_entries():
 
 def test_the_profiler_derives_the_same_fact_table_stems():
     """Compared as a SET: the alternation order of the old pattern followed an unsorted glob."""
-    from aughor.tools.profiler import _build_fact_signals
+    from pramanyx.tools.profiler import _build_fact_signals
 
     def stems(pattern: str) -> set[str]:
         inner = re.fullmatch(r"\^\((.*)\)", pattern).group(1)
@@ -129,7 +129,7 @@ def test_the_profiler_derives_the_same_fact_table_stems():
 
 
 def test_the_curated_industries_are_the_same():
-    from aughor.business_profile.metric_kb import load_industry_kbs
+    from pramanyx.business_profile.metric_kb import load_industry_kbs
 
     kbs = load_industry_kbs()
     got = {kb["id"]: {"industry": kb.get("industry"), "aliases": kb.get("aliases"),
@@ -142,14 +142,14 @@ def test_the_curated_industries_are_the_same():
 
 
 def test_every_entry_belongs_to_the_same_industry():
-    from aughor.business_profile.metric_kb import kb_entry_industry
+    from pramanyx.business_profile.metric_kb import kb_entry_industry
 
     for entry_id, industry in BASELINE["entry_industry"].items():
         assert kb_entry_industry(entry_id) == industry, entry_id
 
 
 def test_each_industrys_metric_vocabulary_is_the_same():
-    from aughor.business_profile.metric_kb import metric_vocabulary
+    from pramanyx.business_profile.metric_kb import metric_vocabulary
 
     # `include_packages=False` — the vocabulary `industry.json` ALONE defines, which is what the
     # pre-move loaders read and what this fixture measured. The platform's own callers take the

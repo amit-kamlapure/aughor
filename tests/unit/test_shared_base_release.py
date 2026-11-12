@@ -28,7 +28,7 @@ import pytest
 _PROGRAM = textwrap.dedent("""
     import sys, threading, time
     import duckdb
-    from aughor.connectors.file.local_upload import _BASE_DBS, _BASE_LOCK, _shared_base, evict_base
+    from pramanyx.connectors.file.local_upload import _BASE_DBS, _BASE_LOCK, _shared_base, evict_base
 
     def build():
         c = duckdb.connect(":memory:")
@@ -92,7 +92,7 @@ def test_superseding_really_does_replace_the_cached_database():
     still hand out a NEW database, or the workspace would serve stale files forever."""
     prog = textwrap.dedent("""
         import duckdb
-        from aughor.connectors.file.local_upload import _shared_base, evict_base, _BASE_DBS
+        from pramanyx.connectors.file.local_upload import _shared_base, evict_base, _BASE_DBS
         mk = lambda: duckdb.connect(":memory:")
         a = _shared_base("c1", None, ("sig", 1), build=mk)
         b = _shared_base("c1", None, ("sig", 1), build=mk)   # same signature → cached

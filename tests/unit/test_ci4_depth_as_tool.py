@@ -16,8 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import converse_tools as ct
-from aughor.routers import investigations as inv
+from pramanyx.agent import converse_tools as ct
+from pramanyx.routers import investigations as inv
 
 
 def _req(**kw):
@@ -32,7 +32,7 @@ def _route(depth="quick", forced=None):
 
 @pytest.fixture
 def _calls_tools(monkeypatch):
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: True)
 
 
 # ── eligibility: the carve-outs that dissolved, and the two that remain ──────────────
@@ -65,7 +65,7 @@ def test_a_router_chosen_deep_route_keeps_its_body(_calls_tools):
 
 
 def test_a_binding_without_tools_still_gates_everything(monkeypatch):
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: False)
     assert inv._converse_eligible(_req(seed_sql="SELECT 1"), _route("quick")) is False
 
 
@@ -118,9 +118,9 @@ def test_the_tool_runs_the_analyst_inline(monkeypatch):
     """CA-3: the tool's body IS the analyst loop, run in this turn — the phases stream
     through the turn's own frame channel and the return value summarizes the report
     the user already watched, never a background handle."""
-    from aughor.agent import analyst as an
+    from pramanyx.agent import analyst as an
 
-    monkeypatch.setattr("aughor.licensing.has_capability",
+    monkeypatch.setattr("pramanyx.licensing.has_capability",
                         lambda cap, **kw: True)
     seen = {}
 
@@ -135,7 +135,7 @@ def test_the_tool_runs_the_analyst_inline(monkeypatch):
                                           "executive_summary": "A bot cohort."},
             steps=[], stop_reason="answered", investigation_id="inv-9")
 
-    monkeypatch.setattr("aughor.agent.analyst.run_analyst", _fake_analyst)
+    monkeypatch.setattr("pramanyx.agent.analyst.run_analyst", _fake_analyst)
 
     out = ct.deep_analysis("c1", {"question": "why did margin fall?"},
                            emit=lambda t, p: None, session_id="s1")
@@ -151,7 +151,7 @@ def test_the_tool_runs_the_analyst_inline(monkeypatch):
 def test_a_missing_capability_is_a_value_not_a_silent_downgrade(monkeypatch):
     """The route silently downgrades deep→quick without the licence; a TOOL named
     deep_analysis that did the same would be lying about itself."""
-    monkeypatch.setattr("aughor.licensing.has_capability",
+    monkeypatch.setattr("pramanyx.licensing.has_capability",
                         lambda cap, **kw: False)
 
     out = ct.deep_analysis("c1", {"question": "why?"})
@@ -163,11 +163,11 @@ def test_a_missing_capability_is_a_value_not_a_silent_downgrade(monkeypatch):
 def test_a_refused_run_reports_its_sentence(monkeypatch):
     """The custom-agent refusal gate survives the CI-4→CA-3 body swap: an agent that may
     not investigate is refused BEFORE the analyst starts, with the authored sentence."""
-    monkeypatch.setattr("aughor.licensing.has_capability",
+    monkeypatch.setattr("pramanyx.licensing.has_capability",
                         lambda cap, **kw: True)
-    monkeypatch.setattr("aughor.runners.refusal_for",
+    monkeypatch.setattr("pramanyx.runners.refusal_for",
                         lambda req: "this agent may not investigate")
-    monkeypatch.setattr("aughor.agent.analyst.run_analyst",
+    monkeypatch.setattr("pramanyx.agent.analyst.run_analyst",
                         lambda *a, **k: (_ for _ in ()).throw(
                             AssertionError("the analyst must not run after a refusal")))
 

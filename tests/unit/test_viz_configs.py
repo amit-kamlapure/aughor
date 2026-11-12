@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.cards.store import get_viz_configs, set_viz_config
+from pramanyx.cards.store import get_viz_configs, set_viz_config
 
 BAR = {"type": "bar", "dim": "platform", "metric": "gmv"}
 LINE = {"type": "line", "xTitle": "Month"}
@@ -24,7 +24,7 @@ LINE = {"type": "line", "xTitle": "Month"}
 @pytest.fixture(autouse=True)
 def _isolated_db(tmp_path, monkeypatch):
     """Never touch the real dashboard DB — the suite has emptied a live store before."""
-    monkeypatch.setattr("aughor.cards.store._DB_PATH", str(tmp_path / "cards.db"))
+    monkeypatch.setattr("pramanyx.cards.store._DB_PATH", str(tmp_path / "cards.db"))
 
 
 def test_roundtrip_one_config():

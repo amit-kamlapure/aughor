@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Agent runs — the person's run history, laid out to CLARITY (`aughor-v2/CLARITY.md`) and, since 2026-11-10, to the
+ * Agent runs — the person's run history, laid out to CLARITY (`pramanyx-v2/CLARITY.md`) and, since 2026-11-10, to the
  * Evidence → Action study's register and inspector (§9, §12.3): four figures (runs, the questions behind them, the
  * ones that did not finish, what is running), the runs that need a person in amber with their buttons on the row, then
  * the register — one row per question (Question · Kind · Latest answer · Runs · When), its repeats folded into ×N with

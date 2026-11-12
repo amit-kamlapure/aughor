@@ -6,7 +6,7 @@ the rendered block always has exactly one opening + one closing delimiter.
 """
 from __future__ import annotations
 
-from aughor.util.prompt_safety import (
+from pramanyx.util.prompt_safety import (
     DATA_CLOSE,
     DATA_OPEN,
     UNTRUSTED_DATA_NOTE,
@@ -53,8 +53,8 @@ def test_fence_max_chars_truncates_block():
 
 
 def test_format_result_for_llm_fences_untrusted_rows():
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.tools.executor import format_result_for_llm
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.tools.executor import format_result_for_llm
 
     r = QueryResult(
         hypothesis_id="h1",

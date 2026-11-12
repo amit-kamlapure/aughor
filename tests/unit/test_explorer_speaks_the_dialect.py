@@ -11,7 +11,7 @@ what its own SQL contained:
 All four are DuckDB spellings sent verbatim to BigQuery. `_run`'s own docstring already drew
 the line this fix keys on: SQL with a `schema` was written by a MODEL and is guarded, while
 SQL without one is "built by the explorer itself from parsed schema metadata" — platform SQL,
-written in DuckDB's dialect, which is precisely what `aughor.db.dialects.native_sql` exists to
+written in DuckDB's dialect, which is precisely what `pramanyx.db.dialects.native_sql` exists to
 translate — since GM-1 as the door's own step, the platform branch declaring `sql_dialect="duckdb"`.
 Model-written SQL is deliberately NOT transpiled: the model is told the target
 dialect and writes in it, so reading that as DuckDB would corrupt it.
@@ -26,8 +26,8 @@ import inspect
 import pytest
 import sqlglot
 
-from aughor.db.dialects import native_sql
-from aughor.explorer import agent as EA
+from pramanyx.db.dialects import native_sql
+from pramanyx.explorer import agent as EA
 
 
 class _FakeConn:

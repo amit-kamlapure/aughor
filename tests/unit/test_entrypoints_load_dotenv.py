@@ -6,13 +6,13 @@ one suspect, tested it, and cleared it; the cause stayed unfound.
 
 The chain, proven statically:
 
-1. `.env` is read in exactly two places — `aughor/api.py` and `semantic/kb_retriever.py`.
+1. `.env` is read in exactly two places — `pramanyx/api.py` and `semantic/kb_retriever.py`.
    Nothing on the general import path reads it.
-2. `aughor/cli.py` is the installed entrypoint (`[project.scripts] aughor = …`) and read
-   none of it. A process starting there therefore never saw `AUGHOR_QDRANT_URL`.
+2. `pramanyx/cli.py` is the installed entrypoint (`[project.scripts] pramanyx = …`) and read
+   none of it. A process starting there therefore never saw `PRAMANYX_QDRANT_URL`.
 3. Without that pin, `vector_store._client()` takes the embedded branch at
    `_embedded_path()` → `state_dir() / "qdrant"` → **`data/qdrant`**.
-4. `aughor investigate` imports `agent.bootstrap`, which calls `delete_by_filter` and
+4. `pramanyx investigate` imports `agent.bootstrap`, which calls `delete_by_filter` and
    `match_filter` — real operations, and this store writes when USED.
 
 🔑 **The fix belongs at the entrypoint, not in the library modules.** `kb_retriever` had
@@ -39,8 +39,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 #: runs in a fresh interpreter, with only the real environment — no `.env` unless it says
 #: so itself.
 ENTRYPOINTS = {
-    "aughor/api.py": "the ASGI app (uvicorn, Vercel)",
-    "aughor/cli.py": "the installed console script (`aughor …`)",
+    "pramanyx/api.py": "the ASGI app (uvicorn, Vercel)",
+    "pramanyx/cli.py": "the installed console script (`pramanyx …`)",
 }
 
 
@@ -70,22 +70,22 @@ def test_every_entrypoint_loads_dotenv():
                if not _loads_dotenv(_ROOT / p)]
     assert not missing, (
         "entrypoint(s) that never read .env: " + "; ".join(missing) +
-        ". A process starting there sees no AUGHOR_QDRANT_URL, so the semantic index "
+        ". A process starting there sees no PRAMANYX_QDRANT_URL, so the semantic index "
         "falls through to embedded mode and creates state_dir()/qdrant — which is the "
         "stray data/qdrant/ this test exists because of. Copy the guarded load from "
-        "aughor/api.py."
+        "pramanyx/api.py."
     )
 
 
 def test_every_entrypoint_honours_the_clean_environment_flag():
-    """`AUGHOR_SKIP_DOTENV` is how the test suite declares a clean environment — conftest
+    """`PRAMANYX_SKIP_DOTENV` is how the test suite declares a clean environment — conftest
     sets it before any app import, because a developer's `.env` leaking into the suite
     makes a laptop run a different suite from CI. An entrypoint that loaded
     unconditionally would re-pollute it."""
     for p in ENTRYPOINTS:
         src = (_ROOT / p).read_text(encoding="utf-8")
-        assert "AUGHOR_SKIP_DOTENV" in src, (
-            f"{p} loads .env without honouring AUGHOR_SKIP_DOTENV — the suite's declared "
+        assert "PRAMANYX_SKIP_DOTENV" in src, (
+            f"{p} loads .env without honouring PRAMANYX_SKIP_DOTENV — the suite's declared "
             f"clean environment would be re-polluted by whatever is in the developer's "
             f".env, which is how a laptop starts running a different suite from CI")
 
@@ -95,8 +95,8 @@ def test_the_console_script_target_is_covered():
     test does not know about is exactly how the next entrypoint slips through — which is
     how this one did."""
     pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'aughor = "aughor.cli:cli"' in pyproject, (
-        "the console script moved; ENTRYPOINTS in this test names aughor/cli.py and must "
+    assert 'pramanyx = "pramanyx.cli:cli"' in pyproject, (
+        "the console script moved; ENTRYPOINTS in this test names pramanyx/cli.py and must "
         "be updated to whatever module now starts a process")
 
 
@@ -110,11 +110,11 @@ def test_the_dotenv_readers_are_the_ones_we_think():
     """
     readers = sorted(
         str(p.relative_to(_ROOT))
-        for p in (_ROOT / "aughor").rglob("*.py")
+        for p in (_ROOT / "pramanyx").rglob("*.py")
         if _loads_dotenv(p)
     )
-    assert readers == ["aughor/api.py", "aughor/cli.py",
-                       "aughor/semantic/kb_retriever.py"], (
+    assert readers == ["pramanyx/api.py", "pramanyx/cli.py",
+                       "pramanyx/semantic/kb_retriever.py"], (
         f"the set of .env readers changed: {readers}. That is not necessarily wrong, but "
         f"the stray-data/qdrant diagnosis assumed this set — re-check it before trusting "
-        f"the comment in aughor/cli.py")
+        f"the comment in pramanyx/cli.py")

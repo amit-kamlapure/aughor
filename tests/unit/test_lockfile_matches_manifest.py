@@ -44,7 +44,7 @@ def _manifest() -> dict[str, set[str]]:
 def _locked() -> dict[str, set[str]]:
     """The same shape, read off the lockfile's record of the root package."""
     lock = tomllib.loads((REPO / "uv.lock").read_text())
-    root = next((p for p in lock["package"] if p["name"] == "aughor"), None)
+    root = next((p for p in lock["package"] if p["name"] == "pramanyx"), None)
     assert root is not None, "uv.lock has no record of this project — the guard is blind"
     out: dict[str, set[str]] = {}
     for req in root.get("metadata", {}).get("requires-dist", []):

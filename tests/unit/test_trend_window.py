@@ -7,12 +7,12 @@ The bug a user caught from the missimi briefing: trend chart_sql written as
 
 High-precision contract: it must ONLY rewrite a provably-ascending LIMITed time trend —
 never a top-N category breakdown, a no-LIMIT query, or an already-DESC trend.
-See aughor/sql/trend_window.py.
+See pramanyx/sql/trend_window.py.
 """
 import duckdb
 import pytest
 
-from aughor.sql.trend_window import recent_window
+from pramanyx.sql.trend_window import recent_window
 
 
 # ── Rewrites: provably-ascending LIMITed time trends ──────────────────────────

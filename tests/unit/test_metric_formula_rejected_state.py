@@ -15,7 +15,7 @@ So the reason is persisted beside the profile — not on `BusinessProfile`, whic
 generation schema and would describe the field to the model on every inference — and the
 catalogue reports ``formula_rejected`` carrying the audit's own words.
 """
-from aughor.semantic import metric_catalogue as mc
+from pramanyx.semantic import metric_catalogue as mc
 
 
 class _Metric:
@@ -35,7 +35,7 @@ class _Profile:
 
 def _entries(monkeypatch, metrics, rejections):
     """Drive `_explorer_entries` over a stored profile + its persisted verdicts."""
-    from aughor.business_profile import store as profile_store
+    from pramanyx.business_profile import store as profile_store
     monkeypatch.setattr(profile_store, "load", lambda *a, **k: _Profile(metrics))
     monkeypatch.setattr(profile_store, "load_raw", lambda *a, **k: {"rejections": rejections})
     return {e.label: e for e in mc._explorer_entries("conn", None)}
@@ -69,7 +69,7 @@ def test_an_older_profile_with_no_verdicts_is_not_guessed_about(monkeypatch):
     """Payloads written before verdicts were recorded have none. Those rows stay
     `needs_formula` rather than being assumed rejected — an unknown reason is not a
     reason, and inventing one is the failure this whole change is about."""
-    from aughor.business_profile import store as profile_store
+    from pramanyx.business_profile import store as profile_store
     monkeypatch.setattr(profile_store, "load", lambda *a, **k: _Profile([_Metric("GMV")]))
     monkeypatch.setattr(profile_store, "load_raw", lambda *a, **k: {})   # no key at all
     e = mc._explorer_entries("conn", None)[0]
@@ -78,7 +78,7 @@ def test_an_older_profile_with_no_verdicts_is_not_guessed_about(monkeypatch):
 
 def test_a_missing_profile_payload_does_not_break_the_catalogue(monkeypatch):
     """`load_raw` is best-effort; a store that raises must cost the reason, not the row."""
-    from aughor.business_profile import store as profile_store
+    from pramanyx.business_profile import store as profile_store
 
     def _boom(*a, **k):
         raise RuntimeError("store unavailable")
@@ -92,11 +92,11 @@ def test_a_missing_profile_payload_does_not_break_the_catalogue(monkeypatch):
 def test_the_verdict_survives_a_round_trip_through_the_store(tmp_path, monkeypatch):
     """The reason is worthless if `save` drops it — it lives beside the profile, and the
     profile model must stay the model the LLM is asked to fill."""
-    from aughor.business_profile.models import BusinessProfile
+    from pramanyx.business_profile.models import BusinessProfile
     assert "rejections" not in BusinessProfile.model_fields, (
         "the verdict must NOT be a profile field: BusinessProfile is the generation "
         "schema, so a field here is described to the model on every inference"
     )
     import inspect
-    from aughor.business_profile import store as profile_store
+    from pramanyx.business_profile import store as profile_store
     assert "rejections" in inspect.signature(profile_store.save).parameters

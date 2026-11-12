@@ -11,11 +11,11 @@ from datetime import date, timedelta
 
 import pytest
 
-from aughor.monitors import backtest as bt_mod, drill as drill_mod
-from aughor.monitors.backtest import Backtest, backtest_monitor, series_sql_for
-from aughor.monitors.drill import DRILL_PREFIX, DrillConnection, drill_monitor, proof
-from aughor.monitors.models import Monitor
-from aughor.monitors.rules import anomaly_verdict, threshold_verdict
+from pramanyx.monitors import backtest as bt_mod, drill as drill_mod
+from pramanyx.monitors.backtest import Backtest, backtest_monitor, series_sql_for
+from pramanyx.monitors.drill import DRILL_PREFIX, DrillConnection, drill_monitor, proof
+from pramanyx.monitors.models import Monitor
+from pramanyx.monitors.rules import anomaly_verdict, threshold_verdict
 
 D0 = date(2025, 9, 1)
 
@@ -99,7 +99,7 @@ def test_a_noisy_backtest_offers_the_quieter_sigma(monkeypatch):
 
 
 def test_still_settling_days_are_not_replayed(monkeypatch):
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: 8)
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: 8)
     today = D0 + timedelta(days=420)
     rows = [(d.isoformat(), v) for d, v in _series(420, spikes={417: 900.0})]   # 3 days old: still settling
     bt = backtest_monitor(_monitor(), run_sql=lambda sql: (["day", "n"], rows, None), today=today)
@@ -136,10 +136,10 @@ def test_what_cannot_be_replayed_says_why():
 
 def test_a_metric_monitor_is_replayed_as_its_definition_per_day(monkeypatch):
     from types import SimpleNamespace
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric",
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric",
                         lambda name, connection_id=None: SimpleNamespace(
                             name=name, sql="COUNT(*)", tables=["orders"], filters=["status = 'Complete'"]))
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [("thelook.orders", "created_at", 10)])
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [("thelook.orders", "created_at", 10)])
     sql, how = series_sql_for(_monitor(custom_sql=None, metric_name="orders"), since=date(2025, 8, 1))
     assert how == "metric 'orders' per day"
     assert sql.startswith('SELECT CAST("created_at" AS DATE) AS day, (COUNT(*)) AS value FROM orders WHERE')
@@ -165,7 +165,7 @@ def test_the_stand_in_serves_a_quiet_series_and_an_outlier_on_the_newest_settled
 
 def test_a_drill_fires_the_rule_and_never_files_the_alert(drills, monkeypatch):
     filed: list = []
-    monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: filed.append(a))
+    monkeypatch.setattr("pramanyx.monitors.store.append_alert", lambda a: filed.append(a))
     d = drill_monitor(_monitor(), deliver=True, today=date(2026, 9, 23), settle_days=1)
     assert d.fired and d.severity == "critical" and d.delivered is None
     assert d.message.startswith(f"{DRILL_PREFIX} Orders anomaly: anomaly detected")
@@ -182,7 +182,7 @@ def test_a_drill_delivers_through_the_real_channel_marked_as_a_drill(drills, mon
         sent.append((alert, monitor))
         return SimpleNamespace(id="log-1", status="ok", error=None)
 
-    monkeypatch.setattr("aughor.monitors.notify.dispatch_alert", fake_dispatch)
+    monkeypatch.setattr("pramanyx.monitors.notify.dispatch_alert", fake_dispatch)
     m = _monitor(notification_channel="trig-slack")
     d = drill_monitor(m, deliver=True, today=date(2026, 9, 23), settle_days=1)
     assert d.proven and d.delivered is True and d.delivery_log_id == "log-1"
@@ -191,7 +191,7 @@ def test_a_drill_delivers_through_the_real_channel_marked_as_a_drill(drills, mon
     assert alert.id.startswith("drill-") and alert.message.startswith(DRILL_PREFIX) and mon is m
     assert proof(m)["sentence"].startswith("last proven working") and "trig-slack" in proof(m)["sentence"]
 
-    monkeypatch.setattr("aughor.monitors.notify.dispatch_alert", lambda alert, monitor=None: None)
+    monkeypatch.setattr("pramanyx.monitors.notify.dispatch_alert", lambda alert, monitor=None: None)
     gone = drill_monitor(m, deliver=True, today=date(2026, 9, 23), settle_days=1)
     assert gone.fired and gone.delivered is False and "nothing was sent" in gone.detail
 
@@ -210,18 +210,18 @@ def test_a_threshold_drill_crosses_the_line(drills):
 
 
 def test_a_never_proven_monitor_says_so(drills, monkeypatch):
-    monkeypatch.setattr("aughor.notifications.store.list_logs", lambda limit=100, trigger_id=None: [])
+    monkeypatch.setattr("pramanyx.notifications.store.list_logs", lambda limit=100, trigger_id=None: [])
     assert proof(_monitor(id="m-new"))["sentence"] == "never proven — no drill, no delivered alert"
 
 
 def test_the_doors(drills, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     m = _monitor(id="m-door")
-    monkeypatch.setattr("aughor.routers.monitors.get_monitor", lambda mid: m if mid == "m-door" else None)
-    monkeypatch.setattr("aughor.monitors.backtest.backtest_monitor",
+    monkeypatch.setattr("pramanyx.routers.monitors.get_monitor", lambda mid: m if mid == "m-door" else None)
+    monkeypatch.setattr("pramanyx.monitors.backtest.backtest_monitor",
                         lambda monitor, run_sql=None, today=None: Backtest(monitor.id, "anomaly", True, sentence="never"))
     client = TestClient(app)
     assert client.post("/monitors/m-door/backtest").json()["sentence"] == "never"

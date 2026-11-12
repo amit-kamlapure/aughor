@@ -23,8 +23,8 @@ import types
 
 import pytest
 
-from aughor.packs import disclosure
-from aughor.packs.loader import PROSE_FIELD
+from pramanyx.packs import disclosure
+from pramanyx.packs.loader import PROSE_FIELD
 
 
 def _pack(pack_id, name="P", domains=(), description="", tags=(), canonical=()):
@@ -50,7 +50,7 @@ def duck():
     fizzling on a fake whose tag list was thinner than the pack's."""
     from pathlib import Path as _P
 
-    from aughor.packs import load_pack
+    from pramanyx.packs import load_pack
 
     return load_pack(_P(__file__).resolve().parents[2] / "packs" / "duckdb-engine")
 
@@ -61,7 +61,7 @@ def on_duckdb(monkeypatch):
     shipped pack — scoped to the DuckDB-speaking connectors — correctly matches nothing, and
     every assertion below would pass or fail for a reason that has nothing to do with
     routing. The first draft of this file did exactly that."""
-    monkeypatch.setattr("aughor.packs.scope.conn_type_of", lambda _cid: "duckdb")
+    monkeypatch.setattr("pramanyx.packs.scope.conn_type_of", lambda _cid: "duckdb")
 
 
 # ── it fires on what the pack answers ────────────────────────────────────────────
@@ -97,7 +97,7 @@ def test_a_pack_out_of_scope_is_never_named(monkeypatch):
     bq = _pack("bq", "BigQuery", ("BigQuery",), "Partitioning and slots.",
                tags=("partition", "cast", "string"))
     bq.manifest.scope = {"connections": ["engine:bigquery"]}
-    monkeypatch.setattr("aughor.packs.scope.conn_type_of", lambda _cid: "duckdb")
+    monkeypatch.setattr("pramanyx.packs.scope.conn_type_of", lambda _cid: "duckdb")
 
     assert disclosure.disclosure_block("why is this column a string?", "c1", packs=[bq]) == ""
 
@@ -108,8 +108,8 @@ def test_the_description_alone_is_a_thin_signal(duck, on_duckdb):
     asks about one — so a first cut that read descriptions alone fired on nothing. Tags are
     the words a USER types; a description is the words we chose. Both are read, and this is
     the receipt for why."""
-    from aughor.agent.platform_tools import pack_description
-    from aughor.packs.routing import score_text
+    from pramanyx.agent.platform_tools import pack_description
+    from pramanyx.packs.routing import score_text
 
     question = "why is my revenue column stored as a string?"
 
@@ -123,7 +123,7 @@ def test_the_block_names_the_pack_and_does_not_paste_it(duck, on_duckdb):
     """The deliverable's risk note: "a skill that adds 800 tokens and changes nothing is a
     regression". The real pack's prose is ~1,500 tokens; a pointer is ~140. Pasting bodies
     into every matching turn would spend exactly the budget the two-rung ladder protects."""
-    from aughor.packs.loader import PROSE_FIELD
+    from pramanyx.packs.loader import PROSE_FIELD
 
     prose = getattr(duck, PROSE_FIELD, "")
     block = disclosure.disclosure_block("why did my cast lose the decimals?", "c1",
@@ -162,9 +162,9 @@ def test_the_ordering_is_stable_when_scores_tie():
 def test_the_system_prompt_carries_the_block(monkeypatch):
     """Built and not wired is this repo's most repeated failure, and the one the whole
     skills plane already suffered once."""
-    from aughor.agent import converse_tools
+    from pramanyx.agent import converse_tools
 
-    monkeypatch.setattr("aughor.packs.disclosure.disclosure_block",
+    monkeypatch.setattr("pramanyx.packs.disclosure.disclosure_block",
                         lambda q, cid, packs=None: "PACK-BLOCK-MARKER" if q else "")
 
     with_q = converse_tools.converse_system_prompt("c1", question="anything")
@@ -176,11 +176,11 @@ def test_the_system_prompt_carries_the_block(monkeypatch):
 
 def test_a_broken_disclosure_never_breaks_the_conversation(monkeypatch):
     """Additive by construction. The roster block next to it follows the same rule."""
-    from aughor.agent import converse_tools
+    from pramanyx.agent import converse_tools
 
     def _boom(*_a, **_k):
         raise RuntimeError("pack store is gone")
-    monkeypatch.setattr("aughor.packs.disclosure.disclosure_block", _boom)
+    monkeypatch.setattr("pramanyx.packs.disclosure.disclosure_block", _boom)
 
     prompt = converse_tools.converse_system_prompt("c1", question="anything")
 

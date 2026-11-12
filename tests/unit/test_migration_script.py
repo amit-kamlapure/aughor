@@ -11,7 +11,7 @@ import sqlite3
 
 import pytest
 
-PG_URL = os.environ.get("AUGHOR_PG_TEST_URL", "postgres://postgres:aughor@localhost:5544/aughor")
+PG_URL = os.environ.get("PRAMANYX_PG_TEST_URL", "postgres://postgres:pramanyx@localhost:5544/pramanyx")
 
 
 def _pg_available() -> bool:
@@ -48,11 +48,11 @@ def source_db(tmp_path):
 def test_migrates_verifies_and_serves(source_db, monkeypatch):
     from scripts.migrate_sqlite_to_postgres import _schema_for, migrate_db_file
 
-    monkeypatch.setenv("AUGHOR_DB_URL", PG_URL)
+    monkeypatch.setenv("PRAMANYX_DB_URL", PG_URL)
     tables, rows, mismatches = migrate_db_file(source_db, PG_URL, wipe=True)
     assert (tables, rows, mismatches) == (1, 7, [])
 
-    from aughor.db.backend import PgConnection
+    from pramanyx.db.backend import PgConnection
     dst = PgConnection(PG_URL, schema=_schema_for(source_db))
     try:
         # Rows serve, and stringly-typed storage semantics held through the copy.
@@ -74,7 +74,7 @@ def test_refuses_a_nonempty_target_without_wipe(source_db, monkeypatch):
     """Half-written targets must never be silently merged into."""
     from scripts.migrate_sqlite_to_postgres import migrate_db_file
 
-    monkeypatch.setenv("AUGHOR_DB_URL", PG_URL)
+    monkeypatch.setenv("PRAMANYX_DB_URL", PG_URL)
     migrate_db_file(source_db, PG_URL, wipe=True)
     with pytest.raises(SystemExit, match="not empty"):
         migrate_db_file(source_db, PG_URL, wipe=False)

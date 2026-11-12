@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { getConnections, listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
 import { doorFor, isPlainSend } from "@/lib/chatDoors";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
-import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
-import { useAughorChat } from "@/lib/useAughorChat";
+import { projectThread, newSessionId, type PramanyxUIMessage, type ChatTurn } from "@/lib/chatTurn";
+import { usePramanyxChat } from "@/lib/usePramanyxChat";
 import { focusOf, setAskSubject, subjectWords, useAskSubject } from "@/lib/askSubject";
 import { useStickToBottom } from "@/lib/useStickToBottom";
 import { Button } from "@/components/ui/button";
@@ -610,7 +610,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
   const {
     messages, sendMessage, setMessages, regenerate, stop: sdkStop, status, error, clearError,
-  } = useAughorChat({
+  } = usePramanyxChat({
     connectionId,
     sessionId,
     body: canvasId ? { canvas_id: canvasId } : undefined,
@@ -803,7 +803,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     const attempt = (tries: number) => {
       fetch(`${getApiBase()}/chat-sessions/${encodeURIComponent(resumeId)}/messages`)
         .then(r => (r.ok ? r.json() : []))
-        .then((msgs: AughorUIMessage[]) => {
+        .then((msgs: PramanyxUIMessage[]) => {
           if (cancelled) return;
           if (!Array.isArray(msgs) || !msgs.length) {
             if (tries > 0) setTimeout(() => { if (!cancelled) attempt(tries - 1); }, 1500);

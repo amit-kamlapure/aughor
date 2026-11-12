@@ -4,9 +4,9 @@ The Swiss-Air deep analysis reported a ~2.5% refund rate that was flat across ev
 dimension, then dismissed elevated small-sample segments (5.88% on 85 tickets) by
 eyeballing. These primitives make that rigorous: Wilson CIs per segment + a two-
 proportion test vs the pooled rest, Bonferroni-corrected, yielding an explicit
-"uniform / no signal" verdict instead of a hunch. See aughor/tools/stats.py.
+"uniform / no signal" verdict instead of a hunch. See pramanyx/tools/stats.py.
 """
-from aughor.tools.stats import (
+from pramanyx.tools.stats import (
     proportion_ci,
     two_proportion_pvalue,
     assess_rate_uniformity,

@@ -3,7 +3,7 @@
  * Idea 3 — a period brief shows what it MEASURED for the period: each headline metric with
  * the server's own formatted values and the change, a comparison the data only partly covers
  * with no change stated, and every metric it could not measure with the reason. The shape is
- * the backend's `aughor/knowledge/period_brief.py` block.
+ * the backend's `pramanyx/knowledge/period_brief.py` block.
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";

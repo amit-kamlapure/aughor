@@ -8,7 +8,7 @@
  * alone accounts for 20% of 346.89" for AVG(order_value) (five ~€69 averages summed to
  * 346.89). The truth is AOV is flat across payment types.
  *
- * Single source of the additivity judgement (mirrors aughor/tools/postproc.py).
+ * Single source of the additivity judgement (mirrors pramanyx/tools/postproc.py).
  */
 
 // Matched against a name normalised so snake_case/camel separators become spaces, so a word

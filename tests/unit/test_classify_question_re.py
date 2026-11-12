@@ -12,8 +12,8 @@ borderline, in the same four words (`ShapeDecision`); the stubbed provider stand
 call so no LLM is needed."""
 import re as _re
 
-from aughor.agent import nodes as N
-from aughor.agent.state import ShapeDecision
+from pramanyx.agent import nodes as N
+from pramanyx.agent.state import ShapeDecision
 
 
 def test_re_is_bound_at_module_scope():

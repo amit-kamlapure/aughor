@@ -12,8 +12,8 @@ import { nounOf, setAskSubject, type AskSubject } from "@/lib/askSubject";
 
 const sent: { text: string; body: Record<string, unknown> }[] = [];
 
-vi.mock("@/lib/useAughorChat", () => ({
-  useAughorChat: () => ({
+vi.mock("@/lib/usePramanyxChat", () => ({
+  usePramanyxChat: () => ({
     messages: [],
     sendMessage: (m: { text: string }, o: { body: Record<string, unknown> }) => { sent.push({ text: m.text, body: o.body }); return Promise.resolve(); },
     setMessages: vi.fn(), regenerate: vi.fn(), stop: vi.fn(), status: "ready", error: undefined, clearError: vi.fn(),

@@ -5,8 +5,8 @@ The gate treats a generated finding as untrusted until it passes a deterministic
 battery: self-ratio tautology, fan-out (incl. CTE-hidden + parent), boundary-saturated
 rate (scale-robust), part>whole, and claim-grounding.
 """
-from aughor.sql.fanout import self_ratio_tautology, group_by_continuous_measure
-from aughor.explorer.verify import (
+from pramanyx.sql.fanout import self_ratio_tautology, group_by_continuous_measure
+from pramanyx.explorer.verify import (
     is_degenerate_result, _part_exceeds_whole, _claim_numbers_grounded, verify_insight,
 )
 
@@ -209,7 +209,7 @@ class TestGroupByContinuousMeasure:
 
 
 def test_make_cardinality_oracle_probes_and_caches():
-    from aughor.business_profile.validate import make_cardinality_oracle
+    from pramanyx.business_profile.validate import make_cardinality_oracle
 
     class _Conn:
         calls = 0
@@ -231,7 +231,7 @@ def test_make_cardinality_oracle_probes_and_caches():
 
 def test_col_types_from_schema_maps_bare_and_qualified():
     # The shared parse behind BOTH the finding cards/brief (routers) and the emission gate.
-    from aughor.tools.schema import col_types_from_schema
+    from pramanyx.tools.schema import col_types_from_schema
     ct = col_types_from_schema(
         "TABLE: customers (10 rows)\n"
         "  signup_fy  VARCHAR\n"
@@ -256,7 +256,7 @@ def test_one_value_under_two_names_is_refused():
     """The live defect, verbatim. The query selected platform, logistics_cost_ratio and
     gmv_eur — there is no logistics-cost total in it, so GMV was reused for both. True
     logistics cost was 112,367: the finding overstated it 26× and reached a briefing."""
-    from aughor.explorer.verify import one_value_two_labels
+    from pramanyx.explorer.verify import one_value_two_labels
 
     rows = [("Mytheresa", 0.0381, 2949292.0)]
     text = ("Mytheresa has the lowest logistics cost ratio at 0.0381 over the last 12 "
@@ -269,7 +269,7 @@ def test_one_value_under_two_names_is_refused():
 def test_the_same_measure_reworded_is_not_a_mislabel():
     """'total revenue' and 'revenue' name ONE quantity — the noise words are stripped
     before comparison, or every honest restatement would be dropped."""
-    from aughor.explorer.verify import one_value_two_labels
+    from pramanyx.explorer.verify import one_value_two_labels
 
     rows = [("acme", 2949292.0)]
     assert one_value_two_labels(
@@ -280,7 +280,7 @@ def test_the_same_measure_reworded_is_not_a_mislabel():
 def test_a_value_the_result_carries_twice_may_be_described_twice():
     """Two mentions are honest when the figure genuinely occurs twice — a self-join or a
     repeated dimension. The guard only fires when the result holds it exactly once."""
-    from aughor.explorer.verify import one_value_two_labels
+    from pramanyx.explorer.verify import one_value_two_labels
 
     rows = [("a", 2949292.0), ("b", 2949292.0)]
     text = "logistics costs totaling 2949292 of GMV 2949292.0"
@@ -288,7 +288,7 @@ def test_a_value_the_result_carries_twice_may_be_described_twice():
 
 
 def test_correctly_labelled_figures_pass():
-    from aughor.explorer.verify import one_value_two_labels
+    from pramanyx.explorer.verify import one_value_two_labels
 
     rows = [("Mytheresa", 112367.0, 2949292.0)]
     assert one_value_two_labels(
@@ -297,7 +297,7 @@ def test_correctly_labelled_figures_pass():
 
 def test_the_emission_gate_refuses_the_mislabelled_finding():
     """The guard is wired into the emission gate, not merely importable."""
-    from aughor.explorer.verify import verify_insight
+    from pramanyx.explorer.verify import verify_insight
 
     rows = [("Mytheresa", 0.0381, 2949292.0)]
     sql = ("SELECT o.platform, SUM(o.shipping_fee_eur + o.duty_eur) / NULLIF(SUM(o.gmv_eur), 0) "

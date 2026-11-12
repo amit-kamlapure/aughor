@@ -16,7 +16,7 @@
  * organ suite the reducer path drove — the report registry, the gates, the
  * trace, the guard chain, the tool trail, the figure. The organs took typed
  * props all along; only the accumulation moved. Coverage is a TESTED contract:
- * every key of `AughorUIDataTypes` is consumed by a projector or named in
+ * every key of `PramanyxUIDataTypes` is consumed by a projector or named in
  * `FALLBACK_PARTS`, and `chatTurn.test.ts` fails on any key that is neither.
  *
  * WHAT RENDERS AS A FALLBACK, DELIBERATELY:
@@ -28,7 +28,7 @@
 
 import { ChatMessage } from "@/components/ChatMessage";
 import type { ChatMessageProps } from "@/components/ChatMessage";
-import type { AughorUIMessage } from "@/lib/chatTurn";
+import type { PramanyxUIMessage } from "@/lib/chatTurn";
 import { PROJECTED_PARTS } from "@/lib/chatTurn";
 
 /** A titled block of monospace payload — the honest default for an unclaimed part. */
@@ -53,7 +53,7 @@ function DataBlock({ label, value }: { label: string; value: unknown }) {
 
 export interface PartsMessageProps extends ChatMessageProps {
   /** The raw message the turn was projected from — the fallback sweep reads it. */
-  message?: AughorUIMessage;
+  message?: PramanyxUIMessage;
 }
 
 export function PartsMessage({ message, ...chatMessageProps }: PartsMessageProps) {

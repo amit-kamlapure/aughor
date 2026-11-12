@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import sql_context as C
+from pramanyx.agent import sql_context as C
 
 
 class _Native:
@@ -91,7 +91,7 @@ INTAKE = {"metric_label": "revenue", "metric_sql": "SUM(sale_price)", "metric_ta
 
 
 def test_the_analyst_is_told_the_engine_the_clock_and_each_window_as_a_filter():
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     prompt = analyst_system_prompt("8233e4fd", INTAKE, 24)
     assert "SQL DIALECT: BigQuery (GoogleSQL)" in prompt and "TODAY: 2026-09-30 (UTC)." in prompt
     assert ("  observation: July 2026 (2026-07-01 to 2026-07-31 inclusive) — filter: "
@@ -103,14 +103,14 @@ def test_the_analyst_is_told_the_engine_the_clock_and_each_window_as_a_filter():
 def test_an_analyst_with_no_spec_still_knows_the_engine_and_the_date():
     """Q3, 2026-09-29: the intake returned nothing, the analyst got no spec, and with no
     date it anchored on CURRENT_DATE into a month still filling."""
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     prompt = analyst_system_prompt("8233e4fd", {}, 24, sql_context="SQL DIALECT: BigQuery (GoogleSQL) — x\nTODAY: 2026-09-30 (UTC). y")
     assert "intake produced no spec" in prompt
     assert "SQL DIALECT: BigQuery (GoogleSQL)" in prompt and "TODAY: 2026-09-30" in prompt
 
 
 def test_the_shared_grounding_shows_a_half_open_window_and_claims_no_engine():
-    from aughor.agent.investigate import _ADA_SQL_GROUNDING as G
+    from pramanyx.agent.investigate import _ADA_SQL_GROUNDING as G
     assert "<dated_table>.<date_column> >= '2023-03-10' AND <dated_table>.<date_column> < '2024-03-10'" in G
     assert "EXCLUSIVE" in G and "DATE '" not in G
     # The examples are placeholders: a plausible column on a real table name gets copied into a
@@ -120,19 +120,19 @@ def test_the_shared_grounding_shows_a_half_open_window_and_claims_no_engine():
 
 
 def test_every_phase_template_writes_each_window_as_a_filter():
-    from aughor.agent import prompts_investigate as P
+    from pramanyx.agent import prompts_investigate as P
     for name in ("DECOMPOSE_PLAN_PROMPT", "DIMENSIONAL_PLAN_PROMPT", "BEHAVIORAL_PLAN_PROMPT"):
         t = getattr(P, name)
         assert "{obs_filter}" in t and "{comp_filter}" in t, name
     assert "{clock_section}" in P.ADA_SYNTHESIZE_PROMPT
-    from aughor.agent.prompts_explore import BUILD_LEDGER_PROMPT
+    from pramanyx.agent.prompts_explore import BUILD_LEDGER_PROMPT
     assert "{sql_context}" in BUILD_LEDGER_PROMPT
 
 
 def test_the_phase_runner_puts_the_context_on_every_phase_by_construction(monkeypatch):
     """The five callers pass the intake's block; a caller that passes none still gets the
     connection's own — an engine and a date are never left to the model."""
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
     seen: list[str] = []
 
     class _Prov:
@@ -153,7 +153,7 @@ def test_the_phase_runner_puts_the_context_on_every_phase_by_construction(monkey
 
 
 def test_the_writer_is_told_the_date():
-    from aughor.agent.investigate import _clock_section
+    from pramanyx.agent.investigate import _clock_section
     line = _clock_section({"data_coverage_end": "2026-10-02"})
     assert line.startswith("TODAY: ") and "AFTER this date" in line and "runs to 2026-10-02" in line
     assert "runs to" not in _clock_section({})
@@ -162,8 +162,8 @@ def test_the_writer_is_told_the_date():
 def test_an_empty_intake_reply_is_asked_once_more(monkeypatch):
     """The provider returned no content in 0.6 s twice in five runs. One more ask — not a
     loop — before the run is stopped for want of a spec."""
-    from aughor.agent import investigate as I
-    from aughor.agent.prompts_investigate import IntakeAsk
+    from pramanyx.agent import investigate as I
+    from pramanyx.agent.prompts_investigate import IntakeAsk
     calls: list[str] = []
 
     class _Prov:
@@ -179,10 +179,10 @@ def test_an_empty_intake_reply_is_asked_once_more(monkeypatch):
                              dimensions=[], intake_notes="")
     monkeypatch.setattr(I, "_provider", lambda role="coder": _Prov())
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: (None, None))
-    monkeypatch.setattr("aughor.agent.explore.build_analysis_ledger", lambda *a, **k: "")
+    monkeypatch.setattr("pramanyx.agent.explore.build_analysis_ledger", lambda *a, **k: "")
     # this source restates its recent days for 29 days (theLook); the intake counts back from
     # the day the platform has learned is settled, not from yesterday
-    monkeypatch.setattr("aughor.agent.sql_context.learned_settle_days", lambda cid: 29)
+    monkeypatch.setattr("pramanyx.agent.sql_context.learned_settle_days", lambda cid: 29)
     state = {"question": "What was total revenue in July 2026?", "connection_id": "c1",
              "schema_context": "TABLE: order_items (1 rows) [id INTEGER, sale_price FLOAT, created_at TIMESTAMP]",
              "scan_context": "", "events_context": "", "investigation_phases": []}
@@ -196,8 +196,8 @@ def test_an_empty_intake_reply_is_asked_once_more(monkeypatch):
 
 def test_an_intake_is_cut_in_the_words_of_what_is_true_of_its_source(monkeypatch):
     """The clamp is handed the answer's clause, so a source never seen to settle is not said to settle at a learned lag."""
-    from aughor.agent import investigate as I
-    from aughor.agent.prompts_investigate import IntakeAsk
+    from pramanyx.agent import investigate as I
+    from pramanyx.agent.prompts_investigate import IntakeAsk
     told = {}
 
     def clamp(intake, *a, **k):
@@ -214,9 +214,9 @@ def test_an_intake_is_cut_in_the_words_of_what_is_true_of_its_source(monkeypatch
                              dimensions=[], intake_notes="")
     monkeypatch.setattr(I, "_provider", lambda role="coder": _Prov())
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: (None, None))
-    monkeypatch.setattr("aughor.agent.explore.build_analysis_ledger", lambda *a, **k: "")
+    monkeypatch.setattr("pramanyx.agent.explore.build_analysis_ledger", lambda *a, **k: "")
     monkeypatch.setattr(I, "_clamp_intake_to_coverage", clamp)
-    monkeypatch.setattr("aughor.settling.store.connection_lag",
+    monkeypatch.setattr("pramanyx.settling.store.connection_lag",
                         lambda cid: {"days": 29, "source": "beyond_horizon", "still_moving": ["order_items"], "horizon": 28, "rewrites": ["order_items"]})
     state = {"question": "What was total revenue in July 2026?", "connection_id": "c1",
              "schema_context": "TABLE: order_items (1 rows) [id INTEGER, sale_price FLOAT, created_at TIMESTAMP]",
@@ -232,10 +232,10 @@ def test_the_explore_planner_and_the_ontology_enricher_are_told_the_engine(monke
     """The explore branch runs no intake, so its sub-question planner was told no engine; the
     ontology enricher's formulas likewise. The planner gets the block and the writer rules; a
     formula gets the engine and the rules but never the clock — it reads today at query time."""
-    from aughor.agent import explore as E
-    from aughor.agent.prompts_explore import PLAN_SUBQ_PROMPT
-    from aughor.db.dialects import writer_rules
-    from aughor.ontology import enricher
+    from pramanyx.agent import explore as E
+    from pramanyx.agent.prompts_explore import PLAN_SUBQ_PROMPT
+    from pramanyx.db.dialects import writer_rules
+    from pramanyx.ontology import enricher
 
     block = E._engine_block({"connection_id": "c1"}, _Native())
     assert block.startswith("SQL DIALECT: BigQuery") and "TODAY: " in block

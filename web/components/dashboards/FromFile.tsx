@@ -3,12 +3,12 @@
 /**
  * New dashboard ▸ From a file: a file and a sentence (design-mockups/dashboard-from-file.html).
  *
- * The file becomes a sheet, a model drafts cards for what the person asked (`aughor/sheets/dashboard_draft.py`), and they check the
+ * The file becomes a sheet, a model drafts cards for what the person asked (`pramanyx/sheets/dashboard_draft.py`), and they check the
  * draft here before anything is kept. What each card means is said in words read off its statement, never the model's, because a
  * confident label on a wrong definition looks just like one on a right one. What the model chose is asked about, and what could
  * not be made is said. Drafting asks a model once, and the button says so.
  *
- * A person who does not know yet what to ask may have a model explore the file first (`aughor/sheets/dashboard_explore.py`): it runs
+ * A person who does not know yet what to ask may have a model explore the file first (`pramanyx/sheets/dashboard_explore.py`): it runs
  * its own queries, shown as they happen, and writes the words for them to change, or goes straight on to draw the cards. They may
  * also change any drafted card themselves, its title or its query, which runs on the file and asks no model.
  */

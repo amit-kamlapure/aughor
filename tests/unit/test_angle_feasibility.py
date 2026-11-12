@@ -6,7 +6,7 @@ hallucination). See feasibility.angle_feasible and the Phase-8 column-feasibilit
 Parallels the temporal-feasibility gate (feasibility.is_temporal_angle): same idea,
 but for categorical column requirements instead of a date/timestamp.
 """
-from aughor.explorer.feasibility import angle_feasible as _angle_feasible
+from pramanyx.explorer.feasibility import angle_feasible as _angle_feasible
 
 
 def test_channel_angle_needs_a_channel_column():

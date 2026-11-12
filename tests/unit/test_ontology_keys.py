@@ -14,8 +14,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from aughor.ontology import keys as K
-from aughor.ontology.models import Backing, EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.ontology import keys as K
+from pramanyx.ontology.models import Backing, EntityProperty, OntologyEntity, OntologyGraph
 
 CONN = "keys-t"
 
@@ -62,25 +62,25 @@ def test_a_metric_over_two_entities_with_no_grain_proposes_none_and_says_why():
 
 @pytest.fixture
 def store(monkeypatch, tmp_path):
-    from aughor.semantic import metrics as M
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
-    monkeypatch.setattr("aughor.semantic.metric_time.with_dates", lambda c, m: m)
+    from pramanyx.semantic import metrics as M
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
+    monkeypatch.setattr("pramanyx.semantic.metric_time.with_dates", lambda c, m: m)
     graph = _graph()
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
-    monkeypatch.setattr("aughor.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
     M.save_metric(M.MetricDefinition(name="revenue", connection=CONN, schema_name="shop", label="Revenue",
                                      sql="SELECT SUM(sale_price) AS revenue FROM order_items",
                                      tables=["order_items"], time_column="order_items.created_at",
                                      status="approved", version=3, approved_by="finance"))
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def test_a_person_confirms_the_entity_and_nothing_it_computes_changes(store):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     r = store.put("/metrics/revenue/entity", params={"connection_id": CONN, "schema": "shop"}, json={"entity": "OrderItem"})
     assert r.status_code == 200, r.text
     m = M.definition_at("revenue", CONN, "shop")
@@ -93,7 +93,7 @@ def test_a_person_confirms_the_entity_and_nothing_it_computes_changes(store):
 
 
 def test_an_entity_the_scope_does_not_serve_is_refused_and_an_empty_one_clears(store):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     r = store.put("/metrics/revenue/entity", params={"connection_id": CONN, "schema": "shop"}, json={"entity": "Refund"})
     assert r.status_code == 400 and "no entity 'Refund'" in r.json()["detail"] and "OrderItem" in r.json()["detail"]
     store.put("/metrics/revenue/entity", params={"connection_id": CONN, "schema": "shop"}, json={"entity": "OrderItem"})
@@ -104,7 +104,7 @@ def test_an_entity_the_scope_does_not_serve_is_refused_and_an_empty_one_clears(s
 
 
 def test_an_edit_keeps_the_confirmed_entity(store):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     store.put("/metrics/revenue/entity", params={"connection_id": CONN, "schema": "shop"}, json={"entity": "OrderItem"})
     m = M.definition_at("revenue", CONN, "shop")
     body = {**m.model_dump(), "label": "Gross revenue"}
@@ -116,7 +116,7 @@ def test_an_edit_keeps_the_confirmed_entity(store):
 
 def test_the_census_counts_keyed_metrics(store):
     store.put("/metrics/revenue/entity", params={"connection_id": CONN, "schema": "shop"}, json={"entity": "OrderItem"})
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     M.save_metric(M.MetricDefinition(name="orders", connection=CONN, schema_name="shop", label="Orders",
                                      sql="SELECT COUNT(*) FROM orders", status="approved"))
     assert K.keyed_counts()["metrics"] == {"of": 2, "n": 1}
@@ -125,7 +125,7 @@ def test_the_census_counts_keyed_metrics(store):
 # ── what relies on an entity now includes the metrics keyed to it ─────────────────────────────
 
 def test_a_keyed_metric_relies_on_its_entity(store, monkeypatch):
-    from aughor.ontology.dependents import dependents_of
+    from pramanyx.ontology.dependents import dependents_of
     store.put("/metrics/revenue/entity", params={"connection_id": CONN, "schema": "shop"}, json={"entity": "OrderItem"})
     rows = dependents_of(_graph(), CONN, "entity", "OrderItem", automations=[])
     assert ("metric", "revenue", "the approved metric measures its objects") in {

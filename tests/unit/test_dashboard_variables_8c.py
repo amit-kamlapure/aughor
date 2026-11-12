@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.dashboards import queries as Q, variables
+from pramanyx.dashboards import queries as Q, variables
 from tests.unit.test_dashboard_variables import ROWS, db, rows  # noqa: F401 — the fixtures, by name
 from tests.unit.test_dashboard_wiring import _desk, _graph
 
@@ -38,7 +38,7 @@ def test_a_bound_list_returns_exactly_the_rows_it_names(db, rows):  # noqa: F811
 
 
 def test_a_sum_adds_up_a_number_its_set_s_objects_have(monkeypatch):
-    monkeypatch.setattr("aughor.dashboards.pieces.accepted_edits", lambda conn: [])
+    monkeypatch.setattr("pramanyx.dashboards.pieces.accepted_edits", lambda conn: [])
     read = {"values": {"spend": {"by": "sum", "set": "placed", "entity": "order", "path": "total_amount"},
                        "colours": {"by": "sum", "set": "placed", "entity": "order", "path": "colour"},
                        "words": {"by": "sum", "set": "placed", "entity": "order", "path": "status"},
@@ -52,8 +52,8 @@ def test_a_sum_adds_up_a_number_its_set_s_objects_have(monkeypatch):
 
 @pytest.fixture
 def cards(volumes):  # noqa: F811 — the card store, kept apart
-    from aughor.cards.models import StoredCard
-    from aughor.cards.store import upsert_card
+    from pramanyx.cards.models import StoredCard
+    from pramanyx.cards.store import upsert_card
     made = {}
     for key, sql, render in (("mine", "SELECT country FROM orders ORDER BY 1 LIMIT 1", {"shown": {"as": "table"}}),
                              ("loose", "SELECT 1", {"shown": {"as": "figure"}}),

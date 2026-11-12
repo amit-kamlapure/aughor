@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _MIN_BASELINE_PERIODS,
     _longest_period_series,
     _neutralize_short_baseline_z,

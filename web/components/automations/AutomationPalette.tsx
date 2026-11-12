@@ -114,7 +114,7 @@ export function ordered(
  *  Deliberately not the whole entry: a payload carrying labels and availability would be
  *  a second copy of the server's answer, decided at drag time and acted on at drop time.
  *  The kind and its group are the only two facts placement turns on. */
-export const PALETTE_DRAG_TYPE = "application/x-aughor-palette";
+export const PALETTE_DRAG_TYPE = "application/x-pramanyx-palette";
 
 export interface PalettePlacement { kind: string; group: PaletteGroup }
 

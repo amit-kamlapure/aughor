@@ -5,7 +5,7 @@ port 3000 over the live API. Every surface was driven in the built-in browser at
 text and as a DOM probe (font sizes, target sizes, horizontal overflow, header crowding, computed token
 contrast in both themes); every surface was also captured headlessly on a fresh browser profile at both widths.
 No model call was made, nothing was written to any store, and the browser's theme and viewport were restored.
-The review lenses are the house's: `web/aughor-v2/INSTRUMENT.md`, the better-ui family (ui, layout, typography,
+The review lenses are the house's: `web/pramanyx-v2/INSTRUMENT.md`, the better-ui family (ui, layout, typography,
 accessibility) and emil-design-eng, in better-ui's report format. Findings are grouped by the principle they
 violate; severity is `HIGH` (blocks content or an action at a supported width, or a systemic failure), `MEDIUM`
 (a visible inconsistency that harms hierarchy, reading order or adaptability) or `LOW` (isolated polish).*
@@ -206,7 +206,7 @@ Computed from the live tokens (`getComputedStyle(document.documentElement)`), WC
 
 | Severity | Location | Before | After | Why |
 |---|---|---|---|---|
-| MEDIUM | `web/aughor-v2/theme/tokens-v2.css` light block | captions at 3.22:1 on 53 elements of the Home alone; the row rule at 1.01:1 — a light-theme table has no rules | lift light `--t3` to ≥ 4.5 (about `#5e6971`), light `--b0` to ≥ 1.25 and `--b1` to ≥ 1.4 against `--bg-0`, validated by `lint:palette` | Instrument §0: "Light is designed, not inverted"; today it is inverted and paler |
+| MEDIUM | `web/pramanyx-v2/theme/tokens-v2.css` light block | captions at 3.22:1 on 53 elements of the Home alone; the row rule at 1.01:1 — a light-theme table has no rules | lift light `--t3` to ≥ 4.5 (about `#5e6971`), light `--b0` to ≥ 1.25 and `--b1` to ≥ 1.4 against `--bg-0`, validated by `lint:palette` | Instrument §0: "Light is designed, not inverted"; today it is inverted and paler |
 | MEDIUM | `web/app/page.tsx:685-688` (Home stat cards) | four tiles accented blue · violet · green · amber **by position** | no accent, or the accent of the state the figure is in | Instrument §3: "if a hue appears, a reader can name the state it means" |
 | MEDIUM | the sparkles icon on Agentic run cards (fig. 9), on the Notifications rail item (`page.tsx:335`, `icon: "spark"`), on Org (`IntelligenceWorkspace.tsx:68`) | violet sparkles = "AI" | the agent's own mark (the roster already gives each agent one); Notifications gets a bell or a webhook glyph | IDEAS.md 14, "the AI costume" |
 | LOW | blue on the Catalog's active "Suggested" chip and the "+ New" primary | fine | fine — noted as the correct use | — |
@@ -222,7 +222,7 @@ the ones built since. The number itself — CP-5's formatter — is still per do
 |---|---|---|---|---|
 | HIGH | Briefing "Numbers that moved" tiles and findings (`web/components/BriefingPanel.tsx`, `extractKeyFigure`, `web/components/brief/keyFigure.ts`) | `180925` · `1820497.55` · `3561748.63` · `13984300.82` · `7.49e+06`; a tile whose text is the model's self-critique ("The query returns 180925 total sold inventory items, but with no category grouping, it does not answer…") shown as a number that moved | **one reader-facing formatter** (CP-5, `lib/format.ts` is the home): thousands separators, the metric's unit, currency from the org setting once per page, precision from the metric, never scientific notation; a tile renders only a figure whose finding **states** a figure, and a finding that is a caveat about itself is not a mover | the product is a claim about a number |
 | HIGH | object page (`web/components/objects/ObjectView.tsx`) | `Revenue 114.98999977111816 USD`; then `average_order_value_aov 114.99 EUR` · `Order Line Revenue 114.99 USD` · `revenue 114.99 $` — three currencies for one value on one page | the same formatter; one currency symbol per page, from the org setting; a metric's declared unit wins over a column's guess; when the currency is undeclared the page says so once | one number, one reading |
-| HIGH | `web/app/page.tsx:841` (run cards), Memory table's CONNECTION column, Departures' `sb_e2d5c528af66:#aughor_canvas`, Security & Audit's `8233e4fdtheLook` and its AGENT column (`SecurityAuditPanel.tsx:102-126`: `__brief_metric_move__`, `card:2878362c`, `cb2_review`, `Watchermonitor`, `YouQuery Builder`), `BrainMapPanel.tsx:56` (`GET /graph`), Settings › System packs (`0m · 0r · 0e`), Agent Ops "NEEDS YOU" (`monitor:Units Sold anomaly watch+automation:Units Sold anomaly watch: Units Sold: over the last 90…`) | hashes, dunders, route paths and concatenated keys as names | **one name resolver**: a connection id renders as its name, an agent key as its display name, an internal caller as "the Briefing's metric check" or "a dashboard card", a Slack destination as `#channel`; the raw key stays in a hover card and the copy button. A concatenation of two names is two lines. Route paths belong in the door's tooltip, not on the box | PX law; a reader cannot act on `cb2_review` |
+| HIGH | `web/app/page.tsx:841` (run cards), Memory table's CONNECTION column, Departures' `sb_e2d5c528af66:#pramanyx_canvas`, Security & Audit's `8233e4fdtheLook` and its AGENT column (`SecurityAuditPanel.tsx:102-126`: `__brief_metric_move__`, `card:2878362c`, `cb2_review`, `Watchermonitor`, `YouQuery Builder`), `BrainMapPanel.tsx:56` (`GET /graph`), Settings › System packs (`0m · 0r · 0e`), Agent Ops "NEEDS YOU" (`monitor:Units Sold anomaly watch+automation:Units Sold anomaly watch: Units Sold: over the last 90…`) | hashes, dunders, route paths and concatenated keys as names | **one name resolver**: a connection id renders as its name, an agent key as its display name, an internal caller as "the Briefing's metric check" or "a dashboard card", a Slack destination as `#channel`; the raw key stays in a hover card and the copy button. A concatenation of two names is two lines. Route paths belong in the door's tooltip, not on the box | PX law; a reader cannot act on `cb2_review` |
 | MEDIUM | Evidence (`web/components/EvidencePanel.tsx`) | claims that are intake specifications ("Investigation Specification: ROUTING: this is a temporal-change question…"), sentences cut mid-number ("The 2,744.", "at 16,811 items (3."), `no query recorded`, confidence 0.50 on most rows (a fixed heuristic) | the ledger lists **claims** — a sentence with a figure and a query; specifications and routing notes are trace, not evidence; a truncated sentence is a bug in the extractor, not a row; a heuristic confidence is not drawn as a number | Instrument §8 trust system: a confidence is computed or absent |
 | MEDIUM | Graph (`web/components/ConnectionGraphPanel.tsx` warnings), Memory readings, Monitors names, Notifications' "Logs50", Documents' `📄` (`DocumentUploader.tsx:529`) and `ChatPanel.tsx:1088`, the Ontology strip's back-ticked "approve \`aov\`", the Briefing's "across all inventoryitems" | "a rebuild would add 6 metric — the committed graph predates them (the live path writes incrementally, so projection fixes and grown sources only land on a full rebuild)"; a remembered reading that is a reviewer's note ("Totally wrong calls."); a monitor named by a finding's first sentence; a count glued to a label; an emoji where Instrument forbids one | plain sentences ("The graph is behind: 6 metrics were added since it was built. Rebuild"); a reading shows the term and its reading, and the note in the inspector; a monitor is named by its metric and its rule; counts are badges; the glyph is a Tabler icon | Writing · "no machine text"; Instrument §8 "emoji are forbidden" |
 | MEDIUM | Briefing (Workspace/amazon) | the FULL SYNTHESIS opens "LuxExperience's marketplace data…" on the *amazon* schema; the theLook synthesis prints `$` while the Profile says the currency is **undeclared** | the synthesis names the connection it was written for; a figure whose currency is undeclared carries no symbol | truth in copy |
@@ -295,9 +295,9 @@ Each row: the verdict in better-ui's terms, the finding that decides it, and the
 | **Roster** | Approve (warm) / Block (cold) | cold: false empty (HIGH, §2.1); warm: a list + "Select an agent." detail | 7 |
 | **Attention** | Approve | the proposal card; "Alert rulesnone yet" glued (LOW); a third navigation level | capture |
 | **Activity › Usage** | Approve | three levels + range (MEDIUM); skeletons — the right wait | 12 |
-| **Automations** | Approve | rows with Design · Run now · History · Mute · Edit · Delete — six actions per row (LOW → primary + ⋯); `schedule(0 9 * * *) → investigate(What changed in theLook ), slack_post(#aughor_canvas)` as the description (MEDIUM: cron and call syntax to a reader) | capture |
+| **Automations** | Approve | rows with Design · Run now · History · Mute · Edit · Delete — six actions per row (LOW → primary + ⋯); `schedule(0 9 * * *) → investigate(What changed in theLook ), slack_post(#pramanyx_canvas)` as the description (MEDIUM: cron and call syntax to a reader) | capture |
 | **Hub** | Approve | "Every automation, one screen" — good; raw connection ids and `● not_fired2026-09-25 00:00` glued (HIGH class, LOW) | capture |
-| **Departures** | Approve | the WHY column is the model of plain sentences; `sb_e2d5c528af66:#aughor_canvas` (HIGH class) | capture |
+| **Departures** | Approve | the WHY column is the model of plain sentences; `sb_e2d5c528af66:#pramanyx_canvas` (HIGH class) | capture |
 | **Monitors** | Approve | one monitor named by a finding's first sentence (MEDIUM); Total/Active/Unacked tiles | capture |
 | **Notifications** | Approve | "Triggers · Logs50" (LOW); the empty state's "when you action a…" (LOW); the destination is misnamed (§2.2) | capture |
 | **Integrations** | Approve | the copy is the best in the product; long paragraphs could fold behind "Why an app, not OAuth" (LOW) | capture |
@@ -546,7 +546,7 @@ one. The blank-pane result was re-taken at `--timeout=25000` and on a profile th
 **Method files** (`docs/assets/ui-study-2026-09-25/_method/`): `capture.sh` (the headless capture, one screen per
 call), `urls-1440.txt` and `urls-1024.txt` (every URL the study captured), `probe.js` (the DOM probe above, ready to
 paste or to run through Playwright's `page.evaluate`), and `canvas/` (the five artboards and the index of the
-"Aughor Layout Grammar" canvas, as `.dc.html` sources). The screenshot gate of §4.9 starts from these four files.
+"Pramanyx Layout Grammar" canvas, as `.dc.html` sources). The screenshot gate of §4.9 starts from these four files.
 
 **Figures** (`docs/assets/ui-study-2026-09-25/`, JPEG at 1280 wide from the 2× originals; every rail tab, every
 Intelligence and Agent Ops layer, the Evals layers, `/chat`, and six screens at 1024):
@@ -570,7 +570,7 @@ Intelligence and Agent Ops layer, the Evals layers, `/chat`, and six screens at 
 | 15 | `query.jpg` | cold SQL editor with `?conn=` in the URL: "Select a connection…", "No schema loaded."; otherwise the strongest screen |
 | — | the rest | `inbox` · `intel-profile` · `intel-graph` · `intel-evidence` · `intel-memory` · `intel-actions` · `intel-org` · `health` · `catalog` · `semantic` · `agentic-ops` · `ops-attention` · `ops-automations` · `ops-hub` · `ops-departures` · `monitors` · `actions` · `integrations` · `security` · `evals` · `evals-runs` · `evals-experiments` · `chat` · `home-1024` · `query-1024` · `spend-1024` |
 
-**Companion artboards.** The layout grammar of §4 is drawn on a Design canvas, "Aughor Layout Grammar"
+**Companion artboards.** The layout grammar of §4 is drawn on a Design canvas, "Pramanyx Layout Grammar"
 (https://claude.ai/artifact/7uAuvqMjwVScM9ZdYFPFda — private until shared): the shell with its regions measured, the
 Briefing redrawn at 1440 with the inspector open, Home for a returning person, Agent Ops at 1024 with the grammar
 holding, and the overlay kit. Each board carries an "annotate" tweak that hides the spec labels.
@@ -578,12 +578,12 @@ holding, and the overlay kit. Each board carries an "annotate" tweak that hides 
 ## 9 · Theme direction — a cool dark skin and a gridded light skin (proposed 2026-09-25, awaiting the user's opinion)
 
 The ask that followed the study: tokens, colours and layout that are easier to read and interact with — a cool,
-high-contrast dark skin and a gridded light skin. Drawn as eleven artboards on the Design canvas **"Aughor
+high-contrast dark skin and a gridded light skin. Drawn as eleven artboards on the Design canvas **"Pramanyx
 Two Skins"** (https://claude.ai/artifact/XvA4nrhaGxTLjSWLs5VCc3 — private until shared): the two token sets side by
 side with their contrast measured, then the Briefing and the Agent Ops overview in each skin, and — added the same day at the user's ask — the agent's
 own page that the click on an agent opens — its Overview (boards 6–7), its Runs tab (8–9: a 30-day run chart, Range ·
 Status · Trigger · Filter, the ledger with a link per run) and its Setup tab (10–11: the Form template, one field per
-field of the agent model, revisions beside it) — drawn from `aughor/custom_agents/models.py`: purpose, instructions,
+field of the agent model, revisions beside it) — drawn from `pramanyx/custom_agents/models.py`: purpose, instructions,
 connection and schema scope, bound documents, packs, tool grants that only ever propose, the golden-suite pass chip,
 revisions. In Play the tabs move between the three and the breadcrumb returns to Agents. Sources in
 `docs/assets/ui-study-2026-09-25/_method/canvas-skins/`: `gen.py` builds every board from ONE layout and two token
@@ -676,7 +676,7 @@ tint (dark). Kept as decided: the verdict-first Briefing; no numbered gutters �
 
 ### 9.5 · Implemented — the first movement (2026-09-25, on `claude/arc-tj-trajectories`)
 
-The token lift and the reading size are on the live app. `web/aughor-v2/theme/tokens-v2.css` carries both skins
+The token lift and the reading size are on the live app. `web/pramanyx-v2/theme/tokens-v2.css` carries both skins
 (§9.2's values; dark `--amb3` `#D57420` and light `--chart-7` `#DC1E98` are the two moves `lint:palette` asked for —
 the amber for the lightness band, the kind accent for 6 ΔE from the new blue under CVD). `styles/type.css` puts body
 at 14 and chrome at 13 (`.aug-fs-chrome`), figures in Inter with tabular numerals (`.aug-num`), and labels at 12 px

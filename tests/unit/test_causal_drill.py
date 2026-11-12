@@ -7,7 +7,7 @@ merely recommending it. Additive + fail-off; byte-identical to before when the f
 """
 from __future__ import annotations
 
-import aughor.agent.investigate as inv
+import pramanyx.agent.investigate as inv
 
 
 # ── item 1: causal-aware dimension priority (pure) ─────────────────────────────

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.knowledge import reindex
+from pramanyx.knowledge import reindex
 
 
 @pytest.fixture()
@@ -28,12 +28,12 @@ def corpus(monkeypatch):
 
     def _install(payloads, registry, *, embed_fails=False, dim=768):
         state["payloads"] = list(payloads)
-        monkeypatch.setattr("aughor.semantic.vector_store.scroll_payloads",
+        monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_payloads",
                             lambda _c, limit=0: list(state["payloads"]))
-        monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
-        monkeypatch.setattr("aughor.semantic.vector_store.drop_collection",
+        monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: 768)
+        monkeypatch.setattr("pramanyx.semantic.vector_store.drop_collection",
                             lambda _c: state.__setitem__("dropped", state["dropped"] + 1))
-        monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+        monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection",
                             lambda _c, dim=None: state.__setitem__("ensured", dim))
         # Capture only the documents this test set up. Something in the wider suite
         # re-indexes a doc tree from a thread that outlives the request that started it —
@@ -41,7 +41,7 @@ def corpus(monkeypatch):
         # in the middle of an unrelated test. A capture that took every point made that
         # write look like the code under test: first a KeyError on a payload shaped for
         # something else, then a stranger's point sitting at `upserted[0]`.
-        from aughor.knowledge.indexer import DOCS_COLLECTION
+        from pramanyx.knowledge.indexer import DOCS_COLLECTION
 
         owned = ({str(p.get("doc_id") or "") for p in payloads}
                  | {str(d.get("doc_id") or "") for d in registry})
@@ -52,8 +52,8 @@ def corpus(monkeypatch):
             state["upserted"].extend(
                 p for p in points
                 if str((p.get("payload") or {}).get("doc_id") or "") in owned)
-        monkeypatch.setattr("aughor.semantic.vector_store.upsert", _upsert)
-        monkeypatch.setattr("aughor.knowledge.indexer.list_documents", lambda: list(registry))
+        monkeypatch.setattr("pramanyx.semantic.vector_store.upsert", _upsert)
+        monkeypatch.setattr("pramanyx.knowledge.indexer.list_documents", lambda: list(registry))
         # Mirrors the real contract: False when the count is ALREADY right, so nothing is
         # rewritten and nothing is counted as a correction. A stub that always returned True
         # made "left alone" indistinguishable from "corrected".
@@ -62,16 +62,16 @@ def corpus(monkeypatch):
         def _correct(doc_id, n):
             state["registered"].append((doc_id, n))
             return known.get(doc_id) != n
-        monkeypatch.setattr("aughor.knowledge.indexer.correct_chunk_count", _correct)
-        monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: dim)
+        monkeypatch.setattr("pramanyx.knowledge.indexer.correct_chunk_count", _correct)
+        monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: dim)
 
         def _embed(texts):
             if embed_fails:
                 raise ConnectionError("embedder is down")
             return [[0.0] * dim for _ in texts]
-        monkeypatch.setattr("aughor.semantic.embedder.embed", _embed)
-        monkeypatch.setattr("aughor.semantic.embedder.embed_backend", lambda: "gemini")
-        monkeypatch.setattr("aughor.semantic.embedder.embed_model", lambda: "some-model")
+        monkeypatch.setattr("pramanyx.semantic.embedder.embed", _embed)
+        monkeypatch.setattr("pramanyx.semantic.embedder.embed_backend", lambda: "gemini")
+        monkeypatch.setattr("pramanyx.semantic.embedder.embed_model", lambda: "some-model")
         return state
     return _install
 
@@ -213,7 +213,7 @@ def test_an_empty_store_is_a_no_op_not_a_wipe(corpus):
 def test_a_kept_original_is_read_again_and_replaces_the_stored_chunks(corpus):
     """The pending item: re-indexing re-embedded the stored chunk text, so a better
     converter never reached a document already uploaded — though its bytes were kept."""
-    from aughor.knowledge import blobs
+    from pramanyx.knowledge import blobs
 
     body = "# Policy\n\n" + "Refunds are paid within fourteen days of the return. " * 3
     blobs.put_original("up1", "policy.md", body.encode())
@@ -232,7 +232,7 @@ def test_a_kept_original_is_read_again_and_replaces_the_stored_chunks(corpus):
 
 
 def test_an_original_that_no_longer_converts_keeps_its_stored_chunks_and_says_so(corpus):
-    from aughor.knowledge import blobs
+    from pramanyx.knowledge import blobs
 
     blobs.put_original("bad1", "deck.pdf", b"not a pdf at all")
     state = corpus([_chunk("bad1", 0, "the stored parse")],

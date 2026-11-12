@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /** Fired on `window` when an owner is linked or unlinked, so every reader of the owners re-reads them. */
-export const OWNERS_CHANGED = "aughor:owners-changed";
+export const OWNERS_CHANGED = "pramanyx:owners-changed";
 export function announceOwnersChanged(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(OWNERS_CHANGED));
 }

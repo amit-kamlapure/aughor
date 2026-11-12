@@ -21,10 +21,10 @@ import pytest
 
 @pytest.fixture
 def agents(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_AGENTS_DB", str(tmp_path / "agents.db"))
-    from aughor.custom_agents import store as s
+    monkeypatch.setenv("PRAMANYX_AGENTS_DB", str(tmp_path / "agents.db"))
+    from pramanyx.custom_agents import store as s
     importlib.reload(s)
-    from aughor.custom_agents import revisions as r
+    from pramanyx.custom_agents import revisions as r
     return s, r
 
 
@@ -52,7 +52,7 @@ def test_an_edit_names_the_fields_it_moved(agents):
 def test_the_changed_list_follows_the_declared_field_order(agents):
     """The same edit must read the same way every time it is shown."""
     store, revisions = agents
-    from aughor.custom_agents.models import GOVERNING_FIELDS
+    from pramanyx.custom_agents.models import GOVERNING_FIELDS
     a = store.create_agent("A", instructions="v1", connection_id="c1", schema_scope="public")
     store.update_agent(a.id, schema_scope="sales", instructions="v2")
 
@@ -93,7 +93,7 @@ def test_an_agent_that_predates_the_plane_gets_a_baseline_on_its_first_edit(agen
     were created before anything recorded revisions.
     """
     store, revisions = agents
-    from aughor.custom_agents.store import _connect, _now
+    from pramanyx.custom_agents.store import _connect, _now
     with _connect() as conn:
         conn.execute(
             "INSERT INTO user_agents (id, name, instructions, connection_id, doc_ids, "

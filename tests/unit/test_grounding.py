@@ -1,10 +1,10 @@
-"""Numeral grounding for Phase-8 findings — see aughor/explorer/grounding.py.
+"""Numeral grounding for Phase-8 findings — see pramanyx/explorer/grounding.py.
 
 The canonical bug this guards: a finding read "2.49M attribution credit" when the
 real result cell was 2.49 (off 1e6, with a fabricated "M"). The verifier must flag
 magnitude/unit hallucinations while never false-flagging legitimately derived
 numbers (percentages, ranks, small counts, years)."""
-from aughor.explorer.grounding import (
+from pramanyx.explorer.grounding import (
     cell_values,
     extract_numerals,
     ground_numerals,
@@ -245,7 +245,7 @@ def test_numeric_cells_block_truncates():
 # surround it.
 import pytest  # noqa: E402
 
-from aughor.explorer.grounding import ungrounded_label_values  # noqa: E402
+from pramanyx.explorer.grounding import ungrounded_label_values  # noqa: E402
 
 _ROUTES = [["ZRH-LHR", 28], ["GVA-LHR", 42], ["ZRH-CDG", 35]]
 
@@ -309,7 +309,7 @@ def test_a_grounded_figure_at_the_END_of_a_sentence_is_not_accused():
     sits rather than on whether it is true, and this guard's own docstring records that a
     false violation costs a real retry.
     """
-    from aughor.agent.report_checks import check_grounding
+    from pramanyx.agent.report_checks import check_grounding
 
     evidence = "Orders were 903 in APAC and 1412 in EMEA"
     # The same figure, in both positions. Neither is a violation.

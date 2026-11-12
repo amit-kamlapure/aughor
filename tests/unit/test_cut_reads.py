@@ -11,7 +11,7 @@ import sqlite3
 
 import pytest
 
-from aughor.connectors.file.sqlite import SQLiteConnection
+from pramanyx.connectors.file.sqlite import SQLiteConnection
 
 
 # ── SQLite, capped at the shared 500 ───────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ class _Cursor:
 
 
 def _mysql(monkeypatch, n):
-    import aughor.connectors.warehouse.mysql as M
+    import pramanyx.connectors.warehouse.mysql as M
     monkeypatch.setattr(M, "MAX_ROWS", 3)
     conn = M.MySQLConnection.__new__(M.MySQLConnection)
     rows = [{"n": i} for i in range(n)]
@@ -79,7 +79,7 @@ def _mysql(monkeypatch, n):
 
 
 def _snowflake(monkeypatch, n):
-    import aughor.connectors.warehouse.snowflake as S
+    import pramanyx.connectors.warehouse.snowflake as S
     monkeypatch.setattr(S, "MAX_ROWS", 3)
     conn = S.SnowflakeConnection.__new__(S.SnowflakeConnection)
     rows = [(i,) for i in range(n)]
@@ -88,7 +88,7 @@ def _snowflake(monkeypatch, n):
 
 
 def _exasol(monkeypatch, n):
-    import aughor.connectors.warehouse.exasol as E
+    import pramanyx.connectors.warehouse.exasol as E
     monkeypatch.setattr(E, "MAX_ROWS", 3)
     conn = E.ExasolConnection.__new__(E.ExasolConnection)
     rows = [(i,) for i in range(n)]
@@ -103,7 +103,7 @@ def _exasol(monkeypatch, n):
 
 def _bigquery(monkeypatch, n):
     pytest.importorskip("google.cloud.bigquery")
-    import aughor.connectors.warehouse.bigquery as B
+    import pramanyx.connectors.warehouse.bigquery as B
     monkeypatch.setattr(B, "MAX_ROWS", 3)
     conn = B.BigQueryConnection.__new__(B.BigQueryConnection)
     conn._project, conn._dataset = "p", "d"
@@ -151,8 +151,8 @@ def test_a_warehouse_counts_a_bound_read_its_cap_cut(make, monkeypatch):
 
 
 def test_the_workspace_connection_reads_past_its_cap_when_the_read_is_bounded(tmp_path, monkeypatch):
-    from aughor.connectors.file import local_upload as LU
-    from aughor.control_plane import vending
+    from pramanyx.connectors.file import local_upload as LU
+    from pramanyx.control_plane import vending
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     monkeypatch.setattr(LU, "MAX_ROWS", 5)
@@ -173,8 +173,8 @@ def test_the_workspace_connection_reads_past_its_cap_when_the_read_is_bounded(tm
 
 
 def test_a_home_connection_that_stops_at_a_cap_of_its_own_is_named_where_it_stopped():
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.semantic import cross_source as XS
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.semantic import cross_source as XS
 
     class Home:
         def read_typed_rows(self, label, sql, max_rows):

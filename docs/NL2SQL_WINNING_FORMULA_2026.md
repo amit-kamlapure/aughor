@@ -92,9 +92,9 @@ missing orchestration around it.
 
 Built the **ASSESS → ROUTE** half (the clarification half is the larger 2030 interactive
 arc; this lays its foundation — the same assessment gates it later). Files:
-`aughor/agent/complexity.py`, `tests/unit/test_complexity.py`, wired in
-`aughor/agent/nodes.py` (`classify_question`/`route_question`) and
-`aughor/routers/investigations.py` (the Insight chat receipt).
+`pramanyx/agent/complexity.py`, `tests/unit/test_complexity.py`, wired in
+`pramanyx/agent/nodes.py` (`classify_question`/`route_question`) and
+`pramanyx/routers/investigations.py` (the Insight chat receipt).
 
 - **`assess_complexity(question, schema_context="") -> ComplexityVerdict`** — deterministic,
   explainable signals (causal / comparison / aggregation / temporal / multi-step / vague

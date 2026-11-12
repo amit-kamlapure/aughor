@@ -11,15 +11,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.kernel import flags as F
-from aughor.orgsettings import allows as A
-from aughor.orgsettings.store import load_org_settings, save_org_settings
+from pramanyx.kernel import flags as F
+from pramanyx.orgsettings import allows as A
+from pramanyx.orgsettings.store import load_org_settings, save_org_settings
 
 
 #: The ALWAYS_ON mechanism, held with a flag registered for the test: every product entry has left the set (the
 #: set-up four last, 2026-10-28), so no product flag is left to prove it with.
 ALWAYS = "_synthetic.always_on"
-ALWAYS_VAR = "AUGHOR_SYNTHETIC_ALWAYS_ON"
+ALWAYS_VAR = "PRAMANYX_SYNTHETIC_ALWAYS_ON"
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def test_an_always_on_flag_refuses_a_change_by_name(always_on):
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -120,10 +120,10 @@ def test_the_last_ten_left_every_part_of_the_registry():
         assert gone not in F.FLAG_ENV and gone not in F.FLAG_META, gone
         assert gone not in F.EXPERIMENT and gone not in F.GRADUATION_QUEUE and gone not in F.ALWAYS_ON, gone
         assert F.flag_disposition(gone) == "undispositioned", gone
-    for var in ("AUGHOR_ONTOLOGY_SECURITY", "AUGHOR_ONTOLOGY_SECURITY_SQL", "AUGHOR_MCP_CALLER_PRINCIPALS",
-                "AUGHOR_SECURITY_PRINCIPAL_SCOPES", "AUGHOR_QUALITY_EXPECTATIONS", "AUGHOR_DASHBOARD_APP_VERSIONS",
-                "AUGHOR_ONTOLOGY_IMPACTS_ONLY", "AUGHOR_OBJECTS_COMPLETENESS", "AUGHOR_MONITORS_RECOVERY",
-                "AUGHOR_AUTOMATIONS_VERSIONS"):
+    for var in ("PRAMANYX_ONTOLOGY_SECURITY", "PRAMANYX_ONTOLOGY_SECURITY_SQL", "PRAMANYX_MCP_CALLER_PRINCIPALS",
+                "PRAMANYX_SECURITY_PRINCIPAL_SCOPES", "PRAMANYX_QUALITY_EXPECTATIONS", "PRAMANYX_DASHBOARD_APP_VERSIONS",
+                "PRAMANYX_ONTOLOGY_IMPACTS_ONLY", "PRAMANYX_OBJECTS_COMPLETENESS", "PRAMANYX_MONITORS_RECOVERY",
+                "PRAMANYX_AUTOMATIONS_VERSIONS"):
         assert var not in F.FLAG_ENV.values() and var not in F.RETIRED_ENV, var
 
 
@@ -174,7 +174,7 @@ def test_a_setting_born_without_a_flag_reads_off_until_an_admin_sets_it(setting,
     """Arc NV-3's `read_query_history` replaced no flag: no environment variable can turn it on, unset is off, and
     only the admin's own choice answers."""
     assert A.allows(setting) is False
-    monkeypatch.setenv(f"AUGHOR_{setting.upper()}", "1")
+    monkeypatch.setenv(f"PRAMANYX_{setting.upper()}", "1")
     assert A.allows(setting) is False
     save_org_settings(load_org_settings().model_copy(update={setting: True}))
     assert A.allows(setting) is True

@@ -13,7 +13,7 @@ Git. The installer brings everything else; for reference, this is what it sets u
 |---|---|---|
 | [uv](https://docs.astral.sh/uv/) | 0.8+ | Python dependency + venv manager. The lockfile is `uv.lock`. Installed when missing. |
 | Python | 3.11+ | `requires-python = ">=3.11"`. CI pins **3.11**, and a new `.venv` is created on 3.11 (an existing one keeps its version). |
-| Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The installer uses yours when it is new enough, and otherwise downloads the Node.js 24 LTS into `.aughor/node/`. The frontend uses npm and `web/package-lock.json`. |
+| Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The installer uses yours when it is new enough, and otherwise downloads the Node.js 24 LTS into `.pramanyx/node/`. The frontend uses npm and `web/package-lock.json`. |
 
 An LLM backend is only needed to *run* Pramanyx, not to develop against it — the
 test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
@@ -23,14 +23,14 @@ test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
 
 ```bash
 git clone https://github.com/amit-kamlapure/pramanyx.git
-cd aughor
+cd pramanyx
 ./install.sh --dev            # Windows: install.cmd --dev
 ```
 
 That runs `uv sync --all-extras --locked` into `.venv` and `npm ci` in `web/`, then starts
 the API and the web app with hot reload and their logs in the terminal. Without `--dev` it
 also makes a production build of the web app and serves that, with the logs in
-`.aughor/logs/`; `--no-start` installs without starting. From then on, `uv run aughor up
+`.pramanyx/logs/`; `--no-start` installs without starting. From then on, `uv run pramanyx up
 --dev` (or `./start.sh --dev`) starts it again, and `./start.sh --stop` stops stray servers.
 
 To give it a model, choose one in **Settings → Models**, or `cp .env.example .env` and set an
@@ -43,14 +43,14 @@ LLM backend and its key.
 > will skip, and you will wonder why a PDF export returns 501. See **Optional extras** in the
 > README.
 
-> **Note:** `aughor up` checks the web app before every start. It runs `npm ci` again when
+> **Note:** `pramanyx up` checks the web app before every start. It runs `npm ci` again when
 > `web/package-lock.json` changed and rebuilds when anything the build reads changed — and
 > says so — and otherwise starts straight away. It never kills a busy port's owner: if
 > `:8000`/`:3000` is already taken it reports who holds the port and exits, so free it
 > yourself or pick another with `--api-port` / `--web-port`.
 
-Nothing is seeded on boot. Run `uv run aughor seed` to write the synthetic DuckDB
-fixture (`data/aughor.duckdb`) when you want something to query without connecting
+Nothing is seeded on boot. Run `uv run pramanyx seed` to write the synthetic DuckDB
+fixture (`data/pramanyx.duckdb`) when you want something to query without connecting
 real data — it takes a couple of seconds and then shows up as a connection. The test
 suite seeds its own copy in a temp dir, so it never needs this.
 
@@ -69,12 +69,12 @@ suite seeds its own copy in a temp dir, so it never needs this.
 >
 > **This repo is public.** These artifacts carry table and column names, so if you
 > connect a private dataset, keep its artifacts out of the tree by pointing the
-> stores somewhere else rather than ignoring them — `AUGHOR_ONTOLOGY_DOCS_DIR` and
-> `AUGHOR_COLUMN_CONFIG_ROOT` are read at call time:
+> stores somewhere else rather than ignoring them — `PRAMANYX_ONTOLOGY_DOCS_DIR` and
+> `PRAMANYX_COLUMN_CONFIG_ROOT` are read at call time:
 >
 > ```bash
-> export AUGHOR_ONTOLOGY_DOCS_DIR=~/.aughor/ontology_docs
-> export AUGHOR_COLUMN_CONFIG_ROOT=~/.aughor/ontology_column_config
+> export PRAMANYX_ONTOLOGY_DOCS_DIR=~/.pramanyx/ontology_docs
+> export PRAMANYX_COLUMN_CONFIG_ROOT=~/.pramanyx/ontology_column_config
 > ```
 >
 > Both are rebuilt on demand (the doc tree is Merkle-checksummed and incremental),
@@ -130,7 +130,7 @@ the diff. `npm ci` is format-tolerant, so CI is unaffected either way.
 
 `tests/conftest.py` redirects every datastore to a temp directory before the app
 is imported, so the suite can never touch `data/`. If you add a new persistent
-store, wire its `AUGHOR_*_DB` env override into that fixture — a store that
+store, wire its `PRAMANYX_*_DB` env override into that fixture — a store that
 ignores its override will silently corrupt a contributor's real data.
 
 ## Project conventions
@@ -145,9 +145,9 @@ These are load-bearing; a PR that ignores them will get review comments.
 - **Never raise a ratchet baseline.** `ruff` is at zero, and the frontend
   raw-element count only shrinks. If a change needs a new suppression, say why
   in the PR.
-- **New behaviour lands behind a flag, default-off.** See `aughor/kernel/flags.py`.
+- **New behaviour lands behind a flag, default-off.** See `pramanyx/kernel/flags.py`.
   The default install should be byte-identical before and after your change.
-- **Don't swallow exceptions silently.** Use `aughor.kernel.errors.tolerate` so
+- **Don't swallow exceptions silently.** Use `pramanyx.kernel.errors.tolerate` so
   a degraded path is counted rather than invisible.
 
 ## Pull requests

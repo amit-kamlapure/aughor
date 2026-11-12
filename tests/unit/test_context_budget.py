@@ -11,8 +11,8 @@ import logging
 
 from pydantic import BaseModel
 
-import aughor.llm.provider as P
-from aughor.llm.context_budget import (
+import pramanyx.llm.provider as P
+from pramanyx.llm.context_budget import (
     estimate_tokens,
     input_budget_tokens,
     overflow_tokens,
@@ -89,7 +89,7 @@ class TestCompleteOverflowGuard:
         # an unknown model → conservative 32k window; a ~37k-token prompt overflows it
         p = P.LLMProvider("ollama", "coder", model="tiny-unknown-model")
         monkeypatch.setattr(p, "_complete_on", lambda *a, **k: _Out(ok=True))
-        with caplog.at_level(logging.WARNING, logger="aughor.llm.provider"):
+        with caplog.at_level(logging.WARNING, logger="pramanyx.llm.provider"):
             out = p.complete("system", "x" * 150_000, _Out)
         assert out.ok
         assert any("exceeds" in r.message for r in caplog.records)
@@ -97,6 +97,6 @@ class TestCompleteOverflowGuard:
     def test_complete_is_silent_when_prompt_fits(self, monkeypatch, caplog):
         p = P.LLMProvider("ollama", "coder", model="tiny-unknown-model")
         monkeypatch.setattr(p, "_complete_on", lambda *a, **k: _Out(ok=True))
-        with caplog.at_level(logging.WARNING, logger="aughor.llm.provider"):
+        with caplog.at_level(logging.WARNING, logger="pramanyx.llm.provider"):
             p.complete("system", "a normal, well-sized prompt", _Out)
         assert not any("exceeds" in r.message for r in caplog.records)

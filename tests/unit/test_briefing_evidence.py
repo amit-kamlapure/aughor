@@ -11,8 +11,8 @@ import re
 
 import pytest
 
-import aughor.llm.provider as prov
-from aughor.knowledge.briefing import BriefingCitation, BriefingNarrative, generate_narrative
+import pramanyx.llm.provider as prov
+from pramanyx.knowledge.briefing import BriefingCitation, BriefingNarrative, generate_narrative
 
 MOVE_SQL = "SELECT day, SUM(converted) * 1.0 / COUNT(*) FROM web_sessions GROUP BY day ORDER BY day"
 
@@ -78,16 +78,16 @@ def test_with_nothing_backed_the_brief_is_empty_and_says_what_it_held_back(narra
 def test_an_alert_carries_the_query_its_monitor_runs(monkeypatch):
     from types import SimpleNamespace
 
-    from aughor.knowledge import period_brief
-    from aughor.monitors.models import Monitor
+    from pramanyx.knowledge import period_brief
+    from pramanyx.monitors.models import Monitor
 
     alert = SimpleNamespace(id="a1", monitor_id="m1", monitor_name="Revenue drop", triggered_at="2026-10-10T07:00:00Z",
                             message="Revenue fell 30%.", severity="critical")
     gone = SimpleNamespace(id="a2", monitor_id="m-gone", monitor_name="Old", triggered_at="2026-10-10T08:00:00Z",
                            message="x", severity="warning")
-    monkeypatch.setattr("aughor.monitors.store.get_alerts", lambda **k: [alert, gone])
+    monkeypatch.setattr("pramanyx.monitors.store.get_alerts", lambda **k: [alert, gone])
     monitors = {"m1": Monitor(id="m1", conn_id="c1", name="Revenue drop", custom_sql="SELECT SUM(amount) FROM orders")}
-    monkeypatch.setattr("aughor.monitors.store.get_monitor", lambda mid: monitors.get(mid))
+    monkeypatch.setattr("pramanyx.monitors.store.get_monitor", lambda mid: monitors.get(mid))
     window = SimpleNamespace(start=__import__("datetime").date(2026, 10, 10), end=__import__("datetime").date(2026, 10, 11))
     got = {f["id"]: f["sql"] for f in period_brief.alert_findings("c1", window)}
     assert got == {"alert::a1": "SELECT SUM(amount) FROM orders", "alert::a2": ""}   # a monitor gone backs nothing

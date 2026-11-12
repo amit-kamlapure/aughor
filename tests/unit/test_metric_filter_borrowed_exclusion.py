@@ -10,7 +10,7 @@ run's own, as stored.
 """
 from __future__ import annotations
 
-from aughor.sql.metric_filter_guard import enforce_metric_filters
+from pramanyx.sql.metric_filter_guard import enforce_metric_filters
 
 RUN_OF_5_OCTOBER = """SELECT
     DATE(created_at) as date,
@@ -63,8 +63,8 @@ def test_measuring_the_cancelled_rows_is_still_the_questions_own_choice():
 
 def test_a_scheduled_runs_context_is_not_read_as_the_persons_words():
     """A quoted previous report that mentions returns must not unlock the exclusion."""
-    from aughor.semantic.enforcement import person_words
-    from aughor.automations import temporal
+    from pramanyx.semantic.enforcement import person_words
+    from pramanyx.automations import temporal
     block = (f"{temporal.OBSERVATION_HEADER}\nThis is a scheduled daily run.\n"
              "[Previous scheduled report — for consistency checking]\n"
              "Returns rose 4% on the day.\n"

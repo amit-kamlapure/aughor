@@ -24,7 +24,7 @@ import sqlite3
 
 import pytest
 
-from aughor.kernel.ledger import Ledger, _as_bool_int
+from pramanyx.kernel.ledger import Ledger, _as_bool_int
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ def test_backfill_populates_history_and_leaves_unknowns_alone(tmp_path):
     c.close()
     del led
 
-    from aughor.kernel.ledger import _add_session_event_attribution
+    from pramanyx.kernel.ledger import _add_session_event_attribution
     c = sqlite3.connect(path)
     _add_session_event_attribution(c)
     c.commit()

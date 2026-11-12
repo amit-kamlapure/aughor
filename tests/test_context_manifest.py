@@ -1,7 +1,7 @@
 """P2 Agent Context surface: the context manifest + rescope (pure, no LLM/DB)."""
 from __future__ import annotations
 
-from aughor.tools.context_manifest import (
+from pramanyx.tools.context_manifest import (
     build_context_manifest,
     estimate_tokens,
     rescope_schema,
@@ -64,7 +64,7 @@ def test_rescope_endpoint_trims_tokens_on_samples():
     reported token budget. Skips if the built-in `samples` connection isn't present."""
     import pytest
     try:
-        from aughor.routers.investigations import RescopeRequest, rescope_context
+        from pramanyx.routers.investigations import RescopeRequest, rescope_context
         full = rescope_context(RescopeRequest(
             connection_id="samples",
             keep=["ecommerce.customers", "ecommerce.orders", "ecommerce.order_items",

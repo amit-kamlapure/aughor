@@ -21,18 +21,18 @@ These are executed measurements, not opinions (commands preserved below each):
 | P7 | Ad-hoc status string literals (`"running"`, `"failed"`, …) acting as state machines | **50 literals across 18 files** |
 | P8 | Frontend `fetch()` calls bypassing `web/lib/api.ts` | **36**, plus **7 independent `setInterval` polling loops** |
 | P9 | God modules | `agent/investigate.py` 2,316 LOC · `explorer/agent.py` 2,305 · `app/page.tsx` 1,948 · `routers/investigations.py` 1,645 · `BriefingPanel.tsx` 1,576 |
-| P10 | Modules importing `aughor.db` internals directly | **39**; private `_underscore` cross-imports: **37** |
+| P10 | Modules importing `pramanyx.db` internals directly | **39**; private `_underscore` cross-imports: **37** |
 
 <details><summary>Measurement commands (re-run to verify)</summary>
 
 ```bash
-# P1: grep -rEn --include="*.py" -A1 "except( Exception)?( as \w+)?:" aughor/ | grep -cE "(pass|continue)\s*$"
-# P2: ls data/*.json | wc -l ; grep -rEl --include="*.py" "json\.dump|KeyedJsonStore" aughor/ | wc -l
-# P3: grep -rEn --include="*.py" "os\.replace|NamedTemporaryFile" aughor/util/ aughor/explorer/ aughor/ontology/ | wc -l
-# P4: grep -rEn --include="*.py" "threading\.Lock|asyncio\.Lock|RLock" aughor/ | wc -l
-# P5: grep -rEn --include="*.py" "create_task|ensure_future" aughor/ | wc -l
-# P6: grep -rE --include="*.py" "class Job|heartbeat|journal" aughor/ | wc -l
-# P7: grep -rEn --include="*.py" '"(running|failed|completed|pending|complete|paused)"' aughor/ | wc -l
+# P1: grep -rEn --include="*.py" -A1 "except( Exception)?( as \w+)?:" pramanyx/ | grep -cE "(pass|continue)\s*$"
+# P2: ls data/*.json | wc -l ; grep -rEl --include="*.py" "json\.dump|KeyedJsonStore" pramanyx/ | wc -l
+# P3: grep -rEn --include="*.py" "os\.replace|NamedTemporaryFile" pramanyx/util/ pramanyx/explorer/ pramanyx/ontology/ | wc -l
+# P4: grep -rEn --include="*.py" "threading\.Lock|asyncio\.Lock|RLock" pramanyx/ | wc -l
+# P5: grep -rEn --include="*.py" "create_task|ensure_future" pramanyx/ | wc -l
+# P6: grep -rE --include="*.py" "class Job|heartbeat|journal" pramanyx/ | wc -l
+# P7: grep -rEn --include="*.py" '"(running|failed|completed|pending|complete|paused)"' pramanyx/ | wc -l
 # P8: grep -rEn --include="*.tsx" "fetch\(" web/components web/app | grep -v "api\." | wc -l
 ```
 </details>
@@ -90,7 +90,7 @@ That substrate is what we build now. It is deliberately boring — that's the po
 
 ### Pillar 1 — The Ledger (one transactional truth)
 
-**`aughor/kernel/ledger.py`** — a single SQLite database (`data/system.db`, WAL mode) replacing the
+**`pramanyx/kernel/ledger.py`** — a single SQLite database (`data/system.db`, WAL mode) replacing the
 24 JSON files. SQLite-WAL gives us multi-reader/single-writer ACID for free, zero new infra, and a
 clean later swap to Postgres for multi-node (#12).
 
@@ -139,7 +139,7 @@ Rules:
 
 ### Pillar 2 — The Job Kernel (supervised autonomy)
 
-**`aughor/kernel/jobs.py`** — every long-running operation becomes a `Job`. The 17 raw
+**`pramanyx/kernel/jobs.py`** — every long-running operation becomes a `Job`. The 17 raw
 `create_task` sites are replaced by ONE entry point:
 
 ```python
@@ -182,11 +182,11 @@ Every job transition, artifact write, and structured error appends to `events`. 
 
 ### The contract layer (componentization)
 
-- **Error taxonomy** (`aughor/kernel/errors.py`): bare `except: pass` is banned in kernel-managed
+- **Error taxonomy** (`pramanyx/kernel/errors.py`): bare `except: pass` is banned in kernel-managed
   code. The only legal swallow is `errors.tolerate(exc, reason="…", counter="…")` which logs, counts,
   and emits an event. A lint rule (CI) enforces it; the 207 silent swallows get triaged: most become
   `tolerate(...)` with a reason, the dangerous ones become real failures. **Failure becomes data.**
-- **Typed domain boundaries**: domains export an explicit interface module (`aughor/ontology/api.py`
+- **Typed domain boundaries**: domains export an explicit interface module (`pramanyx/ontology/api.py`
   etc.); importing another domain's internals (P10's 39 + 37) fails lint. Routers become thin
   adapters over domain interfaces.
 - **Generated frontend client**: derive `web/lib/api.gen.ts` from the FastAPI OpenAPI schema in CI;
@@ -278,7 +278,7 @@ deleted only after the new path passes its invariant tests.
 
 | Stage | Scope | What lands | Proof gate | Effort |
 |---|---|---|---|---|
-| **K0 — Ledger** | `aughor/kernel/` new; zero behavior change | `system.db` + schema + `Ledger` API; `KeyedJsonStore` facade re-backed onto it; ontology/profile/briefing caches migrate first (the racing ones); event journal table live (writers only) | Concurrent-everything invariant on the migrated caches; state-file count starts dropping; WCH-3b/-3e become deletions | M |
+| **K0 — Ledger** | `pramanyx/kernel/` new; zero behavior change | `system.db` + schema + `Ledger` API; `KeyedJsonStore` facade re-backed onto it; ontology/profile/briefing caches migrate first (the racing ones); event journal table live (writers only) | Concurrent-everything invariant on the migrated caches; state-file count starts dropping; WCH-3b/-3e become deletions | M |
 | **K1 — Job Kernel** | exploration, ontology build, investigation, monitor runs, brief delivery | `Job` + supervisor + heartbeats + checkpoints + idempotency + pause-leases; the 17 `create_task` sites migrate; boot-resume | Crash-anywhere + restart-resume invariants; **WCH-4, 5, 6, 7, 8 are deleted as separate items — they're kernel properties now** | L |
 | **K2 — Event Spine to UI** | one SSE `/events` channel; panels subscribe | ChatPanel/Briefing/Exploration/DomainIntel stop polling (fallback kept); live job progress everywhere (feeds the motion pass — real progress, not fake spinners) | Polling-loop count ≤1; network-trace before/after; WCH-11 absorbed | M |
 | **K3 — Lineage & Trust Receipts** | artifacts + lineage edges; receipt chip UI | findings/briefs/monitors written as versioned artifacts with provenance; B-1 ships as a query over `lineage` | A finding's receipt shows job, SQL, inputs, validation — live demo; supersede-not-delete verified | M |

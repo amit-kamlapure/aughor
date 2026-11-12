@@ -6,7 +6,7 @@
  * It was the Phases view of the Activity tab, which folded into the Overview (2026-10-13). That list titled a run by
  * its stored question, so a scheduled run read as the grounding code writes for the model ("[Scheduled-run context —
  * written by code, not inferred] This is a scheduled daily run at …"). The run list's own fold (`runs/AgentRuns.tsx`)
- * already strips it (`lib/runTitle.ts`, the format `aughor/automations/temporal.py` writes) and folds the same
+ * already strips it (`lib/runTitle.ts`, the format `pramanyx/automations/temporal.py` writes) and folds the same
  * question asked again into one row with its count; this reads the same way, so a daily run is one row, "×N".
  *
  * **A run's trace is looked up, not assumed.** A deep run someone asked mints its trace from its own id, so the two

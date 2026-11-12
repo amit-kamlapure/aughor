@@ -21,9 +21,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.govern.departure import TRUST_BANNER, Measurement, gate_departure
+from pramanyx.govern.departure import TRUST_BANNER, Measurement, gate_departure
 
-#: The live 2026-09-16 message's opening, verbatim from #aughor_canvas (13:42) — the
+#: The live 2026-09-16 message's opening, verbatim from #pramanyx_canvas (13:42) — the
 #: departure this gate exists to make impossible.
 LIVE_INCIDENT = (
     "⚠️ A trust check flagged the evidence and the figures below are NOT reliable: "
@@ -232,22 +232,22 @@ _LICENCES = {"inv-causal": ("causal", False), "inv-refuted": ("causal", True),
 
 @pytest.fixture()
 def _stubbed(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: list(_METRICS))
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: object())
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **_: list(_METRICS))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: object())
     monkeypatch.setattr(
-        "aughor.semantic.metrics.validate_metric",
+        "pramanyx.semantic.metrics.validate_metric",
         lambda m, db: SimpleNamespace(passed=_VALIDATES.get(m.name, True),
                                       message="stubbed"))
     monkeypatch.setattr(
-        "aughor.semantic.metrics.check_freshness",
+        "pramanyx.semantic.metrics.check_freshness",
         lambda m, db: SimpleNamespace(
             latest_data_at=(datetime.now(timezone.utc) - _DATA_AGE[m.name]).isoformat()))
-    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.declared_thing",
                         lambda securable, conn_id: _DECLARED.get(securable))
-    monkeypatch.setattr("aughor.govern.departure_basis.analysis_claim_facts",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.analysis_claim_facts",
                         lambda inv: _LICENCES.get(inv, ("", False)))
-    monkeypatch.setattr("aughor.govern.departure_basis.owner_for_disagreement",
+    monkeypatch.setattr("pramanyx.govern.departure_basis.owner_for_disagreement",
                         lambda d, conn_id: "group:finance" if d.get("metric_name") else "")
 
 

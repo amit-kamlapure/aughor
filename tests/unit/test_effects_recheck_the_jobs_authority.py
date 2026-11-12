@@ -12,12 +12,12 @@ import asyncio
 
 import pytest
 
-from aughor.govern import departure as D
-from aughor.govern.departure_store import get_departure
-from aughor.kernel.jobs import JobKernel
-from aughor.kernel.ledger import Ledger
-from aughor.org.context import reset_user_id, set_user_id, using_org
-from aughor.rbac.store import assign_role, revoke_role
+from pramanyx.govern import departure as D
+from pramanyx.govern.departure_store import get_departure
+from pramanyx.kernel.jobs import JobKernel
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.org.context import reset_user_id, set_user_id, using_org
+from pramanyx.rbac.store import assign_role, revoke_role
 
 TEXT = "The weekly review is ready to read."          # no numbers: only the authority law can hold it
 
@@ -53,8 +53,8 @@ def _paused_job(ledger: Ledger, org: str, person: str, between) -> D.DepartureVe
 
 @pytest.fixture
 def signed_in(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")        # the suite declares the proxy (conftest)
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")        # the suite declares the proxy (conftest)
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     # The gate reads the job row through the default ledger; the kernel writes through this one.
     return Ledger.default()
 
@@ -90,7 +90,7 @@ def test_outside_a_job_the_door_already_checked():
 
 
 def test_sign_in_off_is_exempt_and_says_so(monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     v = _paused_job(Ledger.default(), "default", "", between=lambda: None)
     assert v.guards["authority"] == D.EXEMPT and "one operator" in v.checks["authority"]
 
@@ -109,5 +109,5 @@ def test_an_unreadable_authority_holds_under_sign_in(signed_in, monkeypatch):
         raise RuntimeError("role store unreachable")
 
     v = _paused_job(signed_in, org, "dee",
-                    between=lambda: monkeypatch.setattr("aughor.rbac.resolver.resolve_roles", broken))
+                    between=lambda: monkeypatch.setattr("pramanyx.rbac.resolver.resolve_roles", broken))
     assert v.guards["authority"] == D.HOLDS and any("could not be re-checked" in r for r in v.reasons)

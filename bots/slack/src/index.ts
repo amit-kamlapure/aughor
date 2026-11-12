@@ -22,7 +22,7 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 
 import {
   createApprovalPoster, createArrivalPoster, createAskStream, createDecisionPoster, createFactChecker, createVerdictPoster,
-} from "./aughor.js";
+} from "./pramanyx.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
 import { createTableRenderer } from "./artifacts.js";
@@ -32,9 +32,9 @@ import { createHeartbeat, createRegistry, type BotRecord } from "./registry.js";
 import { createSupervisor } from "./supervisor.js";
 
 /** How often to ask Pramanyx what should be running. */
-const RECONCILE_MS = Number(process.env.AUGHOR_RECONCILE_MS ?? 30_000);
+const RECONCILE_MS = Number(process.env.PRAMANYX_RECONCILE_MS ?? 30_000);
 
-const apiUrl = process.env.AUGHOR_API_URL ?? "http://127.0.0.1:8000";
+const apiUrl = process.env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000";
 
 /** Built once and shared: the renderers are stateless and hold no per-bot config. */
 const renderChart = createChartRenderer();
@@ -46,47 +46,47 @@ async function makeBot(record: BotRecord) {
     // Each bot gets its OWN synthetic env: same transport, different agent and
     // warehouse. That is the entire difference between two bots.
     ask: createAskStream({
-      AUGHOR_API_URL: apiUrl,
-      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
-      AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
-      AUGHOR_AGENT_ID: record.agent_id,
+      PRAMANYX_API_URL: apiUrl,
+      PRAMANYX_API_KEY: process.env.PRAMANYX_API_KEY,
+      PRAMANYX_CONNECTION_ID: record.connection_id || process.env.PRAMANYX_CONNECTION_ID,
+      PRAMANYX_AGENT_ID: record.agent_id,
     }),
     renderChart,
     renderTable,
     // HB-5 — the note verb's transport: "@bot note: …" files the sentence on the
     // object this thread is about, through the arrivals door's customs.
     postArrival: createArrivalPoster({
-      AUGHOR_API_URL: apiUrl,
-      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
+      PRAMANYX_API_URL: apiUrl,
+      PRAMANYX_API_KEY: process.env.PRAMANYX_API_KEY,
     }),
     // Idea 7 — the check verb's transport: "@bot check: <memo>" checks every number in
     // the memo against this bot's connection, through the fact-check door.
     factCheck: createFactChecker({
-      AUGHOR_API_URL: apiUrl,
-      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
-      AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
+      PRAMANYX_API_URL: apiUrl,
+      PRAMANYX_API_KEY: process.env.PRAMANYX_API_KEY,
+      PRAMANYX_CONNECTION_ID: record.connection_id || process.env.PRAMANYX_CONNECTION_ID,
     }),
     // The decide verb and its card: "@bot decide: …" books a decision citing the thread's answer; a ✅ on the card is
     // the approver's approval (the decision-framework study §3.2).
     postDecision: createDecisionPoster({
-      AUGHOR_API_URL: apiUrl,
-      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
-      AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
+      PRAMANYX_API_URL: apiUrl,
+      PRAMANYX_API_KEY: process.env.PRAMANYX_API_KEY,
+      PRAMANYX_CONNECTION_ID: record.connection_id || process.env.PRAMANYX_CONNECTION_ID,
     }),
     postApproval: createApprovalPoster({
-      AUGHOR_API_URL: apiUrl,
-      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
+      PRAMANYX_API_URL: apiUrl,
+      PRAMANYX_API_KEY: process.env.PRAMANYX_API_KEY,
     }),
     // TJ-4 — a ✅ / ❌ on an answer is a verdict on its turn, through the verdict door.
     postVerdict: createVerdictPoster({
-      AUGHOR_API_URL: apiUrl,
-      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
-      AUGHOR_CONNECTION_ID: record.connection_id || process.env.AUGHOR_CONNECTION_ID,
+      PRAMANYX_API_URL: apiUrl,
+      PRAMANYX_API_KEY: process.env.PRAMANYX_API_KEY,
+      PRAMANYX_CONNECTION_ID: record.connection_id || process.env.PRAMANYX_CONNECTION_ID,
     }),
     // AO-7b — the message→turn map outlives a restart, so a ✅ tomorrow still lands.
     // One file per bot, beside .env.local; "" would keep it in memory.
-    turnMapFile: process.env.AUGHOR_TURN_MAP_FILE
-      ?? `.aughor-turns.${record.id || "env"}.json`,
+    turnMapFile: process.env.PRAMANYX_TURN_MAP_FILE
+      ?? `.pramanyx-turns.${record.id || "env"}.json`,
     // AO-6 — rehearse comes from the RECORD, the same row the card's checkbox writes:
     // a mention is answered in the asker's DM first and reaches the channel on their ✅.
     rehearse: record.rehearse ?? false,
@@ -117,9 +117,9 @@ function envBot(): BotRecord[] {
   const app_token = process.env.SLACK_APP_TOKEN ?? "";
   if (!bot_token || !app_token) return [];
   return [{
-    id: "env", name: "aughor (.env.local)", enabled: true,
-    agent_id: process.env.AUGHOR_AGENT_ID ?? "",
-    connection_id: process.env.AUGHOR_CONNECTION_ID ?? "",
+    id: "env", name: "pramanyx (.env.local)", enabled: true,
+    agent_id: process.env.PRAMANYX_AGENT_ID ?? "",
+    connection_id: process.env.PRAMANYX_CONNECTION_ID ?? "",
     bot_token, app_token,
     signing_secret: process.env.SLACK_SIGNING_SECRET ?? "",
     // The env path keeps its own switches: there is no record to read them from.
@@ -162,7 +162,7 @@ async function beat(failed: { id: string; error: string }[]): Promise<void> {
     console[ok ? "log" : "warn"](ok
       ? "heartbeat: Pramanyx knows this supervisor is listening"
       : "heartbeat: Pramanyx could not be told this supervisor is listening (the bot card "
-        + "will read 'not listening' until it can) — check AUGHOR_API_URL / AUGHOR_RUNTIME_KEY");
+        + "will read 'not listening' until it can) — check PRAMANYX_API_URL / PRAMANYX_RUNTIME_KEY");
     heartbeatLanded = ok;
   }
 }
@@ -173,7 +173,7 @@ async function beat(failed: { id: string; error: string }[]): Promise<void> {
 // every five seconds until its hourly cap (measured 2026-10-03 on a scratch API: seven
 // restarts in a minute). Managed, the reconcile timer holds the process open and the first
 // bot a person creates is picked up on the next tick.
-const managedByApi = process.env.AUGHOR_MANAGED_BY_API === "1";
+const managedByApi = process.env.PRAMANYX_MANAGED_BY_API === "1";
 
 const first = await supervisor.reconcile();
 if (first.running === 0) {
@@ -185,7 +185,7 @@ if (first.running === 0) {
   );
 } else {
   console.log(
-    `aughor-slack-bot: ${first.running} bot(s) connected (socket mode) → ${apiUrl}`,
+    `pramanyx-slack-bot: ${first.running} bot(s) connected (socket mode) → ${apiUrl}`,
   );
 }
 for (const f of first.failed) console.error(`  bot ${f.id} did not start: ${f.error}`);

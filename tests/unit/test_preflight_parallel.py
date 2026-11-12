@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import time
 
-import aughor.agent.nodes as N
-from aughor.agent.state import Hypothesis, QueryIntent, QueryPlanV2
+import pramanyx.agent.nodes as N
+from pramanyx.agent.state import Hypothesis, QueryIntent, QueryPlanV2
 
 
 class _CaptureLLM:
@@ -51,9 +51,9 @@ def _install(monkeypatch, *, sleep=0.0, delays=None):
         time.sleep(d.get("priors", sleep))
         return "PRIORS"
 
-    monkeypatch.setattr("aughor.semantic.retriever.retrieve_relevant_schema", _schema)
-    monkeypatch.setattr("aughor.semantic.kb_retriever.retrieve_for_planning", _kb)
-    monkeypatch.setattr("aughor.feedback.priors.build_corrections_section", _priors)
+    monkeypatch.setattr("pramanyx.semantic.retriever.retrieve_relevant_schema", _schema)
+    monkeypatch.setattr("pramanyx.semantic.kb_retriever.retrieve_for_planning", _kb)
+    monkeypatch.setattr("pramanyx.feedback.priors.build_corrections_section", _priors)
     llm = _CaptureLLM()
     monkeypatch.setattr(N, "get_provider", lambda *_a, **_k: llm)
     return llm

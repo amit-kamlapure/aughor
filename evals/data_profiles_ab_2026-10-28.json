@@ -12,7 +12,7 @@
   "golden": 53,
   "ablation_samples_ecommerce": 12
  },
- "harness_defect_found_first": "evals/run_golden.py imported _parse_schema_tables from aughor.tools.schema, which stopped providing it on 2026-06-30 (af0994e1); the ImportError was swallowed, so linked_tables stayed empty: no Data Catalog, no fan-out guard, and the block rendered for no tables. The 2026-09-24 and 2026-10-04 runs therefore compared one prompt with itself (10-04: 107 of 117 statements byte-identical). Fixed in df151f9b, with a test that resolves every aughor import in the harness.",
+ "harness_defect_found_first": "evals/run_golden.py imported _parse_schema_tables from pramanyx.tools.schema, which stopped providing it on 2026-06-30 (af0994e1); the ImportError was swallowed, so linked_tables stayed empty: no Data Catalog, no fan-out guard, and the block rendered for no tables. The 2026-09-24 and 2026-10-04 runs therefore compared one prompt with itself (10-04: 107 of 117 statements byte-identical). Fixed in df151f9b, with a test that resolves every pramanyx import in the harness.",
  "decision_rule_written_before_the_run": "KEEP only if, over all 65 questions (3 runs each, temperature 0), the block raises the per-question mean overall score with paired t >= 2.0 AND does not lower execution success; otherwise DELETE",
  "arm_checks": {
   "off_golden_sql_expanded": {

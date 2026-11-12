@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.flags import (
+from pramanyx.kernel.flags import (
     FLAG_DEFAULT,
     FLAG_ENV,
     FLAG_META,
@@ -51,13 +51,13 @@ def test_the_auto_tier_is_dissolved_and_stays_dissolved(monkeypatch):
     of truth (a master env var) beside the one that actually decided (the runtime
     trigger). The tier is empty and the elevation branch is gone; this fails if either
     comes back, because a re-elevated flag would silently resolve on unrelated state."""
-    from aughor.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV, flag_state
+    from pramanyx.kernel.flags import AUTO_ELIGIBLE, FLAG_ENV, flag_state
 
     assert AUTO_ELIGIBLE == frozenset()
     assert "capabilities.auto" not in FLAG_ENV
 
     # …and with the tier empty, an unregistered-default flag is plainly off, never "auto".
-    monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+    monkeypatch.delenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", raising=False)
     assert flag_enabled("_synthetic.default_off") is False
     assert flag_state("_synthetic.default_off") == "off"
 
@@ -66,11 +66,11 @@ def test_plain_default_off_flag_env_semantics(monkeypatch):
     # A NON-auto-eligible default-off flag keeps the strict opt-in contract.
     # `semops.champion_validate` is the exemplar (its predecessors `ai_sql` and
     # `obs.prompt_capture` were both removed in the 2026-08-01 flag endgame).
-    monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+    monkeypatch.delenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", raising=False)
     assert flag_enabled("_synthetic.default_off") is False
-    monkeypatch.setenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", "1")
+    monkeypatch.setenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", "1")
     assert flag_enabled("_synthetic.default_off") is True
-    monkeypatch.setenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", "garbage")
+    monkeypatch.setenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", "garbage")
     assert flag_enabled("_synthetic.default_off") is False
 
 
@@ -113,11 +113,11 @@ def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
 
 
 def test_runtime_override_wins_both_directions(monkeypatch):
-    monkeypatch.delenv("AUGHOR_SYNTHETIC_OTHER_OFF", raising=False)
+    monkeypatch.delenv("PRAMANYX_SYNTHETIC_OTHER_OFF", raising=False)
     assert flag_enabled("_synthetic.other_off") is False
     set_flag("_synthetic.other_off", True)
     assert flag_enabled("_synthetic.other_off") is True  # override beats unset env
-    monkeypatch.setenv("AUGHOR_SYNTHETIC_OTHER_OFF", "1")
+    monkeypatch.setenv("PRAMANYX_SYNTHETIC_OTHER_OFF", "1")
     set_flag("_synthetic.other_off", False)
     assert flag_enabled("_synthetic.other_off") is False  # override beats truthy env
     clear_flag("_synthetic.other_off")

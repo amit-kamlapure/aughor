@@ -10,7 +10,7 @@
  * same column. Two spellings of one column, two answers.
  *
  * The backend had already been bitten by this and written the fix down in
- * `aughor/tools/profiler.py` ("every BigQuery numeric typed as unknown and no measure
+ * `pramanyx/tools/profiler.py` ("every BigQuery numeric typed as unknown and no measure
  * could ever exist there"). The first assertion below therefore does not trust a list
  * copied by hand: it READS that regex out of the Python source and requires the two
  * sides of the wire to agree on every spelling. A spelling added there and not here
@@ -71,7 +71,7 @@ function expand(alt: string): string[] {
  *  expansion is mechanical: strip the comments, join the adjacent string literals, and
  *  read the alternation. */
 function backendNumericSpellings(): string[] {
-  const src = readFileSync(`${REPO}/aughor/tools/profiler.py`, "utf8");
+  const src = readFileSync(`${REPO}/pramanyx/tools/profiler.py`, "utf8");
   const block = src.slice(src.indexOf("_NUMERIC_TYPES = re.compile("));
   const pattern = block
     .slice(0, block.indexOf("re.IGNORECASE"))

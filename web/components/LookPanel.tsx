@@ -12,7 +12,7 @@
  * A preset is all six at once, named for what it does (`lib/lookValues.ts`); choosing one leaves
  * every knob its own afterwards. The chart palette does not move: a chart's colours are data.
  *
- * Drawn as one card (Settings ▸ Appearance, redone to `aughor-v2/CLARITY.md`): a row per knob, the way back to the
+ * Drawn as one card (Settings ▸ Appearance, redone to `pramanyx-v2/CLARITY.md`): a row per knob, the way back to the
  * default at the label's right end, and the one line that says where the choice is kept.
  */
 import { SegmentedControl } from "@radix-ui/themes";
@@ -31,10 +31,10 @@ const RADIUS_WORD: Record<Radius, string> = { none: "Square", small: "Small", me
 const EDGES_WORD: Record<Edges, string> = { off: "Off", on: "On" };
 const TYPEFACE_WORD: Record<Typeface, string> = { inter: "Inter", "source-sans": "Source Sans" };
 const ROWS_WORD: Record<Rows, string> = { compact: "Compact", default: "Default", comfortable: "Comfortable" };
-const PRESET_WORD: Record<Preset, string> = { aughor: "Pramanyx", workbench: "Workbench" };
+const PRESET_WORD: Record<Preset, string> = { pramanyx: "Pramanyx", workbench: "Workbench" };
 /** What a preset sets, said once on hover — the knobs below show it anyway. */
 const PRESET_SAID: Record<Preset, string> = {
-  aughor: "Blue · slate · small corners · 100% · Inter · 36px rows — the default",
+  pramanyx: "Blue · slate · small corners · 100% · Inter · 36px rows — the default",
   workbench: "Blue · slate · small corners · 95% · Source Sans · compact rows — a denser look",
 };
 const title = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);

@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.engine import dry_sample, run_automation
-from aughor.automations.models import Automation, Condition, Effect
+from pramanyx.automations.engine import dry_sample, run_automation
+from pramanyx.automations.models import Automation, Condition, Effect
 
 
 def _chain(*effects, **over) -> Automation:
@@ -78,7 +78,7 @@ def test_the_outward_kinds_are_reported_not_sent():
 def test_no_delivery_is_CLAIMED(monkeypatch):
     """The claim is what stops the next tick re-sending. A preview that claimed a period
     would silence the real run — the worst failure available to this feature."""
-    from aughor.automations import engine
+    from pramanyx.automations import engine
     claims: list[str] = []
     monkeypatch.setattr(engine, "claim_delivery",
                         lambda aid, started: claims.append(aid) or True)
@@ -89,7 +89,7 @@ def test_no_delivery_is_CLAIMED(monkeypatch):
 def test_no_source_BASELINE_is_committed(monkeypatch):
     """`commit_fired_baselines` runs regardless of `persist`: a preview would consume the
     change, and the real tick at 09:00 would then not fire."""
-    from aughor.automations import probes
+    from pramanyx.automations import probes
     committed: list[str] = []
     monkeypatch.setattr(probes, "commit_fired_baselines",
                         lambda a: committed.append(a.id))
@@ -110,8 +110,8 @@ def test_no_SPAN_is_emitted(monkeypatch):
     test passes just as well when telemetry is off, on a typo in the patched name, or on
     an import path that moved: a spy that can never fire proves nothing.
     """
-    import aughor.telemetry as telemetry
-    from aughor.automations.models import EffectOutcome
+    import pramanyx.telemetry as telemetry
+    from pramanyx.automations.models import EffectOutcome
     spans: list[str] = []
     original = telemetry.mlflow_tool_span
     monkeypatch.setattr(
@@ -133,7 +133,7 @@ def test_no_SPAN_is_emitted(monkeypatch):
 def test_persist_cannot_be_forced_back_on():
     """`dry_run=True` overrides it rather than trusting every caller to pass both. One
     call site forgetting `persist=False` would write a preview into run history."""
-    from aughor.automations import engine
+    from pramanyx.automations import engine
     stored: list[str] = []
     original = engine.append_run
     try:
@@ -196,7 +196,7 @@ def test_a_real_run_is_untouched_by_any_of_this():
     seen: list[str] = []
 
     def _dispatch(effect, automation):
-        from aughor.automations.models import EffectOutcome
+        from pramanyx.automations.models import EffectOutcome
         seen.append(effect.kind)
         return EffectOutcome(kind=effect.kind, target="t", status="executed")
 

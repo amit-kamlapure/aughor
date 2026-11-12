@@ -50,14 +50,14 @@ A true cold start (state + findings wiped, backed up first) and a warm follow-up
 4. **Deterministic, manifest-driven question generation.** A manifest cell
    (`metric × dimension × grain`) *is* a query spec — generate the baseline SQL mechanically;
    reserve the LLM for *interpretation*, not generation. (Needs the L2 manifest, already built:
-   `aughor/explorer/coverage_manifest.py`.)
+   `pramanyx/explorer/coverage_manifest.py`.)
 5. **`dry_run`/EXPLAIN before interpretation tokens.** Catch failing/rejected SQL cheaply via the
    existing dry-run binder, before paying the full interpret round-trip.
 6. **Pre-LLM dedup.** Dedup candidate questions against existing findings with a cheap
    signature/embedding check *before* the LLM call, not after (today the tokens are already spent).
 7. **Trim per-call context (apply the Layer-A budget).** Each call carries ~3.4k tokens (full
    schema + all findings + negative knowledge). Send only the cell's schema slice + recent
-   findings, sized to `capability.max_context` (`aughor/llm/context_budget.py`).
+   findings, sized to `capability.max_context` (`pramanyx/llm/context_budget.py`).
 8. **Graceful budget landing, not a guillotine.** Make Phase 8 budget-aware: allocate the per-run
    budget across the frontier and stop cleanly (save progress, mark covered cells) instead of
    being killed mid-question.

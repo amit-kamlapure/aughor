@@ -27,15 +27,15 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.actions import executor as ex
-from aughor.ontology.models import (
+from pramanyx.actions import executor as ex
+from pramanyx.ontology.models import (
     ActionParameter,
     KineticAction,
     SideEffect,
     encrypt_action_secrets,
     mask_action_secrets,
 )
-from aughor.secretvault import decrypt_secret, encrypt_secret, is_encrypted
+from pramanyx.secretvault import decrypt_secret, encrypt_secret, is_encrypted
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +46,7 @@ def _no_dns(monkeypatch):
     decide whether a guard fired is a suite that fails on a train. The one test that
     exercises the guard for real turns this OFF and uses a name that resolves locally.
     """
-    monkeypatch.setenv("AUGHOR_ALLOW_PRIVATE_WEBHOOKS", "1")
+    monkeypatch.setenv("PRAMANYX_ALLOW_PRIVATE_WEBHOOKS", "1")
 
 
 @pytest.fixture
@@ -157,7 +157,7 @@ def test_the_ssrf_guard_is_handed_the_FILLED_url_not_the_template(monkeypatch, s
     the guard was actually HANDED, so that is what this asserts.
     """
     seen: list[str] = []
-    import aughor.util.url_guard as guard
+    import pramanyx.util.url_guard as guard
     monkeypatch.setattr(guard, "is_safe_webhook_url",
                         lambda u: (seen.append(u), True)[1])
     action = _pagerduty()
@@ -169,7 +169,7 @@ def test_the_ssrf_guard_is_handed_the_FILLED_url_not_the_template(monkeypatch, s
 def test_a_parameter_that_moves_the_request_to_a_private_host_is_blocked(monkeypatch, sent):
     """And the outcome half, with the guard doing its real work: `localhost` resolves
     without a network, so this stays hermetic."""
-    monkeypatch.delenv("AUGHOR_ALLOW_PRIVATE_WEBHOOKS", raising=False)
+    monkeypatch.delenv("PRAMANYX_ALLOW_PRIVATE_WEBHOOKS", raising=False)
     action = _pagerduty()
     action.side_effects[0].config["url"] = "http://{summary}/x"
     with pytest.raises(ex.KineticDispatchError, match="SSRF guard"):
@@ -209,7 +209,7 @@ def test_a_huge_response_is_capped_before_it_reaches_a_run_record(sent, monkeypa
 
 def _external_events(monkeypatch) -> list:
     events: list = []
-    from aughor.obs import session_log as slog
+    from pramanyx.obs import session_log as slog
     monkeypatch.setattr(slog, "emit",
                         lambda kind, **kw: events.append({"kind": kind, **kw}))
     return events
@@ -218,7 +218,7 @@ def _external_events(monkeypatch) -> list:
 def test_the_component_call_is_capped_spanned_and_counted(sent, monkeypatch):
     events = _external_events(monkeypatch)
     ex.default_dispatch(_pagerduty(), {"summary": "s", "severity": "x"})
-    from aughor.obs import session_log as slog
+    from pramanyx.obs import session_log as slog
     external = [e for e in events if e["kind"] == slog.EXTERNAL_CALL]
     assert external and external[0]["ok"] is True
     assert external[0]["name"] == "http_component.page_oncall"
@@ -239,7 +239,7 @@ def test_the_OLDER_webhook_kind_now_joins_that_seam_too(monkeypatch):
     action = KineticAction(id="ping", kind="side_effect", side_effects=[
         SideEffect(kind="webhook", config={"url": "https://hooks.example.com/x"})])
     ex.default_dispatch(action, {})
-    from aughor.obs import session_log as slog
+    from pramanyx.obs import session_log as slog
     assert [e for e in events if e["kind"] == slog.EXTERNAL_CALL], \
         "the declared webhook still bypasses govern.outbound"
 

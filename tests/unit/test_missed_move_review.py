@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from aughor.monitors import missed, sentinel
+from pramanyx.monitors import missed, sentinel
 
 TODAY = date(2026, 10, 4)
 SPIKE = date(2026, 9, 20)
@@ -25,7 +25,7 @@ def _series(spike_value: float = 160.0):
 @pytest.fixture
 def world(monkeypatch):
     monkeypatch.setattr(sentinel, "candidates", lambda conn, schema_name=None, since=None: [CAND])
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda conn: 1)
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda conn: 1)
     state = {"series": _series()}
     run_sql = lambda sql: (["day", "value"], [list(p) for p in state["series"]], None)  # noqa: E731
     return state, run_sql
@@ -44,14 +44,14 @@ def test_nothing_watching_and_a_quiet_watch_would_have_caught_it(world):
     assert r.proposal["would_stage"] is True
     staged = _review(run_sql, stage=True, conn="conn-missed-1")
     assert staged.proposal["created"] is True and "proposed in the inbox" in staged.verdict
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
     p = get_proposal(staged.proposal["proposal_id"])
     assert (p.kind, p.proposer, p.call_id) == ("monitor_bundle", "watcher", "alert:revenue_mr")
 
 
 def test_an_ordinary_day_is_said_to_be_one(world):
-    from aughor.monitors.models import Monitor
-    from aughor.monitors.store import upsert_monitor
+    from pramanyx.monitors.models import Monitor
+    from pramanyx.monitors.store import upsert_monitor
     state, run_sql = world
     state["series"] = _series(spike_value=101.0)
     r = _review(run_sql, conn="conn-missed-2")
@@ -65,14 +65,14 @@ def test_an_ordinary_day_is_said_to_be_one(world):
 
 def test_a_day_still_settling_is_not_scored_yet(world, monkeypatch):
     _state, run_sql = world
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda conn: 20)
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda conn: 20)
     r = _review(run_sql, conn="conn-missed-3")
     assert "too new to score" in r.verdict and "2026-10-10" in r.verdict
 
 
 def test_a_watch_too_loose_to_count_it_is_named(world):
-    from aughor.monitors.models import Monitor
-    from aughor.monitors.store import upsert_monitor
+    from pramanyx.monitors.models import Monitor
+    from pramanyx.monitors.store import upsert_monitor
     _state, run_sql = world
     upsert_monitor(Monitor(conn_id="conn-missed-4", name="Revenue watch", custom_sql=CAND.series_sql,
                            alert_on="anomaly", sigma_threshold=99.0, created_at="2026-01-01T00:00:00Z"))
@@ -82,11 +82,11 @@ def test_a_watch_too_loose_to_count_it_is_named(world):
 
 
 def test_a_breach_that_fired_but_was_held_is_traced_to_the_gate(world):
-    from aughor.automations.models import Automation
-    from aughor.automations.store import upsert_automation
-    from aughor.govern.departure_store import record_departure
-    from aughor.monitors.models import Monitor, MonitorAlert
-    from aughor.monitors.store import append_alert, upsert_monitor
+    from pramanyx.automations.models import Automation
+    from pramanyx.automations.store import upsert_automation
+    from pramanyx.govern.departure_store import record_departure
+    from pramanyx.monitors.models import Monitor, MonitorAlert
+    from pramanyx.monitors.store import append_alert, upsert_monitor
     _state, run_sql = world
     m = upsert_monitor(Monitor(conn_id="conn-missed-5", name="Revenue alarm", metric_name="revenue_mr",
                                alert_on="anomaly", sigma_threshold=2.5, created_at="2026-01-01T00:00:00Z"))

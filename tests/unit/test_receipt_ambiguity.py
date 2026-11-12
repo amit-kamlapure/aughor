@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.routers.investigations as inv
+import pramanyx.routers.investigations as inv
 
 
 class _Cap:
@@ -25,7 +25,7 @@ class _Cap:
 def cap_ledger(monkeypatch):
     # Patch only artifact_write/emit on the REAL singleton — leave kv_get intact so
     # flag_enabled (which reads flags through the ledger) still works.
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     cap = _Cap()
     real = Ledger.default()
     monkeypatch.setattr(real, "artifact_write", cap.artifact_write)
@@ -34,7 +34,7 @@ def cap_ledger(monkeypatch):
 
 
 def test_receipt_surfaces_resolved_ambiguity(cap_ledger, monkeypatch):
-    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
+    from pramanyx.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
     purge_connections(["rcpt_conn"])
     crystallize_user_choice("rcpt_conn", "top products", "by revenue")
     inv._write_answer_receipt(
@@ -51,7 +51,7 @@ def test_receipt_surfaces_resolved_ambiguity(cap_ledger, monkeypatch):
 
 
 def test_receipt_omits_field_when_no_resolution(cap_ledger, monkeypatch):
-    from aughor.semantic.ambiguity_ledger import purge_connections
+    from pramanyx.semantic.ambiguity_ledger import purge_connections
     purge_connections(["rcpt_empty"])
     inv._write_answer_receipt(
         kind="chat_answer", natural_key="chat:rcpt_empty:x",
@@ -69,7 +69,7 @@ def test_receipt_endpoint_serves_resolved_ambiguity_lineage(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
+    from pramanyx.semantic.ambiguity_ledger import crystallize_user_choice, purge_connections
     purge_connections(["rcpt_api"])
     crystallize_user_choice("rcpt_api", "top products", "by revenue")
     # write a real receipt artifact under the chat natural key the endpoint reads

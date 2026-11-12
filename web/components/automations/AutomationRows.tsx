@@ -998,7 +998,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
               <Input style={{ ...inputStyle, flex: 1 }} value={fieldText(e.config.channel)}
                 onChange={ev => set({ channel: parseMessage(ev.target.value) })}
                 title={BINDING_HINT}
-                placeholder="channel — e.g. #aughor-canvas or C0…" />
+                placeholder="channel — e.g. #pramanyx-canvas or C0…" />
               <BindingCast value={e.config.channel}
                 onChange={next => set({ channel: next })} />
             </div>

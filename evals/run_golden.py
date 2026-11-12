@@ -24,7 +24,7 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Load .env so the eval uses the CONFIGURED coder model (AUGHOR_CODER_MODEL),
+# Load .env so the eval uses the CONFIGURED coder model (PRAMANYX_CODER_MODEL),
 # not the provider's stale hardcoded default. As a standalone script this never
 # imports api.py (which is what loads dotenv for the app), so without this the
 # whole run silently fell back to qwen2.5-coder:32b — uninstalled → every
@@ -32,7 +32,7 @@ if str(_REPO_ROOT) not in sys.path:
 # Skipped when the caller has declared it wants a clean environment. This runs at
 # IMPORT, so a test that imports anything from this module gets the developer's `.env`
 # in its process — which is how a suite that is green in CI fails on a laptop.
-if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+if not os.environ.get("PRAMANYX_SKIP_DOTENV"):
     try:
         from dotenv import load_dotenv
         load_dotenv(_REPO_ROOT / ".env")
@@ -40,7 +40,7 @@ if not os.environ.get("AUGHOR_SKIP_DOTENV"):
         pass
 
 from evals.sql_accuracy import score_single
-from aughor.db.connection import open_connection_for
+from pramanyx.db.connection import open_connection_for
 
 
 def _safe_exec(db, sql: str) -> tuple[bool, list[str], list[list], str | None]:
@@ -65,12 +65,12 @@ def generate_sql_chat(question: str, connection_id: str, schema: str, temperatur
                       dialect_rules: str = "") -> str:
     """Generate SQL using the same chat pipeline as the UI.
 
-    ``dialect_rules`` is the engine's rule block (`aughor.db.dialects.writer_rules(db)`), led the way the quick
+    ``dialect_rules`` is the engine's rule block (`pramanyx.db.dialects.writer_rules(db)`), led the way the quick
     path leads it, and every caller passes it: without it this generator wrote SQL blind to the engine where the
     product does not — on 2026-09-13 both ON-10 falsifier runs got SQLite's JULIANDAY on DuckDB, a function the
     DuckDB rules forbid by name."""
-    from aughor.llm.provider import get_provider
-    from aughor.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
+    from pramanyx.llm.provider import get_provider
+    from pramanyx.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
 
     # Minimal prompt with schema only (no history, no KB)
     prompt = CHAT_PROMPT.format(
@@ -116,7 +116,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     """Generate SQL through the FULL production chat pipeline (intelligence-injected).
 
     Faithfully mirrors the SQL-generation core of `_stream_chat`
-    (aughor/routers/investigations.py) minus the SSE/streaming, final_text,
+    (pramanyx/routers/investigations.py) minus the SSE/streaming, final_text,
     insight and follow-up machinery: schema-linker → Data Catalog → context-cap →
     full CHAT_PROMPT (KB / connection-KB / SQL examples / metrics / exploration /
     causal / docs / playbook / rules) → coder LLM → semantic column alignment →
@@ -128,9 +128,9 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     eval reflects real platform quality, not a re-implementation.
     """
     from pydantic import BaseModel, Field
-    from aughor.llm.provider import get_provider
-    from aughor.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
-    from aughor.rules import get_chat_rules_block
+    from pramanyx.llm.provider import get_provider
+    from pramanyx.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
+    from pramanyx.rules import get_chat_rules_block
 
     def _safe_str(fn) -> str:
         try:
@@ -140,31 +140,31 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
 
     # ── Context sections (same sources as _stream_chat) ──────────────────────
     def _kb() -> str:
-        from aughor.semantic.kb_retriever import retrieve_for_planning
+        from pramanyx.semantic.kb_retriever import retrieve_for_planning
         s = retrieve_for_planning(question, top_k=2) or ""
         return (s + "\n\n") if s else ""
 
     def _ckb() -> str:
-        from aughor.semantic.connection_kb import retrieve_for_question as _r
+        from pramanyx.semantic.connection_kb import retrieve_for_question as _r
         s = _r(question, connection_id)
         return (s + "\n\n") if s else ""
 
     def _sqlex() -> str:
-        from aughor.tools.prior_analyses import search_sql_examples
+        from pramanyx.tools.prior_analyses import search_sql_examples
         return search_sql_examples(question, connection_id) or ""
 
     def _metrics(schema_text: str) -> str:
-        from aughor.semantic.metrics import build_metrics_block
+        from pramanyx.semantic.metrics import build_metrics_block
         s = build_metrics_block(schema_text=schema_text, connection_id=connection_id)
         return (s + "\n\n") if s else ""
 
     def _expl() -> str:
-        from aughor.explorer.store import render_exploration_annotations
+        from pramanyx.explorer.store import render_exploration_annotations
         s = render_exploration_annotations(connection_id)
         return (s + "\n\n") if s else ""
 
     def _docs() -> str:
-        from aughor.knowledge.indexer import build_external_context_section
+        from pramanyx.knowledge.indexer import build_external_context_section
         s = build_external_context_section(question, top_k=2)
         return (s + "\n\n") if s else ""
 
@@ -177,7 +177,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
 
     pb_entries = []
     try:
-        from aughor.playbook.retriever import retrieve_for_metric_and_phases
+        from pramanyx.playbook.retriever import retrieve_for_metric_and_phases
         pb_entries = retrieve_for_metric_and_phases([question], limit=4)
     except Exception:
         pb_entries = []
@@ -193,15 +193,15 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     metrics_section = _safe_str(lambda: _metrics(full_schema))
     schema = full_schema
     try:
-        from aughor.tools.schema_linker import link_schema_for_prompt
+        from pramanyx.tools.schema_linker import link_schema_for_prompt
         schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
     except Exception:
         pass
     linked_tables: list[str] = []
     try:
-        from aughor.tools.data_catalog import build_data_catalog
-        from aughor.tools.schema import fk_neighbor_expand, parse_schema_tables, temporal_dimension_tables
-        from aughor.tools.schema_linker import rank_tables_for_context
+        from pramanyx.tools.data_catalog import build_data_catalog
+        from pramanyx.tools.schema import fk_neighbor_expand, parse_schema_tables, temporal_dimension_tables
+        from pramanyx.tools.schema_linker import rank_tables_for_context
         linked_tables = list(parse_schema_tables(schema).keys())
         if linked_tables:
             # Mirrors the /chat and deep paths exactly (routers/investigations.py): pin the
@@ -225,15 +225,15 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     # linked entities — mirrors the chat path so the eval measures the same lift.
     semantic_layer_section = ""
     try:
-        from aughor.ontology.store import load_latest_ontology
-        from aughor.ontology.semantic_block import render_semantic_layer
+        from pramanyx.ontology.store import load_latest_ontology
+        from pramanyx.ontology.semantic_block import render_semantic_layer
         semantic_layer_section = render_semantic_layer(
             load_latest_ontology(connection_id), linked_tables
         )
     except Exception:
         semantic_layer_section = ""
     try:
-        from aughor.tools.data_catalog import enforce_context_cap
+        from pramanyx.tools.data_catalog import enforce_context_cap
         schema = enforce_context_cap(schema, max_tables=10)
     except Exception:
         pass
@@ -253,13 +253,13 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     if rules_block:
         prompt = rules_block + prompt
     # The engine's dialect rules, where the quick path puts them (`routers/investigations.py`).
-    from aughor.db.dialects import writer_rules
+    from pramanyx.db.dialects import writer_rules
     _dialect_block = _safe_str(lambda: writer_rules(db))
     if _dialect_block:
         prompt = _dialect_block + "\n\n" + prompt
     if pb_entries:
         try:
-            from aughor.playbook.retriever import build_playbook_prompt_section
+            from pramanyx.playbook.retriever import build_playbook_prompt_section
             _pbsec = build_playbook_prompt_section(pb_entries)
             if _pbsec:
                 prompt = _pbsec + "\n" + prompt
@@ -271,7 +271,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     # Trusted query templates (authoritative) — prepended last so they sit at the
     # very top. Verified patterns the model reuses to avoid fan-out/grain errors.
     try:
-        from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
+        from pramanyx.semantic.trusted_queries import retrieve_trusted, build_trusted_block
         _tblk = build_trusted_block(retrieve_trusted(question, connection_id))
         if _tblk:
             prompt = _tblk + "\n" + prompt
@@ -282,7 +282,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     # close-the-loop) alongside verified patterns, so the ratchet measures the same
     # pipeline production runs. Empty + zero-cost when the flag is off.
     try:
-        from aughor.feedback.priors import build_corrections_section
+        from pramanyx.feedback.priors import build_corrections_section
         _cblk = build_corrections_section(question, connection_id)
         if _cblk:
             prompt = _cblk + "\n" + prompt
@@ -326,7 +326,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     # ── Semantic column alignment (pre-execution) ────────────────────────────
     _semantic_fix_hint = ""
     try:
-        from aughor.tools.semantic_validator import check_entity_column_alignment
+        from pramanyx.tools.semantic_validator import check_entity_column_alignment
         _sem_warnings = check_entity_column_alignment(question, final_sql, schema)
         if _sem_warnings:
             _semantic_fix_hint = " | ".join(w.to_prompt_text() for w in _sem_warnings)
@@ -336,8 +336,8 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     # ── Fan-out: deterministic de-fan first, else LLM hint (mirrors _stream_chat) ─
     _fanout_fix_hint = ""
     try:
-        from aughor.sql.fanout import detect_fanout, defan
-        from aughor.tools.schema import parse_schema_tables as _pst
+        from pramanyx.sql.fanout import detect_fanout, defan
+        from pramanyx.tools.schema import parse_schema_tables as _pst
         _ff = detect_fanout(final_sql, _pst(full_schema), dialect=db.dialect)
         if _ff:
             _rw = defan(final_sql, _ff, dialect=db.dialect)
@@ -349,9 +349,9 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
         pass
 
     # ── Lint → fix before execution ──────────────────────────────────────────
-    from aughor.sql.writer import SqlWriter
+    from pramanyx.sql.writer import SqlWriter
     try:
-        from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
+        from pramanyx.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
         _lint_issues = _lint_sql(final_sql, dialect=db.dialect)
         if _lint_has_errors(_lint_issues):
             _writer = SqlWriter(db, schema_str=schema, temperature=temperature)
@@ -366,7 +366,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     #    enum/literal that matches no row to its confirmed stored value, before execution.
     #    Mirrors the product's safety.preflight_repair (probe-confirmed + dry-run-gated).
     try:
-        from aughor.sql.join_guard import bind_filter_literals
+        from pramanyx.sql.join_guard import bind_filter_literals
         _bound, _applied = bind_filter_literals(db, final_sql, dialect=db.dialect)
         if _applied and _bound.strip() != final_sql.strip() and db.dry_run(_bound)[0]:
             print(f"  [value-bind] {connection_id}: "
@@ -379,7 +379,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     result = db.execute("__eval_full__", final_sql)
     _zero_diag = None
     try:
-        from aughor.agent.investigate import _zero_row_suspicious
+        from pramanyx.agent.investigate import _zero_row_suspicious
         if not result.error and result.row_count == 0:
             _zero_diag = _zero_row_suspicious(final_sql)
     except Exception:
@@ -427,7 +427,7 @@ def run_eval(record: dict, db, live: bool = False, schema: str = "", mode: str |
             if mode == "full":
                 generated_sql = generate_sql_full_pipeline(question, conn_id, db, temperature=temperature)
             else:
-                from aughor.db.dialects import writer_rules
+                from pramanyx.db.dialects import writer_rules
                 rules = writer_rules(db) if db is not None else ""
                 generated_sql = generate_sql_chat(question, conn_id, schema, temperature=temperature,
                                                   dialect_rules=rules)
@@ -470,12 +470,12 @@ def _volatile_semantic_state(connection_id: str) -> dict:
     expl_bytes = 0
     ont_state = "none"
     try:
-        from aughor.explorer.store import render_exploration_annotations
+        from pramanyx.explorer.store import render_exploration_annotations
         expl_bytes = len(render_exploration_annotations(connection_id) or "")
     except Exception:
         pass
     try:
-        from aughor.ontology.store import load_latest_ontology
+        from pramanyx.ontology.store import load_latest_ontology
         ont_state = "present" if load_latest_ontology(connection_id) else "none"
     except Exception:
         pass
@@ -486,10 +486,10 @@ def _print_provenance(connection_id: str, mode: str, temperature: float, runs: i
     """Print (and return) the full run configuration so every eval self-documents
     WHAT was measured — model, decode temperature, and the injected semantic
     state. Without this, a cross-connection confound is invisible after the fact."""
-    from aughor.llm.provider import get_provider
+    from pramanyx.llm.provider import get_provider
     p = get_provider("coder")
     vol = _volatile_semantic_state(connection_id)
-    fallback_disabled = os.environ.get("AUGHOR_FALLBACK_DISABLED", "") not in ("", "0", "false", "False")
+    fallback_disabled = os.environ.get("PRAMANYX_FALLBACK_DISABLED", "") not in ("", "0", "false", "False")
     print(f"\n{'-'*60}")
     print(" Run provenance (pin this to compare runs)")
     print(f"{'-'*60}")
@@ -553,7 +553,7 @@ def _aggregate_runs(runs: list[dict]) -> dict:
 def main():
     # Eval integrity: pin the model by disabling the silent Anthropic fallback
     # (so a backend hiccup can't swap models mid-run), unless the user overrode.
-    os.environ.setdefault("AUGHOR_FALLBACK_DISABLED", "1")
+    os.environ.setdefault("PRAMANYX_FALLBACK_DISABLED", "1")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="evals/golden_sql_expanded.jsonl")

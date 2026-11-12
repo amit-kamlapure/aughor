@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.briefing import versions
+from pramanyx.briefing import versions
 
 
 def _brief(**metrics) -> dict:
@@ -53,7 +53,7 @@ def test_a_figure_that_moves_enough_becomes_a_new_version(key):
 def test_a_move_under_the_noise_band_is_not_news(key):
     """5% is the platform's own bar for two readings of one number — imported from the
     departure gate, not re-declared here, so the two can never drift apart."""
-    from aughor.govern.departure import NOISE_REL
+    from pramanyx.govern.departure import NOISE_REL
 
     versions.record("c4", _brief(return_rate=10.0), **key)
     out = versions.record("c4", _brief(return_rate=10.0 * (1 + NOISE_REL / 2)), **key)

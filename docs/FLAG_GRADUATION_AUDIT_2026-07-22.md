@@ -5,7 +5,7 @@ OFF. Every fresh clone, every CI run, and every other user got none of them.
 
 Two consequences worse than a stale backlog item:
 
-1. **CI was validating a configuration nobody ran.** Every green suite exercised Aughor with all 19
+1. **CI was validating a configuration nobody ran.** Every green suite exercised Pramanyx with all 19
    off — including the suites we treat as the merge gate.
 2. **The daily-driver configuration was untested.** The thing actually being used was verified by
    nothing.
@@ -58,7 +58,7 @@ except along its intended axis.
 | Flag | Why it stays off |
 |---|---|
 | `ai_sql` | Makes **per-row LLM calls**. Its own description says "enable deliberately". |
-| `obs.mlflow` | Requires an external MLflow server (`AUGHOR_MLFLOW_TRACKING_URI`); default-on would be a no-op at best. |
+| `obs.mlflow` | Requires an external MLflow server (`PRAMANYX_MLFLOW_TRACKING_URI`); default-on would be a no-op at best. |
 
 ### Decide with Wave E4 — each adds LLM calls for a claimed quality gain
 
@@ -81,10 +81,10 @@ wrong.
 
 | Flag | Note |
 |---|---|
-| `agents.user_defined` | ✅ **GRADUATED 2026-07-31** — receipt `df89c044999a`, run `234be1fbb62b` of `aughor/evals/user_agents_receipt.py` (9/9 stable ×3, bar 1.0, no baseline). This row's "default-on only makes the capability available" hunch was right and is now *measured*: the claim is **data-gated** — no agent named on a request ⇒ identical prompt, retrieval scope and resume path — with exactly one fresh-clone delta (`/agents/custom` 404 → empty roster), asserted rather than waved away. Fail-closed retrieval pinned alongside. |
+| `agents.user_defined` | ✅ **GRADUATED 2026-07-31** — receipt `df89c044999a`, run `234be1fbb62b` of `pramanyx/evals/user_agents_receipt.py` (9/9 stable ×3, bar 1.0, no baseline). This row's "default-on only makes the capability available" hunch was right and is now *measured*: the claim is **data-gated** — no agent named on a request ⇒ identical prompt, retrieval scope and resume path — with exactly one fresh-clone delta (`/agents/custom` 404 → empty roster), asserted rather than waved away. Fail-closed retrieval pinned alongside. |
 | `plan.program` | A whole alternate executor path (`/query/plan-run`). Needs its own soak. |
 | `capability.pipeline_live` | An AL-02 live-migration flag — graduating it is a migration decision. |
-| `specialist_packs` | ✅ **GRADUATED 2026-07-31** (flag strategy batch 1) — receipt `452a6fcebba4`, run `c84f1e75a50c` of `aughor/evals/specialist_packs_receipt.py` (8/8 stable ×3, bar 1.0, no baseline). The subsystem HAD landed (21 modules + Wave H4's hire flow) and the off-default was silently dead-ending it: hiring an analyst from a pack never consults this flag, but the pack's steering returned `None` — a hired expert whose expertise never injected. The claim is **data-gated three gates deep**: an installed `status: active` pack, matching the question, with a human-pinned deploy binding on the exact connection (`save_binding`'s only product caller is the deploy endpoint behind `govern.guard("pack.bind")`). Fresh-clone delta: `GET /packs` reports `enabled: true` — the shipped sample pack is `status: draft`, so nothing can steer until a human activates and deploys. See `docs/FLAG_STRATEGY_2026-07-31.md`. |
+| `specialist_packs` | ✅ **GRADUATED 2026-07-31** (flag strategy batch 1) — receipt `452a6fcebba4`, run `c84f1e75a50c` of `pramanyx/evals/specialist_packs_receipt.py` (8/8 stable ×3, bar 1.0, no baseline). The subsystem HAD landed (21 modules + Wave H4's hire flow) and the off-default was silently dead-ending it: hiring an analyst from a pack never consults this flag, but the pack's steering returned `None` — a hired expert whose expertise never injected. The claim is **data-gated three gates deep**: an installed `status: active` pack, matching the question, with a human-pinned deploy binding on the exact connection (`save_binding`'s only product caller is the deploy endpoint behind `govern.guard("pack.bind")`). Fresh-clone delta: `GET /packs` reports `enabled: true` — the shipped sample pack is `status: draft`, so nothing can steer until a human activates and deploys. See `docs/FLAG_STRATEGY_2026-07-31.md`. |
 
 ## What Batch 1 changed, beyond the four defaults
 

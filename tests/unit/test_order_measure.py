@@ -1,4 +1,4 @@
-"""A ranked finding's evidence must return what it is ranked by (aughor.sql.order_measure).
+"""A ranked finding's evidence must return what it is ranked by (pramanyx.sql.order_measure).
 
 The first case is the stored theLook finding verbatim: it ranked categories by profit and
 returned only the names, so its Briefing chart had no measure and Table was the only
@@ -6,7 +6,7 @@ visualization on offer.
 """
 import sqlglot
 
-from aughor.sql.order_measure import project_order_keys
+from pramanyx.sql.order_measure import project_order_keys
 
 THELOOK_PINNED = """WITH category_profit AS (
     SELECT

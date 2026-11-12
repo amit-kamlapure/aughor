@@ -40,7 +40,7 @@ def test_postgres_opens_read_only(monkeypatch):
 
     monkeypatch.setattr(psycopg2, "connect", _fake_connect)
 
-    from aughor.db.connection import PostgresConnection
+    from pramanyx.db.connection import PostgresConnection
     PostgresConnection("postgresql://u:p@localhost/db", schema_name="public")
 
     assert "options" in captured["kwargs"], "psycopg2.connect must receive libpq options"
@@ -60,7 +60,7 @@ def test_read_only_applies_to_parallel_readers(monkeypatch):
 
     monkeypatch.setattr(psycopg2, "connect", _fake_connect)
 
-    from aughor.db.connection import PostgresConnection
+    from pramanyx.db.connection import PostgresConnection
     conn = PostgresConnection("postgresql://u:p@localhost/db")
     conn.make_reader()
 

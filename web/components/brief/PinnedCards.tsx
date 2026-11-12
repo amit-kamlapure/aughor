@@ -40,12 +40,12 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
   // kept behind an "Arrange freely" toggle. Persisted per-connection so the reader's choice sticks.
   const [arrangeMode, setArrangeMode] = useState<"tidy" | "free">("tidy");
   useEffect(() => {
-    try { const m = localStorage.getItem(`aughor:cockpit-mode:${connectionId}`); setArrangeMode(m === "free" ? "free" : "tidy"); }
+    try { const m = localStorage.getItem(`pramanyx:cockpit-mode:${connectionId}`); setArrangeMode(m === "free" ? "free" : "tidy"); }
     catch { setArrangeMode("tidy"); }
   }, [connectionId]);
   const setMode = useCallback((m: "tidy" | "free") => {
     setArrangeMode(m);
-    try { localStorage.setItem(`aughor:cockpit-mode:${connectionId}`, m); } catch { /* private mode — mode just won't persist */ }
+    try { localStorage.setItem(`pramanyx:cockpit-mode:${connectionId}`, m); } catch { /* private mode — mode just won't persist */ }
   }, [connectionId]);
 
   const rangeKey = JSON.stringify(range ?? null);

@@ -1,4 +1,4 @@
-# Extends banking with the rest of the banking and payments industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1,
+# Extends banking with the rest of the banking and payments industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1,
 # 2026-11-11: 64 reference types). Six of them are the parent's objects, some under another name (Bank Account is its
 # DepositAccount, Loan Account its Loan, Account Transaction its Transaction, Regulatory Report its CallReport, Party
 # its Customer — which already spells `parties` — and Customer itself); Watchlist Match is folded into SanctionsHit as

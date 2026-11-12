@@ -15,8 +15,8 @@ import pytest
 import sqlglot
 from fastapi.testclient import TestClient
 
-from aughor.db.connection import _pg_fix_round
-from aughor.sql.engine_fit import from_duckdb
+from pramanyx.db.connection import _pg_fix_round
+from pramanyx.sql.engine_fit import from_duckdb
 
 STATEMENT = ("SELECT platform, ROUND(100 * (SUM(CASE WHEN d >= '2026-09-01' THEN g END) "
              "/ SUM(CASE WHEN d >= '2026-08-01' THEN g END) - 1), 1) AS mom_pct FROM orders GROUP BY 1")
@@ -67,7 +67,7 @@ def test_round_casts_an_argument_unless_it_already_is_a_numeric_cast():
 # ── the audit row keeps the statement as written ─────────────────────────────────────────────────────────────
 
 def test_an_audit_store_from_before_gains_the_column_and_a_row_outside_a_run_writes_none(tmp_path, monkeypatch):
-    from aughor.security import audit
+    from pramanyx.security import audit
     path = tmp_path / "audit.db"
     monkeypatch.setattr(audit, "_DB_PATH", path)
     audit.AuditLogger.recent()                                    # the store as it is now, then put back to version 4
@@ -89,7 +89,7 @@ def test_an_audit_store_from_before_gains_the_column_and_a_row_outside_a_run_wri
 
 @pytest.fixture()
 def duck(tmp_path):
-    from aughor.db import registry
+    from pramanyx.db import registry
     db = tmp_path / "written.duckdb"
     c = duckdb.connect(str(db))
     c.execute("CREATE TABLE t AS SELECT * FROM range(3) r(n)")
@@ -100,8 +100,8 @@ def duck(tmp_path):
 
 
 def test_the_workbench_run_records_what_was_written_beside_what_ran(duck):
-    from aughor.api import app
-    from aughor.security.audit import AuditLogger
+    from pramanyx.api import app
+    from pramanyx.security.audit import AuditLogger
     sql = "select n from t where n > 0"
     r = TestClient(app).post("/query/run", json={"conn_id": duck, "sql": sql, "format": "typed", "limit": 500,
                                                  "source": "query_workbench", "use_cache": False})

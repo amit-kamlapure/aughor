@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-import aughor.routers.ontology as onto
-import aughor.semantic.embedder as embedder
+import pramanyx.routers.ontology as onto
+import pramanyx.semantic.embedder as embedder
 
 
 def _ent(eid, name, tables):

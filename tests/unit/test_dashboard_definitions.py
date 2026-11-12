@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.dashboards.definitions import definition_of
+from pramanyx.dashboards.definitions import definition_of
 
 
 @pytest.mark.parametrize("sql,said", [

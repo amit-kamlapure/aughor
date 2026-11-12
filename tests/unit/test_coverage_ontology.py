@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.packs import knowledge
-from aughor.semantic import coverage_proposals as CP
-from aughor.semantic import metric_coverage
-from aughor.semantic.metric_map import map_of
+from pramanyx.packs import knowledge
+from pramanyx.semantic import coverage_proposals as CP
+from pramanyx.semantic import metric_coverage
+from pramanyx.semantic.metric_map import map_of
 from tests.unit.test_object_processes import FULFILMENT, _isolated_overrides, db, declare, graph  # noqa: F401
 
 

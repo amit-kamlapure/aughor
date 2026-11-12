@@ -1,0 +1,588 @@
+"""ON-3 — instances: one object, resolved live through its backing (ROADMAP §3.15).
+
+An object type (ON-1) says what its instances ARE; this module reads one of them. `get_object`
+fetches ONE row through the type's backing — its table, or the keyed SELECT a human set — by its
+primary key, at read time: no object store, no sync, no copy of the warehouse (§3.15's second law).
+
+Its links are read the way ON-2's compiler reads them. A to-one link resolves to the linked object's
+key, so a page can link straight to it; a to-many link resolves to a COUNT of its objects, listed a
+page at a time on demand by `list_linked`; a link the compiler would refuse — unmeasured, N:N, or
+touching a query backing — is shown with its reason and never traversed. Every statement here is
+assembled from the graph plus a key literal typed by its column (`typed_literal`); nothing a caller
+types reaches SQL as text.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+
+from pramanyx.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from pramanyx.ontology.parts import detail_from, rollup_note
+from pramanyx.ontology.timeseries import (
+    HISTORY_ROWS,
+    frame_note,
+    history_sql,
+    latest_columns,
+    latest_from,
+    latest_note,
+    reduced_columns,
+)
+from pramanyx.ontology.cardinality import quote_ident
+from pramanyx.ontology.display import display_of
+from pramanyx.ontology.models import Binding, EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.ontology.sources import binding_source, entity_source
+from pramanyx.semantic.object_query import (
+    ObjectLink,
+    ObjectQueryRefused,
+    backing_from,
+    find_object_type,
+    find_property,
+    held_to_grant,
+    link_problem,
+    object_links,
+    overlay_properties,
+    typed_literal,
+)
+
+_MAX_PAGE = 200
+
+
+class ObjectNotFound(LookupError):
+    """No instance has that key — an answer, not a failure."""
+
+
+class ObjectWithheld(LookupError):
+    """Arc OC-7 — the object exists and a row policy keeps it from this reader: said as withheld, never as missing."""
+
+
+@dataclass
+class ObjectInstance:
+    object_type: str                    # the type's api name
+    type_id: str
+    type_name: str                      # the type's display name
+    key: str                            # the key column
+    pk: str
+    title: Optional[str]                # the object's own name when the type carries one
+    properties: list[dict]
+    links: list[dict]
+    caveats: list[str] = field(default_factory=list)
+    #: ON-3b — what titles this object and on what warrant (`display_of`), with the value it shows.
+    display: dict = field(default_factory=dict)
+    #: ON-5 — one entry per timeseries binding: the readings behind its latest value, newest first.
+    timeseries: list[dict] = field(default_factory=list)
+    #: Arc OC-6 — held by the platform: no warehouse row, every property set by a declared action.
+    platform: bool = False
+
+    def to_dict(self) -> dict:
+        return {"object_type": self.object_type, "type_id": self.type_id, "type_name": self.type_name,
+                "key": self.key, "pk": self.pk, "title": self.title, "display": dict(self.display),
+                "properties": list(self.properties), "links": list(self.links), "caveats": list(self.caveats),
+                "timeseries": list(self.timeseries), **({"platform": True} if self.platform else {})}
+
+
+def key_of(entity: OntologyEntity) -> str:
+    backing = entity.backing
+    key = (backing.primary_key if backing is not None else "") or entity.identity_key
+    if not key:
+        raise ObjectQueryRefused(f"object type {entity.id} declares no key, so it has no instances to open")
+    return key
+
+
+def _key_property(entity: OntologyEntity, column: str) -> EntityProperty:
+    return find_property(entity, column) or EntityProperty(name=column)
+
+
+def _value(row: dict, column: str) -> Any:
+    if column in row:
+        return row[column]
+    low = column.lower()
+    return next((v for k, v in row.items() if k.lower() == low), None)
+
+
+def _read(db: Any, sql: str, what: str):
+    from pramanyx.ontology.security_sql import object_door
+    with object_door():                      # Arc ED, ED-1 — the page reads through backing_from and masks what it shows
+        result = db.execute("object_instance", sql, sql_dialect="duckdb")
+    if getattr(result, "error", None):
+        raise ObjectQueryRefused(f"{what} could not be read: {result.error}"[:300])
+    return result
+
+
+def _reader(graph: OntologyGraph, db: Any, source_db: Optional[Callable[[str], Any]]):
+    """Where each read of one call runs. On one connection's ontology that is ``db``. On an organisation's (ON-8) a
+    type's rows, a binding's and a linked type's may each live on another connection, so each is read where it lives:
+    ``source_db(connection_id)`` hands back that connection, opened by the caller, who closes it."""
+    def on(entity: OntologyEntity, binding: Optional[Binding] = None) -> Any:
+        if source_db is None:
+            return db
+        return source_db(binding_source(graph, entity, binding) if binding is not None else entity_source(graph, entity))
+    return on
+
+
+def title_column(entity: OntologyEntity) -> Optional[str]:
+    """The column that titles one object: the type's declared display property (ON-3b), or None when its key
+    names it — the key is already on screen. A proposal the data refuted gives way to the key."""
+    shown = display_of(entity)
+    return None if shown["is_key"] else shown["property"]
+
+
+def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str], bool]:
+    key = key_of(entity)
+    prop = _key_property(entity, key)
+    sql = (f"SELECT * FROM {backing_from(entity, 't0')} "
+           f"WHERE t0.{quote_ident(prop.name)} = {typed_literal(str(pk), prop, key)} LIMIT 2")
+    result = _read(db, sql, f"{entity.id} {pk!r}")
+    rows = list(result.rows or [])
+    if not rows:
+        raise ObjectNotFound(f"no {entity.id} has {key} = {pk!r}")
+    columns = list(result.columns or [])
+    return dict(zip(columns, rows[0])), columns, len(rows) > 1
+
+
+def _bound_properties(on: Callable[..., Any], entity: OntologyEntity, key: str,
+                     pk: str) -> tuple[list[dict], list[dict], list[str]]:
+    """ON-1b/ON-5 — the properties each further binding supplies for one object, read by its key under the
+    compiler's law: a binding measured one row per object is read; one that is not is named in a caveat and never
+    read. A TIMESERIES binding is read through its latest-row reduction (ON-5) — the same SQL the compiler joins,
+    narrowed to this object — and the readings behind that value come back beside it as its history. An object a
+    binding does not cover reads those properties as empty. Each binding is read on the connection its rows live on
+    (``on``, `_reader`).
+
+    Returns ``(properties, timeseries, caveats)``."""
+    properties: list[dict] = []
+    series: list[dict] = []
+    caveats: list[str] = []
+    literal = typed_literal(str(pk), _key_property(entity, key), key)
+    for binding in entity.bindings or []:
+        problem = binding_problem(entity, binding)
+        supplied = list(binding.properties.items())
+        if problem or not supplied:
+            if problem:
+                caveats.append(f"not read from {binding.name}: {problem}")
+            continue
+        latest, detail = binding.kind == "timeseries", binding.kind == "detail"
+        # ON-7 — a detail binding is read through its pre-aggregation narrowed to this object, like a timeseries one.
+        source_sql = (latest_from(binding, "b", key_equals=literal) if latest
+                      else detail_from(binding, "b", key_equals=literal) if detail else binding_from(binding, "b"))
+        if not source_sql:
+            caveats.append(f"not read from {binding.name}: it names no source to read")
+            continue
+        db = on(entity, binding)
+        # A timeseries binding reads its whole reduced row, so the time column is on it even when no property is
+        # supplied from that column — the value is only half the fact, and WHEN is the other half.
+        read = reduced_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
+        where = "" if (latest or detail) else f"WHERE b.{quote_ident(binding.key)} = {literal} "
+        result = _read(db, f"SELECT {', '.join(f'b.{quote_ident(c)}' for c in read)} FROM {source_sql} "
+                           f"{where}LIMIT 2", f"{entity.id} {pk!r} through {binding.name}")
+        rows = list(result.rows or [])
+        if len(rows) > 1 and not latest:
+            caveats.append(f"{binding.name} holds more than one row for {key} = {pk!r} — showing the first")
+        by_column = dict(zip(read, list(rows[0]) if rows else [None] * len(read)))
+        at = by_column.get(binding.time_column) if latest else None
+        # ON-5 — the reading BEFORE the latest one, read off the history's second row rather than by a second
+        # query: `history_sql` is ordered by the reduction's own ordering reversed, so its first row IS the row
+        # the latest value came from and its second is unambiguously the one before it.
+        history = _history(db, entity, binding, literal, pk) if latest else None
+        before: dict = {}
+        if history is not None and len(history["rows"]) > 1:
+            before = dict(zip(history["columns"], history["rows"][1]))
+        source = binding.table or "a keyed SELECT"
+        for name, p in supplied:
+            column = column_of(binding, name)
+            properties.append({"name": name, "value": by_column.get(column),
+                               "display_name": p.display_name or name,
+                               "semantic_type": p.semantic_type, "data_type": p.data_type, "unit": p.unit,
+                               "description": p.description,
+                               "binding": {"name": binding.name, "kind": binding.kind, "source": source,
+                                           "column": column,
+                                           **({"time_column": binding.time_column, "at": at,
+                                               "note": latest_note(binding)} if latest else {}),
+                                           **({"rollup": binding.rollups[name].describe(binding.name),
+                                               "note": rollup_note(binding)} if name in binding.rollups else {}),
+                                           # A frame is already a statement about a span of readings: "what it
+                                           # was before" is not a second fact about it, it is a different frame.
+                                           **({"frame": binding.frames[name].describe(),
+                                               "note": frame_note(binding, name)} if name in binding.frames else
+                                              {"previous": before.get(column),
+                                               "previous_at": before.get(binding.time_column)} if latest else {})}})
+        if history is not None:
+            series.append({**history, "latest_at": at})
+    return properties, series, caveats
+
+
+def _history(db: Any, entity: OntologyEntity, binding: Binding, literal: str, pk: str) -> dict:
+    """ON-5 — the readings behind one object's latest value, newest first: the binding's own source, unreduced.
+    The time column leads, because what a person reads first is WHEN."""
+    columns = latest_columns(binding)
+    view = {"binding": binding.name, "source": binding.table or "a keyed SELECT", "key": binding.key,
+            "time_column": binding.time_column, "note": latest_note(binding), "limit": HISTORY_ROWS,
+            "columns": columns, "rows": []}
+    sql = history_sql(binding, literal)
+    if not sql:
+        return {**view, "error": "the binding names no source, key or time column to read a history from"}
+    try:
+        result = _read(db, sql, f"{entity.id} {pk!r} through {binding.name}")
+    except ObjectQueryRefused as refused:
+        return {**view, "error": str(refused)}
+    read = list(result.columns or columns)
+    return {**view, "columns": read, "rows": [list(r) for r in (result.rows or [])]}
+
+
+def _link_view(on: Callable[..., Any], link: ObjectLink, row: dict) -> dict:
+    view = {"name": link.name, "business_name": link.business, "verb": link.rel.verb,
+            "to": link.target.api_name, "to_type": link.target.id,
+            "cardinality": link.label, "on": f"{link.local_col} = {link.remote_col}",
+            "kind": "to-one" if link.to_one else "to-many"}
+    # Arc ED, ED-2 — a link into an entity outside a principal's grant is not followed — not even to count — and says
+    # why, in the grant's words
+    from pramanyx.rbac.principal_grant import outside
+    held = outside(link.target)
+    if held:
+        return {**view, "usable": False, "why_not": held}
+    problem = link_problem(link)
+    if problem:
+        return {**view, "usable": False, "why_not": problem}
+    value = _value(row, link.local_col)
+    if value is None:
+        return {**view, "usable": True, **({"pk": None} if link.to_one else {"count": 0})}
+    remote = _key_property(link.target, link.remote_col)
+    literal = typed_literal(str(value), remote, link.remote_col)
+    source = backing_from(link.target, "l")
+    if link.to_one:
+        target_key = key_of(link.target)
+        if link.remote_col.lower() == target_key.lower():
+            return {**view, "usable": True, "pk": str(value)}
+        found = _read(on(link.target), f"SELECT l.{quote_ident(target_key)} FROM {source} "
+                          f"WHERE l.{quote_ident(link.remote_col)} = {literal} LIMIT 1", link.describe())
+        return {**view, "usable": True, "pk": str(found.rows[0][0]) if found.rows else None}
+    counted = _read(on(link.target), f"SELECT COUNT(*) FROM {source} WHERE l.{quote_ident(link.remote_col)} = {literal}",
+                    link.describe())
+    return {**view, "usable": True, "count": int(counted.rows[0][0]) if counted.rows else 0}
+
+
+def _formula_properties(graph: OntologyGraph, on: Callable[..., Any], entity: OntologyEntity, key: str,
+                        pk: str) -> tuple[list[dict], list[str]]:
+    """PENDING item 27 — the object's formula properties, each evaluated for THIS object through the object compiler:
+    every expression a person declared and every computed property the builder verified. Neither is a column of the
+    backing row, so the page never showed one. Each is read on its own — one the compiler refuses (an aggregate
+    formula is a figure about the type, not a property of an object) costs only itself, and is said."""
+    from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
+    wanted = [(name, e.expression, "expression", e.description, e.unit, e.semantic_type, e.provenance)
+              for name, e in (entity.expressions or {}).items() if e.verified is True]
+    wanted += [(c.id, c.formula_sql, "computed", c.label, c.unit, "measure", "")
+               for c in entity.computed_properties or [] if c.verified and c.id not in (entity.properties or {})]
+    out: list[dict] = []
+    caveats: list[str] = []
+    db = on(entity) if wanted else None
+    for name, formula, kind, described, unit, role, provenance in wanted:
+        try:
+            compiled = compile_object_query({"object_type": entity.api_name, "filters": [{"path": key, "value": pk}],
+                                             "by": [name], "measures": [{"name": "objects", "agg": "count"}]},
+                                            graph, dialect=(getattr(db, "dialect", "") or "duckdb"))
+        except ObjectQueryRefused as exc:
+            caveats.append(f"{name} is not shown: {exc.reason}")
+            continue
+        if compiled.cross_source is not None:
+            caveats.append(f"{name} is not shown: it reads another connection")
+            continue
+        from pramanyx.ontology.security_sql import object_door
+        with object_door():                  # Arc ED, ED-1 — compiled by the object door, which applied OC-7 itself
+            result = db.execute("object_instance", compiled.sql)
+        if getattr(result, "error", None):
+            caveats.append(f"{name} could not be read: {str(result.error)[:200]}")
+            continue
+        columns = [str(c).lower() for c in (result.columns or [])]
+        row = (result.rows or [[None]])[0]
+        value = row[columns.index(name.lower())] if name.lower() in columns and row else None
+        if isinstance(value, str) and value.strip().upper() == "NULL":
+            value = None
+        out.append({"name": name, "value": value, "display_name": described if kind == "computed" else name,
+                    "semantic_type": role, "data_type": "", "unit": unit or "",
+                    "description": described if kind == "expression" else "",
+                    # PENDING item 29 — what offered it, when the platform did
+                    "formula": {"expression": formula, "kind": kind, **({"provenance": provenance} if provenance else {})}})
+    return out, caveats
+
+
+def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
+               overlay: Optional[list] = None, source_db: Optional[Callable[[str], Any]] = None) -> ObjectInstance:
+    """One object — its properties (with the overlay properties accepted edits set on it, ON-4), and
+    its links resolved to a key or a count. ON-8 — on an organisation's ontology ``db`` is None and ``source_db`` hands
+    back the connection each read runs on (`_reader`)."""
+    entity = find_object_type(graph, object_type)
+    if entity.backing is not None and entity.backing.kind == "platform":
+        # Arc OC-6 — a platform-owned object: read from the edit layer, never a warehouse
+        from pramanyx.ontology.platform_objects import instance
+        return instance(graph, entity, pk, overlay)
+    on = _reader(graph, db, source_db)
+    try:
+        row, columns, repeated = _fetch_row(on(entity), entity, pk)
+    except ObjectNotFound:
+        _say_withheld(on(entity), entity, pk)
+        raise
+    key = key_of(entity)
+    caveats: list[str] = []
+    if repeated:
+        note = (entity.backing.verification_note if entity.backing is not None else "") or "unmeasured"
+        caveats.append(f"{key} = {pk!r} matches more than one {entity.id} row — the key is not unique "
+                       f"({note}); showing the first")
+    properties = []
+    for column in columns:
+        prop = find_property(entity, column)
+        properties.append({"name": column, "value": row[column],
+                           "display_name": (prop.display_name if prop else "") or column,
+                           "semantic_type": prop.semantic_type if prop else "",
+                           "data_type": prop.data_type if prop else "",
+                           "unit": prop.unit if prop else "",
+                           "description": prop.description if prop else ""})
+    bound, series, bound_caveats = _bound_properties(on, entity, key, pk)
+    properties += bound
+    caveats += bound_caveats
+    formulas, formula_caveats = _formula_properties(graph, on, entity, key, pk)
+    properties += formulas
+    caveats += formula_caveats
+    for edits in overlay_properties(entity, overlay).values():
+        mine = next((e for e in edits if str(e.row_key) == str(pk)), None)
+        if mine is None:
+            continue
+        raw = str(mine.body).strip()
+        value = raw.lower() == "true" if raw.lower() in ("true", "false") else mine.body
+        properties.append({"name": mine.column, "value": value, "display_name": mine.column,
+                           "semantic_type": "overlay", "data_type": "BOOLEAN" if isinstance(value, bool) else "",
+                           "unit": "", "description": mine.note,
+                           "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
+                                       "origin": mine.origin, "provenance": mine.provenance(),
+                                       "id": mine.id, "version": mine.version}})
+    _mask(entity, properties, caveats)
+    shown = display_of(entity)
+    # Read off the ASSEMBLED properties, not the backing row: ON-1b lets a name live on a static binding, and
+    # `_bound_properties` has already fetched it. The backing row is still where a backing property comes from.
+    title = None if shown["is_key"] else _value({p["name"]: p["value"] for p in properties}, shown["property"])
+    links = [_link_view(on, link, row) for link in object_links(graph, entity)]
+    return ObjectInstance(object_type=entity.api_name, type_id=entity.id,
+                          type_name=entity.display_name or entity.id, key=key, pk=str(pk),
+                          title=str(title) if title is not None else None,
+                          properties=properties, links=links, caveats=caveats, timeseries=series,
+                          display={**shown, "value": str(title) if title is not None else None})
+
+
+def _say_withheld(db: Any, entity: OntologyEntity, pk: str) -> None:
+    """Arc OC-7 — raise `ObjectWithheld` when a row policy hides an object that exists: the reader is told it is
+    withheld and why, never that it does not exist. Silent when no policy restricts the reader."""
+    from pramanyx.ontology.security import rows_said, unfiltered
+    said = rows_said(entity)
+    if not said:
+        return
+    with unfiltered():
+        try:
+            _fetch_row(db, entity, pk)
+        except ObjectNotFound:
+            return
+    raise ObjectWithheld(f"{entity.id} {pk} is withheld from you — {said}")
+
+
+def _mask(entity: OntologyEntity, properties: list[dict], caveats: list[str]) -> None:
+    """Arc OC-7 — a sensitive property the reader may not read: its value emptied, why said beside it and once above."""
+    from pramanyx.ontology.security import masked
+    for prop in properties:
+        why = masked(entity, str(prop.get("name") or ""))
+        if why:
+            prop["value"] = None
+            prop["withheld"] = why
+            if why not in caveats:
+                caveats.append(why)
+
+
+#: The most keys one titling call resolves. An answer table shows a page of rows, not a warehouse; a
+#: request past this is answered for the first MAX_TITLES and says so, rather than building an IN list
+#: the database will refuse.
+MAX_TITLES = 500
+
+
+def titles(graph: OntologyGraph, db: Any, object_type: str, keys: list[str], *,
+           source_db: Optional[Callable[[str], Any]] = None) -> dict:
+    """The name of each object a set of keys names — ONE query over the backing, so an answer table of 200
+    customer ids costs one round trip rather than 200.
+
+    A type whose key IS its name resolves nothing and says so: the key is already on screen, and inventing a
+    title for it would put the same string in two columns. A key nothing matches is simply absent from the
+    map — a missing title is a key rendered as it always was, never a guess. ON-8 — on an organisation's ontology
+    ``db`` is None and ``source_db`` hands back the connection each read runs on (`_reader`); a name on a binding on
+    another connection costs a second read, of which of the keys an object holds."""
+    entity = find_object_type(graph, object_type)
+    on = _reader(graph, db, source_db)
+    key = key_of(entity)
+    column = title_column(entity)
+    wanted, seen = [], set()
+    for raw in keys:
+        text = str(raw)
+        if text not in seen and text != "":
+            seen.add(text)
+            wanted.append(text)
+    out = {"object_type": entity.api_name, "type_id": entity.id, "key": key,
+           "property": column or key, "titles": {}, "truncated": len(wanted) > MAX_TITLES}
+    if column is None:
+        out["note"] = f"{entity.display_name or entity.id} is named by its key — {key} is already the title"
+        return out
+    wanted = wanted[:MAX_TITLES]
+    if not wanted:
+        return out
+    prop = _key_property(entity, key)
+    literals = ", ".join(typed_literal(text, prop, key) for text in wanted)
+    # A name on a static binding (ON-1b) is read through that binding, joined on the object's key — the same
+    # join the object page makes for the same property, so the two cannot disagree.
+    binding = property_binding(entity, column)
+    reader, objects = on(entity), None
+    if binding is not None and binding.kind == "static" and not binding_problem(entity, binding):
+        out["through"] = binding.name
+        if binding_source(graph, entity, binding) != entity_source(graph, entity):
+            # ON-8 — on another connection no statement joins it to the backing: it holds one row per object keyed by
+            # the object's key, so it is read by those keys where it lives, as the object page reads it — and a key is
+            # named only when an object holds it, read from the backing where the backing lives
+            reader = on(entity, binding)
+            sql = (f"SELECT d0.{quote_ident(binding.key)}, d0.{quote_ident(column_of(binding, column))} "
+                   f"FROM {binding_from(binding, 'd0')} WHERE d0.{quote_ident(binding.key)} IN ({literals})")
+            present = _read(on(entity), f"SELECT t0.{quote_ident(key)} FROM {backing_from(entity, 't0')} "
+                                        f"WHERE t0.{quote_ident(key)} IN ({literals})", f"the {entity.id} objects named")
+            objects = {str(row[0]) for row in (present.rows or [])}
+        else:
+            sql = (f"SELECT t0.{quote_ident(key)}, d0.{quote_ident(column_of(binding, column))} "
+                   f"FROM {backing_from(entity, 't0')} "
+                   f"JOIN {binding_from(binding, 'd0')} ON d0.{quote_ident(binding.key)} = t0.{quote_ident(key)} "
+                   f"WHERE t0.{quote_ident(key)} IN ({literals})")
+    else:
+        sql = (f"SELECT t0.{quote_ident(key)}, t0.{quote_ident(column)} FROM {backing_from(entity, 't0')} "
+               f"WHERE t0.{quote_ident(key)} IN ({literals})")
+    result = _read(reader, sql, f"the names of {entity.id} objects")
+    # Matched back as TEXT: the warehouse hands a key back in its own type (an integer id comes back an int),
+    # and the caller asked with the string it had on screen.
+    out["titles"] = {str(row[0]): str(row[1]) for row in (result.rows or [])
+                     if row[1] is not None and (objects is None or str(row[0]) in objects)}
+    return out
+
+
+def _find_link(graph: OntologyGraph, entity: OntologyEntity, name: str) -> ObjectLink:
+    links = object_links(graph, entity)
+    low = (name or "").strip().lower()
+    # a link answers to its mechanical name and, beside it, to its business-verb name (ON-3b)
+    named = [x for x in links if low in (x.name.lower(), x.business.lower())]
+    reaching = [x for x in links if low in (x.target.api_name.lower(), x.target.id.lower())]
+    chosen = named or reaching
+    if len(chosen) != 1:
+        names = sorted(x.name for x in links)
+        what = "names several links" if chosen else "is not a link"
+        raise ObjectQueryRefused(f"'{name}' {what} from {entity.id} — its links: {', '.join(names) or 'none'}",
+                                 names)
+    return chosen[0]
+
+
+def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: str, *,
+                limit: int = 50, offset: int = 0, source_db: Optional[Callable[[str], Any]] = None) -> dict:
+    """One page of the objects a link reaches from one object — refused when the link is. ON-8 — on an organisation's
+    ontology ``db`` is None and ``source_db`` hands back the connection each read runs on (`_reader`)."""
+    entity = find_object_type(graph, object_type)
+    on = _reader(graph, db, source_db)
+    chosen = _find_link(graph, entity, link)
+    held_to_grant(chosen.target, f"{chosen.name} reaches it from {entity.id}")      # Arc ED, ED-2
+    problem = link_problem(chosen)
+    if problem:
+        raise ObjectQueryRefused(problem)
+    limit = max(1, min(int(limit), _MAX_PAGE))
+    offset = max(0, int(offset))
+    row, _, _ = _fetch_row(on(entity), entity, pk)
+    target = chosen.target
+    target_key = key_of(target)
+    base = {"link": chosen.name, "object_type": target.api_name, "type_id": target.id,
+            "type_name": target.display_name or target.id, "key": target_key,
+            "title_column": title_column(target), "cardinality": chosen.label,
+            "offset": offset, "limit": limit}
+    value = _value(row, chosen.local_col)
+    if value is None:
+        return {**base, "columns": [], "rows": [], "has_more": False}
+    remote = _key_property(target, chosen.remote_col)
+    source = backing_from(target, "l")
+    sql = (f"SELECT * FROM {source} WHERE l.{quote_ident(chosen.remote_col)} = "
+           f"{typed_literal(str(value), remote, chosen.remote_col)} "
+           f"ORDER BY l.{quote_ident(target_key)} LIMIT {limit + 1} OFFSET {offset}")
+    result = _read(on(target), sql, chosen.describe())
+    rows = list(result.rows or [])
+    page = {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
+    _mask_page(target, page)
+    return page
+
+
+def _mask_page(entity: OntologyEntity, page: dict) -> None:
+    """Arc OC-7, closed at the linked page by ED-6: a sensitive property the reader may not read is emptied in every
+    row, as the object's own page empties it (`_mask`), with why — ``masked`` maps each column to it — and what a row
+    policy withholds of the linked objects is said. Nothing is added when no policy restricts the reader."""
+    from pramanyx.ontology.security import masked, rows_said
+    columns = list(page.get("columns") or [])
+    hidden = {c: why for c in columns if (why := masked(entity, c))}
+    caveats: list[str] = []
+    if hidden:
+        at = [i for i, c in enumerate(columns) if c in hidden]
+        page["rows"] = [[None if i in at else v for i, v in enumerate(row)] for row in page["rows"]]
+        page["masked"] = hidden
+        caveats.extend(dict.fromkeys(hidden.values()))
+    said = rows_said(entity)
+    if said:
+        caveats.append(said)
+    if caveats:
+        page["caveats"] = caveats
+
+
+def typed_value(value: Any, data_type: str) -> Any:
+    """A property value as its declared type. Some result paths carry every cell as text, and a criterion
+    comparing a number with text would fail closed forever; dates stay ISO text, which compares correctly
+    with an ISO literal."""
+    if not isinstance(value, str):
+        return value
+    kind, text = (data_type or "").upper(), value.strip()
+    try:
+        if "BOOL" in kind and text.lower() in ("true", "false"):
+            return text.lower() == "true"
+        if "INT" in kind and re.fullmatch(r"-?\d+", text):
+            return int(text)
+        if any(t in kind for t in ("DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "NUMBER", "INT")):
+            return float(text)
+    except ValueError:
+        return value
+    return value
+
+
+def object_resolver(connection_id: str, schema_name: str = ""):
+    """ON-4 — reads ONE object by ``(object_type, key)`` for a declared action's object parameters,
+    through the graph and scoped connection the object pages use, so row policy and redaction apply as
+    they do there. Each call opens and closes its own connection: an action reads one or two objects,
+    and a held connection would outlive the run. Raises LookupError when no object has that key."""
+    def resolve(object_type: str, key: str) -> dict:
+        from pramanyx.db.connection import open_connection_for_with_schema
+        from pramanyx.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_name or None)
+        if graph is None and schema_name:
+            graph = load_latest_ontology(connection_id, None)
+        if graph is None:
+            raise LookupError(f"no ontology is built for {connection_id}, so no {object_type} can be read")
+        entity = find_object_type(graph, object_type)
+        db = open_connection_for_with_schema(connection_id, graph.schema_name or schema_name)
+        try:
+            # Arc OC-6, D5 — read WITH the accepted edits, so a criterion can be gated on state another action set
+            from pramanyx.actions.overlay import accepted_object_edits
+            instance = get_object(graph, db, entity.api_name, key, overlay=accepted_object_edits(connection_id))
+        finally:
+            db.close()
+        table = ((entity.backing.table if entity.backing is not None else "")
+                 or (entity.source_tables[0] if entity.source_tables else entity.api_name))
+        edited = {p["name"]: {"value": p["value"], "version": p["overlay"].get("version", 0), "by": p["overlay"].get("by")}
+                  for p in instance.properties if p.get("overlay")}
+        return {"object_type": instance.object_type, "type_id": instance.type_id, "pk": instance.pk,
+                "key": instance.key, "table": table.rsplit(".", 1)[-1].strip('"').lower(),
+                "title": instance.title,
+                "properties": {p["name"]: typed_value(p["value"], p.get("data_type", "")) for p in instance.properties},
+                # what the source holds, apart from what the edit layer set — an edit may set only the latter
+                "source": sorted(p["name"] for p in instance.properties if not p.get("overlay")),
+                "edited": edited,
+                # Arc OC-6 — the moves an edit-layer property declares, enforced by the executor
+                "state_machines": {k: v.model_dump() for k, v in (getattr(entity, "edit_states", None) or {}).items()}}
+    return resolve

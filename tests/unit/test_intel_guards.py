@@ -5,7 +5,7 @@
 
 These are the deterministic, pure pieces of the gate-on-the-authority + re-validate fix.
 """
-from aughor.explorer.verify import _implausible_ratio_claim, _parse_magnitude, verify_insight
+from pramanyx.explorer.verify import _implausible_ratio_claim, _parse_magnitude, verify_insight
 
 
 # ── RC4: implausible ratio/turnover magnitude ────────────────────────────────
@@ -72,14 +72,14 @@ def test_verify_insight_keeps_healthy_ratio():
 # ── RC3: metric name↔SQL coherence ───────────────────────────────────────────
 
 def test_category_named_percent_metric_is_incoherent():
-    from aughor.business_profile.validate import name_sql_coherent
+    from pramanyx.business_profile.validate import name_sql_coherent
     ok, reason = name_sql_coherent("Top Return Reason (by review score)", "percent 0-100")
     assert ok is False
     assert "category" in reason.lower()
 
 
 def test_scalar_metrics_stay_coherent():
-    from aughor.business_profile.validate import name_sql_coherent
+    from pramanyx.business_profile.validate import name_sql_coherent
     assert name_sql_coherent("Gross Margin Rate", "percent 0-100")[0] is True
     assert name_sql_coherent("Average Order Value (AOV)", "USD")[0] is True
     # a "Top X (by units)" returning a count is fine — not a percent
@@ -87,7 +87,7 @@ def test_scalar_metrics_stay_coherent():
 
 
 def test_distribution_named_ratio_is_incoherent():
-    from aughor.business_profile.validate import name_sql_coherent
+    from pramanyx.business_profile.validate import name_sql_coherent
     assert name_sql_coherent("Channel mix distribution", "ratio 0-1")[0] is False
 
 
@@ -96,10 +96,10 @@ def test_distribution_named_ratio_is_incoherent():
 def test_profile_governed_source_outranks_ontology():
     """RC2 precedence, on the surviving authority: SemanticContract.rank (the
     legacy canonical._SOURCE_RANK mirror left with its resolver, 2026-08-06)."""
-    from aughor.ontology.models import OntologyMetric
-    from aughor.semantic.contracts import SemanticContract
-    from aughor.semantic.metrics import MetricDefinition
-    from aughor.business_profile.models import NorthStarMetric
+    from pramanyx.ontology.models import OntologyMetric
+    from pramanyx.semantic.contracts import SemanticContract
+    from pramanyx.semantic.metrics import MetricDefinition
+    from pramanyx.business_profile.models import NorthStarMetric
 
     catalog = SemanticContract.from_metric_definition(
         MetricDefinition(name="m", label="M", sql="SUM(x)"))

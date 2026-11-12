@@ -16,7 +16,7 @@ import re
 
 import pytest
 
-from aughor.kernel.flags import FLAG_ENV, FLAG_META
+from pramanyx.kernel.flags import FLAG_ENV, FLAG_META
 
 FACT_KINDS = {"model", "free", "schedule", "sends", "warehouse", "needs", "private", "route"}
 

@@ -1,4 +1,4 @@
-"""Phase 7 of the 2027 study, P7-2 — the event catalogue (`aughor/kernel/events.py`) as a measured
+"""Phase 7 of the 2027 study, P7-2 — the event catalogue (`pramanyx/kernel/events.py`) as a measured
 ratchet: every kind the source journals is catalogued with what its payload carries.
 """
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aughor.kernel import events as E
+from pramanyx.kernel import events as E
 
 REPO = Path(__file__).resolve().parents[2]
 _EMIT = re.compile(r"\.emit\(\s*\"([a-z][a-z0-9_.]*)\"")
@@ -20,7 +20,7 @@ _HELPER_TAKES_KIND = re.compile(r"def (?:_emit|_journal)\(\s*(?:self,\s*)?kind\b
 
 def emitted_kinds() -> dict[str, list[str]]:
     found: dict[str, list[str]] = {}
-    for path in (REPO / "aughor").rglob("*.py"):
+    for path in (REPO / "pramanyx").rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
         text = path.read_text(errors="ignore")
@@ -35,7 +35,7 @@ def test_every_kind_the_source_journals_is_catalogued():
     found = emitted_kinds()
     assert len(found) > 30, f"the scan found only {len(found)} kinds — the walk is broken"
     missing = {k: v for k, v in found.items() if k not in E.CATALOGUE}
-    assert not missing, "uncatalogued event kinds (add each to aughor/kernel/events.CATALOGUE with its payload): " + \
+    assert not missing, "uncatalogued event kinds (add each to pramanyx/kernel/events.CATALOGUE with its payload): " + \
         "; ".join(f"{k} ({', '.join(sorted(set(v))[:2])})" for k, v in sorted(missing.items()))
 
 

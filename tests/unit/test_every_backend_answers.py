@@ -19,8 +19,8 @@ import types
 
 import pytest
 
-from aughor.agent import converse_tools as ct
-from aughor.routers import investigations as inv
+from pramanyx.agent import converse_tools as ct
+from pramanyx.routers import investigations as inv
 
 
 @pytest.fixture(autouse=True)
@@ -33,9 +33,9 @@ def _no_remembered_refusals():
 @pytest.fixture
 def binding(monkeypatch):
     declared = {"tools": None}
-    monkeypatch.setattr("aughor.llm.provider.resolve_binding",
+    monkeypatch.setattr("pramanyx.llm.provider.resolve_binding",
                         lambda role="coder", **kw: ("ollama", "gemma:2b", ""))
-    monkeypatch.setattr("aughor.llm.provider.model_supports_tools",
+    monkeypatch.setattr("pramanyx.llm.provider.model_supports_tools",
                         lambda model: declared["tools"])
     return declared
 
@@ -45,7 +45,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(inv, "build_history_section", lambda h: "")
     monkeypatch.setattr(inv, "build_prior_answers_section", lambda a: "")
     monkeypatch.setattr(inv, "resolve_prior_answers", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.agent.converse_tools.ground_answer_numbers",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.ground_answer_numbers",
                         lambda answer, rows, question="": (answer, None))
 
     def _quick(question, connection_id, history, *, emit, cancelled, **kw):
@@ -105,7 +105,7 @@ def test_the_analyst_door_follows_the_same_rule(binding):
 
 def test_a_turn_refused_at_its_first_request_is_answered_by_the_quick_body(
         binding, offline, monkeypatch):
-    monkeypatch.setattr("aughor.agent.converse_tools.converse", _raising(
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse", _raising(
         RuntimeError("registry.ollama.ai/library/gemma:2b does not support tools")))
 
     frames = _drive()
@@ -119,14 +119,14 @@ def test_a_turn_refused_at_its_first_request_is_answered_by_the_quick_body(
 
 
 def test_any_other_failure_is_still_the_turns_error(binding, offline, monkeypatch):
-    monkeypatch.setattr("aughor.agent.converse_tools.converse",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse",
                         _raising(RuntimeError("401: invalid key")))
     assert [f["type"] for f in _drive()][-1] == "error"
     assert not ct._REFUSED_TOOLS
 
 
 def test_a_refusal_after_a_step_has_run_is_not_restarted(binding, offline, monkeypatch):
-    monkeypatch.setattr("aughor.agent.converse_tools.converse", _raising(
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse", _raising(
         RuntimeError("does not support tools"), after_a_step=True))
     frames = _drive()
     assert frames[-1]["type"] == "error"

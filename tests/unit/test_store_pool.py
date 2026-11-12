@@ -21,7 +21,7 @@ import threading
 
 import pytest
 
-from aughor.db import store_pool
+from pramanyx.db import store_pool
 
 
 class _FakePg:
@@ -182,7 +182,7 @@ def test_a_disabled_pool_still_counts_and_says_so() -> None:
     opt-out, "switched off" and "on but never reusing" both read acquire=0. In
     production that silence was read as evidence of a fresh thread per request and
     nearly bought a rewrite. A diagnostic whose zero has two meanings is not one."""
-    from aughor.stats import stats
+    from pramanyx.stats import stats
 
     def n(k: str) -> int:
         return stats.snapshot()["counters"].get(f"store.pool.{k}", 0)
@@ -213,8 +213,8 @@ def test_the_backend_branch_is_named(tmp_path, monkeypatch) -> None:
     measured deltas of +3 locally and +30 on CI, both on branches that changed no Python.
     Stubbing the sink measures THIS call and nothing else.
     """
-    from aughor.db import backend
-    import aughor.stats as stats_mod
+    from pramanyx.db import backend
+    import pramanyx.stats as stats_mod
 
     import threading
 
@@ -246,7 +246,7 @@ def test_the_backend_branch_is_named(tmp_path, monkeypatch) -> None:
 def test_sqlite_is_not_pooled(tmp_path, monkeypatch) -> None:
     """A local file open is microseconds; pooling it would add lifetime bugs for no
     gain, so `connect_store` must not route SQLite through the pool."""
-    from aughor.db import backend
+    from pramanyx.db import backend
 
     monkeypatch.setattr(backend, "is_postgres", lambda: False)
     before = store_pool.pooled_count()
@@ -263,7 +263,7 @@ def test_connect_store_reuses_on_the_postgres_path(monkeypatch) -> None:
     else in the suite reaches this branch — without this test the pooled path ships
     on unit evidence that never touched it.
     """
-    from aughor.db import backend
+    from pramanyx.db import backend
 
     built = []
 
@@ -296,7 +296,7 @@ def test_connect_store_reuses_on_the_postgres_path(monkeypatch) -> None:
 def test_a_repeat_acquire_on_one_thread_is_not_counted_as_a_new_thread() -> None:
     """These counters exist to decide whether thread-local pooling can work at all
     in production, so they have to mean what their names say."""
-    from aughor.stats import stats
+    from pramanyx.stats import stats
 
     def n(k: str) -> int:
         return stats.snapshot()["counters"].get(f"store.pool.{k}", 0)
@@ -310,7 +310,7 @@ def test_a_repeat_acquire_on_one_thread_is_not_counted_as_a_new_thread() -> None
 
 
 def test_a_second_thread_counts_as_new() -> None:
-    from aughor.stats import stats
+    from pramanyx.stats import stats
 
     def n(k: str) -> int:
         return stats.snapshot()["counters"].get(f"store.pool.{k}", 0)
@@ -494,7 +494,7 @@ def test_the_ddl_outcome_is_counted_for_production_verification() -> None:
     instead of inferring it from endpoint arithmetic the way the cost it fixes had to
     be found.
     """
-    from aughor.stats import stats
+    from pramanyx.stats import stats
 
     def count(k: str) -> int:
         return stats.snapshot()["counters"].get(f"store.schema_ddl.{k}", 0)
@@ -518,8 +518,8 @@ def test_a_real_store_stops_replaying_its_ddl_across_operations(monkeypatch) -> 
     """
     import sqlite3
 
-    from aughor.db import backend
-    from aughor.metastore import store as ms
+    from pramanyx.db import backend
+    from pramanyx.metastore import store as ms
 
     backing = sqlite3.connect(":memory:")
     backing.row_factory = sqlite3.Row
@@ -580,7 +580,7 @@ def test_the_pool_default_knows_where_it_is_running(monkeypatch, raw, vercel, ex
     it took the whole deployment down within minutes — every route, including
     /health, because the app cannot boot without store access. A safety property
     that depends on someone remembering a variable is not a safety property."""
-    monkeypatch.setenv("AUGHOR_STORE_POOL_DISABLED", raw)
+    monkeypatch.setenv("PRAMANYX_STORE_POOL_DISABLED", raw)
     if vercel:
         monkeypatch.setenv("VERCEL", vercel)
     else:

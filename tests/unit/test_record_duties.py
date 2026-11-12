@@ -1,4 +1,4 @@
-"""The week by duty (`aughor/record/duties.py`, the 2027 study §V screen 8) — a fold over the ledger.
+"""The week by duty (`pramanyx/record/duties.py`, the 2027 study §V screen 8) — a fold over the ledger.
 
 What this holds: a claim is counted under the duty that books its kind and is warranted only above
 `said`; a run's typed verdict is Inquire's and every verdict but `answered` is a failure by its
@@ -10,11 +10,11 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
-from aughor.actions import authority as A
-from aughor.record import claims as C
-from aughor.record import duties as DU
-from aughor.record import inquiry as I
-from aughor.routers import record as R
+from pramanyx.actions import authority as A
+from pramanyx.record import claims as C
+from pramanyx.record import duties as DU
+from pramanyx.record import inquiry as I
+from pramanyx.routers import record as R
 
 
 def _conn():

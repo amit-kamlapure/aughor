@@ -11,9 +11,9 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-import aughor.agent.spotlight_act as act
-from aughor.actions.inbox import StagedProposal, accept_proposal, get_proposal, stage_proposal
-from aughor.custom_agents.store import schema_scope_problem, validate_agent_draft
+import pramanyx.agent.spotlight_act as act
+from pramanyx.actions.inbox import StagedProposal, accept_proposal, get_proposal, stage_proposal
+from pramanyx.custom_agents.store import schema_scope_problem, validate_agent_draft
 
 CONN = "sp7-look"
 
@@ -21,9 +21,9 @@ CONN = "sp7-look"
 @pytest.fixture
 def pinned(monkeypatch):
     """A registered connection that pins schema ``thelook`` — theLook's own shape."""
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda *a, **k: [{"id": CONN}])
-    monkeypatch.setattr("aughor.db.registry.get_meta",
+    monkeypatch.setattr("pramanyx.db.registry.get_meta",
                         lambda conn_id: {"schema_name": "thelook"} if conn_id == CONN else {})
 
 
@@ -51,7 +51,7 @@ def test_a_measured_catalogue_refuses_a_name_it_does_not_hold():
 def test_an_unread_schema_list_is_not_an_absence(monkeypatch):
     """Neither a pin nor a catalogue: nothing is known, so nothing is refused — and an empty
     catalogue is how a failed read arrives, so it is not a measurement either."""
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn_id: {})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn_id: {})
     assert schema_scope_problem("anything", "unpinned") == ""
     assert schema_scope_problem("anything", "any", known_schemas=[]) == ""
 
@@ -59,7 +59,7 @@ def test_an_unread_schema_list_is_not_an_absence(monkeypatch):
 def test_a_settings_read_that_fails_is_not_an_absence(monkeypatch):
     def boom(conn_id):
         raise RuntimeError("registry locked")
-    monkeypatch.setattr("aughor.db.registry.get_meta", boom)
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", boom)
     assert schema_scope_problem("public", "whatever") == ""
 
 
@@ -67,7 +67,7 @@ def test_a_settings_read_that_fails_is_not_an_absence(monkeypatch):
 
 def test_spotlight_refuses_the_wrong_schema_before_anything_is_staged(pinned, monkeypatch):
     staged: list = []
-    monkeypatch.setattr("aughor.actions.inbox.stage_proposal",
+    monkeypatch.setattr("pramanyx.actions.inbox.stage_proposal",
                         lambda p: staged.append(p) or p)
     draft = {"name": "Anomaly Scout", "instructions": "Hunt statistical departures."}
 
@@ -84,8 +84,8 @@ def test_spotlight_refuses_the_wrong_schema_before_anything_is_staged(pinned, mo
 
 def test_accept_refuses_a_staged_draft_whose_schema_is_not_there(pinned):
     """The user's pending draft, as it sits in the live inbox: staged before SP-7 existed."""
-    from aughor.custom_agents.store import list_agents
-    from aughor.org.context import current_org_id
+    from pramanyx.custom_agents.store import list_agents
+    from pramanyx.org.context import current_org_id
 
     before = {a.id for a in list_agents()}
     p = stage_proposal(StagedProposal(
@@ -103,7 +103,7 @@ def test_accept_refuses_a_staged_draft_whose_schema_is_not_there(pinned):
 
 
 def test_the_create_route_refuses_it(pinned):
-    from aughor.routers.agents import UserAgentCreate, create_user_agent
+    from pramanyx.routers.agents import UserAgentCreate, create_user_agent
     with pytest.raises(HTTPException) as err:
         create_user_agent(UserAgentCreate(name="Anomaly Scout", instructions="x",
                                           connection_id=CONN, schema_scope="public"))
@@ -111,7 +111,7 @@ def test_the_create_route_refuses_it(pinned):
 
 
 def test_the_template_route_refuses_it_before_looking_for_the_pack(pinned):
-    from aughor.routers.agents import UserAgentFromTemplate, create_user_agent_from_template
+    from pramanyx.routers.agents import UserAgentFromTemplate, create_user_agent_from_template
     with pytest.raises(HTTPException) as err:
         create_user_agent_from_template(UserAgentFromTemplate(
             pack_id="no-such-pack", connection_id=CONN, schema_scope="public"))
@@ -122,8 +122,8 @@ def test_the_template_route_refuses_it_before_looking_for_the_pack(pinned):
 
 from types import SimpleNamespace  # noqa: E402
 
-from aughor.automations.models import fill_required_holes  # noqa: E402
-from aughor.automations.propose import ProposedChain, _first_run, propose_chain  # noqa: E402
+from pramanyx.automations.models import fill_required_holes  # noqa: E402
+from pramanyx.automations.propose import ProposedChain, _first_run, propose_chain  # noqa: E402
 
 AUTO_CONN = "sp7-auto"
 
@@ -155,15 +155,15 @@ def _anomaly_chain(channel="#general", bot_id="sb_look") -> ProposedChain:
 
 @pytest.fixture
 def two_bots(monkeypatch):
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", lambda *a, **k: [
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", lambda *a, **k: [
         SimpleNamespace(id="sb_look", name="TheLook Analyst", enabled=True),
-        SimpleNamespace(id="sb_aughor", name="Pramanyx", enabled=True)])
+        SimpleNamespace(id="sb_pramanyx", name="Pramanyx", enabled=True)])
 
 
 @pytest.fixture(autouse=True)
 def _no_saved_chains():
     """The automations store is session-scoped: whatever an accept saves here is removed."""
-    from aughor.automations.store import delete_automation, list_automations
+    from pramanyx.automations.store import delete_automation, list_automations
     for a in list_automations(conn_id=AUTO_CONN):
         delete_automation(a.id)
     yield
@@ -171,8 +171,8 @@ def _no_saved_chains():
         delete_automation(a.id)
 
 
-def _stage_chain(channel: str, bot_id: str = "sb_aughor", trigger=None):
-    from aughor.org.context import current_org_id
+def _stage_chain(channel: str, bot_id: str = "sb_pramanyx", trigger=None):
+    from pramanyx.org.context import current_org_id
     return stage_proposal(StagedProposal(
         kind="automation_draft", org_id=current_org_id() or "", connection_id=AUTO_CONN,
         action_id="automation:Morning Anomaly Scout",
@@ -210,20 +210,20 @@ def test_a_channel_and_sender_the_request_did_not_name_stay_open(two_bots):
 def test_what_the_request_names_is_kept(two_bots):
     out = propose_chain("post anomalies to #anomalies as Pramanyx every morning at 9am",
                         conn_id=AUTO_CONN,
-                        provider=_Provider(_anomaly_chain("#anomalies", "sb_aughor")))
+                        provider=_Provider(_anomaly_chain("#anomalies", "sb_pramanyx")))
     post = out.draft["effects"][1]["config"]
-    assert (post["channel"], post["bot_id"]) == ("#anomalies", "sb_aughor")
+    assert (post["channel"], post["bot_id"]) == ("#anomalies", "sb_pramanyx")
     assert out.to_fill == []
 
 
 def test_a_channel_named_only_inside_another_word_is_not_named(two_bots):
     out = propose_chain("generally, send anomalies to slack as Pramanyx", conn_id=AUTO_CONN,
-                        provider=_Provider(_anomaly_chain("#general", "sb_aughor")))
+                        provider=_Provider(_anomaly_chain("#general", "sb_pramanyx")))
     assert out.draft["effects"][1]["config"]["channel"] == ""
 
 
 def test_the_one_bot_there_is_needs_no_choosing(monkeypatch):
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", lambda *a, **k: [
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", lambda *a, **k: [
         SimpleNamespace(id="sb_only", name="Pramanyx", enabled=True)])
     out = propose_chain("post anomalies to #ops every morning", conn_id=AUTO_CONN,
                         provider=_Provider(_anomaly_chain("#ops", "")))
@@ -234,7 +234,7 @@ def test_the_one_bot_there_is_needs_no_choosing(monkeypatch):
 def test_any_other_missing_key_still_refuses(two_bots):
     """Only the choices SP-7 opens become holes — a step the model left without its question
     is the model's failure, and refuses exactly as it did before."""
-    chain = _anomaly_chain("#anomalies", "sb_aughor")
+    chain = _anomaly_chain("#anomalies", "sb_pramanyx")
     chain.effects[0].config["question"] = ""
     out = propose_chain("post anomalies to #anomalies as Pramanyx", conn_id=AUTO_CONN,
                         provider=_Provider(chain))
@@ -251,7 +251,7 @@ def test_the_first_run_is_read_by_the_schedulers_own_clock():
 
 def test_spotlight_says_what_is_open_and_when_it_would_first_run(two_bots, monkeypatch):
     real = propose_chain
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id: real(outcome, conn_id=conn_id,
                                                       provider=_Provider(_anomaly_chain())))
     out = act.draft_automation(AUTO_CONN, {"outcome": "anomalies to slack every morning at 9am"})
@@ -262,7 +262,7 @@ def test_spotlight_says_what_is_open_and_when_it_would_first_run(two_bots, monke
 
 
 def test_accept_refuses_an_open_choice_and_the_proposal_stays_pending():
-    from aughor.automations.store import list_automations
+    from pramanyx.automations.store import list_automations
     p = _stage_chain(channel="")
     result, _ = accept_proposal(p.id, actor="tester")
     assert result.ok is False and result.status == "invalid_params"
@@ -274,7 +274,7 @@ def test_accept_refuses_an_open_choice_and_the_proposal_stays_pending():
 def test_an_accepted_schedule_waits_for_its_first_scheduled_time():
     from datetime import datetime, timezone
 
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     p = _stage_chain(channel="#anomalies")
     result, _ = accept_proposal(p.id, actor="tester")
     assert result.ok is True, result.message
@@ -289,7 +289,7 @@ def test_an_accepted_schedule_waits_for_its_first_scheduled_time():
 
 def test_a_chain_with_another_trigger_is_not_muted():
     """A webhook would be silenced by the same mute, so only an all-schedule chain waits."""
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     p = _stage_chain(channel="#anomalies", trigger={"kind": "webhook", "config": {}})
     result, _ = accept_proposal(p.id, actor="tester")
     assert result.ok is True, result.message

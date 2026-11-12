@@ -17,10 +17,10 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import open_connection
-from aughor.ontology.explorer import source_catalogue
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.prompt_reach import FIXTURE_DEPLOYED_PACKS, fixture_graph
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology.explorer import source_catalogue
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.prompt_reach import FIXTURE_DEPLOYED_PACKS, fixture_graph
 
 REPO = Path(__file__).resolve().parents[2]
 HEADING = "PACK CLAIMS"
@@ -60,7 +60,7 @@ def test_a_catalogue_that_is_told_of_no_deployed_pack_renders_no_claim():
 
 def test_the_explorer_sends_the_catalogue_it_was_given_the_packs_for():
     """The one model call carries the catalogue rendered for THIS connection's deployed packs."""
-    from aughor.ontology.explorer import BusinessDraft, draft_business
+    from pramanyx.ontology.explorer import BusinessDraft, draft_business
 
     sent: dict = {}
 
@@ -89,11 +89,11 @@ def _lux() -> OntologyGraph:
 def test_the_explore_door_hands_the_catalogue_this_connections_deployed_packs(tmp_path, monkeypatch, client):
     """The route is the only plane that knows which packs a connection deployed. Were it to stop passing them, the
     claims would quietly leave the prompt rather than leak into it — so the wiring is read here by name."""
-    import aughor.db.connection as C
-    import aughor.llm.provider as P
-    import aughor.ontology.explorer as EX
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    import pramanyx.llm.provider as P
+    import pramanyx.ontology.explorer as EX
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology("914df862", "luxexperience", "fp", _lux())
@@ -118,10 +118,10 @@ def test_the_measure_door_says_whether_the_pack_is_deployed_and_its_claims_stay_
         tmp_path, monkeypatch, client):
     """Reviewing a package against your own data is what gate 6 asks for, so the door takes any pack id. What it
     measures reaches the panel and the answer — never a prompt, until the pack is deployed here."""
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.packs.ontology_map import bound_pack_ids
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.packs.ontology_map import bound_pack_ids
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology("914df862", "luxexperience", "fp", _lux())

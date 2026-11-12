@@ -16,7 +16,7 @@ import json
 import duckdb
 import pytest
 
-from aughor.routers import investigations as inv
+from pramanyx.routers import investigations as inv
 
 _NARRATION = {"narrative": "Listed.", "anomalies": [], "trend": "", "confidence": "high", "follow_ups": []}
 
@@ -28,7 +28,7 @@ def shop(tmp_path):
     con.execute("CREATE TABLE orders AS SELECT DATE '2026-09-20' - (i % 30)::INT AS order_date, "
                 "(20 + i % 50)::DOUBLE AS amount FROM range(0, 600) t(i)")
     con.close()
-    from aughor.db.registry import add_connection
+    from pramanyx.db.registry import add_connection
     return add_connection("item23 shop", "duckdb", str(path))
 
 

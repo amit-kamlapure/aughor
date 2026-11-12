@@ -1,6 +1,6 @@
 """A dashboard from a file and a sentence: the one door where a model writes a card's query, on terms enforced by code.
 
-The model here is scripted. What is under test is everything around it: each term in `aughor/sheets/dashboard_draft.py`, the spec
+The model here is scripted. What is under test is everything around it: each term in `pramanyx/sheets/dashboard_draft.py`, the spec
 the platform writes for what a person kept, and that the kept cards obey a reader's filters and a row added to the sheet.
 """
 from __future__ import annotations
@@ -20,11 +20,11 @@ ORDERS = """order_id,ordered_on,status,channel,sale_price
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
@@ -32,7 +32,7 @@ def env(tmp_path, monkeypatch):
 
 @pytest.fixture
 def sheet(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "orders.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Orders", by="user:ana",
@@ -71,7 +71,7 @@ def scenario_card(table: str) -> dict:
 
 
 def read(sheet, args):
-    from aughor.sheets import dashboard_draft
+    from pramanyx.sheets import dashboard_draft
     return dashboard_draft._read_proposal(sheet, args)
 
 
@@ -96,10 +96,10 @@ def test_the_rows_are_always_offered(sheet):
 
 
 def test_a_card_reads_this_sheet_and_nothing_else(sheet):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     other_path = sheet.table + "_other.csv"
     import pathlib
-    p = pathlib.Path(__import__("os").environ["AUGHOR_STATE_DIR"]).parent / other_path
+    p = pathlib.Path(__import__("os").environ["PRAMANYX_STATE_DIR"]).parent / other_path
     p.write_text("a,b\n1,2\n")
     other = service.create_from_file(files.stage(p, p.name), name="Other", by="user:ana", chosen={})
     args = proposal(sheet.table)
@@ -164,9 +164,9 @@ def test_the_other_reading_of_a_question_is_run_too(sheet):
 
 
 def test_a_draft_runs_the_model_once_and_stops_when_staged(sheet):
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
-    from aughor.sheets import dashboard_draft
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
+    from pramanyx.sheets import dashboard_draft
     set_responses([FauxToolCall(payload=proposal(sheet.table), name="propose_dashboard")])
     out = dashboard_draft.draft(sheet, "Show what we kept and what came back, by month", provider=LLMProvider(backend="faux", role="coder"))
     assert out["drafted"] is True and out["rounds"] == 1 and out["title"] == "Orders so far"
@@ -174,9 +174,9 @@ def test_a_draft_runs_the_model_once_and_stops_when_staged(sheet):
 
 
 def test_a_refused_draft_goes_back_to_the_model_and_its_repair_lands(sheet):
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
-    from aughor.sheets import dashboard_draft
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
+    from pramanyx.sheets import dashboard_draft
     bad = proposal(sheet.table)
     bad["cards"][0]["sql"] = "SELECT 1 AS kept FROM somewhere_else"
     set_responses([FauxToolCall(payload=bad, name="propose_dashboard"), FauxToolCall(payload=proposal(sheet.table), name="propose_dashboard")])
@@ -185,9 +185,9 @@ def test_a_refused_draft_goes_back_to_the_model_and_its_repair_lands(sheet):
 
 
 def test_no_draft_says_why(sheet):
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
-    from aughor.sheets import dashboard_draft
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
+    from pramanyx.sheets import dashboard_draft
     bad = proposal(sheet.table)
     bad["cards"] = [{"key": "x", "title": "X", "as": "figure", "series": [{"column": "x"}], "sql": "SELECT 1 AS x FROM elsewhere"}]
     set_responses([FauxToolCall(payload=bad, name="propose_dashboard")] * dashboard_draft.MAX_STEPS)
@@ -197,8 +197,8 @@ def test_no_draft_says_why(sheet):
 
 
 def _kept(sheet, env, *, scenario=False, add_row=True):
-    from aughor.dashboards.home import Home
-    from aughor.sheets import dashboard_draft
+    from pramanyx.dashboards.home import Home
+    from pramanyx.sheets import dashboard_draft
     args = proposal(sheet.table, **({"scenario": scenario_args(sheet.table)} if scenario else {}))
     if scenario:
         args["cards"].append(scenario_card(sheet.table))
@@ -211,7 +211,7 @@ def _kept(sheet, env, *, scenario=False, add_row=True):
 
 
 def test_what_is_kept_passes_the_dashboards_own_validator_and_is_written_by_code(sheet, env):
-    from aughor.dashboards import cards, versions
+    from pramanyx.dashboards import cards, versions
     home, out = _kept(sheet, env, scenario=True)
     assert out["version"] == 1 and out["cards"] == 5
     spec = versions.latest(home)["spec"]
@@ -226,9 +226,9 @@ def test_what_is_kept_passes_the_dashboards_own_validator_and_is_written_by_code
 
 
 def test_a_refused_keep_leaves_no_cards_behind(sheet, env, monkeypatch):
-    from aughor.dashboards import cards, versions
-    from aughor.dashboards.home import Home
-    from aughor.sheets import dashboard_draft
+    from pramanyx.dashboards import cards, versions
+    from pramanyx.dashboards.home import Home
+    from pramanyx.sheets import dashboard_draft
     got, _ = read(sheet, proposal(sheet.table))
     home = Home("sheets", "owner-of-nothing", "will-fail")
     with pytest.raises(dashboard_draft.Refused):
@@ -245,12 +245,12 @@ def test_a_refused_keep_leaves_no_cards_behind(sheet, env, monkeypatch):
 
 
 def _run(card_id, **body):
-    from aughor.routers.cards import CardRunValues, run_card_route
+    from pramanyx.routers.cards import CardRunValues, run_card_route
     return run_card_route(card_id, body=CardRunValues(**body) if body else None)
 
 
 def test_a_readers_filter_narrows_a_card_that_never_wrote_it(sheet, env):
-    from aughor.dashboards import cards
+    from pramanyx.dashboards import cards
     home, _ = _kept(sheet, env)
     card = next(c for c in cards.cards_of(home) if c.title == "Kept")
     assert _run(card.id)["value"] == 120.0
@@ -262,7 +262,7 @@ def test_a_readers_filter_narrows_a_card_that_never_wrote_it(sheet, env):
 
 
 def test_a_filter_value_is_bound_never_pasted_in(sheet, env):
-    from aughor.dashboards import cards
+    from pramanyx.dashboards import cards
     home, _ = _kept(sheet, env)
     card = next(c for c in cards.cards_of(home) if c.title == "Kept")
     hostile = [{"table": sheet.table, "column": "channel", "values": ["x') OR 1=1 --"]}]
@@ -271,8 +271,8 @@ def test_a_filter_value_is_bound_never_pasted_in(sheet, env):
 
 def test_a_cards_period_is_the_whole_file(sheet, env):
     """A Briefing's "last month" is no question of a file: a card made from one is never cut to it."""
-    from aughor.dashboards import cards
-    from aughor.routers.cards import run_card_route
+    from pramanyx.dashboards import cards
+    from pramanyx.routers.cards import run_card_route
     home, _ = _kept(sheet, env)
     card = next(c for c in cards.cards_of(home) if c.title == "Kept")
     got = run_card_route(card.id, preset="previous_month")
@@ -280,8 +280,8 @@ def test_a_cards_period_is_the_whole_file(sheet, env):
 
 
 def test_a_row_added_to_the_sheet_moves_the_card(sheet, env):
-    from aughor.dashboards import cards
-    from aughor.sheets import service
+    from pramanyx.dashboards import cards
+    from pramanyx.sheets import service
     home, _ = _kept(sheet, env)
     card = next(c for c in cards.cards_of(home) if c.title == "Kept")
     service.add_row(sheet, {"order_id": "8", "ordered_on": "2026-09-30", "status": "Complete", "channel": "Search", "sale_price": "100"}, by="user:ana")
@@ -289,7 +289,7 @@ def test_a_row_added_to_the_sheet_moves_the_card(sheet, env):
 
 
 def test_a_scenario_card_reads_its_value_bound(sheet, env):
-    from aughor.dashboards import cards
+    from pramanyx.dashboards import cards
     home, _ = _kept(sheet, env, scenario=True)
     card = next(c for c in cards.cards_of(home) if c.title == "Kept, in this scenario")
     assert _run(card.id, values={"return_cut": {"kind": "number", "value": 0.5}})["value"] == 130.0

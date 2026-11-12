@@ -15,8 +15,8 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from aughor.packs.loader import PROSE_FIELD, load_pack
-from aughor.skills.ingest import (
+from pramanyx.packs.loader import PROSE_FIELD, load_pack
+from pramanyx.skills.ingest import (
     PROSE_FILE,
     PackPlan,
     SkillIngestError,
@@ -227,7 +227,7 @@ def test_a_declared_category_becomes_a_domain(tmp_path):
     Measured on google/skills 2026-08-24: those skills carry their subject in
     `metadata.category`, not `domains` — so every one of them imported with `domains: []`,
     which is a pack that can never be routed to."""
-    from aughor.skills.ingest import plan_pack
+    from pramanyx.skills.ingest import plan_pack
 
     plan = plan_pack("---\nname: bigquery-basics\nmetadata:\n  category: BigDataAndAnalytics\n"
                      "description: Runs SQL.\n---\n\nBody.\n")
@@ -237,7 +237,7 @@ def test_a_declared_category_becomes_a_domain(tmp_path):
 
 
 def test_an_explicit_domain_outranks_the_category(tmp_path):
-    from aughor.skills.ingest import plan_pack
+    from pramanyx.skills.ingest import plan_pack
 
     plan = plan_pack("---\nname: s\ndomains: [retention]\nmetadata:\n  category: Databases\n"
                      "description: d\n---\n\nBody.\n")
@@ -252,7 +252,7 @@ def test_import_records_where_the_skill_CAME_from(tmp_path, monkeypatch):
     import yaml
     from click.testing import CliRunner
 
-    from aughor.cli import cli
+    from pramanyx.cli import cli
 
     src = tmp_path / "checkout" / "skills" / "cloud" / "bigquery-basics"
     src.mkdir(parents=True)
@@ -276,7 +276,7 @@ def test_without_an_upstream_url_the_local_path_is_kept(tmp_path):
     import yaml
     from click.testing import CliRunner
 
-    from aughor.cli import cli
+    from pramanyx.cli import cli
 
     src = tmp_path / "s"
     src.mkdir()

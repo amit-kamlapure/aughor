@@ -5,8 +5,8 @@ not when bookkeeping (success rate / status) does. A finding that cited version 
 resolves to exactly what version N said."""
 from __future__ import annotations
 
-from aughor.playbook.models import PlaybookEntry
-from aughor.playbook.store import (
+from pramanyx.playbook.models import PlaybookEntry
+from pramanyx.playbook.store import (
     save_entry, get_entry, compute_receipt, list_versions, get_version, emit_playbook_use,
 )
 

@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from aughor.ontology import entity_uses as U
-from aughor.ontology.models import OntologyGraph
-from aughor.security.audit import AuditLogger
+from pramanyx.ontology import entity_uses as U
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.security.audit import AuditLogger
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 DAY = 86_400
@@ -30,7 +30,7 @@ def graph():
 
 @pytest.fixture
 def ledger(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     fresh = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: fresh))
     return fresh
@@ -38,7 +38,7 @@ def ledger(tmp_path, monkeypatch):
 
 @pytest.fixture
 def router(graph, monkeypatch):
-    from aughor.routers import objects as R
+    from pramanyx.routers import objects as R
     monkeypatch.setattr(R, "_served_graph", lambda conn, schema: graph)
     monkeypatch.setattr(R, "_accepted_edits", lambda conn: [])
     return R
@@ -79,7 +79,7 @@ def test_an_unreadable_session_log_leaves_the_readers_unsaid_never_zero(ledger, 
 
 
 def test_entity_tables_read_off_the_entity_are_the_tables_its_detail_lists(graph):
-    from aughor.semantic.object_types import describe_object_type
+    from pramanyx.semantic.object_types import describe_object_type
     for eid, entity in graph.entities.items():
         assert U.entity_tables(entity) == U.bound_tables(describe_object_type(graph, entity)), eid
 
@@ -107,8 +107,8 @@ def test_every_entity_ranked_least_read_first_a_shared_table_said_and_the_uncoun
 
 
 def test_the_entity_door_carries_the_window_and_what_it_shares(router, graph, ledger, monkeypatch):
-    monkeypatch.setattr("aughor.ontology.dependents.dependents_of", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.dashboards.pieces.dashboards_reading", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.ontology.dependents.dependents_of", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.dashboards.pieces.dashboards_reading", lambda *a, **k: [])
     conn = "usage-door-t"
     graph.entities["Review"].backing.table = "customers"
     AuditLogger.log(connection_id=conn, sql="SELECT * FROM customers")

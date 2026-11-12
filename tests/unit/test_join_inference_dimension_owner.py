@@ -19,8 +19,8 @@ joins were all fact-to-fact and none reached `users.id` or `products.id`.
    users↔events on postal_code hid ``events.user_id → users.id``.
 """
 
-from aughor.db.schema_render import fk_root
-from aughor.tools.schema import _compute_join_map
+from pramanyx.db.schema_render import fk_root
+from pramanyx.tools.schema import _compute_join_map
 
 # theLook's shape, reduced. `users` and `products` key on bare `id`.
 THELOOK = {

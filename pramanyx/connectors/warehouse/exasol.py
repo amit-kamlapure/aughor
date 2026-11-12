@@ -1,0 +1,166 @@
+"""Exasol connector for Pramanyx.
+
+DSN format:  exa://host:8563
+Meta fields: {"user": "...", "password": "...", "schema_name": "..."}
+
+Optional dep:
+  uv pip install 'pyexasol>=0.25.0'
+"""
+from __future__ import annotations
+
+import time
+
+from pramanyx.connectors.base import Connector
+from pramanyx.db.signing import sign
+from pramanyx.db.doors import through_door
+from pramanyx.db.errors import classify_error
+from pramanyx.control_plane.contracts.execution import QueryResult
+
+MAX_ROWS = 2000
+
+
+class ExasolConnection(Connector):
+    connector_category = "warehouse"
+    # DE-3a (ROADMAP §3.51) — Exasol declares itself. It declared `postgres` ("the closest transpile fit") since
+    # sqlglot had no Exasol dialect; sqlglot 30 ships one, and under the borrowed name the writer rules told the model
+    # Postgres's syntax and to AVOID QUALIFY, which Exasol supports, while the parse step read Exasol SQL as Postgres.
+    dialect = "exasol"
+    writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — Exasol has no session-level read-only; the door's checks are the read-only boundary, said on the doors.
+    engine_read_only = False
+
+    def __init__(
+        self,
+        dsn: str,
+        schema_name: str | None = None,
+        connection_id: str = "",
+        meta: dict | None = None,
+    ) -> None:
+        self.dep_check("pyexasol", "pyexasol>=0.25.0")
+        import pyexasol
+
+        meta = meta or {}
+        self._connection_id = connection_id
+        self._schema_name = schema_name or meta.get("schema_name") or ""
+
+        dsn_host = dsn.removeprefix("exa://").strip("/") or meta.get("host", "")
+
+        self._conn = pyexasol.connect(
+            dsn=dsn_host,
+            user=meta.get("user", ""),
+            password=meta.get("password", ""),
+            schema=self._schema_name or "",
+            connection_timeout=30,
+        )
+
+    #: NO `param_style`, so `execute_with_params` keeps the base class's visible refusal.
+    #: This is the one connector here that is deliberately left unbound: `pyexasol` takes
+    #: its `query_params` by FORMATTING them into the statement text rather than sending
+    #: them as bind values, which is the one thing this feature must never do — and the
+    #: package is not installed anywhere here, so the claim cannot be checked against the
+    #: driver either. Refusing visibly beats a rendering nobody has run. Note that keying
+    #: the placeholder map on DIALECT would bind silently and wrongly: a dialect says what
+    #: grammar the engine reads, and pyexasol's placeholders are the driver's own affair (it
+    #: declared `postgres` until DE-3a, and spoke no Postgres placeholder syntax either).
+    #: That counter-example is why `param_style` exists.
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): pyexasol keeps `is_closed` on the connection; no statement."""
+        try:
+            return self._conn is not None and not bool(getattr(self._conn, "is_closed", False))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _stage_type(column: object) -> str:
+        """pyexasol describes a column as a dict of its `type`, `precision` and `scale`."""
+        from pramanyx.connectors.base import stage_type
+        if isinstance(column, dict):
+            return stage_type(column.get("type"), column.get("precision"), column.get("scale"))
+        return stage_type(column)
+
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)), internal=internal)
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        from pramanyx.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post
+
+        sql = sql.strip().rstrip(";")
+        if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
+            return blocked
+        sql, _rp = enforce_row_policy(self, hypothesis_id, sql)   # RBAC row-policy (Rec 7); no-op off
+        if _rp is not None:
+            return _rp
+
+        _t0 = time.monotonic()
+        try:
+            stmt = self._conn.execute(sign(sql))
+            meta = stmt.columns()
+            columns = list(meta.keys())
+            # one row past the cap: a read the cap cut counts more rows than it keeps
+            rows_raw = stmt.fetchmany(max_rows + 1)
+            offer_typed_rows([list(row) for row in rows_raw[:max_rows]], truncated=len(rows_raw) > max_rows,
+                             types=[self._stage_type(column) for column in meta.values()])
+            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw[:max_rows]]
+            result = QueryResult(
+                hypothesis_id=hypothesis_id, sql=sql,
+                columns=columns, rows=rows, row_count=len(rows_raw),
+            )
+        except Exception as e:
+            result = QueryResult(
+                hypothesis_id=hypothesis_id, sql=sql,
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
+            )
+        elapsed_ms = (time.monotonic() - _t0) * 1000
+        return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
+
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        try:
+            # Exasol has no cheap EXPLAIN; prepare via a zero-row wrapper.
+            self._conn.execute(f"SELECT * FROM ({sql.rstrip(';')}) AS _dry WHERE 1=0")
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def get_schema(self) -> str:
+        lines: list[str] = []
+        try:
+            stmt = self._conn.execute(
+                """
+                SELECT column_table, column_name, column_type
+                FROM EXA_ALL_COLUMNS
+                WHERE column_schema = :schema
+                ORDER BY column_table, column_ordinal_position
+                """,
+                {"schema": (self._schema_name or "").upper()},
+            )
+            rows = stmt.fetchall()
+            from collections import defaultdict
+            table_cols: dict[str, list[str]] = defaultdict(list)
+            for tname, col, dtype in rows:
+                table_cols[tname].append(f"{col} {dtype}")
+            for tname, cols in table_cols.items():
+                lines.append(f"TABLE: {tname} [{', '.join(cols)}]")
+        except Exception as e:
+            lines.append(f"# Schema introspection failed: {e}")
+        return "\n".join(lines)
+
+    def test(self) -> tuple[bool, str]:
+        try:
+            stmt = self._conn.execute("SELECT PARAM_VALUE FROM EXA_METADATA WHERE PARAM_NAME = 'databaseProductVersion'")
+            row = stmt.fetchone()
+            version = row[0] if row else "?"
+            return True, f"Connected to Exasol {version}"
+        except Exception as e:
+            return False, str(e)
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass

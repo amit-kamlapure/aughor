@@ -46,7 +46,7 @@ const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
 // ── Display metadata per connector ────────────────────────────────────────────
 
-// DE-3b: generated from each engine's one declaration (`aughor/connectors/declarations.py`,
+// DE-3b: generated from each engine's one declaration (`pramanyx/connectors/declarations.py`,
 // via `lib/connectors.gen.ts`), so a new engine is on this panel the day it is declared.
 const META: Record<string, { label: string; blurb: string; badge?: string }> = Object.fromEntries(
   Object.values(CONNECTORS).map(c => [c.type, { label: c.label, blurb: c.blurb, badge: c.badge ?? undefined }]),

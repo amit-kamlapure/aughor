@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.judgment.calibration import NO_LABEL, calibrate
+from pramanyx.judgment.calibration import NO_LABEL, calibrate
 
 
 def _row(**kw):

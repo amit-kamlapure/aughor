@@ -1,4 +1,4 @@
-# Spider 2.0 — Aughor: What We Did, What Worked, What Remains (for second opinion)
+# Spider 2.0 — Pramanyx: What We Did, What Worked, What Remains (for second opinion)
 
 *Date: 2026-06-28. Self-contained brief for an external reviewer. Companion to the deeper engineering
 notes in `docs/SPIDER2_REATTEMPT_2026-06-28.md`. All numbers below are **measured**, not estimated,
@@ -7,14 +7,14 @@ unless explicitly flagged.*
 > **STATUS (2026-06-29, post-consolidation):** the offline benchmark arc is **concluded**, and the
 > eval *harness* has been removed — see **§14**. References below to `evals/spider2_lite.py`, the
 > interactive harness, B6 probe-repair, etc. are **historical**; what survives in the product is the
-> set of deterministic trust-guards (still wired + tested in `aughor/`). §14 is the authoritative
+> set of deterministic trust-guards (still wired + tested in `pramanyx/`). §14 is the authoritative
 > current state.
 
 ---
 
 ## TL;DR
 
-- **Aughor is a grounded NL2SQL + analytics product**, not a purpose-built benchmark agent. We
+- **Pramanyx is a grounded NL2SQL + analytics product**, not a purpose-built benchmark agent. We
   re-attempted Spider 2.0 to (a) get an honest current number and (b) extract product-relevant wins.
 - **Only the offline subset is runnable here.** Spider2-Snow (100% Snowflake) and ~75% of
   Spider2-Lite (BigQuery/Snowflake) cannot be executed because we have **no working cloud
@@ -184,7 +184,7 @@ the cloud tracks (credentials), not more machinery on this slice.
 
 These are product-relevant and serve the cloud tracks once unblocked (committed in `e614acf`):
 
-- **`aughor/sql/closed_loop.py`** — backend-agnostic execute→observe→repair loop + evaluator-faithful
+- **`pramanyx/sql/closed_loop.py`** — backend-agnostic execute→observe→repair loop + evaluator-faithful
   `rows_to_csv` (real NULL→empty cell, cursor column order, no row cap). Fixes the output-contract
   gaps (`"NULL"` stringification, `MAX_ROWS=2000` truncation) that would zero a correct query.
 - **Dialect-aware repair** (`writer._make_diagnosis`) — DuckDB-only function advice
@@ -299,7 +299,7 @@ weaker models or on the harder cloud distribution.
 | 964810c + 182a2a5 | reliability-banding measurement (evals/reliability.py) + harness --holdout reporting |
 
 ### B6 (execution-grounded probe-and-repair) — built, validated, **NOT WIRED** (correct call)
-`aughor/sql/probe_repair.py` (c68fbc2) + validation harness (4a42b90). Reliability-banded on 79
+`pramanyx/sql/probe_repair.py` (c68fbc2) + validation harness (4a42b90). Reliability-banded on 79
 instances (all 59 failing + 20 passing controls, 2 stable reps): **+3 reliable fixes, 0 regressions
 (FP-gate perfect), McNemar p=0.25 — not significant.** Per the pre-registered gate (net>0 AND p<0.05)
 → unwired. Effect is genuinely ~3/59 failures (more running can't reach significance on this data).
@@ -335,13 +335,13 @@ The offline, ungated frontier is fully built. The next real levers are GATED:
 
 This session studied six papers for **product** improvement (not benchmark hacks) and shipped two
 gated capabilities. The throughline of all six: *the hard part of NL2SQL is understanding the
-database*, solved by **automatic, grounded metadata** — which is Aughor's own thesis. Three of the
-papers' pillars were found **already built in Aughor** (independent convergence = external
+database*, solved by **automatic, grounded metadata** — which is Pramanyx's own thesis. Three of the
+papers' pillars were found **already built in Pramanyx** (independent convergence = external
 validation), one **reframes our negative results**, and the rest point at the next builds.
 
 ### 13.1 The papers, mapped
 
-| Paper | Headline number | Transferable mechanism | Aughor verdict |
+| Paper | Headline number | Transferable mechanism | Pramanyx verdict |
 |---|---|---|---|
 | **AT&T — Automatic Metadata Extraction** (#1 BIRD) | auto-profiling **61.2 > SME 59.6**; ~25% of joins undocumented | profiling→LLM descriptions, **query-log mining**, SQL→text | profiling/descriptions/literal-binding **already built**; query-log mining = the gap |
 | **CHESS** (ICML 2025) | 71.10 BIRD, **83% fewer LLM calls** | **LSH over cell values** (5min→5s); schema selector; NL unit-test selection | value-LSH = the **filter-binding ceiling lift** (shipped this session) |
@@ -358,7 +358,7 @@ corrected gold shifted execution accuracy **−3% to +31%** and rankings by up t
 (CHESS 62%→81%, 4th→1st; 11 of its 12 "wrong" answers were actually right). Two direct hits:
 
 - **The #1 error pattern (E2, ~56%) is *missing `DISTINCT` over a fan-out join* — row inflation —
-  which is exactly what Aughor's `grain_guard` deterministically detects.** The single most common
+  which is exactly what Pramanyx's `grain_guard` deterministically detects.** The single most common
   bug in these benchmarks is the one we built a guard for; in production that guard would flag the
   *human analyst's* error. Strong validation of the deterministic-guard lever.
 - **It weakens our own "machinery doesn't help strong models" conclusion.** Faithful-EK scored
@@ -371,15 +371,15 @@ corrected gold shifted execution accuracy **−3% to +31%** and rankings by up t
 
 | Commit | Capability | Source | Gate |
 |---|---|---|---|
-| `bcba17a` | **query-log miner** (`aughor/sql/query_log_miner.py`) — join paths / value domains / business formulas from real query history; wired into `build_schema_context` (opt-in `AUGHOR_QUERY_LOG_MINING=1`); runs on Aughor's own logs now | AT&T | built·wired·tested·leveraged |
-| `ac40821` | **CHESS-style value index** (`aughor/sql/value_index.py`) → high-cardinality filter-literal binding in `join_guard` (>50-distinct columns the old path skipped); 3 safety gates (absent-probe + 0.82 cutoff + dry-run); positive predicates only | CHESS | built·wired·tested·leveraged |
+| `bcba17a` | **query-log miner** (`pramanyx/sql/query_log_miner.py`) — join paths / value domains / business formulas from real query history; wired into `build_schema_context` (opt-in `PRAMANYX_QUERY_LOG_MINING=1`); runs on Pramanyx's own logs now | AT&T | built·wired·tested·leveraged |
+| `ac40821` | **CHESS-style value index** (`pramanyx/sql/value_index.py`) → high-cardinality filter-literal binding in `join_guard` (>50-distinct columns the old path skipped); 3 safety gates (absent-probe + 0.82 cutoff + dry-run); positive predicates only | CHESS | built·wired·tested·leveraged |
 
 Both are **deterministic, execution-grounded width wins** — the lever class that held up on a strong
 model (§6), applied to real customer warehouses. 15 new tests; suite 1941 green; zero ratchet debt.
 
 ### 13.4 Next-build queue (gated, unchanged priority order)
 
-1. **CIDR E1–E4 result-trust checks** — ✅ **E1 SHIPPED** (`aughor/sql/trust_checks.py`, commit
+1. **CIDR E1–E4 result-trust checks** — ✅ **E1 SHIPPED** (`pramanyx/sql/trust_checks.py`, commit
    `2135ce0`): deterministic AST critiques for the function-semantics footguns (timestamp/date-literal
    boundary, lexicographic order of numeric text, text-vs-numeric compare), wired into
    `/query/validate` as `trust_findings`. E2/E3/E4 already covered by grain_guard / join_guard /
@@ -405,7 +405,7 @@ guards from *tested* into *leveraged on the real path*:
 | **CIDR-E1 trust** | 3/135 | all lexicographic-order over numeric-looking text (`year`, `FacRank`, `rating`) |
 | **filter value-domain** | 3/135 | real literal misses: `'United States'→'United States of America'`, `'retired out'→'retired hurt'` |
 
-This **corroborates CIDR-2026 on Aughor's own output**: fan-out (E2) is by far the dominant detectable
+This **corroborates CIDR-2026 on Pramanyx's own output**: fan-out (E2) is by far the dominant detectable
 defect (20.7% fire, a 92× over-count in the worst case). The filter examples are exactly the silent-
 zero bug the high-cardinality value-binding now fixes. Confirms the deterministic-guard lever is the
 right one — measured, not asserted.
@@ -421,10 +421,10 @@ removed** and only the durable product value kept.
 
 **Removed (disposable measurement scaffolding):** `evals/spider2_lite.py`, `evals/run_golden`'s
 siblings `guard_coverage` / `validate_probe_repair` / `interactive` / `reliability`, `spider2_dev_set`,
-the two harness-only tests, the **B6** module `aughor/sql/probe_repair.py` (unwired; validation harness
+the two harness-only tests, the **B6** module `pramanyx/sql/probe_repair.py` (unwired; validation harness
 gone), and the whole archived **LiveSQLBench** harness + 50 MB of output.
 
-**Survives — the real output, all wired into `aughor/` and test-covered:**
+**Survives — the real output, all wired into `pramanyx/` and test-covered:**
 - `sql/grain_guard.py` (fan-out) and `sql/trust_checks.py` (CIDR-E1) → `/query/validate`
 - `sql/join_guard.py` filter-literal binding + `sql/value_index.py` (CHESS high-cardinality) → `safety.preflight_repair`
 - `sql/query_log_miner.py` → `build_schema_context`

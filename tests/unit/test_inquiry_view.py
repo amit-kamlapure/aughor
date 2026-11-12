@@ -1,5 +1,5 @@
 """The inquiry, as people read it — a decision read from where it arose to what was learned, forwards and backwards, with its loops (the
-decision-framework study §3.1 and §3.3; `aughor/record/inquiry_view.py`).
+decision-framework study §3.1 and §3.3; `pramanyx/record/inquiry_view.py`).
 
 What these hold: a decision taken on an answer reads back to the inquiry it came out of and the claim it stood on,
 its options and dissent, who decided, what it expected, its outcome with the numbers, and the scored expectation;
@@ -13,18 +13,18 @@ import uuid
 
 import pytest
 
-from aughor.kernel.ledger import DEEP_REPORT_KIND
-from aughor.record import byproducts as B
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import inquiry as I
-from aughor.record import inquiry_view as T
-from aughor.record import writers as W
+from pramanyx.kernel.ledger import DEEP_REPORT_KIND
+from pramanyx.record import byproducts as B
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import inquiry as I
+from pramanyx.record import inquiry_view as T
+from pramanyx.record import writers as W
 
 
 @pytest.fixture(autouse=True)
 def _settled(monkeypatch):
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 0)
 
 
@@ -127,7 +127,7 @@ def test_a_stage_with_nothing_in_it_says_so():
 def test_the_route_reads_the_inquiry_and_says_when_nothing_reads():
     from fastapi import HTTPException
 
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     did = B.declare_decision(question="Raise safety stock?", chosen="raise it", decided_by="user:amit")
     assert R.read_record_inquiry_view(did)["decision"] == did
     with pytest.raises(HTTPException) as e:

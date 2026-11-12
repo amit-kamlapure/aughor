@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.integrations import call as callmod
-from aughor.integrations import store
-from aughor.integrations.models import Connection
+from pramanyx.integrations import call as callmod
+from pramanyx.integrations import store
+from pramanyx.integrations.models import Connection
 
 
 @pytest.fixture(autouse=True)
@@ -220,7 +220,7 @@ def test_an_unreadable_write_is_uncertain_and_an_unreadable_read_is_not(
 
 def test_a_usage_cap_blocks_before_the_work_and_says_nothing_was_sent(
         wire, grant, monkeypatch):
-    from aughor.govern import outbound
+    from pramanyx.govern import outbound
 
     class _Decision:
         allowed = False
@@ -236,7 +236,7 @@ def test_the_call_is_countable_as_an_external_call(wire, grant, monkeypatch):
     """A span alone leaves the cap plane blind — it reads session events, not spans.
     That gap is exactly what made VA-9's deliverable 5 read as instrumented while
     nothing could be metered."""
-    import aughor.obs.session_log as slog
+    import pramanyx.obs.session_log as slog
     seen: list[dict] = []
     real_emit = slog.emit
 
@@ -255,7 +255,7 @@ def test_the_call_is_countable_as_an_external_call(wire, grant, monkeypatch):
 
 def test_an_un_allowlisted_write_stops_and_a_read_does_not(wire, grant, slack_grant,
                                                            monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     wire["queue"].append((200, {"messages": []}))
     assert callmod.call_operation(grant.id, "gmail.messages.list").status == "executed", \
         "a read is audited and proceeds — the gate is for what CHANGES something"
@@ -272,9 +272,9 @@ def test_allowlisting_the_write_for_this_grant_lets_it_through(wire, slack_grant
                                                               monkeypatch):
     """Scoped to the GRANT, which is the grain a person reasons about: approving
     'this account may post to Slack' must not approve a second account's."""
-    from aughor.govern import actions as govern
+    from pramanyx.govern import actions as govern
 
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     govern.allow("integration.slack.slack.chat.postMessage", slack_grant.id,
                  actor="tester")
     wire["queue"].append((200, {"ok": True, "ts": "1.2", "channel": "C1"}))
@@ -289,7 +289,7 @@ def test_allowlisting_the_write_for_this_grant_lets_it_through(wire, slack_grant
 
 
 def test_every_call_lands_in_the_audit_ledger_naming_the_grants_owner(wire, monkeypatch):
-    from aughor.govern import actions as govern
+    from pramanyx.govern import actions as govern
 
     store.save_connection(Connection(
         id="ic_owned", provider="google", user_id="u_amit",
@@ -307,7 +307,7 @@ def test_a_human_accept_is_not_asked_to_pass_the_gate_again(wire, slack_grant,
                                                             monkeypatch):
     """The accept IS the approval. Asking again would refuse it forever — the proposal is
     not allowlisted, and nothing about a person saying yes makes it so."""
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     wire["queue"].append((200, {"ok": True, "ts": "1.2", "channel": "C1"}))
     res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
                                  {"channel": "#x", "text": "hi"},
@@ -318,7 +318,7 @@ def test_a_human_accept_is_not_asked_to_pass_the_gate_again(wire, slack_grant,
 def test_approving_bypasses_the_gate_and_nothing_else(wire, monkeypatch):
     """An approval is permission, not a promise that the world stood still: a proposal can
     sit for days and the account behind it can be revoked in the meantime."""
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     store.save_connection(Connection(id="ic_dead2", provider="slack", scopes="chat:write",
                                      status="revoked"))
     res = callmod.call_operation("ic_dead2", "slack.chat.postMessage",

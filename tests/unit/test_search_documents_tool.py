@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import platform_tools as pt
+from pramanyx.agent import platform_tools as pt
 
 
 def _hit(doc_id, text, score=0.5, title=None):
@@ -33,8 +33,8 @@ def index(monkeypatch):
         def _search(query, top_k=4, **_):
             asked["query"], asked["top_k"] = query, top_k
             return list(hits)
-        monkeypatch.setattr("aughor.knowledge.indexer.search_documents", _search)
-        monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids", lambda: allowed)
+        monkeypatch.setattr("pramanyx.knowledge.indexer.search_documents", _search)
+        monkeypatch.setattr("pramanyx.custom_agents.context.agent_doc_ids", lambda: allowed)
         return asked
     return _install
 
@@ -45,7 +45,7 @@ def test_the_conversation_can_reach_documents():
     """The whole defect, in one assertion. Built-and-not-wired is this repo's most repeated
     failure and the knowledge plane had it in its purest form: a retrieval path, an
     endpoint, per-agent scoping — and no way for a chat turn to call any of it."""
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
 
     names = [t.name for t in converse_tools("workspace")]
 
@@ -132,8 +132,8 @@ def test_no_agent_means_the_whole_corpus(index):
 def test_a_failing_index_answers_empty(monkeypatch):
     def _boom(*_a, **_k):
         raise RuntimeError("qdrant is down")
-    monkeypatch.setattr("aughor.knowledge.indexer.search_documents", _boom)
-    monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids", lambda: None)
+    monkeypatch.setattr("pramanyx.knowledge.indexer.search_documents", _boom)
+    monkeypatch.setattr("pramanyx.custom_agents.context.agent_doc_ids", lambda: None)
 
     out = pt.search_documents("c1", {"query": "x"})
 

@@ -6,12 +6,12 @@ module inherits: classification by what the run recorded (never its label), a ca
 cell never reached counts as `unrun` (never as a flip), and a pair whose configs differ
 on more than one axis is not an experiment at all.
 
-Hermetic — `tests/conftest.py` points `AUGHOR_EVALS_DB` at a tempdir.
+Hermetic — `tests/conftest.py` points `PRAMANYX_EVALS_DB` at a tempdir.
 """
 from __future__ import annotations
 
-from aughor.evals import store
-from aughor.evals.compare import compare_runs, find_experiments
+from pramanyx.evals import store
+from pramanyx.evals.compare import compare_runs, find_experiments
 
 
 def _suite_with_cases(n: int = 3) -> tuple[str, list[str]]:

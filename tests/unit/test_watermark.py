@@ -1,5 +1,5 @@
-"""Temporal Tier 3 — incremental re-exploration watermark. See aughor/explorer/watermark.py."""
-import aughor.explorer.watermark as wm
+"""Temporal Tier 3 — incremental re-exploration watermark. See pramanyx/explorer/watermark.py."""
+import pramanyx.explorer.watermark as wm
 
 
 def _isolate(tmp_path, monkeypatch):

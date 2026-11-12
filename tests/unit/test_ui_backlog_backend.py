@@ -5,23 +5,23 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor.kernel.flags import clear_flag, flag_enabled, list_flags, set_flag
-from aughor.routers.query import _PostprocRequest, query_postproc
+from pramanyx.kernel.flags import clear_flag, flag_enabled, list_flags, set_flag
+from pramanyx.routers.query import _PostprocRequest, query_postproc
 
 
 class TestFeatureFlags:
     def test_override_wins_then_env_fallback(self, monkeypatch, synthetic_flags):
-        monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+        monkeypatch.delenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", raising=False)
         clear_flag("_synthetic.default_off")
         assert flag_enabled("_synthetic.default_off") is False   # no override, env unset
         set_flag("_synthetic.default_off", True)
         assert flag_enabled("_synthetic.default_off") is True    # runtime override wins
         set_flag("_synthetic.default_off", False)
-        monkeypatch.setenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", "1")
+        monkeypatch.setenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", "1")
         assert flag_enabled("_synthetic.default_off") is False   # override still wins over env
         clear_flag("_synthetic.default_off")
         assert flag_enabled("_synthetic.default_off") is True    # cleared → env decides
-        monkeypatch.delenv("AUGHOR_SYNTHETIC_DEFAULT_OFF", raising=False)
+        monkeypatch.delenv("PRAMANYX_SYNTHETIC_DEFAULT_OFF", raising=False)
         clear_flag("_synthetic.default_off")
 
     def test_list_flags_shape(self, synthetic_flags):

@@ -12,8 +12,8 @@ import types
 
 import duckdb
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import IntakeOutput
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import IntakeOutput
 from dataclasses import dataclass, field
 
 
@@ -60,7 +60,7 @@ class _ProbeConn:
 
 
 def _on(monkeypatch, metrics=(_GOVERNED,)):
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: list(metrics))
 
 
@@ -124,8 +124,8 @@ def test_no_fire_when_parsed_reading_does_not_run(monkeypatch):
 
 def test_no_fire_when_already_resolved(monkeypatch):
     _on(monkeypatch)
-    from aughor.org.context import current_org_id
-    from aughor.semantic import ambiguity_ledger as L
+    from pramanyx.org.context import current_org_id
+    from pramanyx.semantic import ambiguity_ledger as L
     L.save_resolution(L.AmbiguityResolution(
         connection_id="c_resolved", org_id=current_org_id() or "",
         dim_kind="AmbiIntent", dim_facet="aggregation",
@@ -150,7 +150,7 @@ def test_router_is_transparent_without_a_pending_clarify():
 # ── graph structure ────────────────────────────────────────────────────────────────
 
 def _mem_db():
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     db = DuckDBConnection.__new__(DuckDBConnection)
     db._conn = duckdb.connect(":memory:")
     db._path = None
@@ -159,7 +159,7 @@ def _mem_db():
 
 
 def test_clarify_gate_interrupt_armed_only_when_enabled():
-    from aughor.agent.graph import build_graph_generic
+    from pramanyx.agent.graph import build_graph_generic
     db = _mem_db()
     on = build_graph_generic(db, clarify_gate=True)
     off = build_graph_generic(db, clarify_gate=False)
@@ -191,7 +191,7 @@ def _pending_state():
 
 
 def test_resume_binds_chosen_reading_and_clears_pending():
-    from aughor.routers import investigations as R
+    from pramanyx.routers import investigations as R
     patch = R._apply_clarify_choice(_pending_state(), "Governed: refund_rate", "c_bind")
     assert patch["_clarify_pending"] is None
     assert patch["_ada_intake"]["metric_sql"] == _GOVERNED.sql
@@ -199,8 +199,8 @@ def test_resume_binds_chosen_reading_and_clears_pending():
 
 
 def test_resume_crystallizes_user_choice():
-    from aughor.routers import investigations as R
-    from aughor.semantic import ambiguity_ledger as L
+    from pramanyx.routers import investigations as R
+    from pramanyx.semantic import ambiguity_ledger as L
     R._apply_clarify_choice(_pending_state(), "As I read the question", "c_cryst")
     res = L.list_resolutions("c_cryst")
     assert len(res) == 1
@@ -210,13 +210,13 @@ def test_resume_crystallizes_user_choice():
 
 
 def test_resume_defaults_to_first_reading_when_choice_unmatched():
-    from aughor.routers import investigations as R
+    from pramanyx.routers import investigations as R
     patch = R._apply_clarify_choice(_pending_state(), "nonsense", "c_default")
     assert patch["_ada_intake"]["metric_sql"] == _GOVERNED.sql   # governed is first → the safe default
 
 
 def test_resume_noop_without_pending_clarify():
-    from aughor.routers import investigations as R
+    from pramanyx.routers import investigations as R
     assert R._apply_clarify_choice({"_ada_intake": {}}, "x", "c_none") == {}
 
 
@@ -224,8 +224,8 @@ def test_resume_noop_without_pending_clarify():
 
 def test_burndown_hard_binds_the_resolved_reading(monkeypatch):
     # After a prior clarify resolved to the parsed reading, a later run must BIND it and skip the ask.
-    from aughor.org.context import current_org_id
-    from aughor.semantic import ambiguity_ledger as L
+    from pramanyx.org.context import current_org_id
+    from pramanyx.semantic import ambiguity_ledger as L
     parsed = "COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100"
     L.save_resolution(L.AmbiguityResolution(
         connection_id="c_burndown", org_id=current_org_id() or "",
@@ -244,8 +244,8 @@ def test_a_reading_the_intake_pinned_itself_is_never_bound_as_a_choice(monkeypat
     """theLook, 2026-10-02: the one-metric intake of 09-29 pinned units_sold's COUNT(id) to "total revenue and units
     sold" (source probe), and every run after bound COUNT(id) to "total revenue" as "your previously-chosen reading".
     A reviewer's verdict binds, and says it is a reviewer's."""
-    from aughor.org.context import current_org_id
-    from aughor.semantic import ambiguity_ledger as L
+    from pramanyx.org.context import current_org_id
+    from pramanyx.semantic import ambiguity_ledger as L
     parsed = "COUNT(DISTINCT refund_id) / COUNT(DISTINCT order_id) * 100"
     for conn_id, source in (("c_probe_only", "probe"), ("c_reviewed", "verdict")):
         L.save_resolution(L.AmbiguityResolution(
@@ -320,10 +320,10 @@ def test_an_unmatched_choice_binds_the_default_but_records_nothing(monkeypatch):
     system a reading nobody picked. The run still binds the governed default so it
     can finish; that is our decision, not the user's answer.
     """
-    from aughor.routers import investigations as I
+    from pramanyx.routers import investigations as I
 
     wrote = []
-    monkeypatch.setattr("aughor.semantic.ambiguity_ledger.crystallize_user_choice",
+    monkeypatch.setattr("pramanyx.semantic.ambiguity_ledger.crystallize_user_choice",
                         lambda *a, **k: wrote.append(a))
 
     merged = {"_clarify_pending": {"subject": "refund rate", "readings": [
@@ -338,10 +338,10 @@ def test_an_unmatched_choice_binds_the_default_but_records_nothing(monkeypatch):
 
 def test_a_matched_choice_is_still_crystallized(monkeypatch):
     """The real answer is still remembered — that is the whole point of the ledger."""
-    from aughor.routers import investigations as I
+    from pramanyx.routers import investigations as I
 
     wrote = []
-    monkeypatch.setattr("aughor.semantic.ambiguity_ledger.crystallize_user_choice",
+    monkeypatch.setattr("pramanyx.semantic.ambiguity_ledger.crystallize_user_choice",
                         lambda *a, **k: wrote.append(a))
 
     merged = {"_clarify_pending": {"subject": "refund rate", "readings": [
@@ -359,7 +359,7 @@ def test_agui_forwards_allow_clarify():
     not, leaving an AG-UI consumer unable to decline a pause it cannot answer."""
     from ag_ui.core import RunAgentInput
 
-    from aughor.routers.agui import ask_request_from
+    from pramanyx.routers.agui import ask_request_from
 
     def _build(props):
         return ask_request_from(RunAgentInput(

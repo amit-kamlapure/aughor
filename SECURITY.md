@@ -31,12 +31,12 @@ branch receives fixes. There is no long-term-support branch, and no backports.
 Pramanyx connects a large language model to a SQL warehouse. That shape carries
 inherent risk. The following are **in scope** and worth reporting:
 
-- Bypassing the read-only SQL gate (`aughor/sql/readonly.py`, `aughor/sql/executor.py`)
+- Bypassing the read-only SQL gate (`pramanyx/sql/readonly.py`, `pramanyx/sql/executor.py`)
   so that a generated query can write, drop, or otherwise mutate data.
 - Escaping the per-schema scoping so a query reads tables it was not granted.
 - Bypassing the RBAC row policy or the licensing capability gate.
 - Extracting stored connection credentials. DSNs and connector secrets are
-  encrypted at rest with Fernet (`aughor/db/registry.py`); the key file is
+  encrypted at rest with Fernet (`pramanyx/db/registry.py`); the key file is
   written `0o600`. Anything that recovers plaintext without the key is a finding.
 - Prompt injection through *data* — a value inside a warehouse row that causes
   the agent to exfiltrate data or execute unintended SQL.
@@ -45,12 +45,12 @@ inherent risk. The following are **in scope** and worth reporting:
 
 ## Out of scope
 
-- **The API is unauthenticated by default.** `AUGHOR_API_KEY` is unset out of
+- **The API is unauthenticated by default.** `PRAMANYX_API_KEY` is unset out of
   the box, because Pramanyx is designed as a local single-user tool bound to
   `localhost`. Reporting "the API has no auth" is not a vulnerability — but
   *bypassing the key when one is set* is.
 - CORS is restricted to `http://localhost:3000,http://localhost:3001` by default
-  and is configurable via `AUGHOR_CORS_ORIGINS`. Widening it yourself and then
+  and is configurable via `PRAMANYX_CORS_ORIGINS`. Widening it yourself and then
   reporting it is not a finding.
 - Vulnerabilities in third-party dependencies that Pramanyx does not reach. Report
   those upstream. If you can show a reachable path through Pramanyx, that *is* in
@@ -64,7 +64,7 @@ inherent risk. The following are **in scope** and worth reporting:
 Pramanyx's defaults assume a trusted, single-user, local environment. Before
 exposing it to a network:
 
-- Set `AUGHOR_API_KEY` to a strong random value. Every request must then carry
+- Set `PRAMANYX_API_KEY` to a strong random value. Every request must then carry
   it as `X-Api-Key` (`/health`, `/docs`, `/redoc`, and `/openapi.json` stay open).
 - **`GET /slack-bots/runtime` opens only to the deployment's own credentials.** It is the
   one route that returns raw Slack `xoxb-`/`xapp-` tokens (a socket cannot be opened with
@@ -73,16 +73,16 @@ exposing it to a network:
   the supervisor is one process for the whole deployment. Its RBAC entry alone is not
   enough. You do **not** have to lock the whole API to open it — generate a scoped key in
   **Integrations → Slack → Supervisor key** and give it to the bot supervisor as
-  `AUGHOR_RUNTIME_KEY`. An org-wide `AUGHOR_API_KEY` satisfies it too. Nothing else is
+  `PRAMANYX_RUNTIME_KEY`. An org-wide `PRAMANYX_API_KEY` satisfies it too. Nothing else is
   affected: automations posting to Slack read the bot from the store server-side and
   never touch that route.
-- Set `AUGHOR_CORS_ORIGINS` to the exact origins you serve. A browser sign-in needs this: the session
+- Set `PRAMANYX_CORS_ORIGINS` to the exact origins you serve. A browser sign-in needs this: the session
   cookie rides only to named origins, and a wildcard keeps the API cookie-less (it says so at boot).
 - Terminate TLS in front of the app; Pramanyx speaks plain HTTP.
-- **Requiring identity needs something that can verify it.** With `AUGHOR_REQUIRE_IDENTITY=1`
-  and no `AUGHOR_OIDC_ISSUER`, the API refuses every request but `/health` and `/auth/config`
-  (which say why) — before 2026-11-05 it trusted whatever `X-Aughor-Org` a client sent, and
+- **Requiring identity needs something that can verify it.** With `PRAMANYX_REQUIRE_IDENTITY=1`
+  and no `PRAMANYX_OIDC_ISSUER`, the API refuses every request but `/health` and `/auth/config`
+  (which say why) — before 2026-11-05 it trusted whatever `X-Pramanyx-Org` a client sent, and
   the first caller to name an organisation became its owner. The one deployment where those
   headers are a credential is an authenticating proxy that sets them and strips them from
-  clients; declare that with `AUGHOR_IDENTITY_FROM_PROXY=1`, and nothing else.
+  clients; declare that with `PRAMANYX_IDENTITY_FROM_PROXY=1`, and nothing else.
 - Give the warehouse credential the narrowest read-only grant that works.

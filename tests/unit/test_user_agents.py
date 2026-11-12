@@ -1,7 +1,7 @@
 """
 User-defined agents (flag `agents.user_defined`) — slice 1.
 
-Covers: the store CRUD (against the conftest-redirected AUGHOR_AGENTS_DB), the
+Covers: the store CRUD (against the conftest-redirected PRAMANYX_AGENTS_DB), the
 contextvar seams (prompt brief + document scope, incl. the fail-closed
 no-documents semantics), the indexer's agent-scoped retrieval, the /agents/custom
 CRUD routes (404 when the flag is off), and /ask's agent resolution rules.
@@ -13,10 +13,10 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from aughor.custom_agents import (
+from pramanyx.custom_agents import (
     create_agent, delete_agent, get_agent, list_agents, update_agent,
 )
-from aughor.custom_agents.context import (
+from pramanyx.custom_agents.context import (
     activate_agent, agent_brief_block, agent_doc_ids, current_agent, release_agent,
 )
 
@@ -29,7 +29,7 @@ def _clean_store():
 
 
 def _flag(monkeypatch, value: bool):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(
         flags, "flag_enabled",
         lambda name: value if name == "agents.user_defined" else False,
@@ -78,7 +78,7 @@ def test_tool_grants_survive_the_store():
 
     # Grants are governing configuration: the revision machinery must hand them back
     # on a restore, or "put it back how it was" silently keeps the new powers.
-    from aughor.custom_agents.revisions import list_revisions, revision_config
+    from pramanyx.custom_agents.revisions import list_revisions, revision_config
     revs = list_revisions(a.id)
     assert len(revs) >= 2
     oldest = revision_config(a.id, revs[-1]["version"])
@@ -130,7 +130,7 @@ def test_doc_ids_semantics():
 # ── Indexer scoping ───────────────────────────────────────────────────────────
 
 def test_external_context_scoped_to_agent_docs(monkeypatch):
-    import aughor.knowledge.indexer as idx
+    import pramanyx.knowledge.indexer as idx
     hits = [
         {"text": "alpha", "filename": "a.pdf", "title": "A", "doc_id": "d1", "score": 0.9},
         {"text": "beta", "filename": "b.pdf", "title": "B", "doc_id": "d2", "score": 0.8},
@@ -165,7 +165,7 @@ def test_external_context_scoped_to_agent_docs(monkeypatch):
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -208,7 +208,7 @@ def test_route_validation(client, monkeypatch):
                        json={"name": "x", "doc_ids": ["doc-does-not-exist"]}
                        ).status_code == 422
     # A known document passes validation.
-    import aughor.knowledge.indexer as idx
+    import pramanyx.knowledge.indexer as idx
     monkeypatch.setattr(idx, "get_document", lambda d: {"doc_id": d})
     r = client.post("/agents/custom", json={"name": "x", "doc_ids": ["d-ok"]})
     assert r.status_code == 201
@@ -248,8 +248,8 @@ def test_bound_grants_are_checked_against_the_declared_roster(monkeypatch):
 
     from fastapi import HTTPException
 
-    from aughor.routers.agents import _validate_agent_grants
-    import aughor.ontology.store as ost
+    from pramanyx.routers.agents import _validate_agent_grants
+    import pramanyx.ontology.store as ost
     monkeypatch.setattr(ost, "load_latest_ontology", lambda c, s=None: SimpleNamespace(
         kinetic_actions={"refund_orders": object(), "post_note": object()}))
 
@@ -264,12 +264,12 @@ def test_bound_grants_are_checked_against_the_declared_roster(monkeypatch):
 # ── /ask agent resolution ─────────────────────────────────────────────────────
 
 def _ask_req(**over):
-    from aughor.routers.investigations import AskRequest
+    from pramanyx.routers.investigations import AskRequest
     return AskRequest(question="q", **over)
 
 
 def test_resolve_ask_agent_rules(monkeypatch):
-    from aughor.routers.investigations import _resolve_ask_agent
+    from pramanyx.routers.investigations import _resolve_ask_agent
 
     assert _resolve_ask_agent(_ask_req()) is None  # no agent_id → None, flag irrelevant
 
@@ -296,7 +296,7 @@ def test_resolve_ask_agent_rules(monkeypatch):
 
 @pytest.mark.anyio
 async def test_stream_as_agent_activates_and_releases():
-    from aughor.routers.investigations import _stream_as_agent
+    from pramanyx.routers.investigations import _stream_as_agent
     a = create_agent("Ctx Agent", instructions="be brief")
     seen = {}
 
@@ -313,7 +313,7 @@ async def test_stream_as_agent_activates_and_releases():
 # ── Deep-path: state seeding + resume re-activation ──────────────────────────
 
 def test_current_agent_id_for_state_seeding():
-    from aughor.routers.investigations import _current_agent_id
+    from pramanyx.routers.investigations import _current_agent_id
     assert _current_agent_id() == ""
     a = create_agent("Seeded")
     token = activate_agent(a)
@@ -324,13 +324,13 @@ def test_current_agent_id_for_state_seeding():
 
 
 def test_read_checkpoint_values_missing_run_is_empty():
-    from aughor.agent.graph import read_checkpoint_values
+    from pramanyx.agent.graph import read_checkpoint_values
     assert read_checkpoint_values("inv-does-not-exist") == {}
 
 
 def test_persona_for_investigation_rules(monkeypatch):
-    import aughor.agent.graph as graph
-    from aughor.routers.investigations import persona_for_investigation
+    import pramanyx.agent.graph as graph
+    from pramanyx.routers.investigations import persona_for_investigation
 
     a = create_agent("Deep Persona", instructions="deep focus")
     monkeypatch.setattr(graph, "read_checkpoint_values", lambda inv: {"agent_id": a.id})
@@ -362,7 +362,7 @@ def test_store_schema_scope_and_pack_ids_roundtrip():
 
 
 def test_agent_pack_ids_semantics():
-    from aughor.custom_agents.context import agent_pack_ids
+    from pramanyx.custom_agents.context import agent_pack_ids
     assert agent_pack_ids() == []  # no agent → no restriction
     a = create_agent("Packed", pack_ids=["p1", "p2"])
     token = activate_agent(a)
@@ -377,7 +377,7 @@ def test_intake_pool_restricted_to_agent_packs(monkeypatch):
     the pinned-binding deploy gate is untouched (still consulted)."""
     import types
 
-    import aughor.packs.intake as intake
+    import pramanyx.packs.intake as intake
 
     # `partial` is on the manifest of every real Pack; intake filters on it because a
     # prose-only pack cannot inject and would otherwise shadow one that can.
@@ -425,7 +425,7 @@ def test_intake_pool_restricted_to_agent_packs(monkeypatch):
 
 
 def test_apply_agent_bindings_rules():
-    from aughor.routers.investigations import _apply_agent_bindings
+    from pramanyx.routers.investigations import _apply_agent_bindings
 
     bound = create_agent("Bound", connection_id="conn-b", schema_scope="finance")
 
@@ -458,7 +458,7 @@ def test_apply_agent_bindings_rules():
 # ── Slice 5: measured agents (goldens + evaluation) ───────────────────────────
 
 def test_goldens_store_roundtrip():
-    from aughor.custom_agents.store import add_golden, delete_golden, list_goldens
+    from pramanyx.custom_agents.store import add_golden, delete_golden, list_goldens
     a = create_agent("Measured")
     g = add_golden(a.id, "How many orders?", "SELECT COUNT(*) FROM orders")
     assert g["id"].startswith("ag_")
@@ -472,7 +472,7 @@ def test_goldens_store_roundtrip():
 
 
 def test_results_match_semantics():
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     assert results_match([[5]], [[5]])
     assert results_match([[5.0]], [["5"]])            # type-tolerant
     assert results_match([[1], [2]], [[2], [1]])      # order-insensitive
@@ -486,7 +486,7 @@ def test_results_match_tolerates_presentation_rounding_but_not_a_wrong_number():
     # 2026-08-14 Superstore audit: the model wrote ROUND(SUM(profit), 2) and the
     # 6-place comparator called the correct answer wrong. Cents-level rounding is
     # presentation; a wrong aggregate is off by far more.
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     ref = [["Anna Andreadi", 108418.44890000018], ["Chuck Magee", 91522.78000000026]]
     assert results_match(ref, [["Anna Andreadi", 108418.45], ["Chuck Magee", 91522.78]])
     assert results_match(ref, [["Anna Andreadi", "108418.45"], ["Chuck Magee", "91522.78"]])
@@ -497,7 +497,7 @@ def test_results_match_tolerates_presentation_rounding_but_not_a_wrong_number():
 def test_results_match_tolerates_a_dropped_measure_when_the_label_survives():
     # "Which sub-category loses the most money?" → the model answered ['Tables'];
     # the reference carried the amount too. Naming the right entity is not wrong.
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     ref = [["Tables", -17725.4811]]
     assert results_match(ref, [["Tables"]])
     # …but a bare number without its entity, a wrong entity, or an unrelated
@@ -514,7 +514,7 @@ def test_results_match_treats_period_spellings_as_equal():
     # DATE_TRUNC('year') → 2015-01-01 00:00 vs EXTRACT(YEAR) → 2015: same period.
     from datetime import date, datetime
 
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     ref = [[2015, 484247.4981], [2016, 470532.509]]
     assert results_match(ref, [[datetime(2015, 1, 1), 484247.5], [datetime(2016, 1, 1), 470532.51]])
     assert results_match(ref, [[date(2015, 1, 1), 484247.5], [date(2016, 1, 1), 470532.51]])
@@ -530,8 +530,8 @@ def test_evaluate_agent_stamps_result(monkeypatch):
     import duckdb as _duckdb
     import types as _types
 
-    from aughor.custom_agents.quality import evaluate_agent
-    from aughor.custom_agents.store import add_golden
+    from pramanyx.custom_agents.quality import evaluate_agent
+    from pramanyx.custom_agents.store import add_golden
 
     con = _duckdb.connect()
     con.execute("CREATE TABLE orders AS SELECT * FROM (VALUES (1), (2), (3)) t(id)")
@@ -567,8 +567,8 @@ def test_evaluate_agent_stamps_result(monkeypatch):
 def test_evaluate_agent_generation_failure_is_scored(monkeypatch):
     import types as _types
 
-    from aughor.custom_agents.quality import evaluate_agent
-    from aughor.custom_agents.store import add_golden
+    from pramanyx.custom_agents.quality import evaluate_agent
+    from pramanyx.custom_agents.store import add_golden
 
     db = _types.SimpleNamespace(
         execute=lambda qid, sql: _types.SimpleNamespace(rows=[[1]], error=None),
@@ -608,7 +608,7 @@ def test_observability_endpoint_history_and_degradation(client, monkeypatch, tmp
     """Per-agent run history surfaces from the history store; trace_stats is None
     when obs.mlflow is off (history-only — the workspace works without MLflow)."""
     _flag(monkeypatch, True)  # agents.user_defined on; obs.mlflow stays off
-    from aughor.db import history
+    from pramanyx.db import history
     monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
 
     aid = client.post("/agents/custom",
@@ -655,7 +655,7 @@ def test_results_match_reads_iso_strings_as_the_dates_they_are():
     # Observation rows cross the SSE/JSON boundary as strings; the reference is
     # fetched live as objects. A correct DATE_TRUNC('year') answer scored wrong on
     # exactly this (grid 2026-08-15).
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     ref = [[2015, 484247.5], [2016, 470532.51]]
     assert results_match(ref, [["2015-01-01T00:00:00", 484247.5], ["2016-01-01T00:00:00", 470532.51]])
     assert results_match([["2017-06", 10]], [["2017-06-01", 10]])
@@ -664,7 +664,7 @@ def test_results_match_reads_iso_strings_as_the_dates_they_are():
 
 
 def test_results_match_accepts_a_fraction_written_as_a_percent():
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     ref = [["West", 0.11731843575418995], ["Central", 0.033191489361702124]]
     assert results_match(ref, [["West", 1611, 189, 11.73], ["Central", 1175, 39, 3.32]])
     # …but not a hundredfold neighbour of an ordinary amount, and not the wrong rate
@@ -674,7 +674,7 @@ def test_results_match_accepts_a_fraction_written_as_a_percent():
 
 def test_results_match_forgives_cents_rounding_of_a_fraction_too():
     # ROUND(AVG(discount), 2) → 0.16 for 0.1646: presentation, same as for money.
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     ref = [["First Class", 0.16460988], ["Second Class", 0.13889460]]
     assert results_match(ref, [["First Class", 0.16], ["Second Class", 0.14]])
     assert not results_match(ref, [["First Class", 0.17], ["Second Class", 0.14]])

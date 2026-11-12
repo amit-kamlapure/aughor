@@ -5,12 +5,12 @@ only the LAST sub-question — the streaming router's manual dict-merge clobbers
 `subq_answers` channel — so Q1..Q5 were uninspectable AND had no chart (the frontend renders a chart
 per step from each answer's columns/rows). `_explore_subq_event` carries each step's evidence for a
 progress event; `_reduced_subq_answers` re-reads the authoritative reduced state. See
-aughor/routers/investigations.py.
+pramanyx/routers/investigations.py.
 """
 import asyncio
 
-from aughor.agent.state import SubQuestionAnswer
-from aughor.routers.investigations import _explore_subq_event, _reduced_subq_answers
+from pramanyx.agent.state import SubQuestionAnswer
+from pramanyx.routers.investigations import _explore_subq_event, _reduced_subq_answers
 
 
 def _answer(i, nrows):

@@ -8,8 +8,8 @@ must not rebuild when a caller threads the shared block in.
 """
 from __future__ import annotations
 
-import aughor.semantic.data_understanding as du
-import aughor.agent.investigate as inv
+import pramanyx.semantic.data_understanding as du
+import pramanyx.agent.investigate as inv
 
 
 class _DU:

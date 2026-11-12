@@ -9,12 +9,12 @@ from __future__ import annotations
 import threading
 import time
 
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
 
 
 def _reset():
-    # Pacing state moved into the coordinator (aughor/llm/coordination.py) so it can be
+    # Pacing state moved into the coordinator (pramanyx/llm/coordination.py) so it can be
     # shared across instances; dropping the instance re-resolves a clean one.
     C.set_default(None)
 
@@ -22,7 +22,7 @@ def _reset():
 def test_pacing_is_off_by_default(monkeypatch):
     """An interactive answer must not be slowed for a limit it will never approach."""
     _reset()
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)
     start = time.monotonic()
     for _ in range(5):
         P._pace("https://example.test")
@@ -31,7 +31,7 @@ def test_pacing_is_off_by_default(monkeypatch):
 
 def test_calls_are_spaced_when_an_rpm_is_declared(monkeypatch):
     _reset()
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "600")      # 0.1s apart
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "600")      # 0.1s apart
     start = time.monotonic()
     for _ in range(3):
         P._pace("https://example.test")
@@ -42,7 +42,7 @@ def test_calls_are_spaced_when_an_rpm_is_declared(monkeypatch):
 def test_endpoints_are_paced_independently(monkeypatch):
     """A slow free endpoint must not throttle a paid one behind it."""
     _reset()
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "600")
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "600")
     P._pace("https://a.test")
     start = time.monotonic()
     P._pace("https://b.test")                        # different key ⇒ no wait
@@ -53,7 +53,7 @@ def test_concurrent_callers_cannot_both_claim_one_slot(monkeypatch):
     """Two threads that both read 'clear' and then both called would be the burst this
     exists to prevent — the slot is claimed inside the lock."""
     _reset()
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "600")
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "600")
     P._pace("https://example.test")                  # consume the free first slot
 
     done: list[float] = []

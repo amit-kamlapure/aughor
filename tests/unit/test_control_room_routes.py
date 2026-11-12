@@ -1,7 +1,7 @@
 """Wave CR1–CR4 — the control room's read routes are views, and honest ones.
 
 Each test seeds the store the route folds from (the isolated test stores — see
-conftest's AUGHOR_*_DB env) and asserts the response's honesty properties: the
+conftest's PRAMANYX_*_DB env) and asserts the response's honesty properties: the
 empty state names the flag, the kind vocabulary comes from the data, charter
 and persona rows are labelled, the needs-human count equals the sum of its
 sources, and unmetered runs are counted rather than rendered as zero.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()
@@ -151,7 +151,7 @@ def test_fleet_orphaned_restarts_are_not_agent_errors(client, ledger):
 # ── CR4: needs a human ───────────────────────────────────────────────────────────
 
 def test_needs_human_count_equals_the_sum_of_its_sources(client, monkeypatch, tmp_path):
-    from aughor.db import history
+    from pramanyx.db import history
 
     monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
     history.create_investigation("why did margin collapse", "conn-cr4")
@@ -159,7 +159,7 @@ def test_needs_human_count_equals_the_sum_of_its_sources(client, monkeypatch, tm
     inv_id = rows[0]["id"]
     history.pause_investigation(inv_id)
 
-    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from pramanyx.actions.inbox import StagedProposal, stage_proposal
     proposal = stage_proposal(StagedProposal(
         connection_id="conn-cr4", action_id="create_ticket", params={"title": "t"},
         reasoning="margin fell", run_id="run-cr4", call_id="call-cr4"))
@@ -186,7 +186,7 @@ def test_needs_human_count_equals_the_sum_of_its_sources(client, monkeypatch, tm
 
     # Resolving through the native surface removes the row here — one store,
     # no copies (the J10 gate).
-    from aughor.actions.inbox import reject_proposal
+    from pramanyx.actions.inbox import reject_proposal
     assert reject_proposal(proposal.id, actor="test") is True
     after = client.get("/control-room/needs-human").json()
     assert all(r["id"] != proposal.id for r in after["rows"])
@@ -203,7 +203,7 @@ def test_automation_runs_route_spans_all_automations(client):
 
 def test_investigation_graph_view_is_honest_about_a_missing_checkpoint(
         client, monkeypatch, tmp_path):
-    from aughor.db import history
+    from pramanyx.db import history
 
     monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
     inv_id = history.create_investigation("q", "conn-cr5")
@@ -222,7 +222,7 @@ def test_deep_run_trace_resolves_its_investigation(client, ledger, monkeypatch, 
     verbatim) and its span rows carry no investigation_id column — the door wrapper
     only brackets /ask and /chat. The trace route must resolve the direct match, or
     every deep run's feedback tab degrades to 'nothing to attach to' (found live)."""
-    from aughor.db import history
+    from pramanyx.db import history
 
     monkeypatch.setattr(history, "_DB_PATH", str(tmp_path / "history.db"))
     inv_id = history.create_investigation("why did jobs fail", "conn-cr1")
@@ -243,7 +243,7 @@ def test_fleet_always_lists_user_defined_agents(client):
     receipt df89c044999a): the CRUD routes always answer, so the fleet table and the
     roster can never disagree about what exists — the two-views hazard the old
     flag-off half of this test guarded is structurally gone."""
-    from aughor.custom_agents.store import create_agent
+    from pramanyx.custom_agents.store import create_agent
 
     create_agent(name="Ghost Persona", instructions="x")
     got = client.get("/control-room/fleet").json()

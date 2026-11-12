@@ -20,10 +20,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic import object_context as OC
-from aughor.semantic.object_instances import ObjectInstance
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic import object_context as OC
+from pramanyx.semantic.object_instances import ObjectInstance
 
 REPO = Path(__file__).resolve().parents[2]
 SAMPLES = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -33,7 +33,7 @@ SAMPLES = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.artifacts_of_kind", lambda self, *a, **k: [])
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.artifacts_of_kind", lambda self, *a, **k: [])
     return OntologyGraph.model_validate(json.loads(SAMPLES.read_text()))
 
 
@@ -43,7 +43,7 @@ def _order(pk: str) -> ObjectInstance:
 
 
 def _findings(monkeypatch, graph, instance, findings):
-    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: findings)
+    monkeypatch.setattr("pramanyx.explorer.store.get_findings", lambda key: findings)
     return OC._object_findings("conn-25", "ecommerce", graph, graph.entities["Order"], instance)
 
 
@@ -65,7 +65,7 @@ def test_a_bigquery_finding_with_an_integer_key_cites_its_object(graph, monkeypa
 
 def test_the_guards_still_read_only_text_literals(graph):
     """The extractor is shared with the join guard, which binds TEXT values: numbers are an opt-in."""
-    from aughor.sql.join_guard import extract_filter_literals
+    from pramanyx.sql.join_guard import extract_filter_literals
     sql = "SELECT * FROM orders WHERE order_id = 12345 AND status = 'shipped'"
     assert extract_filter_literals(sql) == [("orders", "status", "shipped", "=")]
     assert ("orders", "order_id", "12345", "=") in extract_filter_literals(sql, numbers=True)
@@ -106,7 +106,7 @@ def _customer() -> ObjectInstance:
 
 
 def test_a_metric_that_reads_another_connection_never_runs_its_display_sql(graph, monkeypatch):
-    from aughor.semantic.object_query import compile_object_query
+    from pramanyx.semantic.object_query import compile_object_query
 
     def planned(query, graph, **kw):
         compiled = compile_object_query(query, graph, **kw)
@@ -139,12 +139,12 @@ def test_every_metric_measures_this_object_whatever_the_one_before_measured(grap
 # ── an organisation's ontology ────────────────────────────────────────────────────────────
 
 def test_a_domain_read_merges_each_types_own_edits_from_where_its_rows_live(monkeypatch):
-    from aughor.routers import objects as R
+    from pramanyx.routers import objects as R
     customer = SimpleNamespace(api_name="customer", id="Customer")
     order = SimpleNamespace(api_name="order", id="Order")
     domain = SimpleNamespace(entities={"Customer": customer, "Order": order})
     lives = {"Customer": "crm", "Order": "shop"}
-    monkeypatch.setattr("aughor.ontology.sources.entity_source", lambda g, e: lives[e.id])
+    monkeypatch.setattr("pramanyx.ontology.sources.entity_source", lambda g, e: lives[e.id])
     edits = {"crm": [SimpleNamespace(object_type="customer", id="e1"), SimpleNamespace(object_type="order", id="e2")],
              "shop": [SimpleNamespace(object_type="order", id="e3"), SimpleNamespace(object_type="customer", id="e4")]}
     monkeypatch.setattr(R, "_accepted_edits", lambda conn: edits[conn])
@@ -154,7 +154,7 @@ def test_a_domain_read_merges_each_types_own_edits_from_where_its_rows_live(monk
 def test_withdrawing_on_an_organisations_ontology_says_where_to_withdraw():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     # by its handler's name: the route's frozen path spells a retired word (tests/unit/test_vocabulary_ratchet.py)
     res = TestClient(app).delete(app.url_path_for("withdraw_annotation", edit_id="e1"),
                                  params={"connection_id": "domain:acme"})
@@ -167,12 +167,12 @@ def test_luxexperience_ships_gmv_and_gmv_per_order_that_compile_for_one_order(tm
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(OV, "_SEED_ROOT", REPO / "data" / "shipped" / "ontology_overrides")
-    import aughor.db.registry as registry
+    import pramanyx.db.registry as registry
     monkeypatch.setattr(registry, "scope_key_of", lambda conn: "luxexperience" if conn == "c0ffee42" else "")
     snapshot = json.loads((REPO / "evals" / "ablation_luxexperience_business_ontology.json").read_text())
     before = OntologyGraph.model_validate(snapshot)
     order = before.entities["Order"]
-    from aughor.semantic.object_query import compile_object_query, metric_on
+    from pramanyx.semantic.object_query import compile_object_query, metric_on
     assert not [m for m in before.metrics.values() if m.verified and metric_on(m, order)], "the panel was not empty"
 
     graph, _ = OV.apply_overrides(before, "c0ffee42", "luxexperience")
@@ -188,7 +188,7 @@ def test_the_shipped_binding_is_the_real_binder_against_the_recorded_schema():
     """What the shipped `bound: true` rests on — and that the same check refuses what LuxExperience lacks."""
     import duckdb
 
-    from aughor.ontology.overrides import OntologyOverride, bind_overrides
+    from pramanyx.ontology.overrides import OntologyOverride, bind_overrides
     snapshot = json.loads((REPO / "evals" / "ablation_luxexperience_business_ontology.json").read_text())
     graph = OntologyGraph.model_validate(snapshot)
     con = duckdb.connect(":memory:")

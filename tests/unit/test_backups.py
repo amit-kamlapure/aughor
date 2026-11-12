@@ -1,6 +1,6 @@
-"""Arc SV-2 — rolling backups of the platform's own state (`aughor/db/backups.py`).
+"""Arc SV-2 — rolling backups of the platform's own state (`pramanyx/db/backups.py`).
 
-Every test builds its own state folder under ``tmp_path`` and points ``AUGHOR_STATE_DIR`` at it; nothing here opens the
+Every test builds its own state folder under ``tmp_path`` and points ``PRAMANYX_STATE_DIR`` at it; nothing here opens the
 suite's shared stores or a live one. The stores are raw SQLite files shaped like the platform's (the ledger's `events`
 and `session_events`, the registry's `connections`, the audit's `audit_log`), each kept open by a writer in WAL mode the
 way the API's keepalive keeps them, so a backup is always taken beside a live writer.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.db import backups
+from pramanyx.db import backups
 
 NOW = datetime(2026, 10, 27, 14, 0, tzinfo=timezone.utc)
 
@@ -72,11 +72,11 @@ def _model_call(c, at: datetime, model: str) -> None:
 def state(tmp_path, monkeypatch):
     root = tmp_path / "state"
     root.mkdir()
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(root))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(root))
     monkeypatch.setenv(backups.FREE_FLOOR_ENV, "0")       # a test machine's disk is not the question
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: None)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: None)
     # The suite runs no clock (conftest); here /health is read as the serving API reads it, where the clock runs.
-    monkeypatch.delenv("AUGHOR_DISABLE_SCHEDULERS", raising=False)
+    monkeypatch.delenv("PRAMANYX_DISABLE_SCHEDULERS", raising=False)
     s = State(root)
     led = s.store("system.db", LEDGER_DDL)
     _event(led, NOW - timedelta(days=2), "job.finished", {"ok": True})
@@ -112,7 +112,7 @@ def state(tmp_path, monkeypatch):
     s.write("system.db.corrupt.bak", "an old damaged copy")
     s.write("_backup_freshrun_20260623/system.db", "a hand-made backup")
     s.write("luxexperience_warehouse/orders.parquet", "a person's own warehouse")
-    s.write(".aughor_key", "secret")
+    s.write(".pramanyx_key", "secret")
     s.write(".serving.pid", "not a pid")
     s.write(".DS_Store", "finder")
     os.symlink(tmp_path, s.root / "elsewhere_link")
@@ -176,7 +176,7 @@ def test_a_backup_copies_every_store_but_checkpoints_and_names_everything_it_lea
     assert "projection" in why["sheets/default/projection.marks.json"]
     assert "backup taken by hand" in why["_backup_freshrun_20260623"]
     assert "never touches" in why["luxexperience_warehouse"]
-    assert "secret key" in why[".aughor_key"]
+    assert "secret key" in why[".pramanyx_key"]
     assert "log" in why["supervisor.log"] and "copy already" in why["system.db.corrupt.bak"]
     assert "link" in why["elsewhere_link"] and "lock" in why["qdrant/.lock"]
     assert why["system.db-wal"] == backups._WHY_SIDECAR
@@ -365,7 +365,7 @@ def test_pruning_keeps_what_retention_keeps_and_sv1_copies_thirty_days(state):
 # ── the clock and /health ──────────────────────────────────────────────────────────
 
 def test_the_job_is_put_on_the_clock_when_it_starts(state):
-    from aughor.monitors import scheduler
+    from pramanyx.monitors import scheduler
     try:
         scheduler._schedule_backups()
         job = scheduler._scheduler.get_job(scheduler.BACKUPS_JOB_ID)
@@ -376,10 +376,10 @@ def test_the_job_is_put_on_the_clock_when_it_starts(state):
 
 
 def test_the_hourly_run_happens_only_in_the_serving_process_and_at_most_hourly(state, monkeypatch):
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: os.getpid() + 1)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: os.getpid() + 1)
     assert backups.run_scheduled(now=NOW).status == "not_serving"
     assert not (state.root / "backups").exists()
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: os.getpid())
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: os.getpid())
     assert backups.run_scheduled(now=NOW).status == "taken"
     assert backups.run_scheduled(now=NOW + timedelta(minutes=30)).status == "not_due"
     state.write("metrics.instance.json", '{"changed": true}')
@@ -387,7 +387,7 @@ def test_the_hourly_run_happens_only_in_the_serving_process_and_at_most_hourly(s
 
 
 def test_health_says_what_the_last_backup_did(state, monkeypatch):
-    from aughor.routers.system import health
+    from pramanyx.routers.system import health
     monkeypatch.setattr(backups, "_now", lambda: NOW + timedelta(minutes=5))
     empty = health()["backups"]
     assert empty["ok"] is False and "no backup" in empty["detail"]
@@ -404,8 +404,8 @@ def test_health_says_what_the_last_backup_did(state, monkeypatch):
 def test_health_says_where_the_clock_never_runs_and_is_not_degraded_by_it(state, monkeypatch):
     """No backup is ever taken where the clock never runs — a test process, a serverless instance. Said, with `ok`
     None, never read as a failing backup: a process that never keeps the state is not failing to keep it."""
-    from aughor.routers.system import health
-    monkeypatch.setenv("AUGHOR_DISABLE_SCHEDULERS", "1")
+    from pramanyx.routers.system import health
+    monkeypatch.setenv("PRAMANYX_DISABLE_SCHEDULERS", "1")
     block = backups.health_block(now=NOW)
     assert block["ok"] is None and "clocks are off" in block["detail"]
     body = health()
@@ -453,7 +453,7 @@ def _after_the_backup(state: State) -> None:
 
 def test_a_restore_is_refused_while_the_api_serves(state, monkeypatch):
     out = _take()
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: 4242)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: 4242)
     asked = []
     refused = backups.restore(out.stamp, confirm=lambda plan: asked.append(plan) or True)
     assert refused.status == "refused" and "pid 4242" in refused.reason
@@ -604,11 +604,11 @@ def test_a_stamp_prefix_names_one_backup(state):
 def test_the_files_it_keys_on_are_what_the_stores_resolve():
     """Name-keyed rules drift silently when a store renames its file; these read each store's own default."""
     pytest.importorskip("langgraph.checkpoint.sqlite", reason="the checkpoint store needs langgraph")
-    from aughor.agent import graph
-    from aughor.connectors.file import local_upload
-    from aughor.db import purge, registry
-    from aughor.kernel import ledger
-    from aughor.security import audit
+    from pramanyx.agent import graph
+    from pramanyx.connectors.file import local_upload
+    from pramanyx.db import purge, registry
+    from pramanyx.kernel import ledger
+    from pramanyx.security import audit
     assert audit._DB_PATH.name in backups.NEVER_RESTORED
     assert ledger._DEFAULT_DB.name in backups.CARRIED_FORWARD
     assert registry.REGISTRY_DB.name == backups._REGISTRY_FILE
@@ -624,14 +624,14 @@ def test_the_files_it_keys_on_are_what_the_stores_resolve():
 def test_the_cli_lists_backups_and_refuses_a_restore_while_serving(state, monkeypatch):
     from click.testing import CliRunner
 
-    from aughor.cli import cli
-    monkeypatch.setenv("AUGHOR_SKIP_DOTENV", "1")
+    from pramanyx.cli import cli
+    monkeypatch.setenv("PRAMANYX_SKIP_DOTENV", "1")
     out = _take()
     runner = CliRunner()
     listed = runner.invoke(cli, ["backups"])
     assert listed.exit_code == 0 and out.stamp in listed.output
     shown = runner.invoke(cli, ["backups", out.stamp])
     assert shown.exit_code == 0 and "checkpoints.db" in shown.output
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: 4242)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: 4242)
     refused = runner.invoke(cli, ["restore", out.stamp, "--yes"])
     assert refused.exit_code == 1 and "4242" in refused.output

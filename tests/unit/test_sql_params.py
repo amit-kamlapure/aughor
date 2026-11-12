@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.sql.params import (
+from pramanyx.sql.params import (
     ParamRenderError, find_params, render_for_engine, render_for_guards,
 )
 
@@ -56,7 +56,7 @@ def test_the_map_is_keyed_on_the_DRIVER_style_not_the_sql_dialect():
     DE-3a let it declare `exasol` — and pyexasol accepts no Postgres placeholder syntax at all.
     Keyed on dialect, that connector would have been handed `%(name)s` silently; keyed on the
     driver's style, a dialect name — any dialect name — is a visible refusal."""
-    from aughor.connectors.warehouse.exasol import ExasolConnection
+    from pramanyx.connectors.warehouse.exasol import ExasolConnection
 
     assert ExasolConnection.dialect == "exasol"
     assert ExasolConnection.param_style is None
@@ -150,7 +150,7 @@ def test_guard_and_engine_renderings_agree_on_what_is_a_parameter():
 # ── SE-8C — list values: the multiselect widget's shape ───────────────────────
 
 def test_expand_list_params_rewrites_in_place():
-    from aughor.sql.params import expand_list_params
+    from pramanyx.sql.params import expand_list_params
     sql, params = expand_list_params(
         "SELECT * FROM t WHERE country IN :c AND x = :x",
         {"c": ["PT", "ES"], "x": 1},
@@ -160,32 +160,32 @@ def test_expand_list_params_rewrites_in_place():
 
 
 def test_expand_list_params_is_identity_without_lists():
-    from aughor.sql.params import expand_list_params
+    from pramanyx.sql.params import expand_list_params
     src = "SELECT * FROM t WHERE a = :a"
     sql, params = expand_list_params(src, {"a": "x"})
     assert sql == src and params == {"a": "x"}
 
 
 def test_expand_empty_list_matches_no_row_rather_than_erroring():
-    from aughor.sql.params import expand_list_params
+    from pramanyx.sql.params import expand_list_params
     sql, params = expand_list_params("SELECT * FROM t WHERE c IN :c", {"c": []})
     assert sql == "SELECT * FROM t WHERE c IN (NULL)"
     assert params == {}
 
 
 def test_expanded_sql_renders_for_every_style():
-    from aughor.sql.params import expand_list_params, render_for_engine
+    from pramanyx.sql.params import expand_list_params, render_for_engine
     sql, _ = expand_list_params("SELECT 1 WHERE c IN :c", {"c": ["a", "b"]})
     assert render_for_engine(sql, "duckdb") == "SELECT 1 WHERE c IN ($c__0, $c__1)"
     assert render_for_engine(sql, "pyformat") == "SELECT 1 WHERE c IN (%(c__0)s, %(c__1)s)"
 
 
 def test_guard_rendering_of_a_list_is_a_parenthesised_group():
-    from aughor.sql.params import render_for_guards
+    from pramanyx.sql.params import render_for_guards
     out = render_for_guards("SELECT 1 WHERE c IN :c", {"c": ["a", "o'brien"]})
     assert out == "SELECT 1 WHERE c IN ('a', 'o''brien')"
 
 
 def test_guard_rendering_of_an_empty_list_matches_no_row():
-    from aughor.sql.params import render_for_guards
+    from pramanyx.sql.params import render_for_guards
     assert render_for_guards("SELECT 1 WHERE c IN :c", {"c": []}) == "SELECT 1 WHERE c IN (NULL)"

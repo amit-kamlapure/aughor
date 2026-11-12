@@ -96,7 +96,7 @@ on the run** — so today the corpus cannot be cut by kind of work at all, only 
    still be in the prompt, teaching a workaround for a problem that no longer occurs.
 
 **Cost.** Finding patterns is SQL and JSON over traces already kept — no model. Wording costs one model call per
-proposed lesson, priced through `AUGHOR_MODEL_PRICES` and said before it runs; nothing runs on its own until a
+proposed lesson, priced through `PRAMANYX_MODEL_PRICES` and said before it runs; nothing runs on its own until a
 person sets a schedule.
 
 ## 5 · Why not yet, measured
@@ -127,6 +127,6 @@ person sets a schedule.
 
 - Live install, read over HTTP 2026-10-23/24: `GET /learning/summary`, `GET /learning/run-labels?days=365&limit=500&rows=true`,
   `GET /learning/trusted`, `GET /learning/resolutions`, `GET /ontology/skills?connection_id=…`, `GET /packs`.
-- Code: `aughor/learning/reward.py`, `aughor/memory/skills.py`, `aughor/skills/ingest.py`, `aughor/packs/models.py`,
-  `aughor/packs/inject.py`, `aughor/packs/promote.py`, `aughor/semantic/trusted_queries.py`,
-  `aughor/agent/question_shape.py`.
+- Code: `pramanyx/learning/reward.py`, `pramanyx/memory/skills.py`, `pramanyx/skills/ingest.py`, `pramanyx/packs/models.py`,
+  `pramanyx/packs/inject.py`, `pramanyx/packs/promote.py`, `pramanyx/semantic/trusted_queries.py`,
+  `pramanyx/agent/question_shape.py`.

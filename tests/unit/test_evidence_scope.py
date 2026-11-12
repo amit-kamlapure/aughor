@@ -3,10 +3,10 @@
 The ledger keys only by investigation_id, so the scope-level layer resolves a
 connection/canvas to its investigation IDs (history) and filters claims to them.
 This covers the evidence-store half (the IN-filter + ordering + limit).
-See aughor/evidence/store.py::get_recent_claims_for_investigations.
+See pramanyx/evidence/store.py::get_recent_claims_for_investigations.
 """
-import aughor.evidence.store as store
-from aughor.evidence.models import EvidenceClaim
+import pramanyx.evidence.store as store
+from pramanyx.evidence.models import EvidenceClaim
 
 
 def _claim(inv, text, created_at, conf=0.7):
@@ -56,7 +56,7 @@ def test_recent_claims_unknown_ids_returns_empty(tmp_path, monkeypatch):
 # ── an investigation's own notes are not claims (2026-10-14: 134 of theLook's last 500) ──────────
 
 def test_the_spec_and_a_skipped_phase_are_not_claims():
-    from aughor.evidence.linker import extract_claims_from_ada_phases
+    from pramanyx.evidence.linker import extract_claims_from_ada_phases
     phases = [
         {"phase_id": "intake", "findings": [
             {"finding_id": "intake_spec", "title": "Investigation Specification", "sql": "",
@@ -73,7 +73,7 @@ def test_the_spec_and_a_skipped_phase_are_not_claims():
 
 def test_a_claim_is_cut_where_its_sentence_ends_never_inside_a_figure():
     """theLook, 2026-11-10: 69 of the latest 80 claims ended mid-number — `split(".")` cut "z = 0.33" at "0."."""
-    from aughor.evidence.linker import extract_claims_from_ada_phases
+    from pramanyx.evidence.linker import extract_claims_from_ada_phases
     phases = [{"phase_id": "baseline", "findings": [
         {"finding_id": "b1", "title": "Z-Score of Observation Day vs. 12-Day Trailing Baseline", "sql": "SELECT 1",
          "interpretation": "The 2026-11-02 revenue of $18,002 is only 0.33 standard deviations above the mean. "

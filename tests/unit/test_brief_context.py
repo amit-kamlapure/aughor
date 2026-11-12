@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from aughor.knowledge.brief_context import (
+from pramanyx.knowledge.brief_context import (
     MAX_CITATIONS,
     MAX_FINDING_CHARS,
     MAX_NARRATIVE_CHARS,
@@ -85,7 +85,7 @@ def test_malformed_citations_are_skipped_not_crashed():
 @pytest.fixture
 def _cache(tmp_path, monkeypatch):
     path = tmp_path / "briefing_cache.json"
-    monkeypatch.setattr("aughor.knowledge.briefing._CACHE_PATH", path)
+    monkeypatch.setattr("pramanyx.knowledge.briefing._CACHE_PATH", path)
     return path
 
 
@@ -121,7 +121,7 @@ def test_corrupt_cache_is_survivable(_cache):
 def test_peek_never_generates(_cache, monkeypatch):
     """`get_briefing` synthesizes on a miss (an LLM call + a coverage fan-out). The read-side
     consumer must never trigger that."""
-    from aughor.knowledge import briefing
+    from pramanyx.knowledge import briefing
 
     def _boom(*a, **k):
         raise AssertionError("peek_briefing must not generate a narrative")
@@ -208,8 +208,8 @@ def test_a_quiet_period_still_says_its_window(_cache):
 
 
 def test_key_metric_tiles_are_described_only_when_asked_from_the_briefing(_cache, monkeypatch):
-    from aughor.business_profile import store as pstore
-    from aughor.business_profile.models import NorthStarMetric
+    from pramanyx.business_profile import store as pstore
+    from pramanyx.business_profile.models import NorthStarMetric
 
     class _Profile:
         north_star_metrics = [
@@ -248,7 +248,7 @@ def test_a_standing_brief_renders_exactly_as_before():
 
 
 def test_a_pause_is_not_told_as_an_ending_with_every_figure_final():
-    from aughor.knowledge.brief_context import _period_lines
+    from pramanyx.knowledge.brief_context import _period_lines
 
     period = {"covers": "October 2026", "lag_days": 0, "data_ended": True, "data_through": "2026-10-29"}
     assert "so every figure is final" in _period_lines(period)[0]

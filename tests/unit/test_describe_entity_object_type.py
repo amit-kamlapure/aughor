@@ -1,7 +1,7 @@
 """ON-3c — the agent reads the type: `describe_entity` returns the ON-1 object type, one body on every transport.
 
 The roster's `describe_entity` and the MCP server's are two callers of `knowledge_tools.describe_entity`; this
-file pins that the body IS the entity-type slice (`aughor.semantic.object_types`), that the conversation and
+file pins that the body IS the entity-type slice (`pramanyx.semantic.object_types`), that the conversation and
 MCP return the identical dict for the same call, that G5's clearance trim still guards it, and that the
 knowledge graph's table node answers only where no ontology describes the type — labelled as such.
 """
@@ -14,10 +14,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import aughor.mcp.knowledge_tools as KT
-from aughor.agent import platform_tools as pt
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic.object_types import describe_object_type
+import pramanyx.mcp.knowledge_tools as KT
+from pramanyx.agent import platform_tools as pt
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic.object_types import describe_object_type
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 
@@ -47,13 +47,13 @@ def test_describe_entity_returns_the_object_type_not_the_table_node(graph):
 def test_the_same_call_over_mcp_returns_the_identical_body(graph, monkeypatch):
     import httpx
 
-    from aughor.api import app
-    from aughor.mcp import server
-    from aughor.mcp.client import AughorClient
+    from pramanyx.api import app
+    from pramanyx.mcp import server
+    from pramanyx.mcp.client import PramanyxClient
 
     # DE-2c: the MCP tool reaches the one body THROUGH the API (`GET /knowledge/{c}/entity/{e}`),
     # under the request's organisation and RBAC; here the API is the app itself, in-process.
-    monkeypatch.setattr(server, "_client", AughorClient(base_url="http://t", api_key="",
+    monkeypatch.setattr(server, "_client", PramanyxClient(base_url="http://t", api_key="",
                                                         transport=httpx.ASGITransport(app=app)))
     conversation = pt.describe_entity("samples", {"entity": "order_item"})
     mcp = asyncio.run(server.describe_entity(connection="samples", entity="order_item"))
@@ -62,8 +62,8 @@ def test_the_same_call_over_mcp_returns_the_identical_body(graph, monkeypatch):
 
 
 def test_a_withheld_type_is_withheld_and_the_notice_never_names_it(graph, monkeypatch):
-    from aughor.govern import tags as T
-    from aughor.govern.tags import ClearanceDecision, Requirement
+    from pramanyx.govern import tags as T
+    from pramanyx.govern.tags import ClearanceDecision, Requirement
 
     req = Requirement(key="tier", value="restricted", clearance="clearance.restricted")
     monkeypatch.setattr(T, "check", lambda securable, held, bypass=False: (

@@ -14,9 +14,9 @@ from types import SimpleNamespace as NS
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_listing
 from tests.unit.test_object_bindings import seed
 from tests.unit.test_object_processes import _DEADLINES, FULFILMENT, declare, fresh_graph
 
@@ -114,7 +114,7 @@ def test_an_accepted_edit_is_listed_like_a_column_and_says_so(db, graph):
 
 
 def _flag_action(graph):
-    from aughor.ontology.models import ActionParameter, KineticAction, ObjectEdit
+    from pramanyx.ontology.models import ActionParameter, KineticAction, ObjectEdit
     graph.kinetic_actions["flag_for_review"] = KineticAction(
         id="flag_for_review", kind="annotate", risk="low", object_type="Order",
         params=[ActionParameter(name="order", kind="object", object_type="Order"),
@@ -169,7 +169,7 @@ def test_the_overdue_segment_lists_exactly_what_the_promise_counted(db, graph, m
 
 
 def test_an_unmeasured_promise_has_no_overdue_list_and_says_why(graph, monkeypatch):
-    from aughor.ontology.processes import process_from_fields
+    from pramanyx.ontology.processes import process_from_fields
     graph.processes["order_fulfilment"] = process_from_fields("order_fulfilment", {
         "entity": "Order", "stages": FULFILMENT["stages"]})
     with pytest.raises(ObjectQueryRefused) as exc:
@@ -182,10 +182,10 @@ def test_an_unmeasured_promise_has_no_overdue_list_and_says_why(graph, monkeypat
 def test_the_door_lists_a_page_with_its_total_and_the_plan_over_http(tmp_path, monkeypatch, client):
     import json
 
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.ontology.models import OntologyGraph
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.ontology.models import OntologyGraph
+    from pramanyx.util.json_store import KeyedJsonStore
     from tests.unit.test_object_bindings import GRAPH
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))

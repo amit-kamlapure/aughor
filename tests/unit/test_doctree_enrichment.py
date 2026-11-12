@@ -11,12 +11,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.ontology.doctree import (
+from pramanyx.ontology.doctree import (
     build_doc_tree,
     enrich_tree,
     estimate_enrichment,
 )
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 
 
 def _graph(desc: str = ""):
@@ -94,7 +94,7 @@ def test_estimate_prices_before_any_spend():
 
 
 def test_width_routing_sends_wide_tables_to_coder(monkeypatch):
-    import aughor.ontology.doctree as dt
+    import pramanyx.ontology.doctree as dt
     monkeypatch.setattr(dt, "_ENRICH_WIDTH_TOKENS", 1)   # everything counts as wide
     tree = build_doc_tree(_graph())
     provider = _Provider()
@@ -119,20 +119,20 @@ def test_per_node_failure_keeps_deterministic_summary():
 
 
 def test_index_doc_tree_embeds_the_polish(monkeypatch, tmp_path):
-    import aughor.knowledge.indexer as idx
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
+    import pramanyx.knowledge.indexer as idx
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
     upserts: list = []
-    monkeypatch.setattr("aughor.semantic.embedder.embed",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed",
                         lambda texts: [[0.0] * 8 for _ in texts])
-    monkeypatch.setattr("aughor.semantic.vector_store.upsert",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.upsert",
                         lambda coll, points: upserts.extend(points))
     # `ensure_collection` takes the active embedder's width now, and `collection_dim` has
     # to be stubbed beside it: without that, this fixture reached a REAL Qdrant for the
     # existing collection's width and compared 768 against its own 8-dimension fake. The
     # fixture was hermetic only while nothing READ from the store.
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection",
                         lambda coll, dim=None: None)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: None)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda coll: None)
     monkeypatch.setattr(idx, "_delete_doc_chunks", lambda doc_id: None)
 
     tree = build_doc_tree(_graph())

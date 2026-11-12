@@ -3,11 +3,11 @@
 A raw-COUNT rate over a join is trustworthy only if its COUNT(DISTINCT) twin agrees.
 count_distinct_variant builds the twin; rate_columns_diverge compares the rate column;
 the verification manifest surfaces the outcome and divergence tanks data_trust.
-See aughor/sql/fanout.py, aughor/agent/explore.py.
+See pramanyx/sql/fanout.py, pramanyx/agent/explore.py.
 """
-from aughor.sql.fanout import count_distinct_variant, rate_columns_diverge
-from aughor.agent.explore import _build_verification_manifest
-from aughor.agent.state import QueryResult, StatResult
+from pramanyx.sql.fanout import count_distinct_variant, rate_columns_diverge
+from pramanyx.agent.explore import _build_verification_manifest
+from pramanyx.agent.state import QueryResult, StatResult
 
 SWISS = ("SELECT COUNT(r.refund_id) / NULLIF(COUNT(t.ticket_id), 0) AS refund_rate "
          "FROM tickets t LEFT JOIN refunds r ON t.ticket_id = r.ticket_id")

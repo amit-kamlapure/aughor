@@ -1,4 +1,4 @@
-"""J3 — the fidelity harness (`aughor/evals/fidelity.py`).
+"""J3 — the fidelity harness (`pramanyx/evals/fidelity.py`).
 
 Pure arithmetic over `RunSummary` objects, so these are the cheapest tests in the wave and
 cover the claim the whole of E4 rests on: that a delta is only reported when the baseline
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.fidelity import (
+from pramanyx.evals.fidelity import (
     DEFAULT_FLOOR_THRESHOLD,
     assess,
     axis_of,
@@ -20,7 +20,7 @@ from aughor.evals.fidelity import (
     harmonic_composite,
     noise_floor,
 )
-from aughor.evals.runner import RunSummary
+from pramanyx.evals.runner import RunSummary
 
 
 def _summary(pass_rate: float, accuracy: float | None = None, total: int = 100) -> RunSummary:

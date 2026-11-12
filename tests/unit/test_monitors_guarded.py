@@ -12,9 +12,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.monitors.models import Monitor, MonitorAlert
-from aughor.monitors.runner import run_monitor
-from aughor.util.time import now_iso
+from pramanyx.monitors.models import Monitor, MonitorAlert
+from pramanyx.monitors.runner import run_monitor
+from pramanyx.util.time import now_iso
 
 
 def _monitor(**over) -> Monitor:
@@ -50,7 +50,7 @@ def test_guard_probe_failure_never_blocks_the_alert(monkeypatch):
     9bf08c312faa) — the property that replaces the old forced-off test is the
     fail-open: a probe that raises must deliver the alert WITHOUT a caveat, never
     swallow it."""
-    monkeypatch.setattr("aughor.monitors.runner._guard_caveats",
+    monkeypatch.setattr("pramanyx.monitors.runner._guard_caveats",
                         lambda m, d: (_ for _ in ()).throw(RuntimeError("probe boom")))
     alert = run_monitor(_monitor(), _StubDB(), suppress=False)
     assert alert is not None and alert.severity == "warning"
@@ -81,7 +81,7 @@ def test_guarded_skips_bare_scalar_expression(monkeypatch):
 # ── Store: caveat round-trips (exercises the v2 migration) ────────────────────
 
 def test_alert_caveat_roundtrips_through_store():
-    from aughor.monitors.store import append_alert, get_alerts
+    from pramanyx.monitors.store import append_alert, get_alerts
 
     a = MonitorAlert(monitor_id="wp1b-m1", monitor_name="w", conn_id="c",
                      triggered_at=now_iso(), severity="warning",
@@ -92,7 +92,7 @@ def test_alert_caveat_roundtrips_through_store():
 
 
 def test_alert_without_caveat_roundtrips_none():
-    from aughor.monitors.store import append_alert, get_alerts
+    from pramanyx.monitors.store import append_alert, get_alerts
 
     a = MonitorAlert(monitor_id="wp1b-m2", monitor_name="w", conn_id="c",
                      triggered_at=now_iso(), severity="info", message="ok")
@@ -105,13 +105,13 @@ def test_alert_without_caveat_roundtrips_none():
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def _register_conn(tmp_path):
     import duckdb
-    from aughor.db import registry
+    from pramanyx.db import registry
     p = tmp_path / "mon.duckdb"
     con = duckdb.connect(str(p))
     con.execute("CREATE TABLE sales (order_id INT, amt DOUBLE)")

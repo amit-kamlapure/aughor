@@ -2,7 +2,7 @@
 
 Agents could already bind documents and chat could already retrieve them. A canvas —
 the thing a person actually works inside — had no document wiring at all: grep
-`aughor/canvas/` for `doc_id` before this and there were zero hits. Its documents were
+`pramanyx/canvas/` for `doc_id` before this and there were zero hits. Its documents were
 reachable only if a global similarity search happened to rank them, which is not what
 attaching a document to a workspace means.
 
@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.canvas.models import CanvasScope
-from aughor.canvas.store import create_canvas, get_canvas, update_canvas
+from pramanyx.canvas.models import CanvasScope
+from pramanyx.canvas.store import create_canvas, get_canvas, update_canvas
 
 
 @pytest.fixture(autouse=True)
@@ -40,9 +40,9 @@ def _offline_embedder(monkeypatch):
     module-level cache that outlives monkeypatch, so a narrower fake would be compared
     against an earlier test's 768 and every write refused.
     """
-    monkeypatch.setattr("aughor.semantic.embedder.embed",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed",
                         lambda texts: [[0.0] * 768 for _ in texts])
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 768)
 
 
 @pytest.fixture
@@ -97,10 +97,10 @@ def test_the_column_is_added_to_a_store_that_predates_it(tmp_path, monkeypatch):
     old.commit()
     old.close()
 
-    monkeypatch.setenv("AUGHOR_CANVAS_DB", str(db))
+    monkeypatch.setenv("PRAMANYX_CANVAS_DB", str(db))
     import importlib
 
-    from aughor.canvas import store as canvas_store
+    from pramanyx.canvas import store as canvas_store
     importlib.reload(canvas_store)
     try:
         existing = canvas_store.get_canvas("old1")
@@ -180,7 +180,7 @@ def test_documents_of_an_unknown_canvas_is_a_404(client):
 def test_a_canvas_with_no_documents_changes_nothing(monkeypatch, canvas):
     """The seam is inert on the default path — the property that makes it safe to
     add to an answer pipeline everyone already depends on."""
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     monkeypatch.setattr(indexer, "search_documents",
                         lambda q, top_k=4, **_: [{"doc_id": "g1", "chunk_index": 0,
@@ -193,7 +193,7 @@ def test_a_canvas_with_no_documents_changes_nothing(monkeypatch, canvas):
 
 
 def test_pinned_documents_are_placed_first_and_labelled(monkeypatch, canvas):
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     update_canvas(canvas.id, doc_ids=["pinned1"])
     hits = [
@@ -214,7 +214,7 @@ def test_pinned_documents_are_placed_first_and_labelled(monkeypatch, canvas):
 def test_a_pinned_document_is_not_repeated_in_the_general_block(monkeypatch, canvas):
     """It ranks in both searches; printing it twice wastes the context it was pinned
     to occupy."""
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     update_canvas(canvas.id, doc_ids=["pinned1"])
     hits = [{"doc_id": "pinned1", "chunk_index": 0, "text": "the only text",
@@ -228,7 +228,7 @@ def test_a_pinned_document_is_not_repeated_in_the_general_block(monkeypatch, can
 def test_an_agent_still_fences_what_a_canvas_pins(monkeypatch, canvas):
     """A canvas must not widen an agent past what it was given — that is the
     direction that turns a restriction into a suggestion."""
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     update_canvas(canvas.id, doc_ids=["pinned1"])
     monkeypatch.setattr(indexer, "search_documents",
@@ -236,7 +236,7 @@ def test_an_agent_still_fences_what_a_canvas_pins(monkeypatch, canvas):
                                              "text": "pinned text", "title": "Pinned",
                                              "filename": "p.md", "score": 0.9}])
     # An agent bound to a DIFFERENT document than the canvas pins.
-    monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids",
+    monkeypatch.setattr("pramanyx.custom_agents.context.agent_doc_ids",
                         lambda: {"agent-doc"})
 
     section = indexer.build_external_context_section("q", canvas_id=canvas.id)
@@ -245,17 +245,17 @@ def test_an_agent_still_fences_what_a_canvas_pins(monkeypatch, canvas):
 
 def test_an_unreadable_canvas_degrades_instead_of_raising(monkeypatch):
     """Losing a pinned document costs context; raising would cost the reply."""
-    from aughor.knowledge import indexer
+    from pramanyx.knowledge import indexer
 
     def boom(_):
         raise RuntimeError("canvas store is down")
 
-    monkeypatch.setattr("aughor.canvas.store.get_canvas", boom)
+    monkeypatch.setattr("pramanyx.canvas.store.get_canvas", boom)
     assert indexer.canvas_doc_ids("any-id") == []
 
 
 def test_no_canvas_means_no_pins():
-    from aughor.knowledge.indexer import canvas_doc_ids
+    from pramanyx.knowledge.indexer import canvas_doc_ids
 
     assert canvas_doc_ids(None) == []
     assert canvas_doc_ids("") == []

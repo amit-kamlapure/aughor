@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import os
 
-from aughor.connectors.api.gsheets import GoogleSheetsConnector, invalidate_sheet_cache
+from pramanyx.connectors.api.gsheets import GoogleSheetsConnector, invalidate_sheet_cache
 
 
 def _connector(monkeypatch, url_for: dict[str, str], sheets: str = "") -> GoogleSheetsConnector:

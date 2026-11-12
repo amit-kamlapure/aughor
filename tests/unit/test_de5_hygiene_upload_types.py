@@ -17,12 +17,12 @@ import json
 import duckdb
 import pytest
 
-from aughor.connectors.file.local_upload import (
+from pramanyx.connectors.file.local_upload import (
     LocalUploadConnection,
     text_only_columns,
     with_text_columns,
 )
-from aughor.control_plane import vending
+from pramanyx.control_plane import vending
 
 BIG_A = "12345678901234567890123"
 BIG_B = "12345678901234567890124"

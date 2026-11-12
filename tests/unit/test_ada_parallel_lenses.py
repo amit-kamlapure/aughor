@@ -12,8 +12,8 @@ import time
 
 import pytest
 
-import aughor.agent.investigate as inv
-from aughor.kernel.metering import BudgetExceeded
+import pramanyx.agent.investigate as inv
+from pramanyx.kernel.metering import BudgetExceeded
 
 
 WOMENSWEAR_DIMS = [
@@ -144,7 +144,7 @@ def test_multilens_routes_event_dims_to_composition(monkeypatch):
 
 def test_multilens_runs_lenses_concurrently(monkeypatch):
     """Concurrency is the TRANSPORT's decision, so declare the headroom the node keys on."""
-    monkeypatch.setattr("aughor.llm.profile.parallel_waves_enabled", lambda: True)
+    monkeypatch.setattr("pramanyx.llm.profile.parallel_waves_enabled", lambda: True)
     _install_stub(monkeypatch, sleep=0.3)
     t0 = time.time()
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
@@ -161,7 +161,7 @@ def test_a_serial_transport_loses_no_lenses(monkeypatch):
     reason benchmark were UNREACHABLE — a rate-limited model ran a structurally smaller
     investigation, not merely a slower one, and the report never said so. Now the transport sets
     the WIDTH only: the same lenses run, one after another."""
-    monkeypatch.setattr("aughor.llm.profile.parallel_waves_enabled", lambda: False)
+    monkeypatch.setattr("pramanyx.llm.profile.parallel_waves_enabled", lambda: False)
     _install_stub(monkeypatch)
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     assert len(out["investigation_phases"]) == 2, "a serial transport must not drop a lens"
@@ -299,12 +299,12 @@ def test_is_saturated_flags_tautology_not_uniformity():
 
 def _ada_nodes(flag):
     import duckdb
-    from aughor.db.connection import DuckDBConnection
-    from aughor.agent.graph import build_graph_generic
+    from pramanyx.db.connection import DuckDBConnection
+    from pramanyx.agent.graph import build_graph_generic
     if flag:
-        os.environ["AUGHOR_LLM_RPM"] = "120"      # declared headroom → parallel waves
+        os.environ["PRAMANYX_LLM_RPM"] = "120"      # declared headroom → parallel waves
     else:
-        os.environ.pop("AUGHOR_LLM_RPM", None)     # undeclared → serial
+        os.environ.pop("PRAMANYX_LLM_RPM", None)     # undeclared → serial
     try:
         db = DuckDBConnection.__new__(DuckDBConnection)
         db._conn = duckdb.connect(":memory:")
@@ -312,7 +312,7 @@ def _ada_nodes(flag):
         db._connection_id = "t"
         return set(build_graph_generic(db).get_graph().nodes.keys())
     finally:
-        os.environ.pop("AUGHOR_LLM_RPM", None)
+        os.environ.pop("PRAMANYX_LLM_RPM", None)
 
 
 def test_multilens_node_is_wired_whatever_the_transport():
@@ -599,9 +599,9 @@ def test_forward_why_lenses_wave_is_byte_identical_to_serial(monkeypatch):
     monkeypatch.setattr(inv, "_ADA_LENS_WIDTH", 4)
     _install_forward_stub(monkeypatch)
 
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)   # undeclared → serial chain
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)   # undeclared → serial chain
     serial = [p["phase_id"] for p in inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())["investigation_phases"]]
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "120")   # declared headroom → the why-lens wave
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "120")   # declared headroom → the why-lens wave
     wave = [p["phase_id"] for p in inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())["investigation_phases"]]
 
     assert serial == wave                                  # byte-identical merged phase order
@@ -615,11 +615,11 @@ def test_forward_why_lenses_wave_uses_a_reader_per_lens(monkeypatch):
     seen: list = []
     _install_forward_stub(monkeypatch, seen=seen)
 
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)   # undeclared → serial chain
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)   # undeclared → serial chain
     serial_top = _FakeConn()
     inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), serial_top)
 
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "120")   # declared headroom → the why-lens wave
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "120")   # declared headroom → the why-lens wave
     wave_top = _FakeConn()
     inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), wave_top)
 
@@ -633,7 +633,7 @@ def test_forward_why_lenses_serial_when_flag_off_shares_conn(monkeypatch):
     """Default (flag off) → the serial chain, each lens on the SAME top-level conn (no clones)."""
     seen: list = []
     _install_forward_stub(monkeypatch, seen=seen)
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)   # undeclared → serial chain
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)   # undeclared → serial chain
     top = _FakeConn()
     inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), top)
 
@@ -645,7 +645,7 @@ def test_forward_why_lenses_wave_runs_concurrently(monkeypatch):
     """The wall-clock win: three ~0.3s forward lenses finish in ~0.3s under the wave, not ~0.9s."""
     monkeypatch.setattr(inv, "_ADA_LENS_WIDTH", 4)
     _install_forward_stub(monkeypatch, sleep=0.3)
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "120")   # declared headroom → the why-lens wave
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "120")   # declared headroom → the why-lens wave
     t0 = time.time()
     out = inv.ada_cross_section_multilens(_state(WOMENSWEAR_DIMS), _FakeConn())
     dt = time.time() - t0

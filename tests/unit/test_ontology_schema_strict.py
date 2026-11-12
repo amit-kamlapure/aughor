@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.routers import ontology as router
+from pramanyx.routers import ontology as router
 
 
 class _Graph:
@@ -38,7 +38,7 @@ def cache(monkeypatch):
         # i.e. an arbitrary schema. Model that, because it is what used to leak.
         return list(entries.values())[-1] if entries else None
 
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", _load_latest)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", _load_latest)
 
     # The read path must never open a connection at all — see
     # `test_a_read_never_builds` below.
@@ -46,7 +46,7 @@ def cache(monkeypatch):
         raise AssertionError("the ontology READ opened a connection — it must not")
 
     monkeypatch.setattr(router, "open_connection_for", _no_build)
-    monkeypatch.setattr("aughor.ontology.store.list_schemas", lambda cid: sorted(entries))
+    monkeypatch.setattr("pramanyx.ontology.store.list_schemas", lambda cid: sorted(entries))
     return entries
 
 
@@ -121,7 +121,7 @@ def test_skill_schema_prefers_the_configured_schema(monkeypatch):
     `load_latest_ontology(id, None)` — the arbitrary last cache entry — so on the live
     instance it answered `ecommerce` for a connection registered against `main`. A skill
     saved under one schema and read back under another is a skill that disappears."""
-    from aughor.memory import skills
+    from pramanyx.memory import skills
 
     entries = {"main": _Graph("main"), "ecommerce": _Graph("ecommerce")}
 
@@ -130,20 +130,20 @@ def test_skill_schema_prefers_the_configured_schema(monkeypatch):
             return entries.get(schema_name)
         return list(entries.values())[-1]
 
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", _load_latest)
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda cid: {"schema_name": "main"})
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", _load_latest)
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda cid: {"schema_name": "main"})
 
     assert skills.resolve_active_schema("c1") == "main"
 
 
 def test_skill_schema_still_answers_when_the_configured_one_is_unbuilt(monkeypatch):
-    from aughor.memory import skills
+    from pramanyx.memory import skills
 
     entries = {"ecommerce": _Graph("ecommerce")}
     monkeypatch.setattr(
-        "aughor.ontology.store.load_latest_ontology",
+        "pramanyx.ontology.store.load_latest_ontology",
         lambda cid, schema_name=None: entries.get(schema_name) if schema_name
         else (list(entries.values())[-1] if entries else None))
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda cid: {"schema_name": "main"})
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda cid: {"schema_name": "main"})
 
     assert skills.resolve_active_schema("c1") == "ecommerce"

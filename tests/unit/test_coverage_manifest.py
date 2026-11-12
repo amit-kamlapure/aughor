@@ -6,8 +6,8 @@ spots can't silently shrink it, and prunes immaterial cuts.
 """
 from __future__ import annotations
 
-from aughor.explorer.coverage_manifest import build_manifest, summarize
-from aughor.tools.profiler import ColumnProfile, TableProfile
+from pramanyx.explorer.coverage_manifest import build_manifest, summarize
+from pramanyx.tools.profiler import ColumnProfile, TableProfile
 
 
 def _measure(table, col):

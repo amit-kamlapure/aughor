@@ -13,8 +13,8 @@ from datetime import date
 import duckdb
 import pytest
 
-from aughor.briefing import guide as G
-from aughor.briefing import ranges
+from pramanyx.briefing import guide as G
+from pramanyx.briefing import ranges
 
 OCT29 = date(2026, 10, 29)
 
@@ -140,12 +140,12 @@ def test_a_redraft_keeps_a_persons_readers_and_proposes_the_rest(con, monkeypatc
 
 
 def test_the_generic_lifecycle_doors_refuse_to_write_a_guide():
-    from aughor.routers.lifecycle import _own_doors
+    from pramanyx.routers.lifecycle import _own_doors
     assert G.KIND in _own_doors()
 
 
 def test_the_briefer_runs_the_guide_job():
-    from aughor.kernel.agents import charter_for_kind
+    from pramanyx.kernel.agents import charter_for_kind
     assert charter_for_kind(G.JOB_KIND).id == "briefer"
 
 

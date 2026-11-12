@@ -18,11 +18,11 @@ import uuid
 import httpx
 import pytest
 
-from aughor.mcp import callers
-from aughor.mcp import policy as P
-from aughor.mcp import server as S
-from aughor.mcp.client import SERVICE_KEY_HEADER, SERVICE_NAME_HEADER, AughorClient
-from aughor.security import service_principals as SP
+from pramanyx.mcp import callers
+from pramanyx.mcp import policy as P
+from pramanyx.mcp import server as S
+from pramanyx.mcp.client import SERVICE_KEY_HEADER, SERVICE_NAME_HEADER, PramanyxClient
+from pramanyx.security import service_principals as SP
 from tests.unit.test_object_actions import db, graph  # noqa: F401 — fixtures by name
 
 
@@ -103,7 +103,7 @@ def test_an_entity_an_action_and_a_connection_off_the_grant_are_each_refused(cli
 
 
 def test_the_contract_is_cut_to_the_grant():
-    from aughor.rbac.principal_grant import narrow_contract
+    from pramanyx.rbac.principal_grant import narrow_contract
     contract = {"release": "r1", "entities": {"Order": {}, "Customer": {}}, "actions": {"flag": {}, "cancel": {}}}
     cut = narrow_contract(contract, {"entities": ["order"], "actions": ["flag"]})
     assert list(cut["entities"]) == ["Order"] and list(cut["actions"]) == ["flag"]
@@ -145,8 +145,8 @@ def _session(tc, headers: dict, call_tool: str = "") -> list[str]:
 def test_two_principals_with_different_grants_list_different_tools(client, held, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    monkeypatch.setattr(S, "_client", AughorClient(base_url="http://api", transport=httpx.ASGITransport(app=app)))
+    from pramanyx.api import app
+    monkeypatch.setattr(S, "_client", PramanyxClient(base_url="http://api", transport=httpx.ASGITransport(app=app)))
     reader_name, reader = _mint(client, areas=["catalog:read"])
     _, ledger = _mint(client, areas=["ledger:read", "ledger:write"])
     gate = S.http_app("the-shared-token", "127.0.0.1")
@@ -159,7 +159,7 @@ def test_two_principals_with_different_grants_list_different_tools(client, held,
         assert set(theirs) == {"read_contract", "read_claims", "read_restatements", "post_claim"}
         assert set(mine) | set(theirs) < set(shared)                     # the shared token: the policy's whole list
         # the call ran as the caller, not as this process: the API audited it under the principal's own name
-        from aughor.kernel.ledger import Ledger
+        from pramanyx.kernel.ledger import Ledger
         audited = [e for e in Ledger.default().events(kind="mcp.tool_call", limit=50)
                    if (e.get("payload") or {}).get("tool") == "list_connections"]
         assert audited and (audited[0]["payload"] or {}).get("principal") == f"service:{reader_name}", audited[:1]
@@ -173,7 +173,7 @@ def test_a_principal_reads_the_contract_its_grant_names(client, held, graph, mon
     """The builders' contract door, on the samples ontology: the entities and declared actions the grant names, and a
     count of what it left out."""
     from tests.unit.test_object_actions import CONN
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     _, headers = _mint(client, areas=["objects:read"], entities=["Order"])
     whole = client.get("/ontology/v1/contract", params={"connection_id": CONN})
     cut = client.get("/ontology/v1/contract", params={"connection_id": CONN}, headers=headers)

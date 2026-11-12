@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.authored_sql import AuthoredSqlRefused, materialise_authored_sql
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.semantic.trusted_queries import (TrustedQuery, get_trusted, list_trusted,
+from pramanyx.automations.authored_sql import AuthoredSqlRefused, materialise_authored_sql
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.semantic.trusted_queries import (TrustedQuery, get_trusted, list_trusted,
                                              save_trusted)
 
 
@@ -37,7 +37,7 @@ def verified(monkeypatch):
         calls.append((conn_id, sql))
         return {"passed": True, "execution": {"ok": True, "row_count": 3}, "blockers": []}
 
-    monkeypatch.setattr("aughor.semantic.trusted_verify.verify", _verify)
+    monkeypatch.setattr("pramanyx.semantic.trusted_verify.verify", _verify)
     return calls
 
 
@@ -63,7 +63,7 @@ def test_authored_sql_is_verified_and_becomes_a_governed_query(verified):
 
 
 def test_a_refusal_lands_at_save_not_at_0900(monkeypatch):
-    monkeypatch.setattr("aughor.semantic.trusted_verify.verify",
+    monkeypatch.setattr("pramanyx.semantic.trusted_verify.verify",
                         lambda c, s: {"passed": False, "blockers": ["no such table: retunrs"]})
     with pytest.raises(AuthoredSqlRefused) as exc:
         materialise_authored_sql(_automation(
@@ -128,7 +128,7 @@ def test_the_proposer_refuses_a_chain_that_wrote_its_own_sql():
     message about a missing `query_id`, and this deployment would never learn that its
     proposer had tried to write SQL.
     """
-    from aughor.automations.propose import ProposedChain, propose_chain
+    from pramanyx.automations.propose import ProposedChain, propose_chain
 
     class _Provider:
         def complete(self, *, system, user, response_model, temperature=0.0):
@@ -151,7 +151,7 @@ def test_the_proposer_refuses_a_chain_that_wrote_its_own_sql():
 def test_a_proposed_chain_that_NAMES_a_query_is_still_fine():
     """The guard must bite on authorship, not on the kind — a proposer picking a vetted
     query by id is the whole point of the roster it is given."""
-    from aughor.automations.propose import ProposedChain, propose_chain
+    from pramanyx.automations.propose import ProposedChain, propose_chain
 
     save_trusted(TrustedQuery(id="tq_vetted", connection_id="c1", question="ok",
                               sql="SELECT 1", status="approved"))
@@ -182,7 +182,7 @@ def test_a_chain_owned_query_is_hidden_from_the_catalogue_and_from_prompts(verif
     # And by id, for the chain that owns it.
     assert get_trusted(qid) is not None
 
-    from aughor.semantic.trusted_queries import retrieve_trusted
+    from pramanyx.semantic.trusted_queries import retrieve_trusted
     assert qid not in [q.id for q, _ in retrieve_trusted("private rollup", "c1")]
 
 
@@ -216,7 +216,7 @@ def test_a_chain_runs_its_own_authored_query_and_never_another_chains(verified, 
     so without scoping, a chain could not run the very query it had just authored. The
     fix must open exactly one door: the catalogue, plus THIS automation's own.
     """
-    from aughor.automations import engine
+    from pramanyx.automations import engine
 
     mine = materialise_authored_sql(_automation({"question": "mine", "sql": "SELECT 1"},
                                                 aid="a1"))
@@ -258,7 +258,7 @@ def test_the_palette_no_longer_gates_the_trusted_query_step():
     """DS-19 makes the kind authorable, so gating it on a pre-existing query would dim a
     step that works — the exact failure `palette.py` exists to prevent, from the far side.
     """
-    from aughor.automations.palette import entries
+    from pramanyx.automations.palette import entries
 
     row = next(e for e in entries("conn-with-nothing") if e["kind"] == "trusted_query")
     assert row["availability"] == "ready"

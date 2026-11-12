@@ -14,7 +14,7 @@ runs / the slowest tasks for a "why was it slow?" pass.
     # slowest task families (e.g. only SQL, or only briefings)
     .venv/bin/python -m evals.task_recover --slow --prefix sql.
 
-Requires the run to have been recorded with ``AUGHOR_OBS_TASK_TABLE=1``; an empty
+Requires the run to have been recorded with ``PRAMANYX_OBS_TASK_TABLE=1``; an empty
 result means the flag was off for that run.
 """
 from __future__ import annotations
@@ -22,14 +22,14 @@ from __future__ import annotations
 import argparse
 import json
 
-from aughor.obs import task_history as th
+from pramanyx.obs import task_history as th
 
 
 def _print_run(trace_id: str) -> None:
     run = th.recover_run(trace_id)
     if not run.spans:
         print(f"[task_recover] no spans for trace {trace_id!r} "
-              f"(was AUGHOR_OBS_TASK_TABLE=1 during the run?)")
+              f"(was PRAMANYX_OBS_TASK_TABLE=1 during the run?)")
         return
     print(f"trace {trace_id}  ·  {len(run.spans)} spans  ·  {run.total_ms} ms wall")
     print("\n— generated SQL (execution order) —")

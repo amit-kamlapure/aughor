@@ -13,15 +13,15 @@ from datetime import date
 import duckdb
 import pytest
 
-from aughor.briefing import guide as G
-from aughor.briefing import ranges
+from pramanyx.briefing import guide as G
+from pramanyx.briefing import ranges
 
 OCT29 = date(2026, 10, 29)
 
 
 @pytest.fixture
 def groups():
-    from aughor.rbac.groups import add_member, upsert_group
+    from pramanyx.rbac.groups import add_member, upsert_group
     upsert_group("default", "finance", "Finance", "money")
     upsert_group("default", "product", "Product", "the storefront")
     add_member("default", "product", "user:dana")
@@ -29,7 +29,7 @@ def groups():
 
 
 def test_the_reader_setting_names_a_function_group_or_the_organisation(groups):
-    from aughor.db.user_prefs import ALLOWED_KEYS
+    from pramanyx.db.user_prefs import ALLOWED_KEYS
     check = ALLOWED_KEYS["briefing_reader"][0]
     assert check("finance") == "finance"
     assert check("") == ""
@@ -38,7 +38,7 @@ def test_the_reader_setting_names_a_function_group_or_the_organisation(groups):
 
 
 def test_a_person_reads_as_their_setting_else_their_group_else_the_organisation(groups):
-    from aughor.db.user_prefs import set_preference
+    from pramanyx.db.user_prefs import set_preference
     assert G.default_reader("user:dana") == "product"            # their first function group
     assert G.default_reader("user:nobody") == ""                  # no group: the organisation
     set_preference("briefing_reader", "finance")
@@ -95,7 +95,7 @@ class _LLM:
 
 
 def test_a_reader_from_plain_words_maps_to_checks_and_may_add_measured_ones(groups, con, monkeypatch):
-    monkeypatch.setattr("aughor.business_profile.infer.gather_context", lambda c, s: ("schema", []))
+    monkeypatch.setattr("pramanyx.business_profile.infer.gather_context", lambda c, s: ("schema", []))
     monkeypatch.setattr(ranges, "governed_metrics", lambda *a, **k: [])
     monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: ranges.resolve_range(
         "last_week", today=OCT29, lag_days=1, lag_source="learned"))
@@ -119,14 +119,14 @@ def test_no_guide_no_reader(groups):
 
 
 def test_a_subscription_sends_the_edition_written_for_its_reader(monkeypatch):
-    from aughor.briefing import delivery
-    from aughor.briefing.compose import write as W
-    from aughor.briefing.models import BriefSubscription
-    from aughor.govern.departure import Measurement
+    from pramanyx.briefing import delivery
+    from pramanyx.briefing.compose import write as W
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.govern.departure import Measurement
 
     spec, _ = ranges.resolve_range("last_week", today=OCT29, lag_days=1, lag_source="learned")
     monkeypatch.setattr(ranges, "resolve_for", lambda *a, **k: (spec, ""))
-    monkeypatch.setattr("aughor.knowledge.period_brief.scope_inputs", lambda *a, **k: ({}, None))
+    monkeypatch.setattr("pramanyx.knowledge.period_brief.scope_inputs", lambda *a, **k: ({}, None))
     monkeypatch.setattr(G, "current", lambda *a, **k: (G.BriefingGuide(), None))
     asked = {}
 

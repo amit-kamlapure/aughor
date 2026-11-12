@@ -20,14 +20,14 @@ import pytest
 def client():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def _run(automation_id: str, *, status: str, message: str = "unknown Action Hub trigger: x",
          name: str = "Hourly jobs pulse", started_at: str | None = None):
-    from aughor.automations.models import AutomationRun, EffectOutcome
-    from aughor.automations.store import append_run
+    from pramanyx.automations.models import AutomationRun, EffectOutcome
+    from pramanyx.automations.store import append_run
     run = AutomationRun(
         automation_id=automation_id, automation_name=name, conn_id="c1",
         outcome="fired", reason="schedule due",
@@ -45,8 +45,8 @@ def _tick(automation_id: str, *, name: str = "Hourly jobs pulse",
     This is what the engine records most of the time: measured live, it ticks every
     minute and fires once an hour.
     """
-    from aughor.automations.models import AutomationRun
-    from aughor.automations.store import append_run
+    from pramanyx.automations.models import AutomationRun
+    from pramanyx.automations.store import append_run
     return append_run(AutomationRun(
         automation_id=automation_id, automation_name=name, conn_id="c1",
         outcome="not_fired", reason="schedule not due", effects=[],
@@ -150,7 +150,7 @@ def test_a_fire_that_recovered_still_clears_it(client):
 def test_a_source_that_could_not_be_read_is_named_never_counted_as_empty(client, monkeypatch):
     """A failed read counted 0, so Attention said "Nothing needs a human. Every source is empty right now" over a source
     nobody had read (the user's defect list, 2026-10-13). It is named instead; the sources that did read still count."""
-    import aughor.obs.agent_alert_store as alerts
+    import pramanyx.obs.agent_alert_store as alerts
 
     def unreadable(**_):
         raise RuntimeError("database is locked")
@@ -168,7 +168,7 @@ def test_the_counts_do_not_depend_on_how_many_rows_were_asked_for(client, monkey
     most one of each (2026-10-13). `limit` trims the rows; the counts read further."""
     import types
 
-    import aughor.obs.agent_alert_store as alerts
+    import pramanyx.obs.agent_alert_store as alerts
     fired = [types.SimpleNamespace(id=f"e{i}", rule_name="Error rate", reason="crossed 40%", severity="warning",
                                    fired_at="2026-10-13T08:00:00Z") for i in range(3)]
     monkeypatch.setattr(alerts, "list_events", lambda unacknowledged_only=True, limit=100: fired[:limit])

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.overrides import (
+from pramanyx.ontology.overrides import (
     PROPOSED_FIELD,
     ROUTING_FIELD,
     OntologyOverride,
@@ -22,7 +22,7 @@ from aughor.ontology.overrides import (
     save_override,
     viewing,
 )
-from aughor.ontology.routing import routing_rules
+from pramanyx.ontology.routing import routing_rules
 
 CONN = "capture-test"
 SCHEMA = "main"
@@ -30,7 +30,7 @@ SCHEMA = "main"
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    from aughor.ontology import overrides as O
+    from pramanyx.ontology import overrides as O
     monkeypatch.setattr(O, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(O, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     return tmp_path
@@ -42,7 +42,7 @@ def _proposal(table="v_fact_sales", scope="sales", bound=True):
         fields={PROPOSED_FIELD: {"table": table, "scope": scope,
                                  "reason": "net of returns", "evidence": "run-123"}},
     )
-    from aughor.ontology.overrides import bind_overrides
+    from pramanyx.ontology.overrides import bind_overrides
     return bind_overrides(ov, None, (lambda sql: None) if bound else (lambda sql: "no such table"))
 
 
@@ -64,13 +64,13 @@ def test_a_proposal_binds_at_capture_time(store):
 
 def test_accepting_moves_it_across_and_it_becomes_live(store):
     """The one path from proposed to enforced: accepted, it waits in the draft, and is live once published."""
-    from aughor.ontology import release as R
+    from pramanyx.ontology import release as R
     publish_override(CONN, SCHEMA, _proposal(scope=""))
     ov = find_override(CONN, SCHEMA, "entity", "orders")
     fields = dict(ov.fields)
     fields[ROUTING_FIELD] = {k: v for k, v in fields[PROPOSED_FIELD].items() if k != "evidence"}
     fields.pop(PROPOSED_FIELD)
-    from aughor.ontology.overrides import bind_overrides
+    from pramanyx.ontology.overrides import bind_overrides
     accepted = bind_overrides(
         OntologyOverride(target_kind="entity", target_id="orders", fields=fields),
         None, lambda sql: None)

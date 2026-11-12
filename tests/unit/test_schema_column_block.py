@@ -20,8 +20,8 @@ A guard whose population is a list beside its expectation cannot fail.
 """
 from __future__ import annotations
 
-from aughor.db.schema_render import ends_column_block
-from aughor.tools.schema import build_rich_schema, parse_schema_tables
+from pramanyx.db.schema_render import ends_column_block
+from pramanyx.tools.schema import build_rich_schema, parse_schema_tables
 
 # The shape the live renderer emits, trimmed to the parts that matter.
 SCHEMA = """TABLE: main.superstore  (9,994 rows)

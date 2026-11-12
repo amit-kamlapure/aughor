@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.explorer import store
-from aughor.explorer.agent import SchemaExplorer
+from pramanyx.explorer import store
+from pramanyx.explorer.agent import SchemaExplorer
 
 
 def _f(fid: str, words: str, at: str = "2026-10-08T06:00:00", domain: str = "Synthesis") -> dict:
@@ -64,7 +64,7 @@ def explored(tmp_path, monkeypatch):
 def test_every_reader_reads_one_id_per_finding_and_a_pin_resolves_each(explored):
     assert [f["id"] for f in store.get_findings(explored)] == [
         "pinned__0", "synth__share__1", "synth__share__1~2", "synth__share__1~3"]
-    from aughor.routers.exploration import domain_findings_for
+    from pramanyx.routers.exploration import domain_findings_for
     by_domain = domain_findings_for(explored, None)                      # what the briefing and the pin door read
     ids = [f["id"] for items in by_domain.values() for f in items]
     assert len(ids) == len(set(ids)) == 4
@@ -98,7 +98,7 @@ def test_reading_back_an_unchanged_pinned_finding_keeps_one_copy(monkeypatch):
     ex._order_keys_projected = lambda sql: False
     ex._emit_insight = lambda *a, **k: None
     ex._save_state = lambda: None
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: None)
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: None)
     profile = SimpleNamespace(key_questions=["Which category leads profit?"], key_question_sql=[])
     for _ in range(3):                                                   # three runs, the data unchanged
         asyncio.run(ex._pass_pinned_questions(profile, SimpleNamespace(table_cols={}), ""))

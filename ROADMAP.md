@@ -236,12 +236,12 @@ Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
 
 ### 3.1 · VA-9d — the MCP consumer (FIRST SLICE SHIPPED 2026-09-02)
 
-~~`aughor/mcp/` today is a **server** exposing Pramanyx's tools, plus an HTTP client to Pramanyx's own
+~~`pramanyx/mcp/` today is a **server** exposing Pramanyx's tools, plus an HTTP client to Pramanyx's own
 API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.~~
 
 > **The premise was re-measured before building, and for once it held exactly.** The
 > `mcp_tool` component family looked like the place it would be wrong — but
-> `_mcp_tool_components()` reads `aughor.mcp.server`'s OWN tool manager, so it re-reports
+> `_mcp_tool_components()` reads `pramanyx.mcp.server`'s OWN tool manager, so it re-reports
 > what we serve, never a foreign roster. A repo-wide sweep for `stdio_client`, `sse_client`,
 > `streamablehttp_client` and `ClientSession` found **zero** first-party hits, and
 > `client.py`'s `_stream_sse` is Pramanyx's own SSE framing, not the protocol's. Two things
@@ -251,7 +251,7 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > id"* — and says outright that VA-9a *"comes before that one"*. The seam was built for
 > this slice.
 >
-> **Shipped: `aughor/mcpservers/`** — `models` (the record + `classify`) · `store` (the
+> **Shipped: `pramanyx/mcpservers/`** — `models` (the record + `classify`) · `store` (the
 > allowlist and the rosters discovered against it) · `session` (stdio + streamable HTTP,
 > transport only) · `discover` (tools/list, classification, health) · `call` (THE door).
 > Plus `GET/POST/PUT/DELETE /mcp-servers`, discover and health routes, a `remote_tool`
@@ -465,12 +465,12 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 ### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; CONSUMED by DS-11)
 
 > **State, measured 2026-08-30 (after `dadc6f63`).** Deliverables 1, 2 and 4 are BUILT:
-> `aughor/integrations/models.py` (the `Connection` object, Fernet under `AUGHOR_SECRET_KEY`,
+> `pramanyx/integrations/models.py` (the `Connection` object, Fernet under `PRAMANYX_SECRET_KEY`,
 > masked reads), `broker.py` (begin/complete with `state`+PKCE, refresh-before-expiry, revoke,
 > audit), `providers.py` (Google · Slack · Microsoft as pure data), six routes and the
 > Integrations panel in `OperationsWorkspace`. **Deliverable 3 — a live end-to-end Google grant
 > — is not done, and more importantly the plane is INERT: nothing outside
-> `aughor/routers/integrations.py` imports the module, and `broker.fresh_access_token()` has
+> `pramanyx/routers/integrations.py` imports the module, and `broker.fresh_access_token()` has
 > zero callers.** No effect kind, tool or connector runs under a user's grant. §7's recurring
 > failure, verbatim. The remaining work is a CONSUMER, not more vault.
 >
@@ -536,7 +536,7 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
 1. **`Connection` — the governed object.** User-scoped, provider-typed, granted scopes,
    expiry, and a `revoke()` that reaches the provider. Generalised from the pattern
    `slackbots/models.py` already proves in production: `SECRET_FIELDS`, Fernet under
-   `AUGHOR_SECRET_KEY`, `encrypt_secrets`/`decrypt_secrets`, masked on every read
+   `PRAMANYX_SECRET_KEY`, `encrypt_secrets`/`decrypt_secrets`, masked on every read
    (`credentials.py`: a credential "is an access token that reading grants" — masked for every
    reader, not gated by role). It is what `govern.audit` attributes against.
    **Warehouse connections adopt it** — they have no owner at all today, the oldest open item
@@ -599,7 +599,7 @@ not code" — it is the exact inverse.** Three of the five pieces are already bu
 
 | Piece | This line said | Measured 2026-09-04 |
 |---|---|---|
-| RBAC on the agent plane | untouched | **built** — `aughor/rbac/` store, `/rbac/roles` routes, `effective_capabilities`/`resolve_roles`, and **80 routes enforcing a capability gate** |
+| RBAC on the agent plane | untouched | **built** — `pramanyx/rbac/` store, `/rbac/roles` routes, `effective_capabilities`/`resolve_roles`, and **80 routes enforcing a capability gate** |
 | Per-user / per-org quotas | untouched | **built** — `govern/usage_caps.py`: `UsageCap`, `evaluate`, `check`, `observed_usage` |
 | Audit of admin trace access | untouched | **built** — VA-5's `trace.payload_access`, categorized into the governance feed |
 | Admin view across users | untouched | **genuinely missing** — no admin routes exist |
@@ -612,7 +612,7 @@ discovery document — **no IdP hardcoded** (the model-id law applied to identit
 Google Workspace / Azure AD / Okta / Keycloak are the same deployment with different env
 values. Fail-closed throughout: half-configuration (issuer without audience) refuses;
 an invalid token resolves to NOTHING rather than downgrading to the header seam; and
-while an issuer is configured under `AUGHOR_REQUIRE_IDENTITY`, the `X-Aughor-*` headers
+while an issuer is configured under `PRAMANYX_REQUIRE_IDENTITY`, the `X-Pramanyx-*` headers
 are **DEAD** — the mallory demonstration below is now a 401, pinned by a test that was
 verified to FAIL with the wiring reverted. The header seam survives only for identity-off
 localhost and for OIDC-less deployments, exactly as before, byte-identically. The admin
@@ -623,12 +623,12 @@ receipt against a real IdP tenant (issuer + client id only they can create) — 
 as VA-11's Google receipt.
 
 The paragraph this replaces, kept for the record: `resolve_principal` read
-`X-Aughor-Org`/`X-Aughor-User` as unverified headers, marked *"SEAM: swap this for
+`X-Pramanyx-Org`/`X-Pramanyx-User` as unverified headers, marked *"SEAM: swap this for
 authenticated-token extraction in production"* — and there was no JWT, no OIDC, no
 session anywhere in the tree.
 
 **Demonstrated on the live instance 2026-09-04**, not argued from a code comment: with
-`AUGHOR_REQUIRE_IDENTITY=1`, a request with no headers is **401**; `X-Aughor-User: mallory`
+`PRAMANYX_REQUIRE_IDENTITY=1`, a request with no headers is **401**; `X-Pramanyx-User: mallory`
 is **200** with no credential; and the §6.4 break-glass audit then recorded
 **`read_by: mallory`** — a string typed into a curl. One thing came out BETTER than
 expected: a caller naming a different org got **403**, so tenant isolation (DATA-06) is real
@@ -658,8 +658,8 @@ second needs a name attached to it.
 ### 3.6 · ~~S1 — Qdrant installs WITH the app, not beside it~~ — **SHIPPED 2026-09-02**
 
 > **Built as directed below: the third branch.** `_client()` opens qdrant-client's
-> in-process local mode at `AUGHOR_QDRANT_PATH` (default `<state_dir()>/qdrant`, so the
-> suite's temp `AUGHOR_STATE_DIR` and any data/ move carry it) whenever no URL is pinned
+> in-process local mode at `PRAMANYX_QDRANT_PATH` (default `<state_dir()>/qdrant`, so the
+> suite's temp `PRAMANYX_STATE_DIR` and any data/ move carry it) whenever no URL is pinned
 > and no Postgres is configured; `backend()` still answers `qdrant` for both shapes
 > because every operation is identical — only the client differs. The exclusive-lock
 > constraint became the design: ONE serialized client per path for the life of the
@@ -668,18 +668,18 @@ second needs a name attached to it.
 > commit. **Receipt:** the embedded suite runs a real upsert→ranked-search→filter→
 > scroll→delete roundtrip on a temp path — no server, no port, no env var.
 > **Found while joining:** THREE call sites built their own `QdrantClient` from
-> `AUGHOR_QDRANT_URL` (org-intelligence list + delete, doc-chunk delete), so on any
+> `PRAMANYX_QDRANT_URL` (org-intelligence list + delete, doc-chunk delete), so on any
 > deployment whose index wasn't at localhost:6333 they read/deleted against a server
 > holding nothing. All three now ride the seam; `scroll_points`/`delete_ids` were added
 > to it (with pgvector twins) because a listed row must be addressable.
 > An operator with an existing server (this repo's author included) pins
-> `AUGHOR_QDRANT_URL` — the embedded default would otherwise hide those vectors.
+> `PRAMANYX_QDRANT_URL` — the embedded default would otherwise hide those vectors.
 
 ### The original S1 case (raised by the user, 2026-08-30)
 
 **Measured, not recalled.** `uv sync` / `pip install '.[semantic]'` installs the *client only*
 — `pyproject.toml` concedes it in its own comment: `qdrant-client` "already needs a Qdrant
-server (`AUGHOR_QDRANT_URL`, default localhost:6333)". The server comes from a **separate**
+server (`PRAMANYX_QDRANT_URL`, default localhost:6333)". The server comes from a **separate**
 `docker compose up` (`docker-compose.yml`, `qdrant/qdrant:latest`, volume `qdrant_data`), and
 that is exactly how it runs on the author's machine today (container `hermes-qdrant-1`, up 7
 days). README says the same out loud: "there is no container image (the only Docker asset
@@ -689,7 +689,7 @@ writes no-op.
 **Half of this is already solved; do not rebuild it.** `vector_store.backend()` routes a
 Postgres deployment to **pgvector** — the index rides inside the platform's one managed
 database, no second service — so the hosted/Vercel shape needs no Qdrant at all. The gap is
-only the **local** shape: with no Postgres `AUGHOR_DB_URL` and no pinned URL, `_client()`
+only the **local** shape: with no Postgres `PRAMANYX_DB_URL` and no pinned URL, `_client()`
 hardcodes `url=http://localhost:6333`, and on a fresh clone nothing is listening there.
 
 **Direction — make the laptop backend embedded.** `qdrant-client` 1.18.0, already the pinned
@@ -706,7 +706,7 @@ the SAME commit, and CLI/backfill paths talk to the API rather than open the dir
 themselves. (Compose-the-app-too is the alternative, but it helps only Docker users and leaves
 `uv run` — the documented path — needing a second service.)
 
-**Receipt:** fresh clone → `uv sync` → `uvicorn aughor.api:app` → semantic search returns hits
+**Receipt:** fresh clone → `uv sync` → `uvicorn pramanyx.api:app` → semantic search returns hits
 with no second process running and no environment variable set.
 
 ---
@@ -985,7 +985,7 @@ resumes it; the trace shows one run with a human in its middle.
 > approved a write is owed the rest of the chain, and a re-probe could answer differently and
 > abandon it half-executed. Accept, reject and expiry all end the wait; a refusal makes its
 > step `skipped`, and dependents skip through the unresolved-binding path that already existed.
-> **The layering forced the shape:** `aughor/actions/*` may not import `aughor/automations/*`
+> **The layering forced the shape:** `pramanyx/actions/*` may not import `pramanyx/automations/*`
 > and `runners/*` may import neither, so the resume is called from the ROUTER (where the
 > automation→proposal purge cascade already lives) and swept every heartbeat by
 > `resume_parked_runs`, which makes resuming a property of the system rather than of whichever
@@ -997,7 +997,7 @@ resumes it; the trace shows one run with a human in its middle.
 > governed write, not the step alias — so the resumed context was published where no binding
 > could reach it (the fixture set `target=alias`, hiding it from both sides); and `needs-human`
 > listed one approval twice, once as a pending proposal and once as a parked run, with Accept
-> on only one of the two cards. **Left open, chip-filed:** `AUGHOR_ACTION_APPROVAL` is unset by
+> on only one of the two cards. **Left open, chip-filed:** `PRAMANYX_ACTION_APPROVAL` is unset by
 > default, so `guard()` returns immediately and the pause is unreachable on a default
 > deployment — the whole graduated-approval plane is complete and inert until that flips.
 
@@ -1041,7 +1041,7 @@ with the law kept: **a component references a governed capability.** Beta/Legacy
 registry metadata — display states, empty by intent. **Receipt:** the palette lists every
 capability of this deployment, searchably, and nothing that isn't real.
 
-> **Shipped 2026-09-01.** `aughor/components/` adapts five existing rosters at read time and
+> **Shipped 2026-09-01.** `pramanyx/components/` adapts five existing rosters at read time and
 > copies none of them: a registry holding its own table of effect kinds would be a second
 > place to add the seventh, and the seventh would reach exactly one of them. Served at
 > `/components` (with `conn_id`, `family`, `q`) and — the part that makes it one roster
@@ -1096,7 +1096,7 @@ and posts to Slack, every hop attributed, capped and audited.
 >
 > **The premise, measured before building and exactly as §3.4 stated it:**
 > `broker.fresh_access_token()` had **zero** callers outside its own tests, and nothing
-> outside `routers/integrations.py` imported `aughor.integrations` at all. The vault
+> outside `routers/integrations.py` imported `pramanyx.integrations` at all. The vault
 > minted, refreshed, revoked and audited tokens that no capability could spend. Two new
 > modules end that: `integrations/operations.py` — what a grant may DO, as DATA in
 > `providers.py`'s shape — and `integrations/call.py`, the ONE door, so refresh policy,
@@ -1142,7 +1142,7 @@ and posts to Slack, every hop attributed, capped and audited.
 > both hops `executed`, the read publishing its declared keys only, the write bound to
 > `{"$from": "step1.count"}` and arriving as `3`. It also fired UNATTENDED on the
 > scheduler heartbeat. `for_each` over `inbox.items` fanned one read into three per-item
-> writes. With `AUGHOR_ACTION_APPROVAL=1` the read proceeded and the write stopped with
+> writes. With `PRAMANYX_ACTION_APPROVAL=1` the read proceeded and the write stopped with
 > the gate's own sentence; allowlisting `integration.slack.slack.chat.postMessage` for
 > THAT grant let it through and left another grant refused. And the network path is real,
 > not stubbed: a step pointed at the unmodified `gmail.messages.get` reached
@@ -1211,7 +1211,7 @@ and posts to Slack, every hop attributed, capped and audited.
 >
 > **Live receipt:** with the gate armed, the chain parked with `finished_at: None` and step
 > 2 never dispatched; ONE row in NEEDS YOU (not the double-listing DS-8 had to fix), and
-> one card in the Inbox reading "slack.chat.postMessage · as slack · Aughor HQ" over the
+> one card in the Inbox reading "slack.chat.postMessage · as slack · Pramanyx HQ" over the
 > RESOLVED params (`text: 3`, step 1's count — RC-3 freezes values, never references).
 > Accepting IN THE UI resumed the SAME run id to `fired` with both steps executed and the
 > resumed step publishing the write's real `{ts, channel}`. The audit ledger carries the
@@ -1260,7 +1260,7 @@ account, the cohort's definition one click away.
 >
 > **Also repaired in passing:** `semantic/trusted_queries.py` was the last authored store
 > here with a hardcoded path, so a test that saved one wrote to the live
-> `data/trusted_queries.json`. `AUGHOR_TRUSTED_QUERIES_PATH` and its conftest redirect
+> `data/trusted_queries.json`. `PRAMANYX_TRUSTED_QUERIES_PATH` and its conftest redirect
 > landed in the SAME commit the automations plane started reading it — the rule this repo
 > bought with a suite run that destroyed real content.
 >
@@ -1292,7 +1292,7 @@ a form, never writes Python, and the approval gate still owns its writes.
 > and the substrate was already here: a declared action carries typed params, submission
 > criteria, a risk tier and the graduated approval gate; `PUT /ontology/kinetic-actions/{id}`
 > is already the form's write path behind `ONTOLOGY_EDIT`; `is_safe_webhook_url` already
-> guards SSRF; and `exec`/`eval` appear NOWHERE in `aughor/`, so the no-code-injection law
+> guards SSRF; and `exec`/`eval` appear NOWHERE in `pramanyx/`, so the no-code-injection law
 > was already true rather than newly promised. Building a separate "custom component"
 > object with its own store and its own gate would have been the second policy authority
 > §3.4 refuses in one line.
@@ -1313,7 +1313,7 @@ a form, never writes Python, and the approval gate still owns its writes.
 >
 > **The credential is Fernet at rest and masked on the way out.** It matters more here than
 > anywhere else this platform holds a secret, because an ontology override is a FILE and
-> files here are tracked — ciphertext under `AUGHOR_SECRET_KEY` is what makes a declared
+> files here are tracked — ciphertext under `PRAMANYX_SECRET_KEY` is what makes a declared
 > PagerDuty component safe to commit beside the entity it belongs to. Masked rather than
 > dropped, unlike a `Connection`'s tokens: this feeds an EDIT form, and a dropped field
 > makes "no key" and "a key you may not see" look identical. An unchanged (masked) value
@@ -1529,7 +1529,7 @@ issue/revoke. Reading the menu opens nothing.
 > And deleting a chain left its token row behind, so the DELETE cascade that already purges
 > grants and proposals now purges the credential too.
 >
-> **Swept in passing:** `scripts/dump_openapi.py` isolated only `AUGHOR_*_DB` names, so a
+> **Swept in passing:** `scripts/dump_openapi.py` isolated only `PRAMANYX_*_DB` names, so a
 > store keyed on a DIRECTORY had no pin at all during `npm run gen:api`. Measured before
 > claiming it: no directory store writes during a spec dump today (reproduced with the old
 > shape — the stray `data/qdrant/` of 2026-09-02 was NOT this script), so it closes a latent
@@ -1618,7 +1618,7 @@ approved, nothing later"*).
   render alike); the row cap is named in the output the way `mcp_call` publishes `truncated`, because a step
   reading the answer must be able to tell a whole one from half; and the answer carries the provenance of
   what it read, so a Slack message's receipt names the approved query behind it. One governed answer path,
-  capped, spanned, audited, no model id in `aughor/`.
+  capped, spanned, audited, no model id in `pramanyx/`.
   **Falsifier:** a `synthesize` answer that states a number absent from its input. If that can happen, the
   step is wrong and ships behind nothing. ✅ **Held**: an answer inventing a plausible sum (2,315 from 1,412
   and 903) is refused twice and the step FAILS publishing nothing — the answer is discarded rather than
@@ -1759,7 +1759,7 @@ approved, nothing later"*).
   send.
   **Receipt, live on theLook:** `state: departed`, nine laws each with its verdict — `definition: cites metric
   units_sold v1` · `remeasure: 6 numbers grounded in the rows of top_sellers.rows, measured moments ago` ·
-  `claims: descriptive — no associational, causal or forecast claim`. The message reached `#aughor_canvas` as
+  `claims: descriptive — no associational, causal or forecast claim`. The message reached `#pramanyx_canvas` as
   TheLook Analyst (ts 1789820966.806669). 24 tests, five mutants killed.
   🔑 **And one hold was the author's own wording, which is the gate working.** The `context` instruction
   written to PREVENT a misleading claim — "the product ranking is driven by unit price rather than demand" —
@@ -1920,7 +1920,7 @@ worked.
 > will be the new agents… start recording the learnings from each and every activity that
 > goes on in the platform and turn it into Machine intelligence."* The same-day audit
 > (both repos of the pipeline platform in §4.5 read end-to-end, nothing executed; every recording surface in
-> `aughor/` inventoried with file:line receipts; the retention, prompt-window and
+> `pramanyx/` inventoried with file:line receipts; the retention, prompt-window and
 > trace-input claims re-verified by hand) reframed the ask: **capture is already rich;
 > grading, keeping and exporting are the gaps.** The case, the scenario storyboards and
 > the reinforcement-learning read live in the session memo (artifacts `35b2c8fa` / `b387d309`);
@@ -1955,7 +1955,7 @@ worked.
   expiring on the 14-day sweep. Retention follows grading, not the other way round.
   ⚠️ **Amended 2026-09-20 (MI-2b).** That sentence was true of `session_events` and false of the
   trace plane it has been read as describing: `events` had no sweep at all — 430,768 rows, 95 days,
-  76.8% of them past the point `aughor_ops` can see. The journal's rule is therefore the INVERSE,
+  76.8% of them past the point `pramanyx_ops` can see. The journal's rule is therefore the INVERSE,
   and for a stated reason: there is no pin on `events`, so every kind is exempt unless it is named,
   and only `job.state` and `automation.run` age out.
 - **Reward integrity precedes optimization.** Before any training consumes a signal,
@@ -1967,7 +1967,7 @@ worked.
   baseline on the held-out golden set with no regression on safety, latency or cost —
   the eval plane's graduation law extended to weights. Every escalation the cascade
   takes is automatically next version's most valuable training row.
-- **No model id in `aughor/`** (standing law, unchanged). Serving rides the provider
+- **No model id in `pramanyx/`** (standing law, unchanged). Serving rides the provider
   chain as config; local inference rides library runtimes (Ollama / llama.cpp / vLLM),
   never a hand-rolled one. The cascade is the failover seam pointed at economics.
 - **Store hygiene, paid for repeatedly:** a new store's env name lands in
@@ -1988,7 +1988,7 @@ worked.
   `E1-*` issues; `emit_guard_receipt` fans out to SSE + a ContextVar only. The best
   free supervision signal on the platform is discarded at birth. (`eval_run_results.fired`
   proves the column shape is already understood — it exists only on the eval path.)
-- **`session_events` expires in 14 days** (`AUGHOR_SESSION_LOG_KEEP_DAYS=14`,
+- **`session_events` expires in 14 days** (`PRAMANYX_SESSION_LOG_KEEP_DAYS=14`,
   `obs/session_log.py:698`) while `finding_verdicts`, `staged_proposals` and
   `evidence_claims` are unbounded — a late verdict's join target is already deleted.
 - ~~**Attribution is dead on arrival**~~ — **RE-MEASURED 2026-09-03, and it was wrong in
@@ -1996,7 +1996,7 @@ worked.
   2026-08-30: VA-9b's plumbing works and the earlier count was taken before it landed.
   `user_id` is genuinely 0 of 10,782 — but not for want of wiring. `session_log.emit`
   already reads all three ids ambiently from contextvars (`telemetry.py:388`), so there is
-  nothing to thread; `user_id` is empty because `AUGHOR_REQUIRE_IDENTITY` is **off by
+  nothing to thread; `user_id` is empty because `PRAMANYX_REQUIRE_IDENTITY` is **off by
   default** (localhost mode) and the identity middleware no-ops. Making it non-empty is
   multi-user work — **§3.5 VA-10's band, not MI-1's**. `investigations.py:5528` had already
   written the diagnosis down: *the machinery was reading a value nobody set.*
@@ -2082,7 +2082,7 @@ start.
 - ✅ **Persist guard verdicts at the execution chokepoint** — the one seam every connector
   and both the quick and deep paths already pass (the capability-misses-a-connector
   lesson, ×3, decides the placement). Rows `(ts, trace_id, sql_digest, pattern,
-  subject, phase, org_id)` beside `audit_log` in `AUGHOR_AUDIT_DB` (an existing store:
+  subject, phase, org_id)` beside `audit_log` in `PRAMANYX_AUDIT_DB` (an existing store:
   migration rules above apply).
 - ✅ **`automation_runs` gains `trace_id`**, and the INSERT carries the `agent_id` the
   model already declares — a chain run can finally reach the `llm_call` rows it caused
@@ -2094,7 +2094,7 @@ start.
   **Why the ratchet was silent, which was the more expensive half:** it hand-listed the
   emitted kinds as a literal and asserted them against the hand-maintained `KIND_CATEGORY`.
   Both sides were the same edit, so a kind nobody remembered was absent from *both* and the
-  assertion passed. It failed OPEN. It now DISCOVERS its population by parsing `aughor/`
+  assertion passed. It failed OPEN. It now DISCOVERS its population by parsing `pramanyx/`
   (resolving module-level constants too — the guardrail sink emits `EVENT_KIND`, not a
   literal), and every discovered kind must be categorized or explicitly declared
   non-governance. It caught `budget.exceeded` on its first run.
@@ -2115,7 +2115,7 @@ start.
 **Receipt:** ONE live SQL query walks run → executed SQL → guard fire. Before this slice
 that query could not be written; it is now
 `tests/unit/test_mi1_graded_ledger.py::test_one_query_walks_run_to_executed_sql_to_guard_fire`,
-and both tables share `AUGHOR_AUDIT_DB` so it is a single-store join. The human-verdict hop
+and both tables share `PRAMANYX_AUDIT_DB` so it is a single-store join. The human-verdict hop
 is reachable but not yet joined in one statement — `finding_verdicts` lives in its own
 store, which is MI-3's dataset plane, not this slice's.
 
@@ -2206,7 +2206,7 @@ cover, both directions of the durable clock, and the row-cap exemption.
 > lean on. §3.9's catalogue-timestamp discipline is what caught it: the figures in this arc are
 > dated 2026-09-02, and re-measuring them is what opened the table.
 >
-> **Unbounded growth was not the finding. Unreachability was.** `AughorOpsConnection` — the
+> **Unbounded growth was not the finding. Unreachability was.** `PramanyxOpsConnection` — the
 > platform's own *"ask SQL about your own runs"* surface — snapshots the NEWEST 100,000 rows per
 > curated table (`db/connection.py:1360`, `_SNAPSHOT_ROW_CAP`; `events` is one of its four, `:1355`),
 > so what the journal cannot fit under that cap is not merely old, it is **invisible to
@@ -2218,7 +2218,7 @@ cover, both directions of the durable clock, and the row-cap exemption.
 
 **Retention is SCOPED, and its default is the INVERSE of MI-2's — deliberately.** `session_events`
 may sweep broadly because `pinned_at` exempts what matters; `events` has no pin, so **the exemption
-has to be the default**. `events_prune` names the kinds it may delete (`AUGHOR_EVENTS_PRUNE_KINDS`,
+has to be the default**. `events_prune` names the kinds it may delete (`PRAMANYX_EVENTS_PRUNE_KINDS`,
 default `job.state` and `automation.run`) and touches nothing else — a kind not named there
 (`investigation.created`, `investigation.completed`, `ontology.build`, `agent.handoff`, …) is kept
 forever. Deleting evidence to save space would be the wrong trade; deleting a heartbeat nobody reads
@@ -2229,7 +2229,7 @@ because a second retention idiom would be a second thing to reason about.
 history inside the 100k snapshot. Projected against the live table 2026-09-19: **1 day → 62,223 rows
 kept · 2 days → 85,134 · 3 days → 108,048 (already over the cap) · 7 days → 165,855.** Signal alone
 is 30,419 rows and spans all 95 days, so under a 2-day ops window **every semantic event ever emitted
-becomes visible to `aughor_ops` again.** The row cap (`AUGHOR_EVENTS_OPS_MAX_ROWS`, 50,000) is what
+becomes visible to `pramanyx_ops` again.** The row cap (`PRAMANYX_EVENTS_OPS_MAX_ROWS`, 50,000) is what
 makes that durable: an age window alone re-breaks the moment the tick rate rises, and it has been
 rising — 8,475/day to 23,287/day in seven days. Capping the chatter at a fixed budget makes the
 snapshot's headroom a property of the design rather than of today's traffic.
@@ -2329,9 +2329,9 @@ byte-identical to main's `json_store.py`. A session re-derived "open the PR" fro
 checking the tree — a prose claim inside §3 rots silently, and this one cost an hour. ② **The 336 were
 not deliveries that failed** — see the corrected paragraph above: a skip recorded as a failure, fixed
 the same day. ③ The three env knobs
-(`AUGHOR_EVENTS_PRUNE_KINDS` · `AUGHOR_EVENTS_OPS_KEEP_DAYS` · `AUGHOR_EVENTS_OPS_MAX_ROWS`) are
+(`PRAMANYX_EVENTS_PRUNE_KINDS` · `PRAMANYX_EVENTS_OPS_KEEP_DAYS` · `PRAMANYX_EVENTS_OPS_MAX_ROWS`) are
 tuning, not store paths, so MI's store-hygiene law does not bind them — verified by precedent rather
-than assumed: `AUGHOR_SESSION_LOG_KEEP_DAYS` appears in neither `tests/conftest.py` nor
+than assumed: `PRAMANYX_SESSION_LOG_KEEP_DAYS` appears in neither `tests/conftest.py` nor
 `scripts/dump_openapi.py` either.
 #### MI-3 · The dataset plane (the ported schema, our law — §4.5) — ✅ SHIPPED 2026-09-03
 
@@ -2342,7 +2342,7 @@ than assumed: `AUGHOR_SESSION_LOG_KEEP_DAYS` appears in neither `tests/conftest.
 > prediction (*capture is rich; grading is the gap*), and `gate_status()` publishes the
 > measured distance to MI-4's entry gates precisely so the falsifier stays checkable.
 >
-> **Store:** `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR`, both registered in all THREE
+> **Store:** `PRAMANYX_LEARNING_DB` + `PRAMANYX_DATASETS_DIR`, both registered in all THREE
 > places in the same commit (code · `tests/conftest.py` · `scripts/dump_openapi.py`),
 > directory family included. Three tables as ported: content-addressed `dataset_data`
 > (bytes dedup by hash; `deleted_at` lets a purge remove payload while the node and its
@@ -2362,7 +2362,7 @@ than assumed: `AUGHOR_SESSION_LOG_KEEP_DAYS` appears in neither `tests/conftest.
 > work joins the one loop that exists, and a nightly export over a two-example corpus is
 > motion without progress. `gate_status()` is what says when that changes.
 
-New store `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR` for snapshot files — the
+New store `PRAMANYX_LEARNING_DB` + `PRAMANYX_DATASETS_DIR` for snapshot files — the
 THREE-registration law applies, same commit. The ported ideas (§4.5): content-addressed
 **`dataset_data`** (hash, size, uri, created_at, deleted_at — bytes dedup by reference;
 provenance survives purging the bytes) · **`dataset_node`** (name, version, task,
@@ -2460,7 +2460,7 @@ query walks dataset → runs → verdicts; a golden set shows up in the evals pl
 > counted against, and both are better stated now than discovered at the gate.
 >
 > ⚠️ **A flag registered whose ON arm has never executed — recorded as a finding, not as readiness.**
-> `framing.choice_confidence` (`kernel/flags.py`, env `AUGHOR_FRAMING_CHOICE_CONFIDENCE`) asks the
+> `framing.choice_confidence` (`kernel/flags.py`, env `PRAMANYX_FRAMING_CHOICE_CONFIDENCE`) asks the
 > definition chooser for its own number through a SEPARATE response model
 > (`DefinitionChoiceWithConfidence`), so the off-arm ships today's schema byte-identically — it is an
 > `EXPERIMENT` entry in group D, because adding a field to a response model changes the prompt. Its
@@ -2520,7 +2520,7 @@ a live Trust Receipt naming the cascade hop it rode.
   same door pointing at a remote binding. Weights never enter the repo or installer —
   even a 0.6–1B base is 0.5–1.5 GB quantized, and an untuned base meets users at its
   worst; first impressions are a one-shot resource.
-- **Shared adapters ship as versioned release artifacts** (`aughor-sql-v1`, `-v2`, …)
+- **Shared adapters ship as versioned release artifacts** (`pramanyx-sql-v1`, `-v2`, …)
   trained on our own pilot data — and on opted-in, scrubbed contributions under §6.7's
   annex (**§6.8: decided YES 2026-09-03**; contribution stays strictly per-deployment
   opt-in — nothing leaves a deployment that didn't say so). An install pulls them the
@@ -2593,7 +2593,7 @@ then own training volume, §4.5's factory question reopens.
 > *"how we enable organisations to bring their own metric definitions. It can be in a
 > Google sheet, confluence page, md format, yaml, notion or ready sqls… do we have an
 > inlet for all such (and many more) formats?"* The same-day sweep (every ingestion
-> surface in `aughor/` and `web/` inventoried with file:line receipts) answered: **prose
+> surface in `pramanyx/` and `web/` inventoried with file:line receipts) answered: **prose
 > has inlets; structure mostly does not — and the structured stores are exactly the ones
 > that carry metric definitions.** Everything load-bearing is restated below so this
 > section stands alone.
@@ -2645,32 +2645,32 @@ then own training volume, §4.5's factory question reopens.
 **What is true today (measured 2026-09-05; file:line receipts in the session sweep):**
 
 - **Prose has inlets.** `POST /documents/upload` accepts `.pdf .docx .md .markdown .txt`
-  (hard allowlist, `aughor/routers/knowledge.py:20`) into the Qdrant KB → the EXTERNAL
+  (hard allowlist, `pramanyx/routers/knowledge.py:20`) into the Qdrant KB → the EXTERNAL
   CONTEXT block on every ask. Confluence and Notion knowledge-sync connectors exist and
-  land in the same KB (`aughor/connectors/knowledge/confluence.py:52`, `notion.py:64`;
-  trigger `aughor/routers/actions.py:203`).
+  land in the same KB (`pramanyx/connectors/knowledge/confluence.py:52`, `notion.py:64`;
+  trigger `pramanyx/routers/actions.py:203`).
 - **Structure mostly does not.** `POST /metrics` takes one JSON metric per call — no
   bulk, no file. Glossary PUTs are per-entity. The four doors that DO take structured
   files — `data/glossary.yaml`, `/ontology/import`'s export tree, pack folders, the dbt
-  manifest (`AUGHOR_DBT_MANIFEST`, env-only) — all assume host filesystem access.
+  manifest (`PRAMANYX_DBT_MANIFEST`, env-only) — all assume host filesystem access.
 - **The most prompt-authoritative store has NO write door.** Trusted queries are
-  injected at the top of the prompt (`aughor/routers/investigations.py:2027`), and the
-  only writers are internal (`aughor/evals/promote_trusted.py:112`,
-  `aughor/semantic/answer_divergence.py:386`). An org seeds golden SQL by editing
+  injected at the top of the prompt (`pramanyx/routers/investigations.py:2027`), and the
+  only writers are internal (`pramanyx/evals/promote_trusted.py:112`,
+  `pramanyx/semantic/answer_divergence.py:386`). An org seeds golden SQL by editing
   `data/trusted_queries.json` on disk, or not at all. The model has no
   `verified_at`/`verified_by`, and stores physical SQL that schema drift silently rots.
-- **A complete bundle format exists, exposed nowhere.** `aughor/ontology/interchange.py`
+- **A complete bundle format exists, exposed nowhere.** `pramanyx/ontology/interchange.py`
   carries a versioned bundle (synonyms · formats · value_dictionaries · exclusions),
   `plan_import`, `apply_import`, `bundle_from_yaml` — and its only caller is
-  `aughor/demo/pack.py`. Likewise the vocabulary store's writers (`add_synonym`,
-  `set_format`, `set_value_dictionary`, `aughor/ontology/vocabulary.py:155,243,272`)
+  `pramanyx/demo/pack.py`. Likewise the vocabulary store's writers (`add_synonym`,
+  `set_format`, `set_value_dictionary`, `pramanyx/ontology/vocabulary.py:155,243,272`)
   have zero HTTP/CLI callers. Built-and-inert — §7's recurring shape, twice over.
 - **Google Sheets exists as DATA only** (public gviz CSV → DuckDB tables,
-  `aughor/connectors/api/gsheets.py:78`); a Sheet-shaped metric dictionary can become a
+  `pramanyx/connectors/api/gsheets.py:78`); a Sheet-shaped metric dictionary can become a
   table and nothing else. CSV/XLSX likewise (`local_upload.py:81`) — there is no "this
   file IS a glossary" path anywhere on the platform.
 - **MCP cannot supply content** — the consumer implements `tools/list` + `tools/call`
-  only (`aughor/mcpservers/session.py:122,136`); `resources/*` is unimplemented, and
+  only (`pramanyx/mcpservers/session.py:122,136`); `resources/*` is unimplemented, and
   nothing routes an MCP result into any knowledge store.
 - **The review plumbing already exists in spirit:** `staged_proposals` (accept/reject,
   resolver named, trace-pinned since MI-2), the packs propose-bindings pattern, DS-15's
@@ -2683,7 +2683,7 @@ CRUD API over the existing store, capability-gated (`SEMANTIC_EDIT`), the model 
 `status · version · source · proposed_by/at · verified_by · verified_at ·
 last_executed_at · verification`. A seeded query is EXECUTED (bounded, mutations
 AST-blocked before any engine sees them) against its connection and walked through the
-SAME guard battery `/query/validate` runs — extracted into `aughor/sql/validation.py`
+SAME guard battery `/query/validate` runs — extracted into `pramanyx/sql/validation.py`
 precisely so there is one battery, not a drifting copy. A failing seed lands as a
 draft with the report attached, never in the prompt. Acceptance is a metrics-style
 transition on the shared governance machine — propose (re-verifies) → approve — so
@@ -2703,7 +2703,7 @@ catalog already paid for an unaudited one).
 #### KI-1 · The canonical bundle and the review lane (the spine) — ✅ BUILT 2026-09-05
 
 The candidate object model landed as `metric · synonym · glossary · rule · join ·
-trusted_query` (`aughor/intake/engine.py SECTIONS`; join and rule are connection-KB
+trusted_query` (`pramanyx/intake/engine.py SECTIONS`; join and rule are connection-KB
 entries, glossary carries table+column semantics). `ontology/interchange.py` is
 CONSUMED, not rebuilt: its `bundle_from_yaml` parses the wire format, its
 forward-version refusal law is shared, and `_plan_synonyms` delegates to its
@@ -2722,7 +2722,7 @@ that, the lane accepted synonyms into a prompt-invisible store, which is the
 built-and-inert shape by construction. Malformed rows are
 REFUSED at the door, never staged; identical objects stage as `noop` (nothing to
 decide); a failed apply keeps the candidate PENDING with the error attached, so an
-edit can fix what a dismissal would lose. Staging store `AUGHOR_INTAKE_DB` — all
+edit can fix what a dismissal would lose. Staging store `PRAMANYX_INTAKE_DB` — all
 three registrations same commit, path resolved PER CALL (the DS-12 lesson; the
 module-level resolution failed its own isolation test within the hour).
 `intake.governance` categorized AND sunk. `/intake/export/{conn}` emits the extended
@@ -2737,7 +2737,7 @@ trusted query is NOT in the prompt until KI-0's own approve.
 #### KI-2 · File mappers — ✅ COMPLETE 2026-09-05 (deterministic half + LLM prose mapper)
 
 `POST /intake/files` (multipart, SEMANTIC_EDIT-gated) maps a file into a bundle and
-feeds the SAME lane (`aughor/intake/mappers.py`; the router's `_stage` is shared, so a
+feeds the SAME lane (`pramanyx/intake/mappers.py`; the router's `_stage` is shared, so a
 mapped file is just a bundle). Built: the column-mapped **CSV/TSV/XLSX dictionary**
 (header vocabulary: Metric/Definition/Formula/Unit/Owner/Aliases/Notes and their
 spellings; XLSX via DuckDB's `excel` extension, the same reader the data-upload path
@@ -2750,7 +2750,7 @@ entry that already exists for exactly that); an Aliases cell fans into synonym
 candidates; a nameless row is refused with its row number. The mapper judges
 nothing — every object still waits in the lane.
 ✅ **The LLM prose mapper landed 2026-09-05, falsifier first** (`POST /intake/prose`,
-`aughor/intake/prose.py`): pasted text or a markdown page → ONE structured model call
+`pramanyx/intake/prose.py`): pasted text or a markdown page → ONE structured model call
 on the provider chain (`get_provider("coder")`, role from config, no model id, metered
 like every call) → deterministic validation stands between the model and the lane
 (nameless drops; a formula-less metric DEMOTES to a definition, the CSV mapper's own
@@ -2788,7 +2788,7 @@ the private-import ratchet refused the `_underscore` import, correctly), mapped 
 KI-2's deterministic dictionary mapper, staged in the SAME lane. A private sheet is
 reported plainly ("Google answered with a login page — share as
 Anyone-with-the-link") rather than as a parse error.
-✅ **Confluence/Notion mining** (`POST /intake/mine`, `aughor/intake/mining.py`):
+✅ **Confluence/Notion mining** (`POST /intake/mine`, `pramanyx/intake/mining.py`):
 walks a knowledge connection's pages through the connectors' OWN iterators and mines
 TABLES — the deterministic first cut, exactly as scoped. One pipeline; only the
 extraction is per-format, because the wire formats genuinely differ: Confluence
@@ -2813,7 +2813,7 @@ mine; a lunch-spots page stages nothing.
 #### KI-4 · The suggestions loop — ✅ BUILT 2026-09-05
 
 The arc's biggest item, landed where it belongs. `POST
-/intake/suggest` (`aughor/intake/suggestions.py`) mines what the platform already
+/intake/suggest` (`pramanyx/intake/suggestions.py`) mines what the platform already
 witnessed on a connection into the SAME lane: validated `sql_examples` runs →
 trusted-query proposals (one per question, ONLY when its history holds exactly one
 distinct SQL — two variants is divergence, and proposing either would fabricate an
@@ -2931,7 +2931,7 @@ hand) · any change to §6.8's outbound posture.
   targets, live data) + `web/lib/commandRegistry.ts` (views contribute scoped commands
   while mounted). Gap: `Command.run` is sync-void — free text that matches no command
   dead-ends; no async/streamed shape.
-- **The outside door exists.** `aughor/mcp/server.py`: 18 governed tools (incl.
+- **The outside door exists.** `pramanyx/mcp/server.py`: 18 governed tools (incl.
   `list_connections`, runs, jobs, briefing — deliberately no raw query) plus every
   exposed automation as a dynamic tool, stdio/HTTP :8765. The irony that sells the arc:
   an external MCP client can ask this platform how many connections it has; the
@@ -2946,7 +2946,7 @@ hand) · any change to §6.8's outbound posture.
   `prompt/completion/total_tokens`; `GET /usage` rolls cost by six axes with
   `cost_is_complete` honesty; six audit readers across six routers; traces with
   per-trace logs; `GET /capabilities` resolves tier ∩ role. Table/column popularity is
-  ALREADY MINED (`aughor/sql/popularity.py`, R14) but consumption sits behind
+  ALREADY MINED (`pramanyx/sql/popularity.py`, R14) but consumption sits behind
   `obs.popularity`, default-off — the built-and-inert shape, in miniature, waiting.
 - **The user's acceptance suite is green on substrate (2026-09-05, four questions —
   a fifth, nav-tab telemetry, was struck by the user same day):** agent runs 7d + token
@@ -3010,7 +3010,7 @@ queries, run histories, trace lookups, a unified audit read, popularity ("not mi
 yet" honest), capability introspection. Bodies shared with the MCP server — the
 `knowledge_tools.py` pattern already proven. Injection fencing on every result.
 
-**Built (first cut, acceptance-suite-shaped):** `aughor/agent/spotlight_tools.py` —
+**Built (first cut, acceptance-suite-shaped):** `pramanyx/agent/spotlight_tools.py` —
 six org-level reads in the converse roster (`list_platform_connections` ·
 `platform_usage` · `platform_runs` · `investigation_cadence` · `answer_accuracy` ·
 `table_popularity`), same read-only contract as `platform_tools`, stated in the same
@@ -3083,7 +3083,7 @@ fallthrough, never the fast path.
 **Built (first cut):** the palette grows a second mode, not a second stack — the
 Spotlight row is appended AFTER Fuse's results (never through the index: zero
 keystroke cost, always last), and selecting it flips the overlay into an answer pane
-driving `useAughorChat` → the same `/api/chat` transport → the same `/ask` door as
+driving `usePramanyxChat` → the same `/api/chat` transport → the same `/ask` door as
 every chat surface, `depth:"quick"` pinned, rendered through `projectTurn` →
 `PartsMessage` (receipts and all, no bespoke renderer). Follow-ups compose in one
 overlay session; ESC backs out one level (spotlight → search → closed); the topbar
@@ -3144,7 +3144,7 @@ through the existing inbox; nothing posts live. Plus the per-user settings store
 (theme · density · defaults) — hermetic from day one: env name in `tests/conftest.py`
 AND `scripts/dump_openapi.py` the same commit, one writer per `data/`.
 
-**Built (first cut):** `aughor/agent/spotlight_act.py` — the Act roster the Know
+**Built (first cut):** `pramanyx/agent/spotlight_act.py` — the Act roster the Know
 module promised by name, wired into converse beside `action_tools`. The custody line
 is mechanical: `set_preference` (cosmetic, self-scoped) applies INSTANTLY against the
 arc's one new store (`db/user_prefs.py`, closed key registry — theme · density ·
@@ -3206,7 +3206,7 @@ the two-site drift class, closed the way SP-3 closed it for drafts). The write's
 TARGET is bound too: an automation on another connection is refused with its home
 named. The vocabulary ratchet came out one UNDER baseline (347): the inbox's four
 accept bodies now share one lazy import of the executor's result type, so two new
-kinds arrived while the count fell. And the live flip: `useAughorChat` announces a
+kinds arrived while the count fell. And the live flip: `usePramanyxChat` announces a
 finished turn (one hook, every chat surface — panel, /chat, the ⌘K overlay), the
 shell re-reads stored preferences and applies a changed theme without a reload;
 proven in-browser against the live store read-only (DOM drifted, event fired,
@@ -3224,7 +3224,7 @@ lately); every guidance answer ends in an offered, staged act. **Receipt:** "how
 I create an agent?" yields the real four steps, cites the asker's own agents and their
 eval results, and offers the draft.
 
-**Built (first cut):** `aughor/agent/spotlight_guide.py` — one tool on the converse
+**Built (first cut):** `pramanyx/agent/spotlight_guide.py` — one tool on the converse
 roster (`platform_guide`), four walkthroughs: creating an agent, creating an
 automation, connecting data, appearance. The split with the concept tool is stated on
 both descriptions (concepts stay with `platform_help`; how-do-I comes here), so the
@@ -3399,7 +3399,7 @@ began.
 #### The second movement — authoring by sentence (adopted 2026-09-15, §6 item 22 (a); SP-7 STARTED the same day)
 
 > **Origin.** The user, 2026-09-15: *"Tell me if I can create automations or agents via natural language on
-> Aughor.. and if not draw me a proper roadmap"* — then drove the answer themselves through ⌘K, *"create an agent
+> Pramanyx.. and if not draw me a proper roadmap"* — then drove the answer themselves through ⌘K, *"create an agent
 > that delivers anomalies to slack every morning at 9am"*, and sent the transcript with a screenshot: *"the
 > formatting in the spotlight is not very great as well as the presentation... must feel agentic.. it is honest -
 > which is nice"*. The measured answer and this plan were published as the artifact "Authoring by Sentence"
@@ -3428,7 +3428,7 @@ began.
      carries no `agent_id` and runs as the default agent;
   5. Accept arms, on a UTC clock — the draft carries no `enabled`, `Automation(**params)` defaults it to True
      (`automations/models.py:407`), cron is read in UTC and an automation has no timezone; and a declared write inside
-     a chain runs unattended unless `AUGHOR_ACTION_APPROVAL` is set (`govern/actions.py:71`);
+     a chain runs unattended unless `PRAMANYX_ACTION_APPROVAL` is set (`govern/actions.py:71`);
   6. a placeholder validates — channel `#general`, sender TheLook Analyst. Spotlight asked the user to confirm both
      "before arming", and Accept does not wait for that.
 - **Also measured:** the guide sends a person to an "Agents page → New agent" (`agent/spotlight_guide.py:146`) where
@@ -3443,9 +3443,9 @@ began.
 **The laws the movement keeps** are the arc's, unchanged: every structural write stays a proposal — the model drafts,
 a person certifies · one inbox, one scheduler loop, one declared roster, with routing left to the tools' own
 descriptions and no intent classifier · an agent stays a form, never a canvas (§4.1); only the chain is drawn ·
-credentials never travel through chat · no model id in `aughor/`, and no model grades its own drafts.
+credentials never travel through chat · no model id in `pramanyx/`, and no model grades its own drafts.
 
-**SP-7 · Honest drafts — ✅ BUILT 2026-09-15** (session branch `claude/aughor-nlang-automations-roadmap-3ffcee`,
+**SP-7 · Honest drafts — ✅ BUILT 2026-09-15** (session branch `claude/pramanyx-nlang-automations-roadmap-3ffcee`,
 not merged; the live receipt waits on the user). A draft may only say what is true on this deployment.
 - A drafted agent names a schema its connection has, or none. It is refused where the schemas are KNOWN — the
   connection pins one (the catalogue's own filter, `routers/catalog.py:46`), or the caller holds the measured
@@ -3456,7 +3456,7 @@ not merged; the live receipt waits on the user). A draft may only say what is tr
   pending — until a draft fills them.
 - The first run is stated with its date, in UTC. *Re-scoped at the start: local time moves to SP-13, because the
   reader's timezone is not known on the server — the settings registry has no such key.*
-- A declared write drafted into a chain waits for a person on every run, whatever `AUGHOR_ACTION_APPROVAL` says; a
+- A declared write drafted into a chain waits for a person on every run, whatever `PRAMANYX_ACTION_APPROVAL` says; a
   person's standing grant for that exact target still satisfies it.
 - The guide names what is on screen, and a parity test pins every quoted label to `web/`.
 **Receipt:** the user's sentence asked again — no `public`, no `#general`, Accept refused while the channel is open,
@@ -3475,7 +3475,7 @@ the first run stated, and every label the guide quotes found in `web/`. **Needs:
 >   BEFORE its resolve-once update, so the proposal stays pending; Propose and Spotlight return `to_fill` and
 >   `first_run`.
 > - **Drafted writes wait** — a declared write a model drafts carries `require_approval`, and the executor asks a
->   person on every run whatever `AUGHOR_ACTION_APPROVAL` says; an accept or a standing grant still satisfies it.
+>   person on every run whatever `PRAMANYX_ACTION_APPROVAL` says; an accept or a standing grant still satisfies it.
 > - **The guide** quotes real labels (“Agent Ops” → “+ Create agent” → “Describe”, approvals under “Attention”,
 >   “Catalog”, ⌘K's “Add a data source”), held by a parity test over `web/`.
 > **Receipts:** `test_sp7_honest_drafts.py`, `test_sp7_drafted_writes_wait.py` and `test_sp7_guide_labels.py`, with
@@ -3665,7 +3665,7 @@ real asks drafted once and recorded, then scored with
 no model — it validates, names its open choices, binds runs-as, uses a real schema, gets the clock right, shows its
 cost; staged → accepted → finished in the form → lapsed, counted weekly; SP-3's falsifier measured rather than assumed.
 **Receipt:** the scoring runs in CI; the baseline on 2026-09-15 is 4 staged, 0 accepted. **Needs:** nothing.
-> **Built 2026-09-16.** `aughor/agent/authoring_measure.py`, two model-free instruments: `score_proposal` grades a
+> **Built 2026-09-16.** `pramanyx/agent/authoring_measure.py`, two model-free instruments: `score_proposal` grades a
 > STAGED row against the movement's own laws (the chain validates · declared open choices == the accept gate's real
 > holes, compared as parsed pairs · a bundle's chain carries no agent id at stage · a schema claim graded only when
 > a catalogue is KNOWN, None otherwise — a failed probe is not an absence · the stated first run sits ON a cron
@@ -3748,7 +3748,7 @@ follow-up chips already ride) and `proposal_ref` (the real approval card, render
 run-a-trusted-query actions wait on a deep-link registry — recorded open, not drifted into. **Receipt:** a click asks
 the follow-up through the same path a typed question takes.
 
-**AV-M · Measure alongside — ✅ BUILT 2026-09-19** (`aughor/obs/vocabulary_uptake.py`). Parts-versus-prose per
+**AV-M · Measure alongside — ✅ BUILT 2026-09-19** (`pramanyx/obs/vocabulary_uptake.py`). Parts-versus-prose per
 converse turn, counted from the session log, no model anywhere — SP-M's shape one movement over.
 **The population is the turns where the tool was OFFERED.** `present` reaches only a streaming converse turn, so a
 deep run or an automation could never have used it and must not be counted against it; `ask.converse` is the
@@ -3919,7 +3919,7 @@ automations and metrics as `explain` kinds; the second shelf and the measure fol
 - **Provisioning is idempotent and first-touch.** The same token arriving twice
   provisions once; a returning user's org is looked up, never re-created. No
   provisioning happens for an unverified caller, ever.
-- **Shared builtins stay shared by design** (the Workspace samples, aughor_ops) —
+- **Shared builtins stay shared by design** (the Workspace samples, pramanyx_ops) —
   they are demo substrate, not tenant data, and every org sees them. Everything a
   user CREATES lands in their own org.
 - **One roadmap, one tenancy mechanism.** No per-user ownership columns beside the
@@ -3929,9 +3929,9 @@ automations and metrics as `explain` kinds; the second shelf and the measure fol
 
 - Identity: OIDC verification live (#459), sign-in flow + `/auth/config` + fetch
   wrapper live (#461, receipted `{oidc_configured:false}` on the local instance —
-  inert until env). `AUGHOR_REQUIRE_IDENTITY=1` would today let the app SHELL render
+  inert until env). `PRAMANYX_REQUIRE_IDENTITY=1` would today let the app SHELL render
   and fail every call with 401s — enforcement without a front door.
-- Tenancy: all verified users land in ONE org (`AUGHOR_OIDC_DEFAULT_ORG`, default
+- Tenancy: all verified users land in ONE org (`PRAMANYX_OIDC_DEFAULT_ORG`, default
   "default"); two strangers would be individually identified and jointly staring at
   the same workspaces. Org isolation itself is enforced and live-proven (403).
 - Cost safety: the caps store has a write door but NO defaults — a fresh org is
@@ -3967,8 +3967,8 @@ automations and metrics as `explain` kinds; the second shelf and the measure fol
   **Receipt:** two different Gmail identities sign in; each sees a private starter
   workspace; each creates workspaces the other cannot list; cross-org reads 403.
 - **MT-2 · Arm the hosted deployment.** External consent screen (user's console),
-  client id pasted, three env vars on Vercel (`AUGHOR_OIDC_ISSUER`,
-  `AUGHOR_OIDC_AUDIENCE`, `AUGHOR_REQUIRE_IDENTITY=1`) plus the per-user mode.
+  client id pasted, three env vars on Vercel (`PRAMANYX_OIDC_ISSUER`,
+  `PRAMANYX_OIDC_AUDIENCE`, `PRAMANYX_REQUIRE_IDENTITY=1`) plus the per-user mode.
   **Receipt:** the MT-1 two-account receipt taken on the LIVE Vercel deployment.
 
 **Deliberately out of scope (not refused — later):** billing and paid tiers · team
@@ -4004,7 +4004,7 @@ block.
 >
 > **The shape: Markdown is the PIVOT.** anydoc (Firecrawl's Rust converter; MIT,
 > prebuilt abi3 wheels, no ML model, no network) brings fourteen formats IN as
-> Markdown; the `ExportDoc` renderers already in `aughor/export/` — which had exactly
+> Markdown; the `ExportDoc` renderers already in `pramanyx/export/` — which had exactly
 > one producer, an investigation's `report_json` — take it back OUT as PDF, Word,
 > PowerPoint, HTML or text. Fourteen readers plus six writers is twenty seams; the
 > format-pair matrix would have been eighty-four.
@@ -4031,7 +4031,7 @@ block.
   prompt, and an agent still fences a canvas: widening would turn a restriction into
   a suggestion.
 - **Hosted OCR is a network call.** anydoc can delegate scanned PDFs to Firecrawl.
-  Off unless `AUGHOR_DOC_OCR=hosted`; consent for sending a document off the box is
+  Off unless `PRAMANYX_DOC_OCR=hosted`; consent for sending a document off the box is
   external, like every other outbound seam.
 
 **Shipped:** the converter seam (`knowledge/convert.py`), byte retention
@@ -4106,7 +4106,7 @@ as canvas nodes on the ReactFlow surface rather than only as a canvas-level bind
 > the consistency-plane UI (out of scope until its flag graduates).
 
 > **Origin.** The user's 2026-09-09 hypothesis, given after the USP discussion: *"there
-> are a lot of features that aughor has but are not surfaced or exposed as much as they
+> are a lot of features that pramanyx has but are not surfaced or exposed as much as they
 > should be. Along with that, our UI is also like an AI slop … it lacks the UI judgement
 > of an experienced UI/UX researcher."* Audited the same day — two exhaustive code
 > audits (every backend path vs. every frontend caller; every surface vs. how a person
@@ -4175,7 +4175,7 @@ as canvas nodes on the ReactFlow surface rather than only as a canvas-level bind
   `?layer=` is written only for Intelligence, so every other workspace's sub-layer is
   lost on reload. ⌘K search on "guardrail" finds nothing but "Ask Spotlight".
 - **The slop, classed:** (1) machine exhaust as user text — run cards titled with the
-  scheduler's prompt preamble (`aughor/automations/temporal.py:81`), 392 Playbook
+  scheduler's prompt preamble (`pramanyx/automations/temporal.py:81`), 392 Playbook
   rules titled by snake_case keys, eval suites named "…(Wave H)", a Briefing tile
   pairing a concentration sentence with the number "2014", raw `0.315801`,
   "1 entities"; (2) lying states — Catalog says "Add a connection to get started"
@@ -4339,12 +4339,12 @@ with no receipt left to take is done.
 
 | The claim | Measured | Where |
 |---|---|---|
-| "It is the ERD, dressed up" | **True, by construction.** The builder's own comment: *"table = entity: every profiled table becomes an entity"*; `source_tables=[table]`; `table_to_entity` is 1:1; `entity_to_tables` is always a singleton. A business object cannot be born spanning two tables — only a gated, manual `entities/merge` can fuse two after the fact. Properties are copied `ColumnProfile`s (*"Sourced from ColumnProfile at build time"*). Relationships are the join map with a verb. Interfaces are name-pattern detection. | `aughor/ontology/builder.py:849-914` · `aughor/ontology/models.py:60-67` · `aughor/ontology/dedup.py:66-106` |
-| "Is it interpretable by the agent at runtime?" | **As TEXT, partially.** What reaches a prompt: the ENTITY MODEL block (name · table · grain · event-time · type · lifecycle · active filter · ≤2 default filters · ≤2 exclusions · `ACTION:` template names); ENTITY RELATIONSHIPS (verified/exact joins with cardinality); the VERIFIED SEMANTIC LAYER (segments + computed properties, verified-gated, question-scoped); the metrics catalog; synonyms; routing rules; `ACTION:` expansion in the planner. **What never reaches a prompt on the answer path:** the entity `description` — the one sentence that says what the business object IS, LLM-enriched, human-editable, rendered in the UI, grep-zero in every renderer; `domain`; `implements`; `exploration_insights` (deliberately, after R4); the `EntityProperty` semantics (`null_meaning`, `value_interpretation`, `measure_grain` reach prompts from the PROFILER directly — the ontology's copy is UI-only); `DefinitionSource` provenance. And the block rides the **heavy** phase, so a fresh connection answers with none of it until `build_intelligence()` has run. | `aughor/ontology/builder.py:1052-1121` · `aughor/agent/schema_annotators.py:262,472` · `aughor/ontology/semantic_block.py` · `aughor/routers/investigations.py:1838-1868,2063` · `aughor/agent/nodes.py:658-784` |
+| "It is the ERD, dressed up" | **True, by construction.** The builder's own comment: *"table = entity: every profiled table becomes an entity"*; `source_tables=[table]`; `table_to_entity` is 1:1; `entity_to_tables` is always a singleton. A business object cannot be born spanning two tables — only a gated, manual `entities/merge` can fuse two after the fact. Properties are copied `ColumnProfile`s (*"Sourced from ColumnProfile at build time"*). Relationships are the join map with a verb. Interfaces are name-pattern detection. | `pramanyx/ontology/builder.py:849-914` · `pramanyx/ontology/models.py:60-67` · `pramanyx/ontology/dedup.py:66-106` |
+| "Is it interpretable by the agent at runtime?" | **As TEXT, partially.** What reaches a prompt: the ENTITY MODEL block (name · table · grain · event-time · type · lifecycle · active filter · ≤2 default filters · ≤2 exclusions · `ACTION:` template names); ENTITY RELATIONSHIPS (verified/exact joins with cardinality); the VERIFIED SEMANTIC LAYER (segments + computed properties, verified-gated, question-scoped); the metrics catalog; synonyms; routing rules; `ACTION:` expansion in the planner. **What never reaches a prompt on the answer path:** the entity `description` — the one sentence that says what the business object IS, LLM-enriched, human-editable, rendered in the UI, grep-zero in every renderer; `domain`; `implements`; `exploration_insights` (deliberately, after R4); the `EntityProperty` semantics (`null_meaning`, `value_interpretation`, `measure_grain` reach prompts from the PROFILER directly — the ontology's copy is UI-only); `DefinitionSource` provenance. And the block rides the **heavy** phase, so a fresh connection answers with none of it until `build_intelligence()` has run. | `pramanyx/ontology/builder.py:1052-1121` · `pramanyx/agent/schema_annotators.py:262,472` · `pramanyx/ontology/semantic_block.py` · `pramanyx/routers/investigations.py:1838-1868,2063` · `pramanyx/agent/nodes.py:658-784` |
 | "Does it improve the agents' context?" | **Unmeasured since 2026-06-21, and the last measurement was NEGATIVE.** R4 (n=12, one warehouse, one model): raw 92% · guarded 92% safe · **injected 58% with 5 silent-wrong**. The doc's own conclusion: *"governed ≠ 'inject more LLM context'; governed = deterministic guards + registered metrics."* That eval predates verified-gating (M24c) and the relationship block, and measured the whole injection stack rather than the ontology alone — so today's effect is UNKNOWN, not merely small. No ontology-only arm has ever been run. | `docs/R4_ABLATION_EVAL_2026-06-21.md:40-60` · `evals/ablation_missimi_results.json` |
-| "Is it actionable?" | **The verb layer is real and well-shaped — and nearly empty.** `KineticAction`: typed params, submission criteria with authored messages shown verbatim to human AND model, side effects (notify · webhook · trigger_investigation · declarative `http`), risk tiers with fail-safe HIGH, graduated approval, K4b proposals attached to every deep-analysis report, the VA-9c `propose_action` tool bounded by grants, one inbox. This IS an Action Type in miniature. Population: **one** tracked declaration (`refund_orders`, description empty) + one untracked receipt on theLook. §7's complete-and-inert shape, on the arc's best idea. | `aughor/ontology/models.py` (`KineticAction`) · `aughor/actions/propose.py` · `aughor/agent/action_tools.py` · `data/ontology_overrides/workspace/default/action/refund_orders.yaml` |
-| "Do agents navigate it?" | **No — humans and the UI do.** The graph's own helpers (`entity_for_table`, `relationship_index`, `actions_for_entity`) have ZERO callers under `agent/`; outside `ontology/` they are used by the router, the explorer's Phase-8 hypothesis prose, and `semantic/compiler.py`. The agent's runtime graph tools (`search_graph`, `describe_entity`) read the **context graph** (Wave C) — node kinds `table · metric · glossary_term · domain · finding · brief` — whose tracked instances are 255/262 glossary terms and 100 findings per connection with 5–15 `joins_on` edges. That is a provenance graph of findings and definitions (the citation substrate, valuable) — not a graph of business objects. | `aughor/mcp/knowledge_tools.py:87-130` · `aughor/ontology/context_graph.py:41-42` · `data/context_graph/**/*.json` |
-| "Does it have instances?" | **No.** Type-level only. There is no object, no link between two objects, no "Customer 42 and her orders" anywhere in `aughor/ontology/`. Segments are WHERE fragments, not collections. An ontology's loop runs on instances; ours runs on a description of types followed by LLM-written SQL. | `grep -rn "instance\|object_id" aughor/ontology/` → 0 semantic hits |
+| "Is it actionable?" | **The verb layer is real and well-shaped — and nearly empty.** `KineticAction`: typed params, submission criteria with authored messages shown verbatim to human AND model, side effects (notify · webhook · trigger_investigation · declarative `http`), risk tiers with fail-safe HIGH, graduated approval, K4b proposals attached to every deep-analysis report, the VA-9c `propose_action` tool bounded by grants, one inbox. This IS an Action Type in miniature. Population: **one** tracked declaration (`refund_orders`, description empty) + one untracked receipt on theLook. §7's complete-and-inert shape, on the arc's best idea. | `pramanyx/ontology/models.py` (`KineticAction`) · `pramanyx/actions/propose.py` · `pramanyx/agent/action_tools.py` · `data/ontology_overrides/workspace/default/action/refund_orders.yaml` |
+| "Do agents navigate it?" | **No — humans and the UI do.** The graph's own helpers (`entity_for_table`, `relationship_index`, `actions_for_entity`) have ZERO callers under `agent/`; outside `ontology/` they are used by the router, the explorer's Phase-8 hypothesis prose, and `semantic/compiler.py`. The agent's runtime graph tools (`search_graph`, `describe_entity`) read the **context graph** (Wave C) — node kinds `table · metric · glossary_term · domain · finding · brief` — whose tracked instances are 255/262 glossary terms and 100 findings per connection with 5–15 `joins_on` edges. That is a provenance graph of findings and definitions (the citation substrate, valuable) — not a graph of business objects. | `pramanyx/mcp/knowledge_tools.py:87-130` · `pramanyx/ontology/context_graph.py:41-42` · `data/context_graph/**/*.json` |
+| "Does it have instances?" | **No.** Type-level only. There is no object, no link between two objects, no "Customer 42 and her orders" anywhere in `pramanyx/ontology/`. Segments are WHERE fragments, not collections. An ontology's loop runs on instances; ours runs on a description of types followed by LLM-written SQL. | `grep -rn "instance\|object_id" pramanyx/ontology/` → 0 semantic hits |
 
 **What is NOT an ERD, and must survive the re-think untouched** (the four things the
 critique undercounts — each is something the reference ontology platforms do not have):
@@ -4352,7 +4352,7 @@ critique undercounts — each is something the reference ontology platforms do n
 1. **Verification as a TIER, not a tiebreak.** `verified` on segments, computed
    properties and metrics is *execution against the live database*; `DefinitionSource`
    ranks an executed formula above a popular or certified one no matter who wrote it
-   (`aughor/ontology/authority.py`). Others rank meaning; we check the arithmetic.
+   (`pramanyx/ontology/authority.py`). Others rank meaning; we check the arithmetic.
 2. **The deterministic guard battery and the operations vocabulary.** Fan-out, additivity,
    value-domain, id-arithmetic, and `operations.yaml` — *what a concept admits and what
    it must never be used for* ("SUM of a latitude is not a quantity"). This is the "logic
@@ -4364,7 +4364,7 @@ critique undercounts — each is something the reference ontology platforms do n
    *described*: a typed intent IR (`scalar · timeseries · breakdown · ranking`) assembled
    deterministically from verified entities, coverage-gated, single-table, falling back
    to LLM SQL when it cannot vouch. *"The LLM augments a declarative layer rather than
-   regenerating SQL."* This is the seed of the whole arc. (`aughor/semantic/compiler.py`)
+   regenerating SQL."* This is the seed of the whole arc. (`pramanyx/semantic/compiler.py`)
 
 **The thesis.** *The ontology is simultaneously the context store, the guardrail, and the
 write API for AI — agents get three tools: query objects, execute actions, call functions.* Ours today: the context store is a
@@ -4409,7 +4409,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   same evening on `samples/ecommerce` (a ceiling) and on the re-authored LuxExperience hard
   set (no lift); the falsifier's honest reading is in that receipt — the user decides).
   **Receipts, 2026-09-10:**
-  - **Prompt reach, measured** (`aughor/ontology/prompt_reach.py` — a field reaches a
+  - **Prompt reach, measured** (`pramanyx/ontology/prompt_reach.py` — a field reaches a
     block iff changing it changes the block's text; one fixture graph with every
     renderer gate open; the seven pure renderers on the answer path). **59 of 142
     fields reach at least one prompt block; 83 reach none.** By model: OntologyGraph
@@ -4434,7 +4434,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
     into `ontology.semantic_block.render_entity_context`, byte-identically (tested); the
     planner's APPROVED METRIC FORMULAS and the explorer's Phase-8 prose remain inline
     and are named as such in the audit's output.
-  - **Kinetic census:** `python -m aughor.ontology.prompt_reach --census` → **1**
+  - **Kinetic census:** `python -m pramanyx.ontology.prompt_reach --census` → **1**
     declared action in the tracked tree (`workspace/default/refund_orders`, description
     empty). The live per-connection number is the user's instance's to take.
   - **The harness, rebuilt** (`evals/ablation_eval.py`): five arms — `raw` · `guarded` ·
@@ -4469,11 +4469,11 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
     the served graph is committed beside its dataset as
     `evals/ablation_samples_ecommerce_ontology.json` (built 2026-07-02, enrichment v5) so
     the arm reproduces without an instance:
-    `AUGHOR_SYSTEM_DB=/tmp/scratch/system.db AUGHOR_FALLBACK_BACKENDS=none uv run python
+    `PRAMANYX_SYSTEM_DB=/tmp/scratch/system.db PRAMANYX_FALLBACK_BACKENDS=none uv run python
     evals/ablation_eval.py --dataset evals/ablation_samples_ecommerce.jsonl --arms
     raw,guarded,ontology,ontology_guarded --graph-json
     samples/ecommerce=evals/ablation_samples_ecommerce_ontology.json` (redirect EVERY
-    `AUGHOR_*_DB` beside a serving API — the list is `tests/conftest.py`'s).
+    `PRAMANYX_*_DB` beside a serving API — the list is `tests/conftest.py`'s).
 
     | arm | correct | silent-wrong | error | guards fired |
     |---|---|---|---|---|
@@ -4534,8 +4534,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
     read-only instead of the registry — a served store a hermetic run redirects, where a
     REGISTERED id resolves to nothing (found by running it: `KeyError: '914df862'`; the
     builtins never hit this). The served graph is committed beside the set as
-    `evals/ablation_luxexperience_ontology.json`. The command: `AUGHOR_FALLBACK_BACKENDS=none`
-    + every `AUGHOR_*_DB` redirected + `uv run python evals/ablation_eval.py --dataset
+    `evals/ablation_luxexperience_ontology.json`. The command: `PRAMANYX_FALLBACK_BACKENDS=none`
+    + every `PRAMANYX_*_DB` redirected + `uv run python evals/ablation_eval.py --dataset
     evals/ablation_luxexperience_hard.jsonl --arms raw,guarded,ontology,ontology_guarded
     --graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology.json --output
     evals/ablation_on0_luxexperience_results.json`.
@@ -4678,13 +4678,13 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   (RDF/OWL, property graph — three studies, one verdict: port the levers, refuse the
   runtime).
   ✅ **First commit, 2026-09-10 — relationship cardinality is measured at build time.**
-  `aughor/ontology/cardinality.py`: a side is "1" iff its key is unique over its non-null
+  `pramanyx/ontology/cardinality.py`: a side is "1" iff its key is unique over its non-null
   rows (`COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)` — exact, one scan per side); the
   label reads from:to like the prompt's own sentence; a contradicted label is REPLACED and
   the authored one survives in `cardinality_note`; an unmeasurable edge (empty or missing
   table) keeps its label and says why. Hooked into the build right after the join-value
   pass, in the same connection, so every rebuild measures; `python -m
-  aughor.ontology.cardinality --graph-json … --duckdb … --out …` measures a served graph
+  pramanyx.ontology.cardinality --graph-json … --duckdb … --out …` measures a served graph
   offline. Ratcheted in `tests/unit/test_relationship_cardinality.py`: the committed
   LuxExperience fixture must still carry the four wrong labels; a hermetic warehouse with
   the demo file's key uniqueness must flip exactly those four and leave the three genuine
@@ -4709,7 +4709,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   Olist's one-customer_id-per-order; `order_items → order_payments` and `→ order_reviews`
   N:1→N:N).
   ✅ **Second commit, 2026-09-11 — lifecycle terminal states are measured at build time.**
-  `aughor/ontology/lifecycle.py`. What a snapshot can prove: an observed state the lists
+  `pramanyx/ontology/lifecycle.py`. What a snapshot can prove: an observed state the lists
   never named, and a claimed terminal state whose `<state>_at`-style timestamp is set on
   rows now in another state (they left it) — either sets `lifecycle_verified=False`, and
   the segment derived from the terminal set (the active filter) is downgraded, so the
@@ -4735,7 +4735,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   loads beside metrics and playbooks; `packs/core-ecommerce` (11 objects, 10 links, 4
   lifecycles, 3 empty alias fields) and `packs/fashion-ecommerce` (`extends:
   [core-ecommerce]`; adds Brand, Season, Collection, Variant, 4 links, 2 alias fields)
-  ship as authored packs. `aughor/packs/ontology_map.py` resolves the `extends` chain
+  ship as authored packs. `pramanyx/packs/ontology_map.py` resolves the `extends` chain
   (parents first, a child replaces by name), matches objects to entities deterministically
   (ids, display names, table stems, aliases — never a model call, never double-booked),
   and evaluates every entry into a `CoreClaim` on the graph with a tier — `expected` ·
@@ -4810,7 +4810,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   byte-identically, otherwise), which is what makes the receipt hold: a `Customer` backed
   by `customers ⋈ customer_profiles` with `lifetime_value` verified against the join, the
   ERD unchanged, `GET /ontology/entities` unchanged for every single-table type. Ratcheted
-  in `tests/unit/test_object_backing.py`; `aughor/ontology/backing.py` holds the
+  in `tests/unit/test_object_backing.py`; `pramanyx/ontology/backing.py` holds the
   measurement and `entity_from_clause`, the seam ON-2's compiler reads. Prompt-reach walk
   147 → 156; none of the nine new fields reach a block — the prompt still names tables,
   which is ON-6's question, not this wave's. **Measured live through the door, 2026-09-11,
@@ -4844,7 +4844,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
 - ✅ **ON-2 · Objects at runtime — the compiled door — FIRST SLICE BUILT 2026-09-11** (the
   user: *"Lets proceed with the roadmap!"*; branch `claude/on-2-object-query`; the conversation's
   door PARKED 2026-09-11 on a measured regression, §6 item 15(c)).
-  **What shipped.** `aughor/semantic/object_query.py`: the algebra below as a typed IR
+  **What shipped.** `pramanyx/semantic/object_query.py`: the algebra below as a typed IR
   (`ObjectQuery`: object type · segment · filters · measures with `where` and `divide_by` ·
   `by` · `time`/`grain`/window · order/limit), compiled over the backings with no model call;
   v1's `compiler.py` stays byte-identical beside it. The laws hold by construction: a link is
@@ -4985,7 +4985,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   **Receipts — first slice, 2026-09-11 (unpushed, on `claude/on-2-object-query`).** `GET
   /objects/{type}/{pk}` reads ONE row through the backing and resolves each link to a key (to-one)
   or a count (to-many), listed a page at a time by `/links/{link}`; a refused link says why and is
-  never followed. `related` carries four panels, each measured (`aughor/semantic/object_context.py`):
+  never followed. `related` carries four panels, each measured (`pramanyx/semantic/object_context.py`):
   verified metrics compiled by ON-2 with this object as the filter (a customer's revenue across its
   orders equals the hand-written SUM in the test); findings and answer receipts cited ONLY when their
   WHERE filters the key, or a column a link from the key joins to, by this exact value (a finding about
@@ -5128,7 +5128,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   its links by verb; the panel lists every property with its source; "Customer → Shipment" returns its
   paths with each hop marked traversable or refused, with the reason; an order page's header shows the
   order's declared display property.
-  **Receipts — first slice, 2026-09-11.** `aughor/semantic/object_types.py` describes a type from what the
+  **Receipts — first slice, 2026-09-11.** `pramanyx/semantic/object_types.py` describes a type from what the
   graph measured: `GET /object-types` (the map — every type with its key verdict, rows, binding, links the
   compiler follows, declared actions and verified metrics, and every link with its verb and measured
   cardinality), `GET /object-types/{type}` (the panel) and `GET /object-paths` (every chain of links within
@@ -5216,7 +5216,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   holds the roster diff honest, and no prompt text is added. **Receipt:** asked "what is a Shipment and
   where does its data come from?", the agent calls `describe_entity` and answers with each property's
   source and the measured links — and the same call over MCP returns the identical body.
-  **Receipts — first slice, 2026-09-11.** `describe_entity` (`aughor/mcp/knowledge_tools.py`, the body the
+  **Receipts — first slice, 2026-09-11.** `describe_entity` (`pramanyx/mcp/knowledge_tools.py`, the body the
   converse roster and the MCP server both call) resolves the name through the served ontology — a type, its
   api name, display name or table, so "orders" and "ecommerce.orders" both answer Order — and returns `kind:
   object_type` with `describe_object_type`'s dict and a line an agent can quote, live on LuxExperience: "Shipment
@@ -5256,7 +5256,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   type gains a second static binding from a table keyed on its key (measured unique); its panel shows each
   property's source; an object query filtering on a property from that binding compiles through the key
   join and equals its hand-written reference.
-  **Receipts — first slice, 2026-09-11.** `aughor/ontology/bindings.py`: a further binding (`Binding` — a table or
+  **Receipts — first slice, 2026-09-11.** `pramanyx/ontology/bindings.py`: a further binding (`Binding` — a table or
   keyed SELECT, the column holding the object's key, `static` or `timeseries`, the properties it supplies with any
   renames, the columns it skips and why) is counted in one probe against the objects it binds to — rows, keyed rows,
   distinct keys, the objects, how many it covers, the keys that reach no object — and holds only when the data says
@@ -5297,7 +5297,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   way:** the overrides tree had no test isolation. A measure-door test that cached a graph under LuxExperience's real
   connection id rewrote the live Order override with counts from its three-row fixture while the full suite ran beside
   the receipt — the panel suddenly read "3 of 3 objects". The counts were restored by re-measuring through the API;
-  the overrides, export and recommendations trees now resolve `AUGHOR_ONTOLOGY_*_DIR`, pointed at the suite's temp dir
+  the overrides, export and recommendations trees now resolve `PRAMANYX_ONTOLOGY_*_DIR`, pointed at the suite's temp dir
   and held by the store-hermeticity guard. `/objects/query` hands a NULL back as the text "NULL" (the legacy
   stringified execute path), filed on its own. **A keyed SELECT's columns carry types (the same day):** a binding's
   columns are read through the connection's typed result channel, so every column carries the data type the warehouse
@@ -5330,7 +5330,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). The frame is N
   semantics explicit. **Receipt:** a timeseries binding on a real event table; an object page shows the
   latest value with its timestamp; an object query for "objects whose latest value breaches a threshold"
   equals its reference.
-  **Built (`aughor/ontology/timeseries.py`).** A timeseries binding is reduced to ONE row per object — the
+  **Built (`pramanyx/ontology/timeseries.py`).** A timeseries binding is reduced to ONE row per object — the
   object's latest row by its time column — so it joins under exactly the law ON-1b proved for a static binding and
   can neither multiply nor invent objects. Each property on that row is O5's declaration INSTANTIATED
   (`semiadditive: last`, partitioned by the object's key, ordered by the time column), never window SQL written a
@@ -5446,18 +5446,18 @@ integrate this in the main roadmap and take on seven first.")*
 > on top of it. The investigation should also have the ontology-first approach."*
 >
 > **How this was measured.** Code and the live instance, 2026-09-12, main `fceda230`: the
-> builder, the models, every route in `aughor/routers/ontology.py`, the served LuxExperience and
+> builder, the models, every route in `pramanyx/routers/ontology.py`, the served LuxExperience and
 > Olist graphs, and the Olist data itself through the API's own read-only SQL door.
 
 **What is true today (measured 2026-09-12):**
 
 | The claim | Measured | Where |
 |---|---|---|
-| "We still match table to table" | **True by construction.** `extract_structural_ontology` is the only minting site (*"table = entity: every profiled table becomes an entity"*). Lux: 14 tables, 14 entities (`Order` and `OrderItem`; `Return` and `ReturnLogistic`). Olist: 9 and 9. `dedup.merge_entities` fuses two AFTER the fact, by a person, through `POST /ontology/entities/merge`; the module header says *"DETECTION ONLY."* | `aughor/ontology/builder.py:846-913` · `aughor/ontology/dedup.py:4,66` · `aughor/routers/ontology.py:1586` |
-| "We can't create an entity or connect one to another" | **True.** No route creates an entity; every mutating route 404s on an unknown id. Relationships come only from the join map (`{from}_RELATES_TO_{to}`); the one human door, `PUT /ontology/links/{id}`, renames. The web has no "New entity" and no "Add relationship". | `aughor/routers/ontology.py:945,1058-1065` · `aughor/ontology/builder.py:918-963` · `web/components/ontology/EntityTypePanel.tsx` |
-| "Tables may come from another schema or connection" | **Scope is one `(connection, schema)`.** Cache key `connection:schema:fingerprint`; `OntologyGraph` carries one `connection_id` and one `schema_name`. `Backing` and `Binding` carry NO connection: another connection is inexpressible; another schema on the same connection binds by accident (`quote_table` splits on the dot, nothing compares the qualifier). A cross-source batched-foreach join engine EXISTS (`aughor/connectors/remote_join.cross_source_join`, door `/query/cross-source-join`) — the seam ON-8 uses. | `aughor/ontology/store.py:41` · `aughor/ontology/models.py:146-150,215-224,762-764` · `aughor/ontology/cardinality.py:44` |
-| "The ontology should hold the business rule" | **No process, no promise, no stage.** `lifecycle_states` is an UNORDERED set with no transitions; `lifecycle.py` can refute a terminal claim and nothing more. `sla`/`threshold`/`expected_within` occur only in freshness monitoring and metric target bands. | `aughor/ontology/models.py:289-340,502-503` · `aughor/ontology/lifecycle.py:1-20` · `aughor/monitors/runner.py:462` |
-| "The investigation should start from the ontology" | **It never consults it first.** The pipeline predates the ontology (`investigate.py` 2026-05-20, `builder.py` 2026-05-26), so the ontology was bolted onto existing prompts as text: the deep coder's schema gets the relationship block, the intake is enriched with entity fields AFTER the question is parsed, the baseline plan gets an entity-context block. Nothing resolves a question's TERMS to an entity, a stage or a definition; nothing proposes drivers from the link graph. Consulting first has NO measurement — what was measured and retired (R4 92%→58%; ON-0/ON-0a no lift) is the text route, on questions the raw schema can answer. | `aughor/agent/investigate.py:1327,5866,6452` · `aughor/ontology/prompt_reach.py:294` · §6 item 15 |
+| "We still match table to table" | **True by construction.** `extract_structural_ontology` is the only minting site (*"table = entity: every profiled table becomes an entity"*). Lux: 14 tables, 14 entities (`Order` and `OrderItem`; `Return` and `ReturnLogistic`). Olist: 9 and 9. `dedup.merge_entities` fuses two AFTER the fact, by a person, through `POST /ontology/entities/merge`; the module header says *"DETECTION ONLY."* | `pramanyx/ontology/builder.py:846-913` · `pramanyx/ontology/dedup.py:4,66` · `pramanyx/routers/ontology.py:1586` |
+| "We can't create an entity or connect one to another" | **True.** No route creates an entity; every mutating route 404s on an unknown id. Relationships come only from the join map (`{from}_RELATES_TO_{to}`); the one human door, `PUT /ontology/links/{id}`, renames. The web has no "New entity" and no "Add relationship". | `pramanyx/routers/ontology.py:945,1058-1065` · `pramanyx/ontology/builder.py:918-963` · `web/components/ontology/EntityTypePanel.tsx` |
+| "Tables may come from another schema or connection" | **Scope is one `(connection, schema)`.** Cache key `connection:schema:fingerprint`; `OntologyGraph` carries one `connection_id` and one `schema_name`. `Backing` and `Binding` carry NO connection: another connection is inexpressible; another schema on the same connection binds by accident (`quote_table` splits on the dot, nothing compares the qualifier). A cross-source batched-foreach join engine EXISTS (`pramanyx/connectors/remote_join.cross_source_join`, door `/query/cross-source-join`) — the seam ON-8 uses. | `pramanyx/ontology/store.py:41` · `pramanyx/ontology/models.py:146-150,215-224,762-764` · `pramanyx/ontology/cardinality.py:44` |
+| "The ontology should hold the business rule" | **No process, no promise, no stage.** `lifecycle_states` is an UNORDERED set with no transitions; `lifecycle.py` can refute a terminal claim and nothing more. `sla`/`threshold`/`expected_within` occur only in freshness monitoring and metric target bands. | `pramanyx/ontology/models.py:289-340,502-503` · `pramanyx/ontology/lifecycle.py:1-20` · `pramanyx/monitors/runner.py:462` |
+| "The investigation should start from the ontology" | **It never consults it first.** The pipeline predates the ontology (`investigate.py` 2026-05-20, `builder.py` 2026-05-26), so the ontology was bolted onto existing prompts as text: the deep coder's schema gets the relationship block, the intake is enriched with entity fields AFTER the question is parsed, the baseline plan gets an entity-context block. Nothing resolves a question's TERMS to an entity, a stage or a definition; nothing proposes drivers from the link graph. Consulting first has NO measurement — what was measured and retired (R4 92%→58%; ON-0/ON-0a no lift) is the text route, on questions the raw schema can answer. | `pramanyx/agent/investigate.py:1327,5866,6452` · `pramanyx/ontology/prompt_reach.py:294` · §6 item 15 |
 | "Where can the dispatch question live?" | **Not on LuxExperience: every order ships within a day** (lag p50 0 · p95 1 · max 1 over 107,903 shipments; 0 never shipped — synthetic). **Olist (`baef6c3e/ecommerce`) holds the whole process plus a per-line promise:** `order_purchase_timestamp → order_approved_at → order_delivered_carrier_date → order_delivered_customer_date`, `order_estimated_delivery_date` per order, `order_items.shipping_limit_date` per line, sellers with a state, products with a category. Measured through `POST /query/run`: delivered after the estimate **7,826 / 96,478 = 8.11%**; handed to the carrier after the line's limit **10,423 / 111,456 = 9.35%**; approved→carrier p50/p90/p95 = **2 / 6 / 8 days**; office_furniture **28.4%** late dispatch, PR sellers **11.1%**. The data answers; the ontology cannot FRAME it — both deadlines are anonymous `timestamp` properties and "dispatched" is not a word the graph knows. | measured 2026-09-12 |
 
 **The reading that reconciles the critique with the record.** The critique is right about the
@@ -5506,12 +5506,12 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
 - ✅ **ON-7 · The declared entity, its parts and its links — FIRST SLICE BUILT + RECEIPT MET 2026-09-12**
   (the user: *"take on seven first"*; branch `claude/on-7-declared-entity`). **What exists:** `Binding.kind`
   gains `detail` (many rows per object, no clock) with `rollups` (`Rollup`: column + sum|avg|min|max|count),
-  each computed inside the object's partition before the join (`aughor.ontology.parts.detail_from`) and read as
+  each computed inside the object's partition before the join (`pramanyx.ontology.parts.detail_from`) and read as
   a property like any other; `OntologyEntity.origin` (table | human | model) and `absorbed_into` — a part mark
   that HOLDS only while the parent binds the part's table (`parts.part_of`, one law for the bind door, the
   override and every read; a lapsed mark says so); `OntologyRelationship.origin`. Doors: `POST/DELETE
   /ontology/entities` (a declared type: its source read for columns and its key counted before anything is
-  written, `aughor.ontology.declared`; a table that backs a type is refused — rename or absorb instead),
+  written, `pramanyx.ontology.declared`; a table that backs a type is refused — rename or absorb instead),
   `POST/DELETE /ontology/links` (each side counted, the share of keys that meet measured; a link whose keys
   NEVER meet is stored with `value_overlap` 0 and REFUSED by the compiler — found on the receipt, see below),
   the bind door's `absorb`, the entity override's `absorbed_into`. The overlay rebuilds a declared type and a
@@ -5567,7 +5567,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   caught (the ON-1b pattern).
 - ✅ **ON-7b · The explorer maps the business first — FIRST SLICE BUILT + RECEIPT TAKEN 2026-09-13; the
   falsifier FIRED once, so the explorer stays on demand · MERGED #495, squash `3508a844`, 2026-09-13** (the user:
-  *"Go for ON-7b"*; branch `claude/on-7b-explorer`). **What exists:** `aughor/ontology/explorer.py` — ONE model call over the SOURCE
+  *"Go for ON-7b"*; branch `claude/on-7b-explorer`). **What exists:** `pramanyx/ontology/explorer.py` — ONE model call over the SOURCE
   CATALOGUE (`source_catalogue`: every type with its key verdict, rows and columns with sample values; the
   builder's joins with measured cardinality and overlap; the bindings the data proposes; what is ALREADY
   DECLARED; the glossary for this scope's own tables; the bound pack's claims), answered as three flat lists
@@ -5641,19 +5641,19 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   never started unasked.
 - ✅ **ON-8 · One ontology, many sources — FIRST SLICE BUILT 2026-09-14** (the user: *"Lets go with ON-8 then.."*; branch
   `claude/on-8-many-sources`; §6 item 18(a) taken as recommended — `org/domain`, one default domain per organisation).
-  **What exists:** the organisation's ontology is keyed `org/domain` and served by `aughor.ontology.domains.domain_graph` —
+  **What exists:** the organisation's ontology is keyed `org/domain` and served by `pramanyx.ontology.domains.domain_graph` —
   no cache and no build. Its declarations live in the overrides tree under `org=<org>/<domain>` (a connection id never holds
   `=`, so there is no second store and every declaration kind works there unchanged) and are overlaid onto an empty graph on
   every read, with no database. `Backing.connection_id` and `Binding.connection_id` name where rows live ("" is the graph's
   own, so every graph built before loads unchanged); `OntologyRelationship.traversal` is `join | cross-source`, stamped by the
-  SOURCE LAW (`aughor.ontology.sources`: a type reads its backing's connection, a binding its own, a link crosses when its
+  SOURCE LAW (`pramanyx.ontology.sources`: a type reads its backing's connection, a binding its own, a link crosses when its
   two types differ) — the one law the compiler follows. **Measured across two connections under the verdicts one connection
   meets:** a binding's rows, keyed rows and distinct keys counted where they live, and its keys and the objects' read in the
   batched-foreach engine's canonical key form and met in memory (`measure_binding(object_db=)`); a link's two sides each
   counted on its own connection and its overlap met the same way (`measure_declared_link(to_db=)`); a side with more than
   2,000,000 distinct keys, or one its connection returns only partly, leaves the claim unmeasured. A declaration borrows its
   columns' roles from its own connection's catalogue and keeps the copy (`profile_record`), so the overlay needs no database.
-  **The compiled door across two connections** (`aughor.semantic.cross_source`): a to-one link to a type on another
+  **The compiled door across two connections** (`pramanyx.semantic.cross_source`): a to-one link to a type on another
   connection, or a STATIC binding read from one, is a KEYED READ hanging off the query's own FROM level. The assembled
   statement is split with sqlglot: every expression that reads no far column and holds no aggregate is computed at HOME, on
   the anchor's connection, at the object's grain; each far source is read through the engine by exactly the distinct keys the
@@ -5737,7 +5737,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   2026-09-13** (the user: *"Start with ON-9"*; branch `claude/on-9-processes`). **What exists:** `Process` · `ProcessStage` · `Promise` · `BusinessRule` on the graph
   (`OntologyGraph.processes`, `.rules` — a graph built before loads with both empty), declared through the overrides
   tree (two new kinds, `process` and `rule`: new directories, none renamed) and rebuilt with no database from what their
-  measurement recorded (`aughor.ontology.processes`, `aughor.ontology.business_rules`). A stage is anchored to a MOMENT —
+  measurement recorded (`pramanyx.ontology.processes`, `pramanyx.ontology.business_rules`). A stage is anchored to a MOMENT —
   a date or timestamp path from the type, to-one links only, a static binding's column included — or to lifecycle
   states. A promise is `within_days` of the previous stage (calendar days) or a per-object `deadline`, kept per object of
   its `grain`, which reaches the process's type through a measured to-one `via` resolved when it is declared (a
@@ -5747,7 +5747,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   days (exact, from a per-day count any warehouse can run — equal to `quantile_cont`); per promise reached, broken,
   kept, open, and open past it as of the data's own latest moment. A stage no object reaches is measured-false; a
   promise never or always broken is FLAGGED, and the flag rides every compiled answer as a caveat. **Derived by
-  construction** (`aughor.ontology.derived` — the door's own IR, never prose): `late_<promise>` (segment),
+  construction** (`pramanyx.ontology.derived` — the door's own IR, never prose): `late_<promise>` (segment),
   `<promise>_breach_rate` (a ratio of two counts; target = the complement of a declared tolerance, none invented),
   `<promise>_lag_days` (calendar days between consecutive moments) — each refused with the reason until its declaration
   is measured. The compiler gains `value_path` (two properties of one object compared row by row, to-one only, the same
@@ -5809,7 +5809,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
 - ✅ **ON-10 · The investigation starts from the ontology — FIRST SLICE BUILT + LIVE FRAME RECEIPT 2026-09-13; THE
   FALSIFIER HELD TWICE 2026-09-13 — OLIST FRAMED 8 OF 12, RAW 3; LUXEXPERIENCE FRAMED 9 OF 13, RAW 1 · MERGED #497, squash `73a61047`, 2026-09-13** (the
   user: *"Take whats next on the ontology roadmap"*; branch
-  `claude/on-10-framing`). **What exists:** `aughor.ontology.framing` — pure: no model, no store, no warehouse.
+  `claude/on-10-framing`). **What exists:** `pramanyx.ontology.framing` — pure: no model, no store, no warehouse.
   `frame_question(question, graph, synonyms, hops)` matches the question's words (a small deterministic stemmer; a longer
   declared name wins its words over a shorter one of no higher rank) against what was declared — types by id, display
   name, api name and backing table; readable properties with a generic tail dropped, and a short name without the type's
@@ -5827,7 +5827,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   reaches no category by a to-one link; words that fit two promises equally choose neither. A short name repeating the
   tail of a property named in full is that property again, and a homonym no type reaches (Olist's translation table's
   category column) never vetoes the property a promise's type does reach. Builder-made segments and metrics are terms that define
-  nothing: the validator proves a guessed filter executes, not that the business means it. `aughor.agent.framing` reads
+  nothing: the validator proves a guessed filter executes, not that the business means it. `pramanyx.agent.framing` reads
   the served graph under the ontology doors' scope law and, only when the words fit several declared definitions
   equally, asks the fast model to choose — a name that is not listed chooses nothing. **Wiring:** `/investigate` frames
   the question before the graph starts and emits a `frame` event (declared in the web's part vocabulary); the deep
@@ -5917,7 +5917,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   `evals/framing_matcher_set.jsonl` — 54 natural questions over Olist and LuxExperience, each with a gold frame (the
   definition it means, the rules that apply, the start, the breakdown it names, terms that must not appear), tagged by
   gap and split dev/test by alternation — scored by `evals/framing_matcher_eval.py`. Baseline, in scope: dev 10/29, test
-  11/22. The fixes, in `aughor/ontology/framing.py`: a rule's name matches with its words in another order within one
+  11/22. The fixes, in `pramanyx/ontology/framing.py`: a rule's name matches with its words in another order within one
   sentence ("returns that were controllable"), weaker than its spelling and covering nothing; an answer instruction's
   verb — a clause's first word before a determiner, "Return the region", "Order each category" — names no type (a
   plural heading a clause is a noun); rules read alone start from a type the question names that reaches every rule's
@@ -5987,9 +5987,9 @@ for ON-8, was taken as recommended when ON-8 began, 2026-09-14.)
 ### 3.16 · Arc UI — Instrument, the design system (adopted 2026-09-13 — §6 item 19; **FIRST PASS BUILT** the same day; **PASSES 1–3 MERGED #498, squash `4476507d`, 2026-09-13**)
 
 > **Origin.** The user, 2026-09-13: *"Lets scoop up a UI overhaul.."*, handing off the Claude Design project
-> "Aughor Design System" (`Aughor Design System.dc.html`: tokens dark and light, type, components, the shell dark
+> "Pramanyx Design System" (`Pramanyx Design System.dc.html`: tokens dark and light, type, components, the shell dark
 > and light, the four universal states, the trust system, motion, icons and density). The spec in this codebase's
-> names, with everything adoption decided, is **`web/aughor-v2/INSTRUMENT.md`** — read that, not this summary.
+> names, with everything adoption decided, is **`web/pramanyx-v2/INSTRUMENT.md`** — read that, not this summary.
 
 **The thesis.** Pramanyx's product is a claim about a number, and the interface's whole job is to make that claim
 checkable at a glance: one warm monochrome plane, hairlines for structure, colour as a data type, three things
@@ -5997,7 +5997,7 @@ that float (popover, toast, dialog), no spinners, and motion only where it expla
 
 **First pass — built on branch `claude/instrument-overhaul`, 2026-09-13.** The scope was the user's call before a
 line was written (§6 item 19a): tokens, type, motion, the primitives and the shell chrome — no new features.
-- **Tokens.** `aughor-v2/theme/tokens-v2.css` is the Instrument set: 41 values per theme, aliases as real `var()`s,
+- **Tokens.** `pramanyx-v2/theme/tokens-v2.css` is the Instrument set: 41 values per theme, aliases as real `var()`s,
   motion `--dur-1/2/3` with the older names pointed at them. The v2 `elevation-motion.css` (glass, lift, spring) and
   `components-v2.css` (a second component layer) were folded into `app/globals.css` and deleted.
 - **Components.** The `.aug-*` layer rewritten to the component sheet; `components/ui/*` redrawn (button, badge,
@@ -6065,7 +6065,7 @@ the live playbook topped up from 392 to 878 plays (the 486 checks, all active; 4
 - **The seam.** The KB left `data/kb` for eleven packages, content untouched (69 `git mv` renames): six industry packages
   (airline, food-delivery, logistics, manufacturing, retail, saas — each its curated `industry.json` and its deep KB
   files), four functions every industry reads (finance, marketing, product, customer) and `analytics-base`. `pack.yaml`
-  declares `layer` and `industry`. `aughor/packs/knowledge.py` is the one reader that replaced the four loaders (the
+  declares `layer` and `industry`. `pramanyx/packs/knowledge.py` is the one reader that replaced the four loaders (the
   seeder, the profiler, the industry KB, the vector retriever): an entry's industry is its package's, authored wins an
   id, a deprecated package is not read, a file or an industry carried twice is a named problem, UTF-8 everywhere.
   **Moved unchanged, measured:** `tests/fixtures/ip1_kb_parity.json` was captured from the pre-move loaders on
@@ -6077,7 +6077,7 @@ the live playbook topped up from 392 to 878 plays (the 486 checks, all active; 4
   that the data has the shape where a pitfall can happen, not that the analysis made the mistake. When a deep analysis
   reports its metric moving, `Verifier.rule_outs` lists the metric's known inflation causes (it rose) or deflation
   causes (it fell), each with its fix, and says *"Not checked against your data."* — carried in the data, so no surface
-  can render the causes without it. Deterministic: no model, no query. Three reads (`aughor/playbook/rule_outs.py`):
+  can render the causes without it. Deterministic: no model, no query. Three reads (`pramanyx/playbook/rule_outs.py`):
   the **direction** is the sign of the report's own `total_change_label`, on a report measured against something; the
   **metric** is named when a KB entry's title or intent tag ENDS the report's label — a one-word alias must be the
   whole label, and a bracket restating the measure as a count abstains; the **plays** are the playbook's active
@@ -6109,10 +6109,10 @@ the live playbook topped up from 392 to 878 plays (the 486 checks, all active; 4
 
 **IP-2 · Chosen at install — BUILT 2026-09-17, MERGED #518** with IP-1. Merged over one red check, the user's call:
 the Windows "Start, and both servers answer" install step has failed on main since #509 (2026-09-15) with the same
-signature, before this work — the servers answer, then `aughor up` stops a few seconds later. Root-caused and fixed in #519: the serving check's `os.kill(pid, 0)` is a Ctrl+C on Windows, which the console host holds and delivers to every process on the console at its next call; it now asks whether the process exited. The answer is one file,
-`data/industries.json` (`AUGHOR_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
-installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
-- **What an answer means** (`aughor/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
+signature, before this work — the servers answer, then `pramanyx up` stops a few seconds later. Root-caused and fixed in #519: the serving check's `os.kill(pid, 0)` is a Ctrl+C on Windows, which the console host holds and delivers to every process on the console at its next call; it now asks whether the process exited. The answer is one file,
+`data/industries.json` (`PRAMANYX_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
+installer, `pramanyx industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
+- **What an answer means** (`pramanyx/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
   detects each connection's (answer 1); a skipped question is written as `null` so a re-run does not ask again. A list
   narrows: `metric_kb.load_industry_kbs()` — through which `match_industry`, `industry_id`, `industry_scope`, the
   vocabulary and the recipes all pass — holds only the chosen packages, so an industry text naming another package
@@ -6122,23 +6122,23 @@ installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-s
   playbook. An id no package carries is refused on write and ignored, with its name, on read; an unreadable file keeps
   every industry and says why. Written whole and moved into place; re-read when its modification time or size
   changes, so a choice made in Settings reaches a running API (the vocabulary cache keys on it).
-- **The installer** (`aughor/installer.py`, still standard-library only). Step 0, after the checkout check and before
+- **The installer** (`pramanyx/installer.py`, still standard-library only). Step 0, after the checkout check and before
   `uv sync`: the six industry packages, read from `packs/*/pack.yaml` without a YAML parser, numbered; the answer
   takes numbers, ids, folder names or package names, Enter for all, `none`. It asks through `/dev/tty` (the console
   on Windows), so it works under `curl | sh`, where stdin is the rest of the script; with no terminal nothing is asked
-  and nothing written. `--industries retail,saas` or `AUGHOR_INDUSTRIES` answers ahead; an id no package carries stops
-  the install before anything slow, naming the ids that exist. The option is not handed on to `aughor up`.
+  and nothing written. `--industries retail,saas` or `PRAMANYX_INDUSTRIES` answers ahead; an id no package carries stops
+  the install before anything slow, naming the ids that exist. The option is not handed on to `pramanyx up`.
 - **Changing it later.** Settings → Organization gains an Industries section (app scope — the choice is
-  deployment-wide): every industry, or only the ticked ones, saved on its own. `aughor industries` lists the packages
+  deployment-wide): every industry, or only the ticked ones, saved on its own. `pramanyx industries` lists the packages
   with the current choice and takes the installer's answers. A change drops only the stored business profiles whose
   industry now resolves to a different package (`refresh_profiles_for_choice`): a profile keeps the recipes it
   resolved when built, and re-inferring costs a model call per dataset, so a retail profile is kept when SaaS is
   added. Settings says how many it dropped.
 - **Live, 2026-09-17, no model call:** the question through a real pseudo-terminal with stdin a pipe, as under
   `curl | sh` — a wrong answer asked again, `5, saas` recorded as `["retail", "saas"]`; on a scratch stack with isolated
-  stores, Settings → Organization saved retail and SaaS (the API read it back, source `settings`), and `aughor
+  stores, Settings → Organization saved retail and SaaS (the API read it back, source `settings`), and `pramanyx
   industries` read the same file with both ticked.
-- **Trap:** the test conftest points `AUGHOR_PACKS_DIR` at a copy of the six packages, so every existing installer
+- **Trap:** the test conftest points `PRAMANYX_PACKS_DIR` at a copy of the six packages, so every existing installer
   test would reach the question — and a developer running pytest in a terminal would wait on `/dev/tty`. Every
   installer test now starts with no terminal and its own choice file; the question's tests script one.
 - **Receipts:** `tests/unit/test_installer.py` (25 new, 73 in all), `tests/unit/test_ip2_industry_choice.py` (14),
@@ -6170,12 +6170,12 @@ The anatomy a package declares with `anatomy: 1`:
 The loader reads all of it as UTF-8 and turns a malformed file into a `PacksError` — a pydantic error from a metric
 or ontology file used to escape every caller, the roster route included.
 
-- **Gate 3, the static gate** (`aughor/packs/gate3.py`; `aughor packs check`; `validate_pack` for an anatomy
+- **Gate 3, the static gate** (`pramanyx/packs/gate3.py`; `pramanyx packs check`; `validate_pack` for an anatomy
   package). It checks: schema, sources, a sourced band for every metric, roles not tables, no alias collision,
   bound plays, goldens, datasets and ontology references. For roles not tables, a formula, filter or detection may
   name only role attributes and SQL words; `FROM`, `JOIN`, `SELECT` and `;` are refused. Each rule is proven by a
   planted violation, and every shipped anatomy package passes (the population is read from `packs/`).
-- **Gate 4, measured with no model** (`aughor/packs/gate4.py`; `aughor packs measure [--download] [--write]`).
+- **Gate 4, measured with no model** (`pramanyx/packs/gate4.py`; `pramanyx packs measure [--download] [--write]`).
   - The dataset comes from a cache outside the repository; it is downloaded only on request and refused when its
     size or SHA-256 differs from the package's.
   - The load statements build a DuckDB database. Each formula is compiled through the binding into one SELECT, and
@@ -6309,7 +6309,7 @@ belongs in any read of this document that a decision hangs on.
     expectation key it did not know, so IP-3's goldens scored as passing wherever the evaluate and status doors ran
     them — airline 14 of 14, banking 51 of 51, with nothing computed and a planner pass spent on each. The checker
     now refuses a golden it cannot judge (and any unknown key, by name), and the runner reads what
-    `aughor packs measure` wrote in `measurements/<dataset>.json`: a receipt that is missing, that describes an
+    `pramanyx packs measure` wrote in `measurements/<dataset>.json`: a receipt that is missing, that describes an
     older package, or that says a figure did not reproduce is reported as that, never as a pass. The door
     downloads nothing, builds nothing and calls no model.
   - ✅ **A pack's claims can no longer reach a model through the explorer.** ON-7b gave the ontology explorer a
@@ -6345,10 +6345,10 @@ a package's ontology claims on every connection of its industry** into measured-
 
 **Chosen at install.** The question sits inside the one-line install of #501 — nothing typed before it or after — and
 before the slow steps. `curl | sh` leaves stdin at the end of the script, so the answer comes from `/dev/tty` (the
-console on Windows); with no terminal nothing is asked, and scripts pass `--industries` or `AUGHOR_INDUSTRIES`. The
+console on Windows); with no terminal nothing is asked, and scripts pass `--industries` or `PRAMANYX_INDUSTRIES`. The
 installer stays standard-library and writes one small file the API reads. **Skipping keeps every shipped package
 available and detects the industry per connection** (answer 1); a pick narrows what the profile may choose from. It
-changes later in Settings → Organization or with `aughor industries`. **Packages live in the repo** (answer 2).
+changes later in Settings → Organization or with `pramanyx industries`. **Packages live in the repo** (answer 2).
 
 **How a package is made — six gates, in order.** (1) A cited dossier. (2) A drafted package: authoring tokens, no
 Pramanyx model. (3) The static gate, in CI: schema, a source per sane range, roles not tables, no alias collision, every
@@ -6424,7 +6424,7 @@ subscription, grant, group, connection, approval, action.
 not.**
 - **Receives:** seven warehouse kinds, uploads and Sheets; PDFs and scans (§3.13); Confluence and Notion definitions
   through KI-3's review lane; a Slack @mention (Socket Mode); one inbound hook per automation
-  (`POST /hooks/{automation_id}`, DS-17); an allowlisted MCP server's tools (`aughor/mcpservers/` — a write needs OUR
+  (`POST /hooks/{automation_id}`, DS-17); an allowlisted MCP server's tools (`pramanyx/mcpservers/` — a write needs OUR
   grant and a changed declaration revokes it, `call.py:74`, `discover.py:85`).
 - **Exports:** Slack (`slack_post`), webhook and Jira (`notifications/models.py:22`), the MCP server (18 tools plus
   automations), proposals into approvals. **No email in either direction.**
@@ -6592,7 +6592,7 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   its measured precision graduates it. *Falsifier:* a departure precision baseline that a later change lowers cannot
   ship — the ratchet.
   > **First slice BUILT 2026-09-16** — same day as the wave's live motivating receipt: theLook's brief departed to
-  > #aughor_canvas prefixed "NOT reliable" (a trust reframe warning readers off numbers a channel had already been
+  > #pramanyx_canvas prefixed "NOT reliable" (a trust reframe warning readers off numbers a channel had already been
   > handed). What stands: `govern/departure.py` — content customs beside `govern/outbound`'s transport customs — wired
   > into the two UNATTENDED transports (`_dispatch_slack_post`, `_dispatch_notify`; the inbox's accepted-proposal send
   > stays ungated by design — a person reviewed that text and pressed send). Three checks, every decision in the
@@ -6628,7 +6628,7 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   > Execute left ungated before; now every call to a message transport (`fire_action`, `post_as_bot`) asks the
   > gate in the same function or is excused by name with its reason (`UNGATED_BY_DESIGN`: the two inbox accepts —
   > a person reviewed that exact send — and the Action Hub's fixed `[TEST]` payload). Held structurally:
-  > `test_departure_every_exit_gated.py` walks the syntax tree of every `aughor/` module, so a send added later
+  > `test_departure_every_exit_gated.py` walks the syntax tree of every `pramanyx/` module, so a send added later
   > that forgets the gate is red, and an exemption whose call site is gone is red too.
   > **The laws, each deterministic and recorded per guard** (`govern/departure.py`; the measurements they read
   > come from `govern/departure_basis.py`, no model anywhere):
@@ -6650,7 +6650,7 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   > user authority, so the next run binds it — asked once · law 7: an unattended automation never sends the same
   > message to the same place twice in 7 days, and a repeat whose every number moved less than 5% is noise; alerts
   > keep their own anti-flap policy, a scheduled briefing speaks by schedule, a person chose · law 8: the receipt
-  > (source · definition · as-of · the guards that ran · the ledger row, linked when `AUGHOR_WEB_URL` is set)
+  > (source · definition · as-of · the guards that ran · the ledger row, linked when `PRAMANYX_WEB_URL` is set)
   > travels on the Slack post, in the webhook's `context` and on the Jira ticket, and is stored verbatim on the row.
   > A scheduled briefing is judged line by line first: causal-graph relationships never depart, a finding line
   > with an inferred KPI is cut, the rest leave with a "N lines held at departure" section and receipt count.
@@ -6756,7 +6756,7 @@ Keep the two-space indent: this is a continuation of HB-2's bullet.
   > narrow); both ride `probe_state`, commit on fired ticks (`commit_hub_baselines`), and PUBLISH a payload the chain
   > binds under the reserved `trigger` alias (`{"$from": "trigger.breach_rate"}`) — seeded into the chain context,
   > validated at save against each kind's closed key set (`TRIGGER_PUBLISHED`), the alias reserved.
-  > **The manifest's first links** — `aughor/hub/links.py` (`data/hub_links.db`, registered same-commit): a ticket,
+  > **The manifest's first links** — `pramanyx/hub/links.py` (`data/hub_links.db`, registered same-commit): a ticket,
   > thread or webhook call FILED on the securable it is about, with the OUTCOME COLUMN (status·outcome·
   > number_recovered·closed_by) and stamped-measure snapshots at filing AND at close, so before/after is two recorded
   > facts. Doors: POST/GET `/links`, POST `/links/{id}/close`. Sends file THEMSELVES when their config says `about`
@@ -6883,27 +6883,27 @@ command, an update command and a doctor.
 
 **Where Pramanyx's install already holds its own — keep these.** The Node.js download is SHA-256-verified against
 nodejs.org; the reference Windows installer verifies none of its downloads. One line per step, the tools' output in
-`.aughor/logs/`, and a failed step shows its log's tail and the next action. A re-run skips what did not change (`npm ci`
+`.pramanyx/logs/`, and a failed step shows its log's tail and the next action. A re-run skips what did not change (`npm ci`
 per lockfile, `next build` per fingerprint). The installer is standard-library only, held by tests, and CI runs it on
 three operating systems. It ends in the running app with the browser open, where Settings → Models is. No shell rc
-file is edited: the `aughor` command sits in uv's own command folder. A download cut off halfway runs nothing, and
+file is edited: the `pramanyx` command sits in uv's own command folder. A download cut off halfway runs nothing, and
 `install.sh` is POSIX `sh`.
 
 **What it teaches — measured against Pramanyx on main `1c150b05`:**
 - **Code and data apart.** The reference keeps its checkout and its data in different places. Pramanyx's state is `data/`
-  inside the checkout, relative to the folder the API starts in (`aughor/db/paths.py`: `AUGHOR_STATE_DIR`, else
-  `Path("data")`). Deleting or re-cloning `~/aughor` deletes the connections, history and receipts with it, and a
+  inside the checkout, relative to the folder the API starts in (`pramanyx/db/paths.py`: `PRAMANYX_STATE_DIR`, else
+  `Path("data")`). Deleting or re-cloning `~/pramanyx` deletes the connections, history and receipts with it, and a
   process started from another folder reads another `data/` — the shape behind the one-writer rule §7 records.
 - **Update is a command.** Its update fetches and fast-forwards, backs up a broken checkout and pins a commit
   (`--commit`, refusing a rollback without `--force-commit`); re-running the installer on an existing clone updates it.
-  Pramanyx's `find_checkout` reuses an existing `~/aughor` as it is: a re-run re-syncs dependencies and never pulls, and
-  there is no `aughor update` and no pin.
+  Pramanyx's `find_checkout` reuses an existing `~/pramanyx` as it is: a re-run re-syncs dependencies and never pulls, and
+  there is no `pramanyx update` and no pin.
 - **A doctor.** Its doctor names missing dependencies, storage problems and PATH. Pramanyx's CLI (`seed`, `up`,
-  `ask`, `ontology-docs`, `graph-export`, `packs`, `industries`, `skills`) has none; `aughor up`'s boot summary is the
+  `ask`, `ontology-docs`, `graph-export`, `packs`, `industries`, `skills`) has none; `pramanyx up`'s boot summary is the
   nearest thing.
 - **The README says what the install does:** the platforms, what gets installed and where, "no admin", and the known
   Windows Defender false positive on `uv.exe` with the exclusion command. Pramanyx's Quick start is two commands and
-  "Next time, run `aughor`".
+  "Next time, run `pramanyx`".
 - **Questions stay off the unattended path.** The reference Windows installer asks nothing (no `Read-Host`); its shell
   installer reads stdin, else `/dev/tty`, else takes the default, and `--non-interactive` skips every prompt. IP-2's
   industries question hung both Windows install jobs on PR #518's first CI run — a console without a window — until
@@ -6917,17 +6917,17 @@ file is edited: the `aughor` command sits in uv's own command folder. A download
   Prompt too (#501).
 
 **Waves** — none built; each lands as its own measured slice:
-- **IN-1 update and doctor.** `aughor update`: a clean clone fetches and fast-forwards; a dirty or diverged one is
+- **IN-1 update and doctor.** `pramanyx update`: a clean clone fetches and fast-forwards; a dirty or diverged one is
   refused with the reason, never reset; a snapshot install re-downloads into place; `--ref` pins; the installer's
-  steps re-run. Re-running `install.sh` or `install.ps1` on an existing clone does the same. `aughor doctor`: uv,
-  Python and Node.js with their versions, both ports, `data/` writable, the `aughor` command on PATH, a model
+  steps re-run. Re-running `install.sh` or `install.ps1` on an existing clone does the same. `pramanyx doctor`: uv,
+  Python and Node.js with their versions, both ports, `data/` writable, the `pramanyx` command on PATH, a model
   configured — answered without a model call and without a query against a warehouse.
 - **IN-2 the README's install section:** the platforms (WSL2 once measured), what gets installed and where, no admin,
   the disk it takes, update, uninstall, non-interactive installs (`--industries`, `--no-start`), and troubleshooting
   (Defender on `uv.exe`, a corporate proxy).
 - **IN-3 hostile networks:** a preflight before the slow steps, retries on the clone and the downloads, the
   proxy-certificate hint.
-- **IN-4 a data home.** Pramanyx's state outside the checkout — per user (`~/.aughor`, `%LOCALAPPDATA%\aughor`), one
+- **IN-4 a data home.** Pramanyx's state outside the checkout — per user (`~/.pramanyx`, `%LOCALAPPDATA%\pramanyx`), one
   env override — and a one-time move of an existing `data/`, verified before anything is removed. The largest wave: it
   touches every store path and the test isolation behind them, so it gets its own plan before it starts.
 
@@ -6938,7 +6938,7 @@ until there is a desktop app to drive it; shell rc edits — uv's command folder
 
 ---
 
-### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; from a survey of typed-judgment models and its +1, the alignment movement below; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5; JD-3 ships OFF behind `semops.banded_cascade`. **RECEIPTS, later the same day:** JD-3's taken and re-decided on total tokens after the seam slim (falsifier quiet, flag still OFF), and **JD-5's taken LIVE against the real hosted judge** — the operator entered the key and asked for the keep-or-throw answer; verdict KEEP, numbers in JD-5 below — **and then, on the user's word ("Flip the flag on and build the [hosted-judge] binding"), JD-3 GRADUATED to default-ON and JD-5's production binding was BUILT** (`aughor/judgment/jev.py`, flag `semops.jev_cheap_tier` OFF, four gates, house-tier fallback). JD-4's own corpus receipt is still blocked on faithful rows, but its shuffled-context control was exercised live that night and did its job. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21, and again the same night when "none of the three JD waves has its receipt" had itself rotted)
+### 3.20 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction; **RECORDED HERE 2026-09-20**, renumbered — §6 item 28; from a survey of typed-judgment models and its +1, the alignment movement below; **JD-2's premise MEASURED AND REFUTED 2026-09-20**, `8797dfef`; **JD-4, JD-1 and JD-3 BUILT and MERGED #535**, squash `583c8d9f`, 2026-09-21, with JD-2's three survivors, A3 and A5; JD-3 ships OFF behind `semops.banded_cascade`. **RECEIPTS, later the same day:** JD-3's taken and re-decided on total tokens after the seam slim (falsifier quiet, flag still OFF), and **JD-5's taken LIVE against the real hosted judge** — the operator entered the key and asked for the keep-or-throw answer; verdict KEEP, numbers in JD-5 below — **and then, on the user's word ("Flip the flag on and build the [hosted-judge] binding"), JD-3 GRADUATED to default-ON and JD-5's production binding was BUILT** (`pramanyx/judgment/jev.py`, flag `semops.jev_cheap_tier` OFF, four gates, house-tier fallback). JD-4's own corpus receipt is still blocked on faithful rows, but its shuffled-context control was exercised live that night and did its job. This header read "nothing from the JD series built" after the merge — §5's prose-rot lesson again, corrected 2026-09-21, and again the same night when "none of the three JD waves has its receipt" had itself rotted)
 
 > ⚠️ **Read the numbering before the arc.** This text was written 2026-09-17 on
 > `origin/claude/fervent-cori-w9ogfc` (`93112558`, ROADMAP.md +106) and it claimed **§3.19 and §6 item
@@ -6961,22 +6961,22 @@ providers today, and which the survey shows we are already approximating badly i
 The deep path's wall-clock is ~100% phase-serial LLM calls (`AGENT_NOTES.md:215`): 373 s serial
 against 304 s with `ada.parallel_phases` = **1.23×**, both arms 14 calls, and the note's own verdict is
 that intake and synthesis dominate and phase-level parallelism is spent. Intake is ONE decoder call
-carrying **28 fields** (`aughor/agent/prompts_investigate.py:761`, `IntakeOutput`, re-counted
+carrying **28 fields** (`pramanyx/agent/prompts_investigate.py:761`, `IntakeOutput`, re-counted
 2026-09-20 — the study said ~25 at `:755`) of which about ten are pure judgments over one state
 (`descriptive_only`, `cross_sectional`, `metric_is_ratio`, `claim_type_suggestion`) and three are picks
 from a set the schema already holds (`date_column`, `metric_table`, `dimensions`) — asked as free text,
 then repaired: "collect ALL spec errors and fix them in ONE combined LLM retry (was up to 3 sequential
-round-trips on the critical path of every investigation)" (`aughor/agent/investigate.py:5654`), with
+round-trips on the critical path of every investigation)" (`pramanyx/agent/investigate.py:5654`), with
 the date column repaired deterministically by `_resolve_date_column` (`:1452`) because asking again is
-less reliable. The semantic operators put 25 rows in one prompt (`aughor/semops/operators.py:32`,
+less reliable. The semantic operators put 25 rows in one prompt (`pramanyx/semops/operators.py:32`,
 `DEFAULT_BATCH`; cap 200 at `:31`), so a row's verdict can be moved by its neighbours, a parse failure
 loses all 25 verdicts fail-open, and the champion cascade escalates **all** 200 rows on a sampled 20%
 disagreement (`_CHAMPION_ESCALATE = 0.20`, `:141`) — paying the strong tier for the rows the cheap tier
 already had right. And `earned_confidence` is COMPUTED, never asserted by the model
-(`aughor/agent/state.py:253`) — the right instinct, and the exact seam a calibrated per-item
+(`pramanyx/agent/state.py:253`) — the right instinct, and the exact seam a calibrated per-item
 probability belongs in. The gates a hosted backend would have to ride already exist: `security/pii`,
 `govern/outbound`, `govern/guardrails.py`, and the 428 `approval_required` graduated gate
-(`aughor/govern/actions.py:166`).
+(`pramanyx/govern/actions.py:166`).
 
 **The arc in one line:** make a judgment a first-class call with a declared answer space, an isolated
 per-question score, and a probability our code bands on — then measure it with a control before
@@ -7022,7 +7022,7 @@ believing any of it.
   are pinned by `tests/unit/test_intake_validity.py`.
   ✅ **What survives the retraction, and is worth fixing on its own merits:** `dimensions` is validated
   against the schema nowhere; the `metric_table` correction retry is accepted without re-validation
-  (`aughor/agent/investigate.py:5676`); and no counter or event fires on a spec repair, so the
+  (`pramanyx/agent/investigate.py:5676`); and no counter or event fires on a spec repair, so the
   spec-repair retry rate JD-2 named as its receipt **is not instrumented and never was**. Those are
   real defects. They are simply not evidenced by an invalid-name rate, because there isn't one. This
   refutation says nothing about whether the picks were the RIGHT ones — only that they were real — and
@@ -7084,7 +7084,7 @@ believing any of it.
   unmeasured. Flag still OFF — the flip is the operator's, now with the numbers on the table.
   ✅ **FLIPPED 2026-09-21, the user, on the receipts: "Flip the flag on."** `semops.banded_cascade`
   GRADUATED to FLAG_DEFAULT (default-ON, the `ask.converse` shape): the sampled cascade stays alive as
-  the off-arm, `AUGHOR_SEMOPS_BANDED_CASCADE=0` is the kill switch, and the graduation guard in
+  the off-arm, `PRAMANYX_SEMOPS_BANDED_CASCADE=0` is the kill switch, and the graduation guard in
   `test_feature_flags.py` was widened deliberately with the receipt. The two sampled-cascade tests now
   opt into the kill-switch arm explicitly — the off-path keeps its own tests, as a live off-path must.
   🔴 **Two findings about this deployment, bigger than the receipt:** (1) the cheap and champion tiers are the SAME model
@@ -7151,9 +7151,9 @@ believing any of it.
   warehouse; its batch-degradation measurement (≤20 rows 100%, 40 → 92–98%, 80 → 77–94%) pins our
   batch at 25 and is the second first-hand-adjacent source for the price.
   ✅ **BUILT the same night — the user, on the receipt: "Flip the flag on and build the [hosted-judge] binding."**
-  `aughor/judgment/jev.py` behind flag `semops.jev_cheap_tier` (EXPERIMENT, default OFF), the cheap
+  `pramanyx/judgment/jev.py` behind flag `semops.jev_cheap_tier` (EXPERIMENT, default OFF), the cheap
   tier of the banded cascade only, never the champion, never the verdict path. Four gates, each
-  failing toward the house: the flag; loud configuration (`TYPESAFE_API_KEY` AND `AUGHOR_JEV_MODEL` —
+  failing toward the house: the flag; loud configuration (`TYPESAFE_API_KEY` AND `PRAMANYX_JEV_MODEL` —
   no model id ships in the product, so the operator names even the latest alias); a PII scan that
   withholds a bundle WHOLE on any redactable cell (a withheld bundle's rows come back unanswered,
   which the band already routes to the in-house champion — conservative over clever, because a
@@ -7189,7 +7189,7 @@ letters are kept so the study and the roadmap still read as one thing.
 - ✅ **A1 — an outcome that can come out negative. BUILT 2026-09-19/20** (`e68beffa`, `2174fc48`,
   `79d01b44`). Measured on the live store first: **40 rows, every one `conn_id` empty, every one
   `confidence` 0.0, and `outcome` `'ok'` on 40 of 40** — because the only writer of that column was
-  `tool_loop`'s inline "the tool did not raise" (`aughor/agent/tool_loop.py:235`; the study cites `:226`,
+  `tool_loop`'s inline "the tool did not raise" (`pramanyx/agent/tool_loop.py:235`; the study cites `:226`,
   pre-A1). A label that never takes its other value is a constant, and `exporters.list_for_export` would
   have shipped 40 positive examples. Now: `record_decision` carries `conn_id`/`trace_id`/`inv_id`,
   `mark_outcomes_for_run` closes a run's decisions from `record_verdict` on reject/correct — the first
@@ -7235,8 +7235,8 @@ letters are kept so the study and the roadmap still read as one thing.
 - ✅ **A5 — capture as a budget, not just a tolerated write. BUILT, MERGED #535.** `record_decision`
   was observation-never-control and never raised, but had no bound: one field capped
   (`_MAX_CONTEXT = 2000`), nothing capping the store's growth or counting what was lost. Now, in the
-  shape of `session_events_prune`: `AUGHOR_DECISIONS_MAX_ROWS` (default 200,000) and
-  `AUGHOR_DECISIONS_KEEP_DAYS` (default **OFF** — this corpus is what A6 waits to accumulate); a row a
+  shape of `session_events_prune`: `PRAMANYX_DECISIONS_MAX_ROWS` (default 200,000) and
+  `PRAMANYX_DECISIONS_KEEP_DAYS` (default **OFF** — this corpus is what A6 waits to accumulate); a row a
   person's verdict labelled is never pruned and never counts toward the cap; losses counted as
   `learning.decision_record.pruned` / `.truncated`. At 58 live rows the counter is the part that earns
   its place, as the study predicted.
@@ -7410,7 +7410,7 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   target), so the latest reply's check overwrites the earlier one's — the claims count is per object, not per reply.
 
 **The map — what Pramanyx offers in place of the usual "deploy the company brain" diagram (the user, 2026-09-22: *"lets keep this
-diagram in mind and build one that aughor would offer.. a real, provable one"*).** Theirs: sources → raw data → four
+diagram in mind and build one that pramanyx would offer.. a real, provable one"*).** Theirs: sources → raw data → four
 observers (people, product, operations, market) → a merge-judge (dedup, resolve, write plan) → three vaults (company:
 stable facts · engagement: operational record · working memory: synthesis and priorities). Ours has the same four layers
 and one rule: **every box is a store that exists, with a door and a live count, and every arrow is a measurement** — so
@@ -7473,9 +7473,9 @@ Taken live on `9186257d` + this branch, against the serving instance. Three of t
 contradict what the arc's own author assumed before measuring, which is why the wave exists.
 
 **What is already central, and works.** Chart rendering has ONE implementation —
-`render_charts_svg` in [aughor/export/echarts.py](aughor/export/echarts.py) — with three
-consumers ([export/document.py](aughor/export/document.py),
-[routers/charts.py](aughor/routers/charts.py), [automations/engine.py](aughor/automations/engine.py)).
+`render_charts_svg` in [pramanyx/export/echarts.py](pramanyx/export/echarts.py) — with three
+consumers ([export/document.py](pramanyx/export/document.py),
+[routers/charts.py](pramanyx/routers/charts.py), [automations/engine.py](pramanyx/automations/engine.py)).
 This is the arc's existence proof: where the principle has been applied it holds.
 
 **What is duplicated.**
@@ -7483,13 +7483,13 @@ This is the arc's existence proof: where the principle has been applied it holds
 | core operation | implementations | evidence |
 |---|---|---|
 | chart → SVG | **1** | `export/echarts.py`, 3 consumers |
-| SVG → PNG | **2** | [export/echarts.py](aughor/export/echarts.py) and [bots/slack/src/chart.ts](bots/slack/src/chart.ts) — the SAME transparent-background defect existed in both and had to be fixed twice on 2026-09-23, the second time only because a screenshot showed it still live |
-| a table for a READER | **3, none shared** | the model writes one in prose for chat; `gfmTable` in [bots/slack/src/artifacts.ts](bots/slack/src/artifacts.ts); `Block("table")` in [export/document.py](aughor/export/document.py) |
-| text into Slack | **3** | [slackbots/post.py:43](aughor/slackbots/post.py:43) · [notifications/executor.py:167](aughor/notifications/executor.py:167) · [integrations/operations.py:213](aughor/integrations/operations.py:213), each with its own truncation |
-| attach the exhibits | **2** | [bots/slack/src/bot.ts:158](bots/slack/src/bot.ts:158) and `_attach_chart` in [automations/engine.py](aughor/automations/engine.py) |
+| SVG → PNG | **2** | [export/echarts.py](pramanyx/export/echarts.py) and [bots/slack/src/chart.ts](bots/slack/src/chart.ts) — the SAME transparent-background defect existed in both and had to be fixed twice on 2026-09-23, the second time only because a screenshot showed it still live |
+| a table for a READER | **3, none shared** | the model writes one in prose for chat; `gfmTable` in [bots/slack/src/artifacts.ts](bots/slack/src/artifacts.ts); `Block("table")` in [export/document.py](pramanyx/export/document.py) |
+| text into Slack | **3** | [slackbots/post.py:43](pramanyx/slackbots/post.py:43) · [notifications/executor.py:167](pramanyx/notifications/executor.py:167) · [integrations/operations.py:213](pramanyx/integrations/operations.py:213), each with its own truncation |
+| attach the exhibits | **2** | [bots/slack/src/bot.ts:158](bots/slack/src/bot.ts:158) and `_attach_chart` in [automations/engine.py](pramanyx/automations/engine.py) |
 
 **Python has no reader-facing table builder at all.** Its only pipe-table emitter,
-[tools/data_catalog.py:158](aughor/tools/data_catalog.py:158), formats for the MODEL'S PROMPT.
+[tools/data_catalog.py:158](pramanyx/tools/data_catalog.py:158), formats for the MODEL'S PROMPT.
 So "show a table" has three different answers and no shared one — which is exactly why a
 measured Slack answer on 2026-09-23 carried the same five rows twice, once as prose the model
 wrote and once as the grid the transport attached, neither able to see the other.
@@ -7505,10 +7505,10 @@ Live `/obs/route-mix`: **74 ask turns, 25 converse (33.8%), 49 fast path (66.2%)
 mean 2.4 steps, and **2 of 25 stopped on `budget`** rather than on an answer. But:
 
 - `fast_path_turns` is **a residual, not a decision** — literally `total - converse`
-  ([obs/session_log.py:617](aughor/obs/session_log.py:617)). Nothing judges it.
+  ([obs/session_log.py:617](pramanyx/obs/session_log.py:617)). Nothing judges it.
 - **`deep_analysis` was chosen 0 times out of 60 tool uses.** It is defined at
-  [agent/converse_tools.py:353](aughor/agent/converse_tools.py:353) and declared to the model
-  at [line 640](aughor/agent/converse_tools.py:640). In 25 agentic turns the model never once
+  [agent/converse_tools.py:353](pramanyx/agent/converse_tools.py:353) and declared to the model
+  at [line 640](pramanyx/agent/converse_tools.py:640). In 25 agentic turns the model never once
   picked it. This is the house's own *features stall at TESTED, not LEVERAGED* shape (§7), and
   it reframes the whole of `IDEAS.md` 24: the quick/deep split is not being made badly, **on
   the interactive path it is not being made at all.**
@@ -7522,9 +7522,9 @@ mean 2.4 steps, and **2 of 25 stopped on `budget`** rather than on an answer. Bu
 111 calls unpriced**. Savings from this arc are statable in TOKENS and not in dollars until
 pricing lands. No wave may claim a dollar figure.
 
-**The judgement primitives are half-bound.** [judgment/seam.py](aughor/judgment/seam.py) types
+**The judgement primitives are half-bound.** [judgment/seam.py](pramanyx/judgment/seam.py) types
 all three — `Noul`, `Choice`, `Score` over 2–10 ordered levels. The hosted binding accepts
-**noul bundles only** ([judgment/jev.py:118](aughor/judgment/jev.py:118)). And the seam states
+**noul bundles only** ([judgment/jev.py:118](pramanyx/judgment/jev.py:118)). And the seam states
 its own limit: *"The probability is STATED, not measured"* — no provider here exposes logprobs,
 so [evals/judgment_battery_eval.py](evals/judgment_battery_eval.py) is the instrument that would
 say whether the numbers mean anything, **and it has never been run against a model.**
@@ -7534,7 +7534,7 @@ say whether the numbers mean anything, **and it has never been run against a mod
 **First, because its corpus cannot be backfilled** — the same reasoning that reordered Arc CB.
 Every day without shadow logging is a day of calibration data that cannot be recovered.
 
-Extend [judgment/jev.py](aughor/judgment/jev.py) past its noul-only gate to the `Choice` and
+Extend [judgment/jev.py](pramanyx/judgment/jev.py) past its noul-only gate to the `Choice` and
 `Score` the seam already types. Then classify every incoming ask and **record the treatment it
 would have chosen beside what actually ran** — no routing, no risk to any answer. The hosted judge evaluates
 a mixed bundle in parallel and its latency scales with tokens rather than question count, so
@@ -7637,7 +7637,7 @@ person's choice.
 #### CP-3 · Route on it, behind a flag — ⏸ NOT BUILT: held 2026-10-04 by CP-2's falsifier (its receipt, above)
 
 Only now does a treatment decide anything. Flag-gated exactly as `semops.jev_cheap_tier` is
-([kernel/flags.py:92](aughor/kernel/flags.py:92)), default OFF, graduating only on a live
+([kernel/flags.py:92](pramanyx/kernel/flags.py:92)), default OFF, graduating only on a live
 receipt. Low confidence escalates UP a tier or asks one clarifying question — never down. A flat
 distribution over `treatment` is a taxonomy fault, not an input fault, and is surfaced as one.
 
@@ -7655,7 +7655,7 @@ envelope that the Slack bot consumes; **the gap is that the prose is not in it.*
 
 Two defects measured in CP-0 are the acceptance test: the duplicate table must become
 impossible (the grid is one field, and a door decides inline-or-attached), and
-[agent/converse_tools.py:611](aughor/agent/converse_tools.py:611) — which instructs the model to
+[agent/converse_tools.py:611](pramanyx/agent/converse_tools.py:611) — which instructs the model to
 narrate guard receipts to the READER, against the standing decision that Slack messages carry
 no receipts — must become a provenance field a door drops.
 
@@ -7665,7 +7665,7 @@ selection; and the two CP-0 defects reproduced against the old path and absent o
 is not structured enough and the wave is not done.
 
 ✅ **BUILT 2026-09-23** (branch `claude/pending-top-nine`; PENDING.md item 1). The ask stream now
-ends with ONE `envelope` frame — `aughor/answer/envelope.py`, folded deterministically from the
+ends with ONE `envelope` frame — `pramanyx/answer/envelope.py`, folded deterministically from the
 frames the run already emitted, no model call: `headline` · `body` (every prose table LIFTED into
 the grid field, so a duplicate is impossible rather than suppressed; `lifted_tables` counts how
 often the model tabulated anyway) · `grid` · `chart` (the decision; encodings stay at the door) ·
@@ -7710,7 +7710,7 @@ own formatter back, the seam was in the wrong place.
 
 ✅ **BUILT 2026-10-04** (branch `claude/second-top-five`, not merged). **The falsifier had already
 fired once:** the Teams door AO-5 merged the day before had grown a FOURTH table builder
-(`teamsbots/reply.py`), so the census re-measured 4, not 3. `aughor/answer/exhibit.py` is the
+(`teamsbots/reply.py`), so the census re-measured 4, not 3. `pramanyx/answer/exhibit.py` is the
 one formatter: `format_cell` ports the web data table's rule field for field (`AugTable.tsx`
 `fmt`, `lib/format.ts`, `lib/orgSettings.ts` — share columns as `12.3%`, money to the cent with the
 column's own ISO suffix winning, ids and period keys left as stored, every other number grouped
@@ -7724,7 +7724,7 @@ fetches `POST /charts/png`, the one rasterizer (`export.echarts.svg_to_png`) wit
 `@resvg/resvg-js` left the bot's dependencies. The export's chat and envelope builders now get
 the connection's currency like the deep and explore builders, and the Teams door resolves it
 from its agent's connection. **Census, re-measured by the test that holds it**
-(`tests/unit/test_exhibit_formatter.py`, scanning `aughor/` and `bots/slack/src/`, not a file
+(`tests/unit/test_exhibit_formatter.py`, scanning `pramanyx/` and `bots/slack/src/`, not a file
 list): a table for a READER **1** (plus the catalog's prompt table, exempt by name — it formats
 for the model), SVG → PNG **1**; both checks fail on `origin/main` by assertion. **Live receipt,
 theLook turn `47a130145460`'s stored envelope:** the grid that read `54496.64009666443` reads
@@ -7753,7 +7753,7 @@ not stop the model writing it.
 > lived on one automation step, and nothing else — the anomaly monitor, a deep run's window,
 > the conversation — knew it.
 
-**What ships.** `aughor/settling/`: a daily reading (`sampler`) counts each of the last 14 days
+**What ships.** `pramanyx/settling/`: a daily reading (`sampler`) counts each of the last 14 days
 per profiled time table — one `GROUP BY day` on the timestamp column, literal dates, no model —
 and files the counts as observations taken today (`store`, a `KeyedJsonStore` — the kernel ledger,
 written only inside the API process); the learner (`learn`) compares tomorrow's reading of the same days with today's
@@ -7799,7 +7799,7 @@ inside the horizon. BR-1 makes an unsettled table read as *more than 14 days*.
 > had never proposed a watch. Spotlight's `draft_monitor` already stages the right shape by
 > hand: ONE `monitor_bundle` proposal, the anomaly monitor plus the chain its breach fires.
 
-**What ships.** `aughor/monitors/sentinel.py`, the Watcher's `alert_proposals` job: after an
+**What ships.** `pramanyx/monitors/sentinel.py`, the Watcher's `alert_proposals` job: after an
 exploration completes (`explorer/agent.py`, keyed on the schema fingerprint so an unchanged
 schema re-explored proposes nothing twice) it reads every metric with a daily series on the
 connection — the profile's north-star trends (`chart_sql`) and every APPROVED definition on a
@@ -7842,7 +7842,7 @@ envelope (CP-4's `envelope` binding is one edit away).
 > departure law 1, CB-8's said-versus-measured on filed Slack replies) and nobody else's. A board
 > memo with a wrong revenue figure in it went unchallenged unless someone happened to ask.
 
-**What ships.** `aughor/factcheck/`: the document is split into the clauses that assert a
+**What ships.** `pramanyx/factcheck/`: the document is split into the clauses that assert a
 measurement (the departure gate's own `numeric_clauses`; a year, a date, "3 regions" are not
 claims), each clause is put to the platform's own quick answer path (`answer_core` — metric
 grounding, SQL, execution, the guard battery, a Trust Receipt) as "what is the actual figure for
@@ -7854,7 +7854,7 @@ result is an answer envelope (§3.22) — headline, the contradicted claims as t
 grid, the SQL per claim in the provenance — filed as a turn (exportable, reloadable), and every
 claim's own check is a chat turn under the fact-check's session, receipt and all. Doors: `POST
 /factcheck` (pasted text), `POST /factcheck/upload` (a PDF, DOCX, PPTX, XLSX… through the
-Documents converter; charts in a PDF read back as tables), and the Slack verb **`@aughor check:
+Documents converter; charts in a PDF read back as tables), and the Slack verb **`@pramanyx check:
 <memo>`** (`bots/slack`), which posts the verdict as prose and the grid as the exhibit. Capped at
 25 claims per document, the rest named. **Cost, stated:** one quick-answer turn per claim (~10–40 s,
 a few model calls) — always on a person's ask, never scheduled.
@@ -7880,7 +7880,7 @@ caveat says so; a memo's figure about a period the data restates is compared wit
 > "anomaly": the runner scored a day against every prior row, the Watcher's replay (§3.24)
 > against a rolling 30-day window — a watch could be proposed on one and fire on the other.
 
-**What ships.** `aughor/monitors/rules.py` — the anomaly and threshold rules as pure functions,
+**What ships.** `pramanyx/monitors/rules.py` — the anomaly and threshold rules as pure functions,
 read by the runner that fires, the backtest that replays and the Watcher that proposes; a
 replay is now a promise about the rule that will actually run. `monitors/backtest.py` —
 **`POST /monitors/{id}/backtest`** replays an EXISTING monitor over the last year of its own
@@ -7927,7 +7927,7 @@ monitors. No web buttons yet (the MonitorCard's action row and subtitle are the 
 > briefing, and only its alert section honoured the period. The idea's own ask: "the agent that
 > delivers the briefing should know which version it is producing" — it could not.
 
-**What ships.** `aughor/knowledge/period_brief.py`, and the period threaded through the pieces
+**What ships.** `pramanyx/knowledge/period_brief.py`, and the period threaded through the pieces
 that already existed rather than a second brief beside them:
 * **The window is computed, never inferred** — `automations/temporal.complete_period`: the most
   recent COMPLETE period whose last day is settled for this source (idea 4's learned lag when
@@ -7974,7 +7974,7 @@ the 'briefing.by_period' flag"*; flag on, the week 2026-09-14..20 against 2026-0
 measured — its first column is not a date*. `period=history` answered exactly as before, with no
 `period` key. 27 backend tests (`tests/unit/test_briefing_by_period.py`), 4 web tests, the seven
 web gates, the ratchets and 1,340 tests across every touched area green — the one red,
-`test_aughor_ops_snapshot.py`, fails the same way on the base commit (it needs the `aughor_ops`
+`test_pramanyx_ops_snapshot.py`, fails the same way on the base commit (it needs the `pramanyx_ops`
 database this container does not have).
 **What the first run found, and fixed before this landed** (none of it visible in the unit tests,
 which all passed first time): (1) the profile store wraps every LIMITed chart in `recent_window`'s
@@ -7999,7 +7999,7 @@ year 31) is a judgement, not a measurement. The canvas brief has no period. The 
 own metric moves still anchor on a fixed yesterday (§3.23's note) — untouched here.
 **Fixed after an independent review of the branch (2026-09-24):** the send-time re-measurement read the result cache the brief had just filled, so law 1 checked the brief against itself for up to an hour — it now reads the warehouse (`connection_runner(cached=False)`); a briefing subscription saved while the flag was on could not be paused after it was turned off — a period or content is now validated only when it changes; an empty fiscal month crashed the year window — it reads as the calendar year.
 
-**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_BRIEFING_BY_PERIOD=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the weekly brief answers 200 for *the week 2026-09-14 to 2026-09-20*, then 404 with the refusal quoted above. The narrator's period prompt is still unmeasured on a real reader.
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `PRAMANYX_BRIEFING_BY_PERIOD=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the weekly brief answers 200 for *the week 2026-09-14 to 2026-09-20*, then 404 with the refusal quoted above. The narrator's period prompt is still unmeasured on a real reader.
 
 **Continued in §3.48 (Arc BR, drafted 2026-09-26).** Measured on theLook 2026-09-25 (UTC): all four period Briefings
 read **0 of 8** headline metrics — six have no chart query, one is a breakdown, and one was cut on `product_department`
@@ -8016,7 +8016,7 @@ control, and folds the daily automation into the Day Briefing.
 > What nothing kept: WHO asked (the asker rides a 14-day session log only). So the recall
 > needed no new store and no model — only the loop.
 
-**What ships.** `aughor/answer/recheck.py`:
+**What ships.** `pramanyx/answer/recheck.py`:
 * **Re-run and compare** — the answer's own query, read-only on its own connection, compared
   with what the person was given row by row on the answer's own labels (its non-numeric
   columns), number by number, at the departure gate's noise band (`NOISE_REL`, 5%: a smaller
@@ -8069,7 +8069,7 @@ by law 2 a KPI word no approved metric defines holds the correction (recorded, n
 chat answers are re-checked — a deep report's many queries are not.
 **Fixed after an independent review of the branch (2026-09-24), each with a test:** a query that reads the clock ("yesterday", "this month so far") is no longer re-checked — re-run tomorrow it measures another window, and the difference would have been told as a correction; a monthly or weekly result is labelled by its bucket's FIRST day, so late rows on the 22nd were called a restatement — the bucket's span is read off its labels and its LAST day decides; a row that vanished read as "unchanged" — it is a change, and said; a move from zero no longer states "+100%"; the daily pass took the newest forty answers forever — the longest-unchecked go first; a later re-check that found the numbers back as said now takes the web banner down; the append is a locked read-modify-write; each re-check releases its connection.
 
-**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_ANSWERS_RECHECK=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the re-check door reaches the answer lookup (404 *No chat answer with this id* for an unknown id), then 404 with the refusal quoted above. On, the scheduler heartbeat re-runs each chat answer's query from the last 14 days once a day — warehouse queries the operator now pays by default.
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `PRAMANYX_ANSWERS_RECHECK=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the re-check door reaches the answer lookup (404 *No chat answer with this id* for an unknown id), then 404 with the refusal quoted above. On, the scheduler heartbeat re-runs each chat answer's query from the last 14 days once a day — warehouse queries the operator now pays by default.
 
 ### 3.29 · Object pages say what is known about the object, its segment and its type (PENDING.md item 13, Arc ON leftover; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a read-only panel, every row marked)
 
@@ -8108,7 +8108,7 @@ still read only the home connection's findings.
 > dates and history on a screen — they land with the map below"). There was no single "brain"
 > read; each count lived behind its own door, and the Hub map is a table of automations.
 
-**What ships.** `aughor/hub/brain_map.py` and **`GET /brain/map?connection_id=`** — a READ,
+**What ships.** `pramanyx/hub/brain_map.py` and **`GET /brain/map?connection_id=`** — a READ,
 never a build (the hub map's rule): nine boxes in the three vaults §3.21 and IDEAS 21 name —
 *what it knows* (dated facts from the per-schema context graphs, approved metrics, what the
 platform can see), *what it did with people* (findings, recommendations and their CB-2
@@ -8169,7 +8169,7 @@ paid model run. A failed explorer call is retried by the next rite, since only a
 recorded.
 **Fixed after an independent review of the branch (2026-09-24):** the "already explored" skip read the run record under "default" while the explorer files it under the connection's own schema — on such a connection every restart would have paid for the model call again; it now reads the explorer's own scope (`resolve_effective_schema`), and the step runs in a copy of the rite's context so its `birth.step` events carry the job's id.
 
-**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_ONTOLOGY_EXPLORE_ON_CONNECT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the birth rite's business-terms step reaches the explorer's preconditions (skipped: *no ontology is built on this scope yet*), then `off` with no step emitted. Taken over the quality gate this section names: the explorer's one live check still stands at two groups fused and the paid re-check has not run, so a new connection's proposals may fuse groups — each stays PROPOSED until a person confirms it. One model call per new scope.
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `PRAMANYX_ONTOLOGY_EXPLORE_ON_CONNECT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the birth rite's business-terms step reaches the explorer's preconditions (skipped: *no ontology is built on this scope yet*), then `off` with no step emitted. Taken over the quality gate this section names: the explorer's one live check still stands at two groups fused and the paid re-check has not run, so a new connection's proposals may fuse groups — each stays PROPOSED until a person confirms it. One model call per new scope.
 
 ### 3.32 · Business terms however worded — the misses counted, the paraphrase set grown, near-matches measured (PENDING.md item 12, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; the near-match is NOT wired — ⚑ the user's call)
 
@@ -8250,7 +8250,7 @@ gates and the flag dispositions green.
 against the answers each door gave.
 **Fixed after an independent review of the branch (2026-09-24):** the flag rewrote EVERY deep-analysis send, and `/ask` does not forward seed SQL, seed context or a cache skip — "Explore this fact" would have lost its seed and "Run fresh" been served from cache; only a plain question (nothing but a depth or a schema) changes door now.
 
-**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `AUGHOR_CHAT_BUTTONS_REACH_AGENT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the web reads the flag from that endpoint, so Quick and Agent now go through `/ask` on a fresh clone. Taken knowing a conversation turn runs ~20k tokens; the gain is still unmeasured, and CP-1's shadow labels are what would measure it.
+**On by default since 2026-09-24 — the user's call, not a measurement.** The user turned the branch's four flags on together ("Four flags - turn them on.. Explorer default-on"); each moved from EXPERIMENT to FLAG_DEFAULT with no eval receipt, its falsifier carried onto the new entry as the condition that turns it off, and its off-path alive: `PRAMANYX_CHAT_BUTTONS_REACH_AGENT=0` restores the behaviour described above as "off", byte for byte. Receipt of the flip, over HTTP with nothing set and then every kill switch at `0`: `/system/flags` reads `value=True source=default disposition=default_on`, then `value=False source=env`; the web reads the flag from that endpoint, so Quick and Agent now go through `/ask` on a fresh clone. Taken knowing a conversation turn runs ~20k tokens; the gain is still unmeasured, and CP-1's shadow labels are what would measure it.
 
 ### 3.34 · Declared business terms survive a fresh clone — shipped under a connection's scope key (PENDING.md item 14, Arc ON; **BUILT 2026-09-23**, branch `claude/determined-bohr-qh3b1p`; no flag — a new seed layer an install opts into by naming a key)
 
@@ -8303,7 +8303,7 @@ follows the seed.
 > Documents list and every by-id door (markdown, original, convert, delete) were install-wide. A deleted document's
 > vectors, whose removal is best-effort, were still served.
 
-**What exists.** The registry row is the authority (`aughor/knowledge/indexer.py`). Every row is stamped with its
+**What exists.** The registry row is the authority (`pramanyx/knowledge/indexer.py`). Every row is stamped with its
 owner when it is indexed — a schema doc with its connection and that connection's organisation (`""` for a shared
 builtin, read by everyone), anything else with the organisation that indexed it — and a re-index never changes the
 owner (a connector re-sync under another org keeps the first stamp). A row from before the stamp resolves the same
@@ -8338,7 +8338,7 @@ organisation's user can trigger them for everyone); the organisation half was ch
 > was never declared, so on a stock install choosing it failed at the first model call with `No module named
 > 'anthropic'` — `test_every_backend_builds_a_client` swallows SDK failures by design, so nothing saw it.
 
-**What exists.** `_tools_on` speaks Anthropic's `messages` surface (`aughor/llm/provider.py`): OpenAI-shaped tool
+**What exists.** `_tools_on` speaks Anthropic's `messages` surface (`pramanyx/llm/provider.py`): OpenAI-shaped tool
 specs become `input_schema` tools; the loop's transcript becomes alternating turns — a call as a `tool_use` block, its
 answer as a `tool_result` inside a user turn, adjacent same-role messages merged, since Anthropic refuses two in a
 row; the reply is read as the same `ToolTurn` (a `tool_use` block before any text, `max_tokens` with nothing usable as
@@ -8373,7 +8373,7 @@ real `_stream_converse` with stubbed bodies, not a live model that refuses tools
 > names, types and sample values" and returned names.
 
 **What exists.** `parse_schema_tables` reads the catalog's form as well as both `TABLE:` forms
-(`aughor/db/schema_render.py`): a `## table` heading counts only when its `| Column | Type |` header follows, so
+(`pramanyx/db/schema_render.py`): a `## table` heading counts only when its `| Column | Type |` header follows, so
 another markdown section never becomes a table, and the catalog's sample rows are never read as columns; the raw
 forms parse exactly as before. Every consumer inherits it — the fixer, `preflight_repair`, the executor's guards,
 the analyst, the data-portrait step, the context manifest. `_checks_still_firing` re-runs the SQL-only checks
@@ -8419,13 +8419,13 @@ ones on the value path.
 3. **The DATA PROFILE block** (`grounding.data_profiles`, EXPERIMENT, off — it changes the prompt). For the linked
    tables, from the profile cache only: row counts and date ranges; per column the most frequent values of a
    dimension, a measure's range and median with its unit, null rates of 20% or more; keys left out; under 2,400
-   characters with any table that does not fit named (`aughor/tools/catalog_profiles.py`). A distinct count appears
+   characters with any table that does not fit named (`pramanyx/tools/catalog_profiles.py`). A distinct count appears
    only as "about N", above what is listed — the first render said "5 values:" over a list of six (SUMMARIZE
    estimates), and a short list is never called complete. **Measured:** mean 1,662 characters on the golden set
    (max 1,771) beside a mean catalog of 4,067; no table left out.
    ❌ **DELETED 2026-10-28, with its flag, by its own falsifier** (the user: *"Run the one clean data-profiles test on
    the cheap model, and let its own rule decide keep or delete"*). The run found first that neither earlier run had
-   measured the block: `evals/run_golden.py` imported `_parse_schema_tables`, gone from `aughor.tools.schema` since
+   measured the block: `evals/run_golden.py` imported `_parse_schema_tables`, gone from `pramanyx.tools.schema` since
    2026-06-30, inside `try: … except: pass`, so no table was linked and the block rendered for none — both arms got one
    prompt (fixed in `df151f9b`, with a test that resolves every Pramanyx import in the harness). The first clean run, in
    its own state on claude-haiku-5-5, 65 questions × 3 runs, the block in all 195 "on" prompts and none of the "off":
@@ -8480,7 +8480,7 @@ running API serves 7 tables and 75 columns for it — the empty reading came fro
 > restart paid again; nothing stopped a person's Explore racing the birth rite's; a record that no longer parsed was
 > read as empty — every withdrawal proposed again — and the next save erased the withdrawals for good.
 
-**What exists.** A coverage guard in `_part_outcome` (`aughor/ontology/explorer.py`, `PART_MIN_COVERAGE = 0.5`): a
+**What exists.** A coverage guard in `_part_outcome` (`pramanyx/ontology/explorer.py`, `PART_MIN_COVERAGE = 0.5`): a
 table that is already its own type and reaches under half of the parent's objects is refused with the counts — *"is a
 type of its own and reaches only 1,000 of 5,000 Order objects (20%) — a part is something nearly every Order has; a
 table about some of them stays its own type, linked to Order"*. The counts come from the measurement the part already
@@ -8512,7 +8512,7 @@ re-check has still not run.
 > ontology store read a saved graph that failed validation as "no ontology" with no log line, and turned a failed build
 > into None with no trace — every door then told a person to build what had been built.
 
-**What exists.** `OverrideWriteFailed` (`aughor/ontology/overrides.py`): a write or a withdrawal that does not land
+**What exists.** `OverrideWriteFailed` (`pramanyx/ontology/overrides.py`): a write or a withdrawal that does not land
 raises, named — *"entity 'Order' was not saved — the ontology store could not write it (No space left on device)"* —
 with the operating system's reason and no path; the temp file's cleanup can no longer mask the failure it follows (a
 test found `unlink(missing_ok=True)` raising `NotADirectoryError` over it). The API answers it as
@@ -8538,7 +8538,7 @@ the screen that asks for a build).
 > exactly such a number ("orders fell 97.5%").
 
 **What exists.** The stream carries the headline's words up to the word holding its first digit
-(`_numberless_prefix`, `aughor/routers/investigations.py`), and flushes those words at once when a number is reached
+(`_numberless_prefix`, `pramanyx/routers/investigations.py`), and flushes those words at once when a number is reached
 rather than waiting on the stream's throttle; the number arrives with the grounded headline once the rows are in. No
 web change: the chat already types the partial headline in place of the skeleton and lets the settled `headline`
 overwrite it.
@@ -8565,9 +8565,9 @@ the conversation's closing prose is (`ground_answer_numbers`).
 **What exists.**
 
 - **The chat's accept.** A 👍 records an `accept` on the turn, carrying the SQL the turn ran — read from its own history
-  row, never from the request (`_accept_chat_answer`, `aughor/routers/query.py`); idempotent, and the thanks line says
+  row, never from the request (`_accept_chat_answer`, `pramanyx/routers/query.py`); idempotent, and the thanks line says
   "recorded as accepted" only when it was.
-- **Rows that mean what they say** (`aughor/learning/exporters.py`): the prompt is the question asked (an answer
+- **Rows that mean what they say** (`pramanyx/learning/exporters.py`): the prompt is the question asked (an answer
   nobody asked — an explorer finding — is left out); each answer's verdicts reconciled to its latest; a verdict's SQL
   counts only when the answer's own record ran it, in this organisation; a correction is a preference pair only when
   it dry-runs on its connection; every row carries `context` (connection, dialect, the tables its SQL reads) and its
@@ -8599,7 +8599,7 @@ a four-gate report. Every guard above was mutation-checked — undone one at a t
 
 ### 3.43 · The few-shot memory learns from every good answer and forgets bad ones (PENDING.md item 24, the ML review's point 2 at answer time; **BUILT 2026-09-24**, branch `claude/determined-bohr-qh3b1p`; no flag)
 
-> **The fact it answers.** Past SQL reaches the SQL writer as few-shot examples (`aughor/tools/prior_analyses.py`) —
+> **The fact it answers.** Past SQL reaches the SQL writer as few-shot examples (`pramanyx/tools/prior_analyses.py`) —
 > the self-improving loop that exists without training — and it learned from almost nothing. Only deep runs wrote to
 > it, never a quick answer or a chat turn; a query a person rejected stayed an example forever; nothing checked the
 > guards; every deep sub-query was filed under the top-level question though the writer searches by hypothesis;
@@ -8611,7 +8611,7 @@ a four-gate report. Every guard above was mutation-checked — undone one at a t
 - **Every clean answer is remembered.** A quick answer, once its envelope is filed, is indexed off the stream
   (`index_answer`, from `stream_with_envelope`, on a daemon thread carrying the request's organisation) when its
   question stands alone (not a follow-up), its query returned rows and its guards were clean — the one definition the
-  training corpus's bronze tier reads too (`aughor.answer.envelope.guards_clean`). Examples only: a quick answer never
+  training corpus's bronze tier reads too (`pramanyx.answer.envelope.guards_clean`). Examples only: a quick answer never
   becomes a cached investigation. A deep run's sub-query is filed under its hypothesis's text, with the run's
   question beside it; a result a guard flagged (`caveats`) is not an example; a direct-mode run teaches examples but
   is not cached (`complete_investigation(cache=False)`).
@@ -8742,7 +8742,7 @@ prune is now scoped and mutation-checked both ways).
 
 **What exists.**
 
-- **One formula law** (`_Compiler.formula_column`, `aughor/semantic/object_query.py`): every name in a formula is read
+- **One formula law** (`_Compiler.formula_column`, `pramanyx/semantic/object_query.py`): every name in a formula is read
   by the compiler's own path law (`column_at`) — the type's column, a binding's property (a linked table joined on the
   object's key), another formula, or a property through to-one links (`order_to_customer.lifetime_spend`). A formula
   that reaches itself is refused with its chain. Builder computed properties are properties (`computed_prop`), in
@@ -8766,13 +8766,13 @@ does not (the conversion error). Customer C00042's page: `main` showed no formul
 cross-connection case in `tests/unit/test_object_sources.py`).
 
 **Measures that must not be summed across periods** (item 27's second half, built the same day). O5 named the kind —
-a semiadditive measure (`aughor/ontology/window_measures.py`) — but nothing could declare one, so `SUM(on_hand)` over
+a semiadditive measure (`pramanyx/ontology/window_measures.py`) — but nothing could declare one, so `SUM(on_hand)` over
 daily stock snapshots compiled, was written by the SQL writer, and answered three mornings' stock added together.
 
 - **Declared by a person** — `PUT /ontology/entities/{type}/semiadditive/{property}` names the time property its
   readings are taken `over` (DELETE withdraws). Checked at the door against the graph (a property the compiler reads;
   `over` the type's own date or timestamp; a moment is not a quantity), the verdict on the override, rebuilt by the
-  overlay without a database like every declaration (`aughor/ontology/semiadditive.py`).
+  overlay without a database like every declaration (`pramanyx/ontology/semiadditive.py`).
 - **One law in the object compiler** (`_Compiler.semiadditive_check`): a SUM of the reading — as a measure, in a
   metric's formula, through a link (to-one or to-many), through a formula that reads it (a stock's value is still a
   stock), over a timeseries binding's readings, or in a frame that sums them — is refused unless the query keeps one
@@ -8788,7 +8788,7 @@ daily stock snapshots compiled, was written by the SQL writer, and answered thre
   prompt-reach baseline grew by `semiadditive.*.over` and `.note`).
 - **The trust checks flag what is written anyway** — `semiadditive-sum` in `run_trust_checks`, on every final statement
   (the quick answer, deep analysis, `run_sql`, the validate door, the trust plane). The platform reads the declarations
-  as plain data through a new registry (`aughor/kernel/registries/readings.py`), never by importing the ontology: a
+  as plain data through a new registry (`pramanyx/kernel/registries/readings.py`), never by importing the ontology: a
   caveat on the headline and a receipt, never a rewrite — which moment the question means is the question's to say.
   The reading is followed through the statement's own CTEs and derived tables (`traverse_scope`): daily totals summed
   across days are flagged, naming where the reading came from; a month-end (`IN (SELECT MAX(d) … GROUP BY` the
@@ -8856,11 +8856,11 @@ one) or through a set operation — silent, not guessed.
   `source=gym`; the held-out golden set stays human-written; the split stays keyed on the question.
 - **The harness drives the real path.** A rollout that does not build the prompt the live path builds measures
   nothing — the scorer once bypassed the connection, and item 19's A/B could not run until its block was wired into
-  the harness. The gym calls the answer path in-process through `ask_target` (`aughor/evals/targets.py:83`), never
+  the harness. The gym calls the answer path in-process through `ask_target` (`pramanyx/evals/targets.py:83`), never
   the hand mirror in `evals/run_golden.py:116`.
 - **No second store, no second harness, no second comparator.** Steps ride `session_events`; datasets ride MI-3's
   plane; scores ride the evals plane; the two result comparators (`evals/sql_accuracy.py:78`,
-  `aughor/custom_agents/quality.py:138`) become one before the gym scores anything.
+  `pramanyx/custom_agents/quality.py:138`) become one before the gym scores anything.
 - **Tokens, not dollars.** All 97 calls this instance made on 2026-09-24 were unpriced. A saving is stated in tokens
   until pricing lands; a dollar figure in this section is a defect.
 - **Receipts that cost model calls run when the user says so** (⚑). TJ-1 to TJ-4 are free; the gym is not.
@@ -8897,7 +8897,7 @@ standing prose, recorded here so nobody re-derives them:** the grounded-answer g
 receipts live only in the four stored envelopes, and `guard_verdicts` holds the E1 checks and the rewrites; the
 treatment-shadow flag reads off-by-default in `kernel/flags.py` and is ON on this deployment through `.env`; the
 conversation roster is no longer reads-only, whatever `platform_tools.py:26` says; a model id *is* hardcoded, at
-`aughor/llm/provider.py:279`, in a slashless form the ratchet's pattern does not see; §1's "theLook mirrored daily
+`pramanyx/llm/provider.py:279`, in a slashless form the ratchet's pattern does not see; §1's "theLook mirrored daily
 07:00" was not found in connector code and is unverified; and `AGENTS.md`'s `data/vocabulary/` does not exist.
 
 #### TJ-1 · Open the taps that exist (substrate-sized, free, about a day)
@@ -8951,7 +8951,7 @@ arc accepts accrual from now and says so.
   deepseek/deepseek-v4.1-flash`, a model whose rate OpenRouter publishes and `llm/models.py` already converts to
   USD per 1M. `refresh_catalogue_prices` HAD NO CALLER. `/obs/usage-summary` now consults the catalogue at most
   hourly before pricing and says whose gap an unpriced call is (`pricing.unpriced_means`); the suite is kept
-  offline from the fetch (`AUGHOR_LLM_MODEL_FETCH=0` by default in conftest). The live number moves on restart.
+  offline from the fetch (`PRAMANYX_LLM_MODEL_FETCH=0` by default in conftest). The live number moves on restart.
 - **A registry row whose bytes are gone says so.** `store.bytes_state` → present · purged · missing, served on
   `GET /learning/datasets/{name}` with the remedy (re-run the export; an unchanged corpus writes the same path).
   Defect 9 closed at the cause, not by the directory's return.
@@ -9131,7 +9131,7 @@ volume is and the gym carries the whole load — record the rate and move on; do
   every declaration a person makes; the 139 hand-written pairs, the 24 Superstore cases and the 26 object queries, as
   reference SQL with the golden tenth held out by question; the 270 pack patterns that carry a SQL template, bound to
   each connection where the template compiles; and the paraphrase set (77) with surface perturbations
-  (`aughor/evals/perturb.py`) for the wording. A model-written paraphrase is allowed only through the door MI-3 allows
+  (`pramanyx/evals/perturb.py`) for the wording. A model-written paraphrase is allowed only through the door MI-3 allows
   synthetic SQL through — scored, spot-checked by a person on a sample, and marked as such.
 - **TJ-5b · Rollouts (⚑).** K runs per problem through `ask_target` on the real path, varying temperature and, where
   more than one binding is configured, the model; every candidate stored as a trajectory (TJ-2) with `source=gym`,
@@ -9309,7 +9309,7 @@ API and web server on copies of `data/` (the user's own API and web untouched):
   automation it replaces after seven delivered mornings. Dry run on the copy (`POST …/test?dry_run=true`, nothing
   sent): the first showed **6 lines held** — a snapshot built before the segment queries were kept, and *"lifting total
   revenue"* held for a causal claim with no licence; every recipe now says no figure caused another, and the rebuilt
-  Day departs with **0 held**. The receipt that counts — seven mornings in `#aughor_canvas` — starts once the branch is
+  Day departs with **0 held**. The receipt that counts — seven mornings in `#pramanyx_canvas` — starts once the branch is
   deployed and the subscription is created on the live install.
 - **BR-6, BR-7** — not started: paused at the user's word. **BR-8** — built 2026-11-09 but for its breakdowns (§3.48, BR-8).
 
@@ -9353,9 +9353,9 @@ API and web server on copies of `data/` (the user's own API and web untouched):
 | **The findings** | 0 of 13 can be re-asked for a range as written: six total every inventory item ever received (received, sold or on hand?), two are return rates (a cohort, maturing for weeks), one counts distinct users (not additive across days), one reads the overwritten `status`; three (profit by category, items sold, orders by month) would re-scope with a filter once a date is declared. Each keeps its literal SQL and a token signature, not the cell that produced it | frozen answers |
 | **The headline finding** | *"Overall return rate is 10.03%"* — `COUNT(returned_at) / COUNT(id) FROM order_items`, all time, with `Cancelled` and `Processing` lines in the denominator (the profile lists five statuses) | against its own metric |
 | **Settling** (§3.23) | readings since 2026-09-23; `orders` and `users` settle at 13 days; `order_items`, `inventory_items` and `events` still move at age 14 on 11–12 of 12 days and have no verdict; `learned_lag_days` takes the largest lag among tables WITH one (`settling/store.py:86`), so theLook reads "13 days, learned" while the table revenue and returns come from has not settled inside the horizon | understates |
-| **"The Look – Daily Briefing"** (an automation) | 09:00 UTC daily since 2026-09-01: a deep analysis (*"What changed in theLook in the last day? …"*, `observation_lag_days: 8` set by hand) → Slack #aughor_canvas; last delivered 2026-09-19; 09-20 and 09-21 the analysis failed; 09-22 → 09-25 held at departure every morning (`aov` stated without an approved definition, twice; figures not among the analysis's measured values, twice); its output never reaches the Briefing tab | the only daily delivery; dark |
+| **"The Look – Daily Briefing"** (an automation) | 09:00 UTC daily since 2026-09-01: a deep analysis (*"What changed in theLook in the last day? …"*, `observation_lag_days: 8` set by hand) → Slack #pramanyx_canvas; last delivered 2026-09-19; 09-20 and 09-21 the analysis failed; 09-22 → 09-25 held at departure every morning (`aov` stated without an approved definition, twice; figures not among the analysis's measured values, twice); its output never reaches the Briefing tab | the only daily delivery; dark |
 | **Brief subscriptions** | 0 | none |
-| **Range controls** | Agent Ops has one (`web/components/agentops/RangePicker.tsx`: presets and a `since`/`until` brush, the segmented control of `web/aughor-v2/INSTRUMENT.md` §5); the Briefing has a separate five-button switch; no calendar dependency in `web/` | grammar exists |
+| **Range controls** | Agent Ops has one (`web/components/agentops/RangePicker.tsx`: presets and a `since`/`until` brush, the segmented control of `web/pramanyx-v2/INSTRUMENT.md` §5); the Briefing has a separate five-button switch; no calendar dependency in `web/` | grammar exists |
 
 #### BR-0 · The survey — ✅ MEASURED 2026-09-25 (UTC)
 
@@ -9851,7 +9851,7 @@ silently (§7).
 > the engine said; EXPLAIN (the skill dry run) and SUMMARIZE (the overview) are refused by the validator everywhere;
 > `db.rows()` still reads any error as "no rows" (GM-4).
 >
-> **Status 2026-09-29, GM-2 BUILT — the census is a ratchet.** `tests/unit/test_sql_door_census.py` walks `aughor/`
+> **Status 2026-09-29, GM-2 BUILT — the census is a ratchet.** `tests/unit/test_sql_door_census.py` walks `pramanyx/`
 > (an AST walk over the door's method names; the study's regex was never recorded) and holds `docs/SQL_DOORS.json`:
 > 191 sites, one row each, keyed by file, enclosing function, door and label — never by line — with the site's
 > dialect class and author. A new door call fails with the row to add; a row whose call is gone fails; `declared` and
@@ -9870,7 +9870,7 @@ silently (§7).
 > their prompt — the fix is the prompt, measured by a model run, not a declaration.
 >
 > **Status 2026-09-29, GM-3 BUILT — the path is a receipt.** Every statement's result carries `QueryResult.doors`:
-> the words each door said as the statement passed it (`aughor/db/doors.py`) — `translated:duckdb→bigquery`,
+> the words each door said as the statement passed it (`pramanyx/db/doors.py`) — `translated:duckdb→bigquery`,
 > `validated:<dialect>`, `safety-checked` or `internal`, `row-policy`, `pii-checked`/`pii-redacted:n`/`pii-blocked`,
 > `row-budget:n`, `audited`, `repaired:<how>`, `blocked:<by>`, and the guard battery's and the quick path's
 > `guarded:<check>` for every check that RAN. Each connection's `execute` opens a fresh trail for its one statement
@@ -9900,7 +9900,7 @@ silently (§7).
 > a table it could not count equalled the fingerprint of `orders` alone, so a move in the left-out table would read
 > as "the finding was mis-derived"; and the answer resolver called a value **absent** from a column the warehouse
 > refused to search (`db.rows` returns `[]` for an error). The grain probe was the exception — it parses in the
-> connection's dialect and ran. **Built:** `aughor/sql/guard_run.py` — a guard's run over one statement is a
+> connection's dialect and ran. **Built:** `pramanyx/sql/guard_run.py` — a guard's run over one statement is a
 > `GuardRun`: its findings, and each part it could not check with the reason (`unchecked`, the house word). The join,
 > filter and grain guards return one (`join_domain_check`, `filter_domain_check`, `grain_check`; the list-returning
 > names stay for their callers). The battery (`execute_guarded`) and the quick path write `unchecked:<guard>` on the
@@ -10024,14 +10024,14 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 
 > **Status 2026-09-28, CT-7 to CT-10 BUILT — the home moved to a person's Briefing, at the user's word (§6 item
 > 36(c) superseded, clauses (i)–(l)).** A cockpit is a person's, keyed by connection, person and cockpit
-> (`aughor/cockpit/home.py`); the Ledger lists a person's by key prefix. Its cards are the person's own (the card
+> (`pramanyx/cockpit/home.py`); the Ledger lists a person's by key prefix. Its cards are the person's own (the card
 > store's `user` scope) and the ones pinned for the connection; another person's are neither placeable nor listed.
 > **CT-7:** the Briefing's "Your cockpit" became a strip of the person's cockpits, drawn for the page's range, with
 > version, history, going back, retiring and bringing back; "My cockpit" starts in one act from the pinned cards, in
 > the order they were arranged. **CT-8:** Arrange — the outline by hand: move a card or section, move to a new
 > section or tab, rename, take off, add a card on none of the person's cockpits; each save a version. Pinning adds
 > to the cockpit in view. **CT-9:** "New cockpit" → an area → one short model run with the drafting tool alone
-> (`aughor/cockpit/ask.py`); the draft is shown as its outline, can be arranged before keeping (kept as the draft,
+> (`pramanyx/cockpit/ask.py`); the draft is shown as its outline, can be arranged before keeping (kept as the draft,
 > then the changes as the next version), or discarded. Only its owner can keep it. **CT-10:** the Cockpit tab and
 > the drafting tool left the Data Canvas (the chat's tools are byte-identical to before Arc CT); a canvas cockpit
 > is offered in its connection's Briefing and moved in one act, its cards made the person's, its canvas history
@@ -10166,15 +10166,15 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 
 > **Status 2026-09-28, last but one — CT-5 is built, and run live WITHOUT a model. No model call was spent.** In a Data
 > Canvas's chat, on a turn with a channel, and only with `cockpit.composed` on, the model is offered one tool,
-> `draft_cockpit` (`aughor/agent/cockpit_tool.py`); off, the tool list is byte-identical. It takes three shapes of
+> `draft_cockpit` (`pramanyx/agent/cockpit_tool.py`); off, the tool list is byte-identical. It takes three shapes of
 > call: `options` (what a cockpit here may be made of, the cockpit as it stands, and how one is written — no
 > query, nothing written), `new` (the whole spec) and `edit` (RFC 6902 operations against the cockpit as it
-> stands). `new` and `edit` stage ONE proposal of the new kind `cockpit_draft` (`aughor/cockpit/propose.py`):
+> stands). `new` and `edit` stage ONE proposal of the new kind `cockpit_draft` (`pramanyx/cockpit/propose.py`):
 > the cards to create and the spec that arranges them. **The model writes no SQL and states no figure:** a new
 > card names an approved metric, an approved trusted query of the catalogue, or a finding of this canvas, and
 > its query is read from that record; a card that carries a query of its own is refused by name. **Every new
 > card is run through the guard battery before the draft is offered** — the battery the Briefing's pin doors
-> run, moved out of the router to `aughor/dashboard/doors.py` so both doors share it. **Approval is all or
+> run, moved out of the router to `pramanyx/dashboard/doors.py` so both doors share it. **Approval is all or
 > nothing:** everything is checked before anything is written, then the cards are made, then the spec is kept
 > as the next version; if either fails, what was made is removed again. A proposal refuses when a record a
 > card came from has a new version or a changed query, or when the cockpit has moved on since the draft — an
@@ -10262,8 +10262,8 @@ dialect class recurs, the door did not own the dialect and the design is wrong, 
 > does not report one.
 
 > **Status 2026-09-28, later — CT-3 is built.** A cockpit's spec is a Ledger artifact of kind `cockpit`, one
-> natural key per canvas (`aughor/cockpit/versions.py`); its cards are kept at canvas scope
-> (`aughor/cockpit/cards.py`); a card made from an approved metric records its name and version. **No new store,
+> natural key per canvas (`pramanyx/cockpit/versions.py`); its cards are kept at canvas scope
+> (`pramanyx/cockpit/cards.py`); a card made from an approved metric records its name and version. **No new store,
 > no migration**: a card's provenance is a JSON column, so the two new fields read as empty on every older row,
 > and the Briefing's arrangement table is untouched. Keeping is an act of approval, so every outcome is said —
 > kept, unchanged, refused, not checked, failed — and nothing is kept without the name of who approved it and
@@ -10318,21 +10318,21 @@ second place that declares chart kinds.
   Node bundle the way `export/echarts.py` runs the chart renderer. *A day.* The user's yes to the dependency came
   the same day; the receipt is CT-1's own run.
 - **CT-2 · the catalog and the validator, one home. ✅ BUILT 2026-09-28** (`web/lib/cockpit/`,
-  `web/components/cockpit/ComposedCockpit.tsx`, `aughor/cockpit/validate.py`; nothing mounts it yet). Five components: `Cockpit`, `Tabs`, `Tab`, `Section`,
+  `web/components/cockpit/ComposedCockpit.tsx`, `pramanyx/cockpit/validate.py`; nothing mounts it yet). Five components: `Cockpit`, `Tabs`, `Tab`, `Section`,
   `Card`. Structure checked by the library's own validator; the platform then checks that every card id is in
   this canvas, every state path is in the published tree, there is no `watch`, `on` or unregistered `$computed`,
   and every piece of model-written text passes the numerals law. Refused whole, with sentences (AV-0's law). A
   drift gate like the chart bundle's. "Cockpit", "card" and "section" entered in the glossary. *Two days.*
-- **CT-3 · kept as versions. ✅ BUILT 2026-09-28** (`aughor/cockpit/versions.py`, `aughor/cockpit/cards.py`;
+- **CT-3 · kept as versions. ✅ BUILT 2026-09-28** (`pramanyx/cockpit/versions.py`, `pramanyx/cockpit/cards.py`;
   no route yet). A Ledger artifact of kind `cockpit`, one natural key per canvas; cards made for it
   stored at canvas scope; a card made from an approved metric records which one. The connection cockpit's
   arrangement table is untouched. *A day.*
-- **CT-4 · the Cockpit tab. ✅ BUILT 2026-09-28** (`aughor/routers/cockpit.py`, `aughor/cockpit/host.py` and
+- **CT-4 · the Cockpit tab. ✅ BUILT 2026-09-28** (`pramanyx/routers/cockpit.py`, `pramanyx/cockpit/host.py` and
   `compose.py`, `web/components/cockpit/CockpitTab.tsx`). The fourth tab of the Data Canvas, behind `cockpit.composed` (off, byte-identical
   when off): the latest approved spec through the registry, `Card` drawn by `PinnedCardBody` unchanged, the
   Briefing's range control feeding `/range`, the count of cards waiting on a condition per section. *Two days.*
-- **CT-5 · ask for it. ⚑ ✅ BUILT 2026-09-28; its receipt by a model NOT run** (`aughor/agent/cockpit_tool.py`,
-  `aughor/cockpit/propose.py`, `aughor/dashboard/doors.py`, `web/lib/cockpit/patch.ts` and `grammar.ts`, the
+- **CT-5 · ask for it. ⚑ ✅ BUILT 2026-09-28; its receipt by a model NOT run** (`pramanyx/agent/cockpit_tool.py`,
+  `pramanyx/cockpit/propose.py`, `pramanyx/dashboard/doors.py`, `web/lib/cockpit/patch.ts` and `grammar.ts`, the
   `cockpit_draft` branch of `web/components/ProposalCard.tsx`). One converse tool, offered only in a Data Canvas
   on a streaming turn; it stages ONE proposal of a new kind — the cards to create, each naming an approved
   metric, a trusted query or a finding, and the spec — approved all or nothing. An edit arrives as RFC 6902
@@ -10444,10 +10444,10 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > **Status 2026-10-03 — DE-2a BUILT** on `claude/focused-hamilton-8w0q1f`, not merged. *Pre-check first,* run live
 > on the build machine before the change: `--http --host 0.0.0.0` answered a remote client (`Host: 203.0.113.5`)
 > `421 Invalid Host header` on every request, and a loopback client with no credential at all got a full session —
-> whose tools call the API with the server's own key and principal. *Built:* `AughorClient` presents the principal
-> it is given — `AUGHOR_MCP_BEARER` as `Authorization: Bearer …`, `AUGHOR_MCP_ORG` and `AUGHOR_MCP_USER` (default
-> `mcp`) as the `X-Aughor-*` seam — and nothing when given none, so identity-off installs are byte-identical; the
-> API compares its key with `hmac.compare_digest`; `--http` refuses to start without `AUGHOR_MCP_TOKEN`, every HTTP
+> whose tools call the API with the server's own key and principal. *Built:* `PramanyxClient` presents the principal
+> it is given — `PRAMANYX_MCP_BEARER` as `Authorization: Bearer …`, `PRAMANYX_MCP_ORG` and `PRAMANYX_MCP_USER` (default
+> `mcp`) as the `X-Pramanyx-*` seam — and nothing when given none, so identity-off installs are byte-identical; the
+> API compares its key with `hmac.compare_digest`; `--http` refuses to start without `PRAMANYX_MCP_TOKEN`, every HTTP
 > request presents it as a bearer (constant-time; otherwise a 401 with a `WWW-Authenticate` challenge that names
 > the variable), and the transport security is built for the host actually served — FastMCP's loopback allowlist on
 > loopback, its own non-loopback posture elsewhere — before FastMCP bakes it into its session manager. *Receipt:*
@@ -10468,7 +10468,7 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > folding) and an Exasol row in the capability contract (`SAFE_DIVIDE`, `IFF`, `DATEDIFF` refused; QUALIFY not), so
 > the parse step, the writer, the capability check and `native_sql` all read Exasol as Exasol; the two comments
 > and the test that held the old declaration up as the param-style counter-example say what it was. *DE-3d:*
-> `aughor/db/errors.py` types a driver's exception by its class name and message — `connection`, `timeout`,
+> `pramanyx/db/errors.py` types a driver's exception by its class name and message — `connection`, `timeout`,
 > `cancelled`, `sql` — without importing any driver (pymysql's `OperationalError` is decided by errno: 1792 is a
 > SQL refusal, 2006 a lost server); every connector's error result carries `error_kind`, and the door says
 > `failed:<kind>`; a connection error marks the connection lost, which the pool then closes on release and never
@@ -10571,7 +10571,7 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > router's cache — so a receipt qualifies against the text already in hand (`sqlglot_schema`: names only, all
 > `qualify` needs; sqlglot matches a statement's `schema.table` to a flat `table` and a bare `table` to a nested
 > one, measured); the quality store's rules carry a column and its results dropped it; `govern/lineage.py` found
-> its sites by a regex over SQL text. *Built:* `aughor/sql/lineage.py` — sqlglot's `qualify` and `lineage` over one
+> its sites by a regex over SQL text. *Built:* `pramanyx/sql/lineage.py` — sqlglot's `qualify` and `lineage` over one
 > statement: output, filter, join and group columns, each edge *certain* (the parser bound it, with the schema or
 > an explicit alias), *likely* (bound through a CTE or a subquery) or *possible* (by name only: no schema, one
 > source); a row count rests on the tables its select reads, said so, never dropped; a `SELECT *` with no schema,
@@ -10611,7 +10611,7 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > MotherDuck, Exasol, Google Sheets or SQLite, and the modal asked MySQL for a DSN where the server reads host, port,
 > user, password and database; a generator and a drift test already existed for `catalog.json` alone; and the
 > federated connector's class said `warehouse` while the picker filed it under `federation`. *Built:*
-> `aughor/connectors/declarations.py` — one `EngineDeclaration` per engine, eighteen in all: identity, label and
+> `pramanyx/connectors/declarations.py` — one `EngineDeclaration` per engine, eighteen in all: identity, label and
 > blurb, category and badge, DSN preview, form fields with secrets and optionals, drivers, the connector class, the
 > sqlglot dialect, native or transpiled, bind style, engine read-only, writer rules, refused constructs, support tier
 > (core / supported / preview), metadata strategy, environment variables, brand colour, the editor's grammar family,
@@ -10647,7 +10647,7 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > edge to claim a table pair blocked every later one. *Built:* the coverage row lives on each engine's declaration
 > (`metadata_facts` — columns, primary keys, foreign keys, comments, each *supported*: the platform reads it,
 > *unsupported*: the engine has no such fact, or *unknown*: the engine may carry it and the platform does not read
-> it yet, with the reason) and rides the catalog and the web map. `aughor/db/metadata.py` reads what is supported
+> it yet, with the reason) and rides the catalog and the web map. `pramanyx/db/metadata.py` reads what is supported
 > through the connection's door as the platform's own statement: DuckDB and the DuckDB-backed databases through
 > the catalog functions; SQLite through `pragma_table_info` / `pragma_foreign_key_list`; Postgres through
 > `information_schema`'s constraints and `pg_description`; MySQL through `KEY_COLUMN_USAGE` and the comment
@@ -10686,10 +10686,10 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > `resource.write`. *DE-2b:* `orgsettings/agent_policy.py` keeps one policy per organisation in the LLM binding's
 > store (§6 item 37(c): no new store) — `level` read / run / act, `connections` and `tools` allowlists, who set it
 > and when; the default is `run` with nobody named, `act` is saved only with a person's name, the environment
-> (`AUGHOR_AGENT_POLICY_LEVEL` / `_CONNECTIONS` / `_TOOLS`) can only narrow it and the effective policy says when
+> (`PRAMANYX_AGENT_POLICY_LEVEL` / `_CONNECTIONS` / `_TOOLS`) can only narrow it and the effective policy says when
 > it did; it is read on every call. `mcp/policy.py` is the one level map — the eighteen tools, the routes a method
 > alone cannot classify, Spotlight's act limb (held to the roster by a test) — with four stable codes. The MCP
-> client marks every call its own (`X-Aughor-Agent: mcp`, `X-Aughor-Tool`); `rbac/agent_gate.py`, an app-wide
+> client marks every call its own (`X-Pramanyx-Agent: mcp`, `X-Pramanyx-Tool`); `rbac/agent_gate.py`, an app-wide
 > dependency after identity and RBAC, is inert for every unmarked request and, for a marked one, checks the tool
 > allowlist, the level the route needs and the connection the request names in its path, query or JSON body,
 > refuses with a 403 carrying the code, and writes every call — allowed or refused — to the Ledger as
@@ -10989,7 +10989,7 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > tile says **unpriced**; five surfaces say *could not read — retry* on a failed fetch (a component test per site);
 > finished runs of a custom agent draw green with their duration; "built-in" replaces "charter" on screen and the
 > ratchet's comment is true. (The model-id ratchet refused a shipped price row, rightly: the rate is the operator's
-> declaration, `AUGHOR_MODEL_PRICES`.) AO-2a ✅ — the supervisor heartbeats after every reconcile and the bot card
+> declaration, `PRAMANYX_MODEL_PRICES`.) AO-2a ✅ — the supervisor heartbeats after every reconcile and the bot card
 > and the Map say *listening since …* or *not listening* with the one command. AO-2e ✅ — the key routes and the
 > heartbeat are admin acts in POLICY, and a rotation keeps the replaced key for ten minutes, said on the screen.
 > AO-4 ✅ — the agent's page is the whole agent: Doors, Alerts and Spend tabs beside Overview, Runs, Map, Quality
@@ -11120,9 +11120,9 @@ restated (the moat is the warrant and the record); §1's trigger and effect coun
 as §4.9; §4.8's executing-grants refusal narrowed on a condition; and `PENDING.md`'s twenty discarded items struck
 with their reasons, every kept item placed in a phase by the study's own section on the ledger.
 
-**Phase 0's exits, which are the next work:** an organisation's install — identity on (`AUGHOR_REQUIRE_IDENTITY=1`),
+**Phase 0's exits, which are the next work:** an organisation's install — identity on (`PRAMANYX_REQUIRE_IDENTITY=1`),
 Postgres (the kernel ledger already runs there), at least five people who own different things; the approval gate on
-by default (`AUGHOR_ACTION_APPROVAL` becomes a kill switch, the old name kept as an alias); the baseline numbers of the
+by default (`PRAMANYX_ACTION_APPROVAL` becomes a kill switch, the old name kept as an alias); the baseline numbers of the
 study's §A re-measured and dated; the Day Briefing delivered seven mornings; and the first number that left the
 platform and was acted on by someone who is not the analyst, with its receipt — the flywheel's first turn. Phase 4
 is gated on phase 3 (§4.8's amendment).
@@ -11130,7 +11130,7 @@ is gated on phase 3 (§4.8's amendment).
 **Phase 0 — the code half BUILT 2026-10-05** (on `claude/platform-2027-study`; the user's answers of 2026-10-05:
 the install is their machine with identity on, no identity provider chosen yet, one owner for now, the
 chooser switch deleted on CP-2's evidence and the ablation scripted). What landed: the approval gate ON by default
-with `AUGHOR_ACTION_APPROVAL=0` as the kill switch and `=1` still on (`govern/actions.py`; the suite's conftest
+with `PRAMANYX_ACTION_APPROVAL=0` as the kill switch and `=1` still on (`govern/actions.py`; the suite's conftest
 switches it off for every test not about the gate, and the gate's own tests prove the default); kill 8 executed —
 the conversation's `query_objects` tool, its schema and `ask.query_objects` deleted, `/objects/query` and the
 compiler kept; kill 6's first case — `framing.choice_confidence` and its second response model deleted; the
@@ -11148,32 +11148,32 @@ python scripts/phase0_baseline.py --write` — the numbers later phases move aga
 subscription and turn `briefing.ranges` on; the seven mornings are BR-5's receipt. (4) Run the promise-breach
 chain live end to end — the first number that leaves and is acted on, the flywheel's first turn. (5) `uv run
 python scripts/phase0_prompt_block_ablation.py` when a model key is at hand, then the deletion PR it licenses.
-(6) `aughor migrate-state` with the API stopped. (7) Identity on — `AUGHOR_REQUIRE_IDENTITY=1` with
-`AUGHOR_OIDC_ISSUER` and `AUGHOR_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
+(6) `pramanyx migrate-state` with the API stopped. (7) Identity on — `PRAMANYX_REQUIRE_IDENTITY=1` with
+`PRAMANYX_OIDC_ISSUER` and `PRAMANYX_OIDC_AUDIENCE` — the day an identity provider is chosen; group grants, the
 proposal approver's name and the grant-ownership refusal all take effect then with no further code. **The
 organisation-scale half of the exit — five owners, identity on — is not observable yet**, by the user's own
 answers, and this line says so rather than reading as met. Phases 1 to 7 followed back to back on the same
 branch at the user's word (2026-10-05, below): each phase's CODE half is built and receipted by its tests; each
 phase's exit is the install's to show, and every "Still open" line names what the install, not the code, still owes.
 
-**Phase 1 — the code half BUILT 2026-10-05**, five slices on the same branch. (P1-1) `aughor/record/` — the one
+**Phase 1 — the code half BUILT 2026-10-05**, five slices on the same branch. (P1-1) `pramanyx/record/` — the one
 claim ledger as kernel artifacts (`claim` · `decision` · `outcome`; no new store): a Claim with the hub's envelope
 and two clocks, restated by supersession with the old text kept, the three laws enforced at the door (a measured
 claim names its run warrant; a model's inference is a hypothesis at tier `said`, never a claim; confidence is
 counted or absent — no writer sets it), belief as a view (`as_recorded` on a date); a Decision with the claims it
 relied on as recorded and its expectation booked as a prediction claim at the moment of deciding, the review date
 proposed from the connection's learned settling lag and saying which rule set it; an Outcome that stamps the
-decision and scores the prediction. (P1-2) `aughor/record/writers.py` — every receipted answer that concluded
+decision and scores the prediction. (P1-2) `pramanyx/record/writers.py` — every receipted answer that concluded
 something with a query behind it books an observation warranted by its receipt, from the one receipt writer; a
 deep analysis books its findings beside it (measured on the report's receipt when a finding has its own SQL; a
 hypothesis at tier `said` when it does not); the daily re-check restates the observation when the numbers moved,
 warranted by a receipt of the re-check run. `EvidenceClaim.confidence` is None from now on — the 0.8 / 0.5 the
 linker stamped by `is_significant` are gone, the store rebuilds a NOT NULL file with every row kept, and the
-Evidence panel says "not counted" instead of drawing a bar. (P1-3) `aughor/record/byproducts.py` — accepting a
+Evidence panel says "not counted" instead of drawing a bar. (P1-3) `pramanyx/record/byproducts.py` — accepting a
 recommendation, approving or rejecting a staged proposal and declaring a decision each book a Decision in passing,
 with what each door already knows; the answer at review books the Outcome against the expectation and says the
 comparison against the metric's own history is phase 3's; `/record/*` reads claims as recorded on a date and
-decisions due. (P1-4) `aughor/record/confidence.py` — two reference classes counted from what the platform already
+decisions due. (P1-4) `pramanyx/record/confidence.py` — two reference classes counted from what the platform already
 measures (answers re-checked; stated causes challenged) plus predictions scored: the hit rate with its *n* from 30
 cases up, the count alone below, counted across every connection when one has too few and saying so; exports and
 the CLI print a model's stated confidence as a word, never a percentage. (P1-5) the public receipt's line two —
@@ -11185,7 +11185,7 @@ booked by people). The Explorer's, a pack's and the hub's claim shapes landed as
 below), organisation scope on glossary, metrics and the Briefing with the close-out's C2, and the graph as a projection
 of the ledger with its C3.
 
-**Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `aughor/record/inquiry.py` — the inquiry as a
+**Phase 2 — the code half BUILT 2026-10-05**, three slices. (P2-1) `pramanyx/record/inquiry.py` — the inquiry as a
 kernel artifact that outlives its runs: the question, who opened it (a person's ask, a monitor's alert, a restated
 claim), its runs with their verdicts, its hypotheses as claims with their state (a refuted one warranted by the run
 that refuted it, with the evidence), what it established, what stays open and what would settle each item, its state
@@ -11199,7 +11199,7 @@ says what was not re-tested, and a deep analysis that reaches a refuted cause ag
 (P2-3) Every run books a typed verdict — answered · contradicted · out of budget · withheld · no definition · no
 data · tool failed — classified by code over the recorded reason, never an empty result; the skeptic challenges
 from a second model binding where the install has two and the `causal_checks` record says which. (P2-2)
-`aughor/govern/attention.py` — the attention budget as the departure gate's last guard: slots a week per addressee
+`pramanyx/govern/attention.py` — the attention budget as the departure gate's last guard: slots a week per addressee
 (the target today, a person where the gate knows one; a person's own send exempt), a clean unattended departure
 held under `held_budget` once they are spent, every hold a ledger row with its score, the held list and each
 addressee's budget served by `/attention/*`, the four ranking terms published with their weights and how each is
@@ -11220,7 +11220,7 @@ wrong way, no expectation named the wanted direction, no history could be measur
 same moment; a person's later answer is laid beside the measured verdict as a restatement, never over it. The review
 question is DELIVERED (`playbook/review_delivery.py`) to the resolved owner's channel through the departure gate,
 where before it was written to a log; a person with no channel bound is said on the record, and the question waits on
-the departures screen. (P3-2) `aughor/record/scenario.py` — the ladder's first three methods behind one interface:
+the departures screen. (P3-2) `pramanyx/record/scenario.py` — the ladder's first three methods behind one interface:
 identity (exact arithmetic over named inputs, refusing anything else, saying what it held fixed), declared (a
 person's assumption as a claim at tier `declared` in their name, refused without one), history (mean and band of the
 prior windows with the backtest: MAE, MAPE, how often the band held); an unknown method refused by name. A
@@ -11260,7 +11260,7 @@ stays where it was and the Action centre links to it)*; and the exit on the inst
 organisation's install, a demotion in a drill). The undo fired from the entry and the gateway writes booked as
 Action entries landed with the close-out's C5.
 
-**Phase 5 — the code half BUILT 2026-10-05**, two slices. (P5-1, P5-2) `aughor/record/mission.py` — the mission as a
+**Phase 5 — the code half BUILT 2026-10-05**, two slices. (P5-1, P5-2) `pramanyx/record/mission.py` — the mission as a
 kernel artifact (kind `mission`) written by people: objective (metric, direction, target, by when, its measurable spec
 resolved from the governed metric), constraints, scope, owner, budget (interruptions a week, spend a month, an
 authority ceiling per action kind), watches, cadence, state proposed · active · paused · met · retired. Three laws at
@@ -11276,7 +11276,7 @@ inquiries by state, decisions and what became of each, cost (interruptions used 
 demotions, spend said as not counted), lessons; "0 inquiries, 0 decisions, no measurable effect yet" is a valid
 headline. Booked as `mission_report`, the mission's review advanced, delivered to the owner's channel through the gate
 on the heartbeat (`report_due_missions_hourly`) or on demand; `/record/missions*` serves it. (P5-3)
-`aughor/record/corrections.py` — Corrections as one view over five ledger records, each with what was believed and what
+`pramanyx/record/corrections.py` — Corrections as one view over five ledger records, each with what was believed and what
 replaced it: restatements, refuted hypotheses, missed moves (the review of a miss now books a `missed_move` entry when
 and only when it found one), predictions outside their band, decisions worse than expected; `/record/corrections`
 counts by kind. (P5-4) `record/scenario.intervention` — method 4 reads Outcome entries and nothing else: the measured
@@ -11325,7 +11325,7 @@ field, and a claim's key carries its author, so one author's restatement is a ne
 same natural key is their own claim; `GET /claims?as_of=` reads as recorded on a date; `GET /restatements?since=` reads
 what was restated from a cursor with what each replaced; `GET /export` streams the ledger as JSON lines so adopting is
 not a trap. `security/service_principals.py` — a principal a person mints (`POST /principals/service`), presented as
-`X-Aughor-Service` and `X-Aughor-Service-Key`, keyed by a hash in the kernel's kv store (no new store), revocable, held
+`X-Pramanyx-Service` and `X-Pramanyx-Service-Key`, keyed by a hash in the kernel's kv store (no new store), revocable, held
 to the organisation's agent policy by `rbac/agent_gate` like the MCP server, its record read at `GET /principals/{id}/
 record` beside the built-in agents'. (P7-2) `kernel/contract.py` — the agent contract rendered from the code that
 enforces it (the seven duties and what each books, the typed verdicts, what an entry carries, the principals and levels,
@@ -11776,8 +11776,8 @@ from records — no model fills the page.
 | **OC-4** · The first ontology-bound surface | An entity listing door. The object table, process board, action button and object detail pieces. The screen is shown before the build. | ✅ **BUILT 2026-10-09**, merged #587–#597 and receipted live; the falsifier reads the census journal, kept from 2026-10-09 22:15 UTC (`ontology.census` on, the user's call) — readable from early November. The screen was shown first and approved as drawn (a late dispatch cockpit; action → run it, or propose it when gated; the detail a piece beside the table). **The listing door** `POST /objects/list`: an entity or a segment, the columns asked for through to-one links, sorted with the key breaking ties, at most 200 a page, with the total; an accepted edit listed like a column, and a property a declared action writes listed (empty) before any edit sets it. **`overdue_<noun>`**, each measured promise's open-and-overdue objects, one definition with the measurement's count (`derived.overdue_filters`). **Four pieces** in the cockpit vocabulary (v3) — ProcessBoard, ObjectTable, ObjectDetail holding ActionButtons — placed by hand from *From the ontology*; kept only when every id resolves in what the connection serves; a model may arrange one and never adds one, and the grammar it reads is byte-identical. **The execute door** takes `propose_if_gated`: an action that needs approval is staged in the Actions inbox, no model. All behind `ontology.cockpit_pieces` (graduation queue). **Receipt on a scratch pair** (the samples shop as a connection, through the screen): a person declared *Order fulfilment* with a 2-day dispatch promise and *Flag for review*, published as release 2; the board read 5,000 placed · 3,600 shipped · broken on 80.6% · 1,400 open and overdue; the table of `overdue_dispatch` read 1,400 — the board's count; a row opened beside it; *Flag for review* ran and its edit showed in the table, the detail and the object's own page; a high-risk action was proposed in Actions instead and nothing was written. **The pin** (the study's §8.7): a version holding pieces is pinned to the release in force when it was composed — resizing keeps the pin, repointing a piece or a person's *Re-pin* moves it — and the cockpit says, above its pieces, every change published since that touches what they read, with its class; the release strip names the cockpits a waiting change touches. **The App wording** shown first and approved: *Publish as an App*, *Apps shared with you*, *An App by … for …*. **Live on theLook, 2026-10-09** (merged #587–#589): a person declared a 2-day dispatch promise on *Order Fulfilment* and *Flag for review*, published as release 4. The receipt first found that 18,726 of the 43,777 orders counted open and overdue were Cancelled — they had left the process — so a process now says how an object leaves it (#588, the door carrying it #589); declared as *leaves when status is Cancelled*: 18,733 left, the promise broken on 16.5%, **25,051 open and overdue**. Through the screen: the board read 25,051; the `overdue_dispatch` table read 25,051, every row Processing; order 6 opened beside it; *Flag for review* ran and its edit showed in the table, the detail and the order's own page; the flag was withdrawn there. The cockpit *Late dispatch* stays, pinned to release 4, and `ontology.cockpit_pieces` stays on (the user's call) |
 | **OC-5** · Processes and flows | Link purpose is derived. Impacts are declared with their mechanism and measured. Object-centric events, declared transitions and monotonic stages. | ✅ **BUILT 2026-10-10** (`claude/oc5-oc6`). **Impacts** (`ontology/impacts.py`): influence · validated · formula, declared through `/ontology/impacts` and counted before they land; measured at the downstream promise's lead object, the upstream promise reached through a link path — a to-many link reads "at least one of them broke it" (an EXISTS, and the object door now compares two properties of one linked row inside it); a reading is descriptive counts with the group sizes, never a cause (the departure gate holds causal wording without a licence). The frame ranks a measured impact first among its drivers and the deep analysis runs it as a declared breakdown; the Briefing names what is upstream of a promise; a process withdrawal is refused naming its impacts. **Link purpose and stage roles** (`ontology/purpose.py`): what each link carries, derived from the processes, promises and impacts routed through it; the objects a stage touches and why its promise is kept per its lead object. **Transitions**: declared moves beside the observed ones with conformance and the moves no one declared; every moment checked against the stages before it. The designer changes a published process. **Eval:** the ablation's `framed_impact` arm, impacts declared in its own fixture graphs (run 2026-10-10, gemini-3.1-flash-lite): Olist's dispatch → delivery impact measured true (24.39% against 6.49% of 96,476 orders) and reached the two delivery questions with no gain and no loss — framed 15/15 with or without it, raw 6/15; Lux's could not be read (shipping broken on fewer than 30 returns) and the arm was dropped, framed 16/16, raw 3/16. **Live on theLook (2026-10-10, merged #599):** a 4-day delivery promise published as release 5 through *Change this process* and the approval dialog; the dispatch → delivery impact declared and measured *false* (6.14% against 10.88% — the delivery clock starts at shipped); a framed deep analysis computed the promise over the wrong table, fixed in #600. |
 | **OC-6** · Actions for apps | Action versions are pinned. An outbox on Arc SR's job table, where an `unknown` delivery is reconciled by the action's own verification read. The edit layer. **Platform-owned entity types**, per decision (b). D4–D7 are closed. | ✅ **BUILT 2026-10-10** (`claude/oc5-oc6`). **D4** a ceiling below *execute with approval* refuses a run (403), below *execute* a standing grant is not honoured · **D5** criteria read the edit layer · **D6** an action's version pinned on its proposal and its run; an accept of a changed action is refused (409) · **D7** authority changes and the approval allow-list need an Admin, and every change notifies its subscribers. **The edit layer** keeps every version (a withdrawal is one), refuses a press against a version since changed (409), and enforces the moves a property declares (`edit_states`). **The outbox** (`actions/outbox.py`, flag `actions.outbox`, off) — in its own store with a lease, not Arc SR's job table, which does not exist yet (the user's call 2026-10-10): calls retried by why they failed, an unknown one checked by the action's own verification before it is ever sent again, dead letters retried or dismissed by a person; a writeback lane runs before the edits. **A Case**, the first platform-owned entity: held in the edit layer, made by an action that `creates` it, moved only as its type declares, listed on its order's page; the object door refuses it and says why. **Live on theLook (2026-10-10, #600):** a Case declared with its moves and three actions, published as release 6, opened on order 28, moved open → working → resolved, a move not declared refused in words, every version kept. The outbox's live receipt waits on the user's call (a localhost carrier needs the SSRF guard relaxed). |
-| **OC-7** · Security on the contract | Ontology securables, property sensitivity, row policy per type, and agent ∩ person. Needs the organisation install. | ✅ **BUILT 2026-10-10** (`claude/oc7-oc9`), behind `ontology.security` (off). An entity declares **row policies** (a group and conditions on its own properties) and **sensitive properties** (the groups that read them), released like any other declaration (`PUT /ontology/entities/{id}/row-policies`, `PUT/DELETE …/sensitive/{prop}`; the key is never masked). The reader is the person (`caller()`) and, when an agent acts for them (`X-Aughor-Acting-Agent`, or an agent actor), that agent too: rows are those both may see, a property is masked if either may not. Enforced through the object doors' one FROM (`object_query.backing_from`), the compiler's one property resolution and the object page; a masked column lists as empty with a lock and a caveat, a query that would filter, group or measure by it is refused, an object outside the reader's rows reads *withheld* (403), and a reader in no group is told which groups would admit them. The organisation install is still parked, so the receipt is on a scratch install with identity on by name (two people, one cockpit) — taken 2026-10-10: 600 and 1,150 orders, the amount masked for one, an agent acting for the other reading 350; a process board counts its reader's own objects, and the measurement kept for every reader counts every one. Live waits for sign-in. |
-| **OC-8** · Doors for builders | Generated from a release: JSON Schemas, TypeScript types, and one MCP proposal tool per declared action, per decision (d). Versioned doors. Ossie import only, per decision (j). | ✅ **BUILT 2026-10-10** (`claude/oc7-oc9`), behind `ontology.builder_doors` — default-on since its live receipt the same day (an outside program over MCP listed theLook's overdue orders and proposed *Open a case*; it waited for a person). `ontology/builder_doors.py` serves the published release as a **contract** — a JSON Schema per entity (properties, key, the segments a listing may name) and per declared action (what a proposal carries; an object parameter as `^<type>:.+$`), and the same as TypeScript declarations stamped with the release. Versioned doors: `GET /ontology/v1/contract`, `/ontology/v1/types.d.ts`, `/ontology/v1/actions/{id}/schema`; `POST /objects/v1/list`; `POST /objects/v1/actions/{id}/propose` — checked against the schema and the action's own criteria, staged in the Actions inbox with its version pinned, never run; a proposal read under a release that moved is refused (409). The MCP server offers `list_objects` (read) and one `propose_<action>` tool per declared action of the scopes in `AUGHOR_MCP_ONTOLOGY`, with the action's own schema (act). **Ossie** (`ontology/ossie.py`, the 0.2 draft): a model is previewed as rows — a dataset as an entity to describe or one already held, a relationship as a link, a metric whose dialect the engine reads as a draft metric, composite keys and unread dialects refused in words — and only the rows a person accepts are declared, into the draft, with `ossie:<model>@<version>` as provenance. No thin client. |
+| **OC-7** · Security on the contract | Ontology securables, property sensitivity, row policy per type, and agent ∩ person. Needs the organisation install. | ✅ **BUILT 2026-10-10** (`claude/oc7-oc9`), behind `ontology.security` (off). An entity declares **row policies** (a group and conditions on its own properties) and **sensitive properties** (the groups that read them), released like any other declaration (`PUT /ontology/entities/{id}/row-policies`, `PUT/DELETE …/sensitive/{prop}`; the key is never masked). The reader is the person (`caller()`) and, when an agent acts for them (`X-Pramanyx-Acting-Agent`, or an agent actor), that agent too: rows are those both may see, a property is masked if either may not. Enforced through the object doors' one FROM (`object_query.backing_from`), the compiler's one property resolution and the object page; a masked column lists as empty with a lock and a caveat, a query that would filter, group or measure by it is refused, an object outside the reader's rows reads *withheld* (403), and a reader in no group is told which groups would admit them. The organisation install is still parked, so the receipt is on a scratch install with identity on by name (two people, one cockpit) — taken 2026-10-10: 600 and 1,150 orders, the amount masked for one, an agent acting for the other reading 350; a process board counts its reader's own objects, and the measurement kept for every reader counts every one. Live waits for sign-in. |
+| **OC-8** · Doors for builders | Generated from a release: JSON Schemas, TypeScript types, and one MCP proposal tool per declared action, per decision (d). Versioned doors. Ossie import only, per decision (j). | ✅ **BUILT 2026-10-10** (`claude/oc7-oc9`), behind `ontology.builder_doors` — default-on since its live receipt the same day (an outside program over MCP listed theLook's overdue orders and proposed *Open a case*; it waited for a person). `ontology/builder_doors.py` serves the published release as a **contract** — a JSON Schema per entity (properties, key, the segments a listing may name) and per declared action (what a proposal carries; an object parameter as `^<type>:.+$`), and the same as TypeScript declarations stamped with the release. Versioned doors: `GET /ontology/v1/contract`, `/ontology/v1/types.d.ts`, `/ontology/v1/actions/{id}/schema`; `POST /objects/v1/list`; `POST /objects/v1/actions/{id}/propose` — checked against the schema and the action's own criteria, staged in the Actions inbox with its version pinned, never run; a proposal read under a release that moved is refused (409). The MCP server offers `list_objects` (read) and one `propose_<action>` tool per declared action of the scopes in `PRAMANYX_MCP_ONTOLOGY`, with the action's own schema (act). **Ossie** (`ontology/ossie.py`, the 0.2 draft): a model is previewed as rows — a dataset as an entity to describe or one already held, a relationship as a link, a metric whose dialect the engine reads as a draft metric, composite keys and unread dialects refused in words — and only the rows a person accepts are declared, into the draft, with `ossie:<model>@<version>` as provenance. No thin client. |
 | **OC-9** · The second domain | Lux's return-to-refund process rebuilt in the same shape, with no core change. | ✅ **LIVE 2026-10-10** on LuxExperience (`914df862`), on main as merged — declarations and screens only. A 7-day *receipt* promise through *Change this process* and the approval dialog (25.4% of returns broken), published as release 2; the designer flagged 4,199 returns refunded before they were received (the refund promise is broken on 25.41%, not 23.27%). The receipt → refund impact declared and measured *false* (3.32% against 30.06% — the refund clock starts at received, as theLook's delivery clock starts at shipped). *Escalate the refund* declared in the action designer; a platform-owned refund Case with its moves and three actions; release 3 (six changes, each SAFE). The *Return to refund* cockpit (the board, the 11,648 late refunds as a table, the detail's actions): RT00000003 escalated and a case opened on it from the cockpit, moved open → working → resolved, a move not declared refused, the return's page lists it. The one defect found was generic — a table offered the Case's properties as the return's columns (fixed, `columnsOffered`). Approvals granted for the run revoked. |
 
 **Order.** OC-0 → OC-1 → OC-2 → OC-3 alongside OC-4 → OC-5 → OC-6 → OC-7 → OC-8 → OC-9.
@@ -11860,7 +11860,7 @@ not yet hold is that shape's own rules, at every door:
   health can only say "not checked".
 - Document search returns `[]` on any exception (`knowledge/indexer.py:457`) — a failure reads as "no match".
 - §3.26's eight monitor defects are still open; `grace_period_hours` is never saved (`monitors/store.py:164-165`).
-- Every HTTP MCP client is one principal (`mcp/client.py:93-95`, one `AUGHOR_MCP_TOKEN`), so the agent policy and the audit
+- Every HTTP MCP client is one principal (`mcp/client.py:93-95`, one `PRAMANYX_MCP_TOKEN`), so the agent policy and the audit
   cannot tell two programs apart.
 - A shared App's readers see every keep: an edit carries `published_to` forward (`dashboards/versions.py:366`).
 - Cause and effect lives in two stores: `ontology/impacts.py` and `data/causal_graph.json` (`lifecycle/causal.py`, read by
@@ -12206,7 +12206,7 @@ switching the dashboard beside it, and suggestion chips.
 
 **The laws it would keep.** Adapt the pattern, never the hosted service (as with PENDING 56) ·
 grounded in the server's copy of the screen · the left rail stays, so the panel is on the right · a mockup on live data
-first (`aughor-v2/CLARITY.md`) · a model proposes, a person approves anything that writes.
+first (`pramanyx-v2/CLARITY.md`) · a model proposes, a person approves anything that writes.
 
 ---
 
@@ -12305,10 +12305,10 @@ Arc SH makes this urgent: once people type into sheets, the platform holds data 
 | # | Builds | Flag · size | Falsifier |
 |---|---|---|---|
 | **SV-1** | **A labelled backup before every migration.** `run_migrations` copies a file-backed SQLite store through `Connection.backup()` to `<store>.<UTC date>.v<old>-before-v<new>.bak`, numbered and never overwriting, verifies it with `quick_check`, then migrates. If the backup fails, the migration does not run, and the health route says so. A Postgres store says it was not copied. The migration test is enumerated from the code (every caller of `run_migrations`), each store from empty and from its base with rows. | none (decided 2026-10-27) · S | A pending migration runs with no `.bak` beside it → stop |
-| **SV-2** | **Rolling backups inside the API,** the one writer. Each store is copied through the backup API, and the JSON files and YAML trees are archived. Each copy is verified by `db/migrate.py`'s verifier and recorded in a manifest. Retention is a ported Apache-2.0 snapshot-retention rule (its licence header kept in `aughor/db/retention.py`). `aughor restore <stamp>` refuses while serving, lists every removal it would undo, asks, and never restores over the audit or the model-call logs. | `state.backups` · M | The API's p95 rises by more than 20% while a backup runs → move it to a quiet hour |
+| **SV-2** | **Rolling backups inside the API,** the one writer. Each store is copied through the backup API, and the JSON files and YAML trees are archived. Each copy is verified by `db/migrate.py`'s verifier and recorded in a manifest. Retention is a ported Apache-2.0 snapshot-retention rule (its licence header kept in `pramanyx/db/retention.py`). `pramanyx restore <stamp>` refuses while serving, lists every removal it would undo, asks, and never restores over the audit or the model-call logs. | `state.backups` · M | The API's p95 rises by more than 20% while a backup runs → move it to a quiet hour |
 | **SV-3** | **Incremental equals rebuilt**, first on `connectors/api/base_sync.py`: a positional insert writes values into the wrong columns (reproduced on a scratch DuckDB), the watermark is stamped after the fetch, and a table with no key duplicates rows. Latent: no API connector is configured. | none · S | — |
 
-**SV-1, built 2026-10-27** (`aughor/db/migrations.py`, no flag):
+**SV-1, built 2026-10-27** (`pramanyx/db/migrations.py`, no flag):
 - **The copy.** Before the first pending migration of a store that holds rows, `run_migrations` copies it through the
   backup API to `backups/<file>.<UTC date>.v<old>-before-v<new>.bak`, numbered, never overwriting. The copy is one
   self-contained file, because it leaves WAL before it closes. It must answer `quick_check` and read the old version
@@ -12337,7 +12337,7 @@ recommended … and start SV-1"*):**
   eight weeks.
 - **SV-2 copies every store but `checkpoints.db`,** LangGraph's resume points for runs in flight.
 
-**SV-2, built 2026-10-27** (`aughor/db/backups.py`, `aughor/db/retention.py`; flag `state.backups`, off, in the
+**SV-2, built 2026-10-27** (`pramanyx/db/backups.py`, `pramanyx/db/retention.py`; flag `state.backups`, off, in the
 graduation queue — receipt: a week of the live install's backups read and one restore proven on a copy; the user:
 *"Take SV-2 till SH-7 in one go"*):
 - **Inside the API, the one writer.** A job on the hourly housekeeping clock only while the flag is on (added and
@@ -12355,10 +12355,10 @@ graduation queue — receipt: a week of the live install's backups read and one 
   no backup, and "unchanged" recorded.
 - **Disk.** Free space must stay above the larger of 10 GiB and a tenth of the disk (46 GiB on the live disk, 79 free);
   a backup that would cross it is skipped and `/health` says so.
-- **Retention** — a ported Apache-2.0 snapshot-retention rule (its licence header kept in `aughor/db/retention.py`;
+- **Retention** — a ported Apache-2.0 snapshot-retention rule (its licence header kept in `pramanyx/db/retention.py`;
   its 8 tests ported as their `+`/`-` strings, its exact counts reproduced) with the decided caps, measured from the clock rather than the newest backup so
   a quiet install still lets a removal go within 8 weeks; SV-1's pre-migration copies go at 30 days.
-- **Restore** (`aughor restore <stamp>`, `aughor backups` to list): refuses while serving; refuses an unfinished backup
+- **Restore** (`pramanyx restore <stamp>`, `pramanyx backups` to list): refuses while serving; refuses an unfinished backup
   or a newer manifest; checks every stored file's sha256 and stages each store before anything live moves; lists what it
   would bring back — tombstones, removals the governance audit approved after the stamp, connections, files — and asks;
   takes a labelled copy of the present; moves the live files aside, puts the backup's in place, checks again, and on any
@@ -12385,7 +12385,7 @@ graduation queue — receipt: a week of the live install's backups read and one 
 - **A restore, proven on copies of two live backups, 2026-10-28** (the user: *"proceed with the rest"*). Real copies (no
   hard link, so nothing could write back into the live backups) of `2026-10-27T183808Z` and `2026-10-27T121237Z`, in a
   scratch folder, restored with `backups.restore(root=…)` from a test the suite's conftest isolates — nothing reached
-  `~/.aughor`. The newest into an empty state: 810 restored, no problem. Back to midday over it: 807 restored, the three
+  `~/.pramanyx`. The newest into an empty state: 810 restored, no problem. Back to midday over it: 807 restored, the three
   files of the sheet made at 13:20 set aside (not deleted), the model-call log kept with the present's rows carried in, a
   `before-restore` backup taken each time. An oracle of its own, not the restore's: all 51 stores' rows per table equal
   what the backup recorded, all 756 files byte for byte. Graduation now wants only its week of hourly backups read
@@ -12399,7 +12399,7 @@ graduation queue — receipt: a week of the live install's backups read and one 
   came back missing, said nowhere — the never-restored skip had no "over"; the backup's is now put back where the present
   has none (`test_a_restore_into_a_lost_state_brings_the_audit_log_back`). The full receipt is the B4 row of
   `docs/TENX_PROGRAM_2026-11-05.md`.
-- **`aughor doctor` says the backups** (`doctor._backups`): read from the backups folder and its last-run note — never
+- **`pramanyx doctor` says the backups** (`doctor._backups`): read from the backups folder and its last-run note — never
   the flag store, never `/health`'s block, which answers for the API's process. On the live install: *"13 kept, the
   newest 2026-10-27T183808Z; checked 0.6 hours ago"*. None taken, a failed one, one skipped for space, and one not
   checked for two hours each say so, with what to do.
@@ -12459,7 +12459,7 @@ user: *"Take SV-2 till SH-7 in one go"*). Four flags, each off and each standing
 `sheets.grid`, `sheets.combine` in the graduation queue with the arc's falsifiers as their receipts, `sheets.chat` an
 experiment (it adds model calls). Off, no route answers, the Sheets connection is not listed, the rail has no row and
 nothing is written.
-- **The model, as adopted — no new store of record.** `aughor/sheets/`: a definition on the lifecycle (`model.py`,
+- **The model, as adopted — no new store of record.** `pramanyx/sheets/`: a definition on the lifecycle (`model.py`,
   kind `sheet`, every change a version recorded with who, what and what made it; removal an `archived` version written
   FIRST — the tombstone); a sheet's values in the edit layer, which gained row grain (`actions/overlay.py`: kinds
   `sheet_cell` and `sheet_row`, migration 5 adds the change a history row belongs to); the file a person brought kept
@@ -12542,7 +12542,7 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   row's key, reads as one page with the tabs going to each part, shows linked rows as cards, and a total says how many
   rows it adds up ("sum of payment_value over 2 rows of Olist payments"). **A defect found on the way:** keeping a new view
   from the grid was refused — the view model required an id the grid does not send.
-- **SH-3** (`aughor/sheets/views.py`, flag `sheets.views`, off, in the graduation queue with the arc's falsifier as its
+- **SH-3** (`pramanyx/sheets/views.py`, flag `sheets.views`, off, in the graduation queue with the arc's falsifier as its
   receipt). A view is a grid — grouped or not — a board by a choice or yes/no column, or a calendar by a date column, and
   shared or kept to its maker (seen and changed by them only; the history says only "a view of their own kept"; a shared
   view is kept to its maker only in its maker's hands, while one other shared view stands). A grouping lists the largest
@@ -12573,7 +12573,7 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
 **SH-6's first piece, rules in the chat, the board by the keyboard, and the cell bar — built 2026-10-27** (branch
 `claude/sheets-next`; the user, on the three things SH-3 left: *"Lets keep building"*, then of the grid's cell pop-up:
 *"I don't want a pop-up to appear every time I click on a cell.. There has to be a better way"*).
-- **Make a dashboard from a sheet** (`aughor/sheets/dashboard.py`, flag `sheets.everywhere`, off, queued with the receipt
+- **Make a dashboard from a sheet** (`pramanyx/sheets/dashboard.py`, flag `sheets.everywhere`, off, queued with the receipt
   below; offered only where `dashboard.composed` and `dashboard.queries` are on). The platform offers what the sheet holds
   — its rows counted, each money column summed, the rows per value of its choice columns, the rows by month of its first
   date, a table — each a query card of the person's own on the Sheets connection, run once before it is offered; with a
@@ -12624,7 +12624,7 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
   answer"*). Measured first (trace d77fd873): the question went to the general quick chat, which ran one breakdown by
   status, never counted the 1,783 rows asked about (*"a small share"*), dropped one of its own seven groups — the two
   delivered orders with no carrier date, the one that mattered — and drew a chart. Built: `show_rows`
-  (`aughor/sheets/answer.py`), offered only to a question asked beside a sheet, bound to it by closure — the rows as the
+  (`pramanyx/sheets/answer.py`), offered only to a question asked beside a sheet, bound to it by closure — the rows as the
   grid's filter, checked and counted by the grid's own reading, under the answer as a card (*Show in the grid*, the
   person's own until kept; *Keep as a view*); the sheet's answer rules handed ahead of its columns. Live, the first
   run showed a defect in the shared numbers check (trace 062247c1): the model wrote the right answer and the check
@@ -12710,7 +12710,7 @@ first, then build SH-3 (grouped totals, board, calendar)."*).
 
 **SH-6's last piece, a sheet placed on the ontology — built 2026-11-09** (`claude/br8-ledger-and-removal-marker`, **merged 2026-11-09 · #658** (`3f37dfdd`); the
 user: *"Lets do 62 if not done already.."*, then the six calls of punch list item 64, each verbatim in
-`aughor/sheets/ontology.py`). Measured first: the Sheets connection builds no ontology at all, so every entity door
+`pramanyx/sheets/ontology.py`). Measured first: the Sheets connection builds no ontology at all, so every entity door
 refused it for want of a graph, and a declared table's columns are recorded once and never re-read — a rename broke the
 entity with a binder error. **Nothing by default:** a person places a sheet from its own bar (*Put on the ontology*, a
 form dialog), and only by a column that is one per object — a stored value, never blank twice, never `_row`, which is
@@ -12742,7 +12742,7 @@ or groups as readers or editors, and when a stale write is refused, say who chan
   maker `own`), and a group reaches a person as a published dashboard does (`dashboards/sharing.audience_of`: an
   organisation's group they are in, a role they hold). A sheet never shared stores neither field: its definition is
   byte for byte what it was.
-- **Every door asks it** (`aughor/sheets/sharing.py`): every sheet route, at the level it needs — read, change, or the
+- **Every door asks it** (`pramanyx/sheets/sharing.py`): every sheet route, at the level it needs — read, change, or the
   maker's reshare and remove — refused with a 403 that says the sheet exists and who to ask; the chat's tools (the rows
   a question asks for, the grounding, a link or a total applied from a proposal); combining (the other sheet must be
   readable); the Sheets connection's door, so the SQL Editor, dashboards and every answer refuse a statement naming a
@@ -12792,7 +12792,7 @@ or groups as readers or editors, and when a stale write is refused, say who chan
 
 **SH-5, built 2026-10-28 — a column a model writes** (same branch, local; the user: *"proceed with the rest"*, after
 *"SH-5 … waits for your go-ahead"*). Behind `sheets.model_columns`, off.
-- **What it is** (`aughor/sheets/model_columns.py`): a column with an instruction and the columns of each row it reads,
+- **What it is** (`pramanyx/sheets/model_columns.py`): a column with an instruction and the columns of each row it reads,
   added from Fields (*Written by a model*). *Fill with the model…* in its header's menu fills it for the view on screen,
   the semantic operators' way — the rows not filled yet, at most 200 a fill, 25 a call, on the cheap `fast` model —
   and says first how many rows, how many calls, and what they cost (or that the model's price is not set, or that no
@@ -12866,14 +12866,14 @@ SH-6's rest as much as to Arc SV's survey.
   120 reads in the code. The 2026-07-31 strategy cut 91 to about 22 decisions; the count regrew because `AGENTS.md`'s
   flag invariant makes every arc ship behind flags that leave only on a separate receipt.
 - **Proposed:** 57 always on (all on live) · 10 always on after a live check · 4 on when their setup exists · 5 flags
-  become 4 organisation settings, admin-only, in `aughor/orgsettings` — data leaving the install, model work nobody
+  become 4 organisation settings, admin-only, in `pramanyx/orgsettings` — data leaving the install, model work nobody
   asked for, a governance posture · 5 experiments decided once. New work merges on, or stays on its branch; the receipt
   moves before the merge.
 - **Calls:** the rule for new work; the four settings; the ten off today; the five experiments (study §8).
 - **Stage 1, built 2026-10-28** (branch `claude/flags-to-settings`): 63 flags in `ALWAYS_ON` — on whatever a saved
   override says, never listed in Settings, and the flags door answers a change with 409 and a sentence; an operator's
   env var set to an explicit falsy value still turns one off until stage 2 deletes its off path (the suite runs them
-  off that way, as it ran Arc OC's five). Five flags became four organisation settings (`aughor/orgsettings/allows.py`,
+  off that way, as it ran Arc OC's five). Five flags became four organisation settings (`pramanyx/orgsettings/allows.py`,
   Settings ▸ Organization ▸ *What Pramanyx may do*); one never set reads the former flag's variable and the screen says
   so. `federation.planner` kept, through its own doors only — `/ask` no longer sends a fresh turn to it.
   `grounding.data_profiles` deleted by its own falsifier (§3.38). `AGENTS.md`'s flag invariant replaced.
@@ -13001,7 +13001,7 @@ specific places. Those three are this arc, in order of value over cost, each thr
 
 - **Measured first, four premises corrected.** (1) The comparison said the mined facts would reach a prompt "through the
   candidate door that already EXPLAIN-binds": the door existed and **nothing called it** — `candidates.mine()` had no
-  caller anywhere, a complete and inert plane (§7's recurring failure). (2) `AUGHOR_QUERY_LOG_MINING` was a raw
+  caller anywhere, a complete and inert plane (§7's recurring failure). (2) `PRAMANYX_QUERY_LOG_MINING` was a raw
   `os.environ` read in `tools/schema.py` gating a prompt block: a feature flag the 2026-10-28 retirement never saw,
   because it was registered nowhere. (3) `candidates.ORIGINS` named `saved_sql` and `dbt`, which nothing ever wrote.
   (4) `EntityProperty` had no notation field and `junction` appeared only in a linker comment — both as the comparison
@@ -13012,7 +13012,7 @@ specific places. Those three are this arc, in order of value over cost, each thr
   falsifier retired, never measured, and under §3.65 a prompt block is always on or it is gone; its facts now reach
   a prompt only as candidates a person confirmed and that bound (NV-3). `saved_sql` and `dbt` are gone from
   `ORIGINS`; every origin named has a miner. *Both are the builder's calls, open to the user (§6 item 60).*
-- **NV-1 · a text column's date notation as a property fact** (`aughor/tools/date_format.py`, the profiler,
+- **NV-1 · a text column's date notation as a property fact** (`pramanyx/tools/date_format.py`, the profiler,
   `EntityProperty.format` / `format_note`). The method transfers whole: candidates in specificity order, a winner
   must parse EVERY value read with the year in [1900, 2099], DD/MM against MM/DD refused by name. This repo's rule
   adds the half the method leaves out — *withheld is said*: an ambiguous column carries the note naming both readings,
@@ -13024,7 +13024,7 @@ specific places. Those three are this arc, in order of value over cost, each thr
   one of 1,237 and 1,334 distinct values parsing, on the profile, on the served property and in the rendered block.
   The first rebuild wrote NOTHING: the 200-value cap had been read as eligibility, not as a read bound, and the
   column holds 1,237 — the kind of defect only the live run finds. theLook and Olist hold no text date column.
-- **NV-2 · the junction mark as a measured fact** (`aughor/ontology/junction.py`, `Junction`,
+- **NV-2 · the junction mark as a measured fact** (`pramanyx/ontology/junction.py`, `Junction`,
   `OntologyRelationship.via`). An entity minted from one table, carrying no measure, with exactly two value-verified
   (≥ 0.15, `join_guard`'s floor) or engine-declared foreign keys to two different entities and nothing else but its
   own key and timestamps, is marked after the cardinality pass, and ONE N:N link is declared between the far entities
@@ -13034,7 +13034,7 @@ specific places. Those three are this arc, in order of value over cost, each thr
   theLook (8 entities), Olist (9) or Superstore (1) qualifies — every bridge-shaped table carries a measure
   (`order_items`, `inventory_items`, `order_payments`), exactly the comparison's check — so the **falsifier holds**: the
   mark ships as a fact and the compiler change waits for a live table that qualifies.
-- **NV-3 · the warehouse's own query history, through the candidate door** (`aughor/db/query_history.py`,
+- **NV-3 · the warehouse's own query history, through the candidate door** (`pramanyx/db/query_history.py`,
   `query_history()` on every connection, `candidates.mine_from_query_log`, `POST /ontology/candidates/mine`, the
   organisation setting `read_query_history`). Snowflake's `INFORMATION_SCHEMA.QUERY_HISTORY`, ClickHouse's
   `system.query_log`, BigQuery's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` (then the caller's own jobs when the project view
@@ -13141,8 +13141,8 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
 - **Track A1–A3 BUILT 2026-11-05** (the user: *"So, lets build!"*). A1: `/slack-bots/runtime` opens only to the
   deployment's own credentials — proved first with a two-organisation test that read the first organisation's raw
   tokens as the second's owner, then closed. A2 (the user chose *refuse unless declared*): identity required with no
-  issuer refuses every request but `/health` and `/auth/config`, with the sentence, unless `AUGHOR_IDENTITY_FROM_PROXY=1`
-  declares an authenticating proxy; said at boot, on `/health`, on `/auth/config` and by `aughor doctor`; the suite
+  issuer refuses every request but `/health` and `/auth/config`, with the sentence, unless `PRAMANYX_IDENTITY_FROM_PROXY=1`
+  declares an authenticating proxy; said at boot, on `/health`, on `/auth/config` and by `pramanyx doctor`; the suite
   declares it in `tests/conftest.py`. A3: no access decision reads the tier — the gate, the role ceiling and the row
   policy all dropped `RBAC_SSO`; three tests that asserted the inert behaviour now assert the opposite. Receipt printed
   from the app the same day (`docs/TENX_PROGRAM_2026-11-05.md` §3, Track A).
@@ -13170,7 +13170,7 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   retention) — the program's row came from the assessment's reading, not the code's.
 - **Track B1–B2 BUILT 2026-11-06** (the user: *"Build B1-B2"*). B1: a pgvector Postgres service in the backend CI job;
   the shared-state tests that skipped on every CI run (23 of 36 — claim contention, peer boot, schema isolation,
-  migrations once — and 4 pgvector tests) now run, and `AUGHOR_REQUIRE_PG_TESTS=1` turns a missing service into a failure. B2: on a shared
+  migrations once — and 4 pgvector tests) now run, and `PRAMANYX_REQUIRE_PG_TESTS=1` turns a missing service into a failure. B2: on a shared
   Postgres the LangGraph checkpointer is the library's own `PostgresSaver` in the store's schema (new extra
   `shared-state`, the saver pinned to 3.1.2 so LangGraph's core does not move — moved to 3.1.3 with `langgraph-checkpoint` 4.3.1 on 2026-11-08, when the dependency audit flagged 3.1.2); a run paused in one process resumes
   and finishes in another, asserted where the rows live. Same branch: Data Canvas charts fill their row (a few-category
@@ -13226,8 +13226,8 @@ half the time until the study's phase-0 install exists. **Open:** the user's ado
   backup week read and a second restore proven on copies of two live backups — and a restore into a lost state found
   to bring the audit log back missing, unsaid (fixed; §3.63's graduation line). B3, its first half (the user: *classes
   and the test now*): every piece of the state folder classified — record, evidence, artifact, ephemeral, left behind,
-  not state — in `aughor/db/state_classes.py`, rendered as `docs/STATE_CLASSES.md`; a test finds every store the code
-  names and fails on one without a class; `aughor doctor` classifies the live folder: 124 entries, every one
+  not state — in `pramanyx/db/state_classes.py`, rendered as `docs/STATE_CLASSES.md`; a test finds every store the code
+  names and fails on one without a class; `pramanyx doctor` classifies the live folder: 124 entries, every one
   classified, 12 left behind (1.9 MB, five stores no code has named since 10-07). The object-store door for artifacts,
   B3's second half, waits for a second organisation (§7.3 of the program).
 - **The dependency audit, run whole, then cleared, 2026-11-08** (the user: *"Yes, do both"*, then *"Do this task here"*).
@@ -13623,7 +13623,7 @@ NEXT (order within a band is the user's knob)
                                    results, and OAuth-authenticated servers,
                                    non-text tool results.
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
-                                   AUGHOR_QDRANT_PATH; one serialized client per path;
+                                   PRAMANYX_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
                                    seam — §3.6)
   ⚠️ DS-1 leftovers — HALF SHIPPED 2026-09-02. **P1** edge-drop → pre-bound palette filter
@@ -13669,12 +13669,12 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first target NL2SQL,
         training rented, not owned
         MI-0 annex ✅ DECIDED (§6.7b); ~~remaining code: the langfuse.trace.input gate~~ — built
-             (`aughor/telemetry.py:812`; corrected 2026-10-04, phase 0 of the 2027 study)
+             (`pramanyx/telemetry.py:812`; corrected 2026-10-04, phase 0 of the 2027 study)
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
         MI-2b ✅ BUILT 2026-09-20, MERGED #532 (`d91fb9be`) — the journal
              had no sweep at all: 430,768 events over 95 days, 76.8% of them unreachable by
-             aughor_ops's 100k snapshot; scoped retention (named chatter only, 2-day window +
+             pramanyx_ops's 100k snapshot; scoped retention (named chatter only, 2-day window +
              50k cap, bounded at 20k/sweep, driven by emit) · Migration 12's trace and
              retention indexes · the store facade's silent fallback made loud · the outbound
              delivery log moved to the Ledger, where it showed 336 rows, 336 failed — read
@@ -13794,8 +13794,8 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         moved unchanged (measured); data-quality plays as the Verifier's rule-outs on deep reports;
         existing playbooks topped up with the 486 checks, a deleted one never resurrected.
         IP-2 ✅ MERGED #518: the installer asks once which industries (through the
-        terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
-        narrows every industry read; Settings → Organization and `aughor industries` change it.
+        terminal, before anything slow; --industries / PRAMANYX_INDUSTRIES answer ahead); one file
+        narrows every industry read; Settings → Organization and `pramanyx industries` change it.
         IP-3 ✅ MERGED #519 (`21a4484f`): the anatomy and gate 3 (static, CI) · gate 4 measures a
         package on a named public dataset with no model · airline the reference — 3 sourced
         metrics, 8 bound plays, 14 goldens; all 14 of BTS's published January 2019 figures
@@ -13838,9 +13838,9 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
         IN-4 → IN-1 → IN-3 → IN-2, NOT the order drafted: IN-4 has to come first, and the
         decisive reason is sharper than atomic-swap. 102 files under `data/` are git-TRACKED and
         the running app writes several of them (`data/metrics.json` is dirty ON PURPOSE on the
-        builder's own install), so a naive `aughor update` dirty-check refuses FOREVER on every
+        builder's own install), so a naive `pramanyx update` dirty-check refuses FOREVER on every
         install that has been used.
-        IN-4 ✅ the data home: nothing moves until `aughor migrate-state` verifies a copy and
+        IN-4 ✅ the data home: nothing moves until `pramanyx migrate-state` verifies a copy and
              writes its marker — a default that relocated on a directory's mere presence would
              make 1.4 GB of connections, history and receipts INVISIBLE rather than missing. A
              SPLIT, not a move (`AUTHORED_ENTRIES`, measured against `git ls-files data/`). Four
@@ -13848,10 +13848,10 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              🔴 The Fernet key had NO path override, computed twice from anchors a different
              number of `.parent` hops apart: state moving without it would have made every stored
              DSN undecryptable, silently, because resolving to an empty path GENERATES a key.
-        IN-1 ✅ `aughor doctor` (typed verdict per check; no model call, no warehouse query, and
+        IN-1 ✅ `pramanyx doctor` (typed verdict per check; no model call, no warehouse query, and
              it writes nothing — the obvious route opens `org_llm.db` and becomes a second writer
-             on `data/`) · `aughor update` (fast-forward, refuse, NEVER reset) · `migrate-state`.
-             🔴 Found by doctor's first live run: `aughor up`'s port guard had NEVER fired here.
+             on `data/`) · `pramanyx update` (fast-forward, refuse, NEVER reset) · `migrate-state`.
+             🔴 Found by doctor's first live run: `pramanyx up`'s port guard had NEVER fired here.
              `_port_in_use` bound `127.0.0.1` with SO_REUSEADDR, which does not stop a WILDCARD
              listener — and `0.0.0.0` is how the runbook starts this API.
         IN-3 ✅ retries, a blobless-clone fallback, a preflight that warns and never blocks, and a
@@ -13878,7 +13878,7 @@ ARC IN  ✅ ALL FOUR WAVES MERGED #531 (`2ae9ae9d`) 2026-09-20 — the install. 
              ✅ Closed in #535: `connectors/api/base_sync.py` resolves through `state_dir()`, whose
              env both hermeticity guards already carry, so `migrate-state` no longer leaves it
              behind · re-running `install.sh` / `install.ps1` on an existing clone fast-forwards it
-             through the function `aughor update` uses — a refusal or an error is one line and never
+             through the function `pramanyx update` uses — a refusal or an error is one line and never
              fails the install.
 ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 BUILT on the user's flip the same night; JD-6 on HOLD); drafted 2026-09-17, recorded 2026-09-20 — the judgment seam: one state,
         N independent typed questions, a closed answer space, and a probability our code bands on.
@@ -13891,7 +13891,7 @@ ARC JD  ✅ ADOPTED 2026-09-21 (§3.20; §6 item 28 — JD-5 BUILT on the user's
         2026-09-21: the hosted judge beats production +2.6 (CI +1.1 to +4.2) at zero champion
         calls, 2.6× cheaper, passes the shuffled-context control — VERDICT KEEP. Then the user: "Flip the flag on and
         build the [hosted-judge] binding" — JD-3 GRADUATED to default-ON (sampled cascade = the kill switch) and JD-5 BUILT
-        (`aughor/judgment/jev.py`: flag `semops.jev_cheap_tier` OFF by default, PII withholds whole bundles, outbound
+        (`pramanyx/judgment/jev.py`: flag `semops.jev_cheap_tier` OFF by default, PII withholds whole bundles, outbound
         seam counts every call, house-tier fallback so an outage is yesterday, never a champion flood; smoke-tested
         live end-to-end). A Postgres extension of it examined, not adopted. ⏳ JD-1's and JD-4's corpus receipts are still model calls. JD-4's first run
         took no reading on three of five measures; the floor is `choice_prior` 44.8%.
@@ -14081,7 +14081,7 @@ ARC OC  ✅ ADOPTED 2026-10-09 (§3.56; §6 item 50) — the ontology as the con
 - ✅ **`govern/disclosure.py` DELETED 2026-09-06 (the user's call, asked first).** Fully built
   and tested since Wave G6, zero production callers ever — §7's complete-and-inert shape held
   for months. The deciding argument was not the inertness but VA-10: its run-as identity half
-  would today surface the unverified `X-Aughor-User` header on answers — misattributable
+  would today surface the unverified `X-Pramanyx-User` header on answers — misattributable
   identity people would trust, §3.5's own warning. Recoverable via git; rebuild ON REAL
   IDENTITY when VA-10's auth model lands, with the receipt/answer as its consumer from day one.
 - ~~**Report-quality deep dive, 7 of 8 defects still live**~~ — **RE-MEASURED 2026-09-02: the
@@ -14174,7 +14174,7 @@ ARC OC  ✅ ADOPTED 2026-10-09 (§3.56; §6 item 50) — the ontology as the con
   server emits a category nothing draws, AND if the panel draws one the server never emits.
 - ~~**Monitors' `notification_channel` unwired**~~ — **THIS LINE WAS FALSE. Re-measured
   2026-09-02:** the field was wired by **#349 (`f4c25426`, OA·N8-0)**, which is where
-  `aughor/monitors/notify.py` came from. `dispatch_alert(alert)` is called on the alert-commit
+  `pramanyx/monitors/notify.py` came from. `dispatch_alert(alert)` is called on the alert-commit
   path (`monitors/store.py:332`), the channel holds an **Action Hub trigger id** (a configured
   destination, not a channel *kind*), delivery is `fire_action`, and a unit test covers it.
   Monitors CAN route. Third instance of the week's lesson — this one deterred work that had
@@ -14188,7 +14188,7 @@ ARC OC  ✅ ADOPTED 2026-10-09 (§3.56; §6 item 50) — the ontology as the con
   through `PUT /ontology/kinetic-actions`. It reaches every consumer — the roster returns it,
   and `GET /components?conn_id=8233e4fd` now carries `declared_action: 1`, `availability=ready`,
   its `order_id` param drawn as a port, `exposable_as_tool=true`, `governed_by=
-  aughor.govern.actions`, and `risk=high` by the model's fail-safe default (an unclassified
+  pramanyx.govern.actions`, and `risk=high` by the model's fail-safe default (an unclassified
   declared action stops for a human rather than auto-firing).
   🔴 **The chain was NOT driven to a staged proposal, deliberately.** `POST
   /kinetic-actions/propose` runs a proposer **LLM call** on the `fast` binding, and spending the
@@ -14271,12 +14271,12 @@ ARC OC  ✅ ADOPTED 2026-10-09 (§3.56; §6 item 50) — the ontology as the con
   is kept rather than globally filtered, and a group claims a shared reason only when every tick
   in it gives the same one.
 - ~~**Stray `data/qdrant/` appeared 2026-09-02** despite the server pin~~ — **CAUSE FOUND
-  2026-09-03: `aughor/cli.py` never read `.env`.**
+  2026-09-03: `pramanyx/cli.py` never read `.env`.**
   The chain, proven statically: `.env` was read by `api.py` and `semantic/kb_retriever.py`
   and **nothing on the general import path**, so a process starting at the CLI — the
-  installed console script — saw no `AUGHOR_QDRANT_URL`. Without that pin
+  installed console script — saw no `PRAMANYX_QDRANT_URL`. Without that pin
   `vector_store._client()` takes the embedded branch at `_embedded_path()` →
-  `state_dir()/qdrant` → **`data/qdrant`**. And `aughor investigate` reaches the store
+  `state_dir()/qdrant` → **`data/qdrant`**. And `pramanyx investigate` reaches the store
   through `agent.bootstrap` (`delete_by_filter` / `match_filter`) — real operations, and
   these stores write when USED, which is exactly why the DS-17 suspect could be real and
   still not reproduce it: a spec dump only imports.
@@ -14288,7 +14288,7 @@ ARC OC  ✅ ADOPTED 2026-10-09 (§3.56; §6 item 50) — the ontology as the con
   every command passes through and no test that merely imports the module runs. The
   existing ratchet caught the first attempt and was right.
   ✅ `tests/unit/test_entrypoints_load_dotenv.py` guards the CLASS — every process
-  entrypoint reads `.env`, honours `AUGHOR_SKIP_DOTENV`, and the console-script target
+  entrypoint reads `.env`, honours `PRAMANYX_SKIP_DOTENV`, and the console-script target
   stays covered — plus a canary on the premise (the set of `.env` readers) so the next
   reader re-derives the reasoning instead of trusting it.
 
@@ -14460,7 +14460,7 @@ the browser** · **measure the premise before building.**
    SQL, result summaries, verdicts) are lawful training inputs, org-scoped. The NL2SQL
    loop needs nothing from this clause.
 8. ✅ **DECIDED 2026-09-03 — the community flywheel: YES to both halves.** (a) Releases
-   may ship shared task adapters (`aughor-sql-vN`) trained on our own pilot data.
+   may ship shared task adapters (`pramanyx-sql-vN`) trained on our own pilot data.
    (b) A deployment may OPT IN to contribute scrubbed graded pairs under 7(b)'s annex.
    The yes does not change the default posture: contribution is strictly opt-in —
    nothing leaves a deployment that didn't say so. This is the mechanical form of the
@@ -14494,7 +14494,7 @@ the browser** · **measure the premise before building.**
     gap-map round asked it directly (platform-minted tokens were the recommended
     alternative; OIDC won). Built generic the same day: no IdP is hardcoded — issuer +
     audience are configuration, provider specifics come from the issuer's discovery
-    document, and the org claim is opt-in (`AUGHOR_OIDC_ORG_CLAIM`, strict when set)
+    document, and the org claim is opt-in (`PRAMANYX_OIDC_ORG_CLAIM`, strict when set)
     with a single-org default. The spoofable header seam dies whenever an issuer is
     configured under required identity. What only the user can supply: a real tenant's
     issuer/client id for the live receipt. Full note: §3.5.
@@ -14515,7 +14515,7 @@ the browser** · **measure the premise before building.**
     Full note: §3.12.
 13. ✅ **DECIDED 2026-09-09 — Arc PX is adopted, and the band's knob is turned: most
     ambitious first.** The user's hypothesis, verbatim: *"there are a lot of features
-    that aughor has but are not surfaced or exposed as much as they should be. Along
+    that pramanyx has but are not surfaced or exposed as much as they should be. Along
     with that, our UI is also like an AI slop … it lacks the UI judgement of an
     experienced UI/UX researcher"* — confirmed by the same-day audit and specced as
     §3.14. The build directive followed mid-session: *"take the most ambitious or
@@ -14895,7 +14895,7 @@ the browser** · **measure the premise before building.**
     `8797dfef` retracts it. Re-pointing per connection gave 46%, equally meaningless. Both numbers
     measured warehouse drift and called it model behaviour. ✅ What survives and is still worth doing:
     `dimensions` is validated nowhere, the `metric_table` correction retry is accepted without
-    re-validation (`aughor/agent/investigate.py:5676`), and **no counter or event fires on a spec
+    re-validation (`pramanyx/agent/investigate.py:5676`), and **no counter or event fires on a spec
     repair** — so the receipt this clause named for itself does not exist yet. *Recommendation as
     amended: fix those three on their own merits; do not build a closed option list to remove a failure
     this corpus says is not happening.* ✅ The three were fixed in #535 (§3.20).
@@ -15268,7 +15268,7 @@ the browser** · **measure the premise before building.**
     the scrim. What did not: the one blue, the navy selection tint, the six intent ramps, the chart palette and its
     order, every size and radius, and the whole light skin. It supersedes the 2026-10-04 "+8" lift of the Du Bois
     greys (#567) — the greys it lifted are gone — and it is the third dark ground in a fortnight, so
-    `web/aughor-v2/theme/tokens-v2.css` carries the note. Measured: text is clearer on every surface (captions on a
+    `web/pramanyx-v2/theme/tokens-v2.css` carries the note. Measured: text is clearer on every surface (captions on a
     card 5.87:1, was 4.92:1; on a pressed control 4.81:1, was 3.84:1); `--t3` is one step above the value in the
     comparison (`#9C9C9C`, not `#9A9A9A`) so a caption on a selected row still clears 4.5:1. Fainter, and shown so
     in the comparison: the row rule on the page (1.25:1, was 1.39:1) and the step from page to chrome (1.11:1, was
@@ -15283,7 +15283,7 @@ the browser** · **measure the premise before building.**
     study's word is dropped and nothing is built. The Policies lens keeps its link there.
     (b) **"Last used" on the gate map, per entry point** — not per call place. *Built:* the SQL door has ten ways in
     (nine methods on a connection and `execute_guarded`); one use is counted at the method the caller came in through,
-    and a door reached through another is the same use (`aughor/db/door_count.py`). Nobody lists which connections are
+    and a door reached through another is the same use (`pramanyx/db/door_count.py`). Nobody lists which connections are
     counted: `DatabaseConnection` wraps the door methods of every class that subclasses it. The count is batched into
     the audit store beside the internal-statement count (`door_counts`: organisation, door, day, uses, last used), and
     the gate map's "By door" table shows Uses and Last used with the day counting began — nothing earlier was
@@ -15292,7 +15292,7 @@ the browser** · **measure the premise before building.**
     (c) **The Briefing gains all three**: signed and dated as a delivery, an action on an item, a prediction on an
     item. *Built so far — signed and dated:* a send that leaves books one ledger entry (`briefing_delivery`) citing
     the kept version it delivered and the departure that carried it — to whom, when, under which receipt
-    (`aughor/briefing/deliveries.py`). The Briefing listed its deliveries under its measured table, each saying
+    (`pramanyx/briefing/deliveries.py`). The Briefing listed its deliveries under its measured table, each saying
     whether the version sent is still the one on the page, and "Open what was sent" read that version by its id,
     never the latest — ⛔ **that table left the Briefing 2026-10-09** (the user: "the delivered part doesn't need
     to be here — the departures is enough"): the ledger entry stands, and a send is read in Agent Ops › Departures. A send the gate held or a channel refused books nothing; the standing Briefing, which keeps no
@@ -15301,7 +15301,7 @@ the browser** · **measure the premise before building.**
     *Built — a prediction on each measured item:* for every approved metric, the band its own past puts on the
     range AFTER the one on the page — the mean of the six ranges before it, each stepped back the way the range's own
     comparison is and all read at one age, with an interval at 80% stated coverage and the backtest on those ranges
-    (`aughor/briefing/expected.py`). The method is the Record's "history"; the measurement is the Briefing's own, so
+    (`pramanyx/briefing/expected.py`). The method is the Record's "history"; the measurement is the Briefing's own, so
     the prediction is of the figure the next Briefing will print. It is booked as a prediction claim under a stable
     key (asking twice books nothing and measures nothing), shown as an "Expected next" column and in the metric's
     drawer, listed with the predictions in play at the Briefing's head, and scored by the hourly tick by measuring
@@ -15330,7 +15330,7 @@ the browser** · **measure the premise before building.**
     connection only, and two tables are the same only where every segment both names spell agrees (`shop.orders` is
     not `crm.orders`). For each declared link from such a type into a type read from another connection, the claim's
     page names the two types and the far connection and lists the newest five claims about the far type, which open
-    beside the page (`aughor/record/cross_links.py`). The organisation's ontology is opened by its own door —
+    beside the page (`pramanyx/record/cross_links.py`). The organisation's ontology is opened by its own door —
     `GET /ontology/claim-links/{claim_id}`, one of the doors that take `?domain=` — and handed to that module; the
     first build read it from the claim's route, and the boundary that keeps an organisation's ontology behind its
     doors refused that in the full suite. A far connection the reader may not see is said to be withheld
@@ -15360,7 +15360,7 @@ the browser** · **measure the premise before building.**
     most sense collectively.. give it a thought later but just mark this requirement somewhere.. its a good to have
     feature"*). Today the table is in the order the definitions were approved. The likely home is the industry
     package, which already names an industry's headline metrics; a connection with no package would need a default
-    order by kind (sales, volume, margin, cost, profit). Not designed. *Built 2026-10-06 (`claude/smaller-open-items`): kinds sales · volume · averages and rates · margin · cost and leakage · operations · profit; each `industry.json` declares a `reading_order`; other metrics placed by their names' words; ordered before the cap (`aughor/briefing/reading_order.py`).*
+    order by kind (sales, volume, margin, cost, profit). Not designed. *Built 2026-10-06 (`claude/smaller-open-items`): kinds sales · volume · averages and rates · margin · cost and leakage · operations · profit; each `industry.json` declares a `reading_order`; other metrics placed by their names' words; ordered before the cap (`pramanyx/briefing/reading_order.py`).*
     Kept as it was: the table also stays on the Briefing — the ask was to make it the Cockpit's default, and the
     Briefing's narrative cites its figures.
 
@@ -15644,12 +15644,12 @@ the browser** · **measure the premise before building.**
       entity (needs usage attribution); the reference's sizing numbers written into CLARITY §3; bordered state tags.
     - *Built 2026-10-25: `lib/lookValues.ts` (EDGES, TYPEFACES, PRESETS),
       `lib/themeBoot.ts` (two attributes of our own), `app/theme-root.tsx` (keeps them), `app/layout.tsx` (the
-      third family), `aughor-v2/theme/tokens-v2.css` (`[data-edges]`, `[data-typeface]`), `components/LookPanel.tsx`
-      (a Preset row, two knobs), `aughor/db/user_prefs.py` (two keys); tests in each. Off by default: a person who
+      third family), `pramanyx-v2/theme/tokens-v2.css` (`[data-edges]`, `[data-typeface]`), `components/LookPanel.tsx`
+      (a Preset row, two knobs), `pramanyx/db/user_prefs.py` (two keys); tests in each. Off by default: a person who
       chose nothing sees nothing move.*
     - *Built 2026-10-25, second step, at the user's "continue building here": **what uses an entity**, behind
       `ontology.entity_usage` (off by default; the type's detail is byte-for-byte what it was) — one door,
-      `GET /object-types/{type}/uses` (`aughor/ontology/entity_uses.py`), composing the dependents index (Arc OC-1),
+      `GET /object-types/{type}/uses` (`pramanyx/ontology/entity_uses.py`), composing the dependents index (Arc OC-1),
       the release strip's dashboards-reading door, and `AuditLogger.reads_by_month` (statements naming the entity's
       tables as whole words, twelve calendar months, every month present); the entity Overview's new "Depends on it"
       and "Reads · 12 months" (`TypeOverview.UsesSection`), what could not be read said in place. **The sizing numbers
@@ -15692,7 +15692,7 @@ the browser** · **measure the premise before building.**
       editor; the builder's own schema reads are not audited and do not count, which the count says by its source.
 
 54. ✅ **DECIDED 2026-10-25 — Pramanyx as the centre piece of an organisation's decision intelligence: the
-    framework before the build; B + C + A** (the user: *"how making Aughor truly a center piece of an organisation's
+    framework before the build; B + C + A** (the user: *"how making Pramanyx truly a center piece of an organisation's
     decision intelligence"* · *"an advanced decision flow — forwards & backwards with loops where every decision and
     their 'why' is readable if the user wishes to"* · *"let's not haste into building something.. invest much time
     into what could be a framework.. the target should be to cover all"*). The study is
@@ -15831,13 +15831,13 @@ the browser** · **measure the premise before building.**
       The computed-property door stays for entity-local values a person declares by hand; nothing routes to it.
     - **Structure is published once, in the Ontology**: links, segments, junctions, bindings — the draft and its release.
     - **Actions and sends are accepted once, in Attention** — what it was built for. It takes no formula.
-    - **The platform signs every statement it sends** (`/* aughor */`, at the driver call), so a warehouse's own history
+    - **The platform signs every statement it sends** (`/* pramanyx */`, at the driver call), so a warehouse's own history
       can tell the platform's statements from everyone else's; the reader leaves them out and says how many.
     - *Why not upstream:* the Briefing and the dashboards read approved metrics only, so an object-layer approval would
       still need the metric's; and the metric is where the governance lives (owner, grain, additivity, figure gates, twins).
 
 62. ✅ **DECIDED 2026-11-08 — the punch list's decisions** (the user: *"ask me for my decision on all items.. 8-19
-    and 56"*; asked one question each, with the facts measured first; the list is the artifact *Aughor Punch List*).
+    and 56"*; asked one question each, with the facts measured first; the list is the artifact *Pramanyx Punch List*).
     - **Sign-in:** a **Google OAuth client** (PENDING VA-10; TENX §7.1, G0). The user creates the client; the wiring
       follows. Unlocks sign-in, Gmail as context, email in and out (HB-5), Slack approvals by person, enforced group
       permissions, cross-user questions and each person's own budget.
@@ -15853,8 +15853,8 @@ the browser** · **measure the premise before building.**
       sheet backing an entity.
     - **Every part of the Briefing can be asked about (item 46):** **later**; stays wanted.
     - **The 12 left-behind state files:** **deleted** on the live install the same day (hourly backups hold them eight
-      weeks); `aughor doctor` reads 112 entries, every one classified, none left behind.
-    - **The local edit to `data/metrics.json` in `~/dev/aughor`:** **left as it is**.
+      weeks); `pramanyx doctor` reads 112 entries, every one classified, none left behind.
+    - **The local edit to `data/metrics.json` in `~/dev/pramanyx`:** **left as it is**.
     - **gmv's owner, "scenario run 2026-10-25":** **cleared** — after a fix, because the metric editor's save dropped
       every stored Briefing of the connection on any edit; an owner-only edit now keeps them
       (`tests/unit/test_metric_edit_keeps_briefings.py`), and the owner is cleared once that is live.
@@ -16005,8 +16005,8 @@ the browser** · **measure the premise before building.**
         Recorded), with search, the review filter and Copy/CSV in the toolbar row; a chosen claim opens in the inspector
         — the claim said as the run's narrative and its review buttons, its query with Open in SQL Editor, where it came
         from. Found on the way and fixed the same day: the ledger cut a claim at its first full stop, decimals
-        included (`aughor/evidence/linker.py`), so 69 of theLook's latest 80 claims ended mid-number ("is only 0.");
-        it now ends a claim where its sentence ends (`aughor/util/prose.py`, the rule the answer's headline already
+        included (`pramanyx/evidence/linker.py`), so 69 of theLook's latest 80 claims ended mid-number ("is only 0.");
+        it now ends a claim where its sentence ends (`pramanyx/util/prose.py`, the rule the answer's headline already
         used, said once). Claims written before the fix keep their cut text.
       - Security & Audit: on Queries the verdict, the connection and a search over the statements sit in the toolbar
         row; the fold is a register (Outcome · Who · What happened · Checks · When · Show) and the log under it a
@@ -16042,7 +16042,7 @@ the browser** · **measure the premise before building.**
 A second application · a TS runtime · an outside workflow-engine dependency · a low-code flow engine (adopting a
 foreign one, that is — Arc DS's visual authoring over our own engine is §3.7, not this) · a
 canvas for anything without a producer/consumer relation (an agent record still gets a form;
-its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/` · a GPU fleet ·
+its *system* gets DS-5's map) · model ids hardcoded anywhere in `pramanyx/` · a GPU fleet ·
 model weights in the repo or installer (Arc MI ships the ledger in the box and adapters as
 release artifacts, §3.9) · online/continual learning on live traffic · a ninth definition
 store or auto-applied imports (Arc KI reviews everything into the eight stores that exist,

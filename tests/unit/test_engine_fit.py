@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import sqlglot
 
-from aughor.connectors.warehouse.dbapi import limit_as_engine_caps
-from aughor.connectors.warehouse.oracle import OracleConnection
-from aughor.connectors.warehouse.wire import PostgresWireConnection
-from aughor.db.dialects import native_sql
-from aughor.sql.engine_fit import translate_for
+from pramanyx.connectors.warehouse.dbapi import limit_as_engine_caps
+from pramanyx.connectors.warehouse.oracle import OracleConnection
+from pramanyx.connectors.warehouse.wire import PostgresWireConnection
+from pramanyx.db.dialects import native_sql
+from pramanyx.sql.engine_fit import translate_for
 
 MONTHS = "SELECT DATE_TRUNC('month', at) AS m, SUM(x) AS s FROM t GROUP BY 1 ORDER BY 1 LIMIT 2"
 CAPPED_QUALIFY = "SELECT id, ROW_NUMBER() OVER (PARTITION BY r ORDER BY at) AS rn FROM t QUALIFY rn <= 2 ORDER BY id DESC LIMIT 1"

@@ -5,9 +5,9 @@ investigation returned Apparel/Electronics/"Mechanical Keyboard" rows. Root caus
 the deep path left scope_schema=None for a table-list-scoped canvas, so the connection
 wasn't search_path-pinned AND the linker's full-schema FK expansion surfaced cross-schema
 tables the planner copied verbatim. _rescope_sql_to_schema re-points any out-of-scope
-table to the canvas schema (or the caller drops the query). See aughor/agent/explore.py.
+table to the canvas schema (or the caller drops the query). See pramanyx/agent/explore.py.
 """
-from aughor.agent.explore import _rescope_sql_to_schema
+from pramanyx.agent.explore import _rescope_sql_to_schema
 
 
 class FakeConn:

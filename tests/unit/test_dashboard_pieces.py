@@ -14,10 +14,10 @@ import uuid
 
 import pytest
 
-from aughor.dashboards import cards, pieces, propose, validate as V, versions
-from aughor.dashboards.home import Home
-from aughor.cards.models import StoredCard
-from aughor.ontology.models import ActionParameter, KineticAction, ObjectEdit, OntologyGraph
+from pramanyx.dashboards import cards, pieces, propose, validate as V, versions
+from pramanyx.dashboards.home import Home
+from pramanyx.cards.models import StoredCard
+from pramanyx.ontology.models import ActionParameter, KineticAction, ObjectEdit, OntologyGraph
 from tests.unit.test_dashboard_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 from tests.unit.test_object_bindings import GRAPH
 
@@ -25,12 +25,12 @@ needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.e
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
 def _flag(monkeypatch) -> None:
     """Every flag off: a piece needs none since 2026-10-28 (ROADMAP §3.65)."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
 
 
 def _graph() -> OntologyGraph:
     g = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
-    from aughor.ontology.processes import process_from_fields
+    from pramanyx.ontology.processes import process_from_fields
     g.processes["order_fulfilment"] = process_from_fields("order_fulfilment", {
         "entity": "Order", "stages": [{"name": "placed", "timestamp": "order_date"},
                                       {"name": "shipped", "timestamp": "shipped_at"}]})
@@ -180,7 +180,7 @@ def test_the_draft_path_reads_the_pieces_law():
 # ── the board says which segment its overdue count lists ─────────────────────────────────────
 
 def test_a_promise_names_its_overdue_segment(monkeypatch):
-    from aughor.ontology.processes import describe_process, process_from_fields
+    from pramanyx.ontology.processes import describe_process, process_from_fields
     g = _graph()
     p = process_from_fields("order_fulfilment", {"entity": "Order", "stages": [
         {"name": "placed", "timestamp": "order_date"},
@@ -194,10 +194,10 @@ def test_a_promise_names_its_overdue_segment(monkeypatch):
 @pytest.fixture
 def gated(monkeypatch, client):
     """The execute door over the test graph, its action needing approval, and a count of anything that ran."""
-    from aughor.actions.executor import KineticResult
+    from pramanyx.actions.executor import KineticResult
     graph = _graph()
-    monkeypatch.setattr("aughor.routers.kinetic._resolve_graph", lambda conn, schema: graph)
-    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action", lambda action, params, **k: KineticResult(
+    monkeypatch.setattr("pramanyx.routers.kinetic._resolve_graph", lambda conn, schema: graph)
+    monkeypatch.setattr("pramanyx.actions.executor.execute_kinetic_action", lambda action, params, **k: KineticResult(
         "approval_required", False, action.id, message="approval required", detail={"error": "approval_required"}))
     return client
 
@@ -216,7 +216,7 @@ def test_asked_a_gated_action_is_staged_for_a_person_and_nothing_runs(gated, mon
     _flag(monkeypatch)
     r = _press(gated, propose_if_gated=True, reasoning="from a dashboard")
     assert r.status_code == 200 and r.json()["status"] == "proposed", r.text
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
     staged = get_proposal(r.json()["inbox_id"])
     assert (staged.action_id, staged.status, staged.source) == ("flag_for_review", "pending", "cockpit")
     assert staged.params == {"order": "Order:O000001", "reason": "late"} and staged.reasoning == "from a dashboard"
@@ -225,9 +225,9 @@ def test_asked_a_gated_action_is_staged_for_a_person_and_nothing_runs(gated, mon
 def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, monkeypatch):
     """The answer had dropped both, so a press read "done" whatever its verification found; they were readable only
     through the action's record."""
-    from aughor.actions.executor import KineticResult
+    from pramanyx.actions.executor import KineticResult
     found = {"status": "failed", "why": "no row returned — the change is not visible"}
-    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action", lambda action, params, **k: KineticResult(
+    monkeypatch.setattr("pramanyx.actions.executor.execute_kinetic_action", lambda action, params, **k: KineticResult(
         "executed", True, action.id, outcome={"edits": 1}, verification=found, action_entry="ae-1"))
     r = _press(gated)
     assert r.status_code == 200, r.text
@@ -238,8 +238,8 @@ def test_a_run_answers_with_what_its_check_found_and_its_ledger_entry(gated, mon
 
 def _release(conn: str, *changes: tuple[str, str, str, str]) -> str:
     """Record the scope's next release, with what it changed: ``(kind, id, change, class)``."""
-    from aughor.kernel import lifecycle
-    from aughor.ontology import release
+    from pramanyx.kernel import lifecycle
+    from pramanyx.ontology import release
     body = {"elements": {}, "hash": "", "changes": [
         {"element": f"ontology:{conn}/default/{k}/{t}", "change": c, "class": cls} for k, t, c, cls in changes]}
     rev = lifecycle.record(release.KIND, release._key(conn, "default"), body, "published", by="ana", note="", conn_id=conn)
@@ -293,7 +293,7 @@ def test_the_read_names_every_change_since_the_pin_that_touches_a_piece_and_no_o
 
 def test_a_segment_is_read_from_the_declaration_that_derives_it():
     g = _graph()
-    from aughor.ontology.processes import process_from_fields
+    from pramanyx.ontology.processes import process_from_fields
     g.processes["order_fulfilment"] = process_from_fields("order_fulfilment", {"entity": "Order", "stages": [
         {"name": "placed", "timestamp": "order_date"},
         {"name": "shipped", "timestamp": "shipped_at", "promise": {"name": "dispatch", "within_days": 2}}]})
@@ -305,10 +305,10 @@ def test_a_segment_is_read_from_the_declaration_that_derives_it():
 
 
 def test_the_release_strip_names_the_cockpits_a_change_touches(monkeypatch):
-    from aughor.ontology import release
+    from pramanyx.ontology import release
     monkeypatch.setattr(pieces, "dashboards_reading", lambda conn, names, graph=None: [{"cockpit": "late", "title": "Late",
                                                                                      "pieces": ["board"]}])
-    monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
+    monkeypatch.setattr("pramanyx.cards.store.list_cards", lambda **k: [])
     _flag(monkeypatch)
     assert release._touches("c", {"order_fulfilment"}, [])["cockpits"] == [{"cockpit": "late", "title": "Late",
                                                                           "pieces": ["board"]}]

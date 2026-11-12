@@ -29,9 +29,9 @@ REPO = Path(__file__).resolve().parents[2]
 
 #: The kernel's source, by the study's list. A directory is every .py under it; a file is itself.
 KERNEL_ROOTS: tuple[str, ...] = (
-    "aughor/kernel", "aughor/record", "aughor/govern", "aughor/actions", "aughor/settling", "aughor/rbac",
-    "aughor/security", "aughor/packs/loader.py", "aughor/packs/models.py", "aughor/packs/priors.py",
-    "aughor/packs/roots.py", "aughor/packs/ontology_map.py", "aughor/semantic/metrics.py",
+    "pramanyx/kernel", "pramanyx/record", "pramanyx/govern", "pramanyx/actions", "pramanyx/settling", "pramanyx/rbac",
+    "pramanyx/security", "pramanyx/packs/loader.py", "pramanyx/packs/models.py", "pramanyx/packs/priors.py",
+    "pramanyx/packs/roots.py", "pramanyx/packs/ontology_map.py", "pramanyx/semantic/metrics.py",
 )
 
 #: The English and SQL senses stripped BEFORE counting, so the count is the industry's word alone.
@@ -126,7 +126,7 @@ def files() -> list[tuple[str, Path]]:
 
 def test_the_scan_reaches_the_kernel(files):
     assert len(files) > 60, f"only {len(files)} kernel files scanned — the walk is broken"
-    assert any(rel.startswith("aughor/kernel/") for rel, _ in files) and any(rel.startswith("aughor/record/") for rel, _ in files)
+    assert any(rel.startswith("pramanyx/kernel/") for rel, _ in files) and any(rel.startswith("pramanyx/record/") for rel, _ in files)
 
 
 def test_no_industry_noun_grew_in_the_kernel(files):
@@ -163,13 +163,13 @@ def test_the_ratchet_can_fire_and_the_english_senses_do_not(tmp_path):
 def test_the_kernel_runs_with_no_pack_installed(tmp_path, monkeypatch):
     """The study's other half of the test: the kernel passes with no pack installed — its doors answer,
     and say that nothing declared what to expect."""
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path / "authored"))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
-    from aughor.packs.roots import all_pack_ids
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(tmp_path / "authored"))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
+    from pramanyx.packs.roots import all_pack_ids
     assert all_pack_ids() == []
-    from aughor.govern import attention
-    from aughor.record import corrections, mission, scenario
-    from aughor.packs import onboarding
+    from pramanyx.govern import attention
+    from pramanyx.record import corrections, mission, scenario
+    from pramanyx.packs import onboarding
     assert mission.bearing("conn-none", metric="revenue")["score"] == 0.0
     assert attention.score(kind="analysis", size=0.2)["terms"]["mission"] == 0.0
     assert scenario.project("identity", formula="a * b", inputs={"a": 2, "b": 3}).value == 6.0

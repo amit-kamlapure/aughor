@@ -1,5 +1,5 @@
 """The 2027 study's close-out, C7 (phase 6, "it arrives ready") — what a pack proposes the day a
-connection is made (`aughor/packs/connect.py`).
+connection is made (`pramanyx/packs/connect.py`).
 
 What these hold: a pack's terms land in the connection's vocabulary at source `pack` — below a
 person's and this install's mined words, above a model's guess — widen retrieval at once and reach no
@@ -19,12 +19,12 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.ontology import vocabulary as V
-from aughor.ontology.models import OntologyEntity, OntologyGraph
-from aughor.packs import connect as X
-from aughor.packs.loader import load_pack
-from aughor.packs.models import ExpectedObject, Pack, PackManifest, PackMetric, PackOntology
-from aughor.packs.roots import pack_dir
+from pramanyx.ontology import vocabulary as V
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.packs import connect as X
+from pramanyx.packs.loader import load_pack
+from pramanyx.packs.models import ExpectedObject, Pack, PackManifest, PackMetric, PackOntology
+from pramanyx.packs.roots import pack_dir
 
 D0 = date(2026, 6, 1)
 
@@ -93,8 +93,8 @@ def test_the_objects_terms_wait_for_the_build_and_a_stronger_source_is_left_alon
     by = {s.synonym: s.source for s in V.synonyms_for(conn)}
     assert by == {"margin on earning assets": "human", "nim": "mined", "interest margin": "pack"}
     # the build matches the map to tables: the objects' terms arrive then, nothing proposed twice
-    from aughor.packs.ontology_map import propose_terms_on_build
-    import aughor.packs.ontology_map as OM
+    from pramanyx.packs.ontology_map import propose_terms_on_build
+    import pramanyx.packs.ontology_map as OM
     graph = _graph(conn)
     OM_bound = OM.bound_pack_ids
     OM.bound_pack_ids = lambda c, s: ["bank-test"]
@@ -126,15 +126,15 @@ def _nim_series(days: int = 420, dips: tuple[int, ...] = (100, 200, 300)):
 
 
 def _patch_registry(monkeypatch, registered: set[str]):
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric",
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric",
                         lambda name, path=None, connection_id=None: _metric(name) if name in registered else None)
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [("bank.quarterly", "as_of", 400)])
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: None)
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [("bank.quarterly", "as_of", 400)])
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: None)
 
 
 def test_a_measured_priors_band_is_staged_per_side_with_its_provenance_and_backtest_and_the_rest_say_why(monkeypatch):
-    from aughor.actions.inbox import get_proposal
-    from aughor.monitors.models import Monitor
+    from pramanyx.actions.inbox import get_proposal
+    from pramanyx.monitors.models import Monitor
     _patch_registry(monkeypatch, {"net_interest_margin"})
     conn = _conn()
     banking = load_pack(pack_dir("banking"))
@@ -171,7 +171,7 @@ def test_a_measured_priors_band_is_staged_per_side_with_its_provenance_and_backt
 
 
 def test_a_band_with_no_series_to_replay_is_still_proposed_and_says_it_has_no_backtest(monkeypatch):
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
     _patch_registry(monkeypatch, {"net_interest_margin"})
     conn = _conn()
     banking = load_pack(pack_dir("banking"))
@@ -185,7 +185,7 @@ def test_a_band_with_no_series_to_replay_is_still_proposed_and_says_it_has_no_ba
 # ── the bind door, the terms doors and the day-one screen ──────────────────────────────────
 
 def _client() -> TestClient:
-    from aughor.routers.packs import router
+    from pramanyx.routers.packs import router
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -211,7 +211,7 @@ def test_the_doors_propose_on_connect_then_confirm_and_decline_terms(monkeypatch
     assert client.post("/packs/banking/terms/confirm", json={"connection_id": conn, "terms": [{"subject_kind": "planet"}]}).status_code == 422
     assert client.post("/packs/nope/propose", json={"connection_id": conn}).status_code == 404
     # the day-one screen carries both halves
-    from aughor.packs.onboarding import onboarding
+    from pramanyx.packs.onboarding import onboarding
     day_one = onboarding(conn, None, pack_id="banking", graph=None)
     assert day_one["arrival"]["terms"][0]["confirmed"] == 1 and day_one["arrival"]["terms"][0]["declined"] == 1
     assert day_one["arrival"]["alerts"][0]["by_status"] == {}
@@ -219,7 +219,7 @@ def test_the_doors_propose_on_connect_then_confirm_and_decline_terms(monkeypatch
 
 def test_binding_a_pack_proposes_its_terms_and_alerts_and_the_binding_stands_when_it_cannot(monkeypatch):
     _patch_registry(monkeypatch, set())
-    monkeypatch.setattr("aughor.routers.connections.open_connection_for", lambda cid: (_ for _ in ()).throw(RuntimeError("unreachable")))
+    monkeypatch.setattr("pramanyx.routers.connections.open_connection_for", lambda cid: (_ for _ in ()).throw(RuntimeError("unreachable")))
     conn = _conn()
     client = _client()
     r = client.post("/packs/banking/bind", json={"connection_id": conn, "bindings": {}, "verified": False})

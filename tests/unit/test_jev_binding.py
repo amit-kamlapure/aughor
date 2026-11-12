@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.judgment.jev import FallbackJudge, JevJudge, cheap_judge_for, configured_judge
-from aughor.judgment.seam import Noul, judge
+from pramanyx.judgment.jev import FallbackJudge, JevJudge, cheap_judge_for, configured_judge
+from pramanyx.judgment.seam import Noul, judge
 
 
 def _post_answering(p_for):
@@ -44,26 +44,26 @@ class HouseTier:
 
 def test_missing_key_and_missing_model_are_stated_reasons_not_defaults(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    monkeypatch.delenv("AUGHOR_JEV_MODEL", raising=False)
+    monkeypatch.delenv("PRAMANYX_JEV_MODEL", raising=False)
     j, why = configured_judge()
     assert j is None and "TYPESAFE_API_KEY" in why
     monkeypatch.setenv("TYPESAFE_API_KEY", "k")
     j, why = configured_judge()
-    assert j is None and "AUGHOR_JEV_MODEL" in why, "no model id may ship as a default"
-    monkeypatch.setenv("AUGHOR_JEV_MODEL", "jev-test")
+    assert j is None and "PRAMANYX_JEV_MODEL" in why, "no model id may ship as a default"
+    monkeypatch.setenv("PRAMANYX_JEV_MODEL", "jev-test")
     j, why = configured_judge()
     assert j is not None and why == "" and j.model == "jev-test"
 
 
 def test_flag_off_hands_back_the_exact_provider(monkeypatch):
-    monkeypatch.delenv("AUGHOR_SEMOPS_JEV_CHEAP_TIER", raising=False)
+    monkeypatch.delenv("PRAMANYX_SEMOPS_JEV_CHEAP_TIER", raising=False)
     house = HouseTier()
     got, note = cheap_judge_for(house)
     assert got is house and note == ""
 
 
 def test_flag_on_but_unconfigured_says_so_instead_of_silently_doing_nothing(monkeypatch):
-    monkeypatch.setenv("AUGHOR_SEMOPS_JEV_CHEAP_TIER", "1")
+    monkeypatch.setenv("PRAMANYX_SEMOPS_JEV_CHEAP_TIER", "1")
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     house = HouseTier()
     got, note = cheap_judge_for(house)
@@ -95,7 +95,7 @@ def test_a_clean_bundle_posts_once_and_reads_probabilities():
 
 
 def test_an_outbound_block_is_an_unavailable_answer(monkeypatch):
-    from aughor.govern.outbound import OutboundBlocked
+    from pramanyx.govern.outbound import OutboundBlocked
 
     def blocked(*a, **kw):
         raise OutboundBlocked("typesafe", "cap reached")
@@ -134,18 +134,18 @@ def test_a_partial_bundle_is_kept_not_retried():
 def test_the_fallback_never_reaches_the_champion_instead(monkeypatch):
     """The whole promise in one run: Jev down + banded cascade on → the CHEAP house tier
     answers, and the champion sees only the rows the band genuinely escalates (none here)."""
-    from aughor.agent.state import QueryResult
-    from aughor.semops import operators as ops
+    from pramanyx.agent.state import QueryResult
+    from pramanyx.semops import operators as ops
 
     def dead(url, body, headers):
         raise RuntimeError("HTTP 503: down")
     house, champ = HouseTier(), HouseTier()
     monkeypatch.setattr(ops, "get_provider",
                         lambda role="fast", **kw: champ if role == "coder" else house)
-    monkeypatch.setenv("AUGHOR_SEMOPS_JEV_CHEAP_TIER", "1")
+    monkeypatch.setenv("PRAMANYX_SEMOPS_JEV_CHEAP_TIER", "1")
     monkeypatch.setenv("TYPESAFE_API_KEY", "k")
-    monkeypatch.setenv("AUGHOR_JEV_MODEL", "jev-test")
-    import aughor.judgment.jev as jev_mod
+    monkeypatch.setenv("PRAMANYX_JEV_MODEL", "jev-test")
+    import pramanyx.judgment.jev as jev_mod
     monkeypatch.setattr(jev_mod, "_http_post", dead)
     qr = QueryResult(hypothesis_id="t", sql="SELECT 1", columns=["note"],
                      rows=[[f"row {i}"] for i in range(6)], row_count=6)
@@ -170,16 +170,16 @@ def test_the_seam_dispatches_to_a_judge_shaped_backend_after_its_own_checks():
 
 
 def test_the_cascade_notes_name_the_third_party(monkeypatch):
-    from aughor.agent.state import QueryResult
-    from aughor.semops import operators as ops
+    from pramanyx.agent.state import QueryResult
+    from pramanyx.semops import operators as ops
     post, sent = _post_answering(lambda qid: 0.9)
     house, champ = HouseTier(), HouseTier()
     monkeypatch.setattr(ops, "get_provider",
                         lambda role="fast", **kw: champ if role == "coder" else house)
-    monkeypatch.setenv("AUGHOR_SEMOPS_JEV_CHEAP_TIER", "1")
+    monkeypatch.setenv("PRAMANYX_SEMOPS_JEV_CHEAP_TIER", "1")
     monkeypatch.setenv("TYPESAFE_API_KEY", "k")
-    monkeypatch.setenv("AUGHOR_JEV_MODEL", "jev-test")
-    import aughor.judgment.jev as jev_mod
+    monkeypatch.setenv("PRAMANYX_JEV_MODEL", "jev-test")
+    import pramanyx.judgment.jev as jev_mod
     monkeypatch.setattr(jev_mod, "_http_post", post)
     qr = QueryResult(hypothesis_id="t", sql="SELECT 1", columns=["note"],
                      rows=[["a coat"], ["a parka"]], row_count=2)

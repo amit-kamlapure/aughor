@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.skills.lint import Severity, blocks, is_importable, lint_skill
+from pramanyx.skills.lint import Severity, blocks, is_importable, lint_skill
 
 
 def _rules(text) -> set[str]:

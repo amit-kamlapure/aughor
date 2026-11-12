@@ -20,12 +20,12 @@ o6,shipped,2018-09-30 10:00:00,2018-10-25 00:00:00,
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
@@ -33,17 +33,17 @@ def env(tmp_path, monkeypatch):
 
 @pytest.fixture
 def faux():
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
     return LLMProvider(backend="faux", role="coder")
 
 
 def _call(tool="propose_sheet_changes", **args):
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
     return FauxToolCall(payload=args, name=tool)
 
 
 def _orders(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "olist_orders_dataset.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -56,9 +56,9 @@ OPEN = [{"column": "order_status", "op": "not_in", "value": ["delivered", "cance
 
 def test_the_view_the_chat_is_handed_counts_the_rows_the_grid_shows(env):
     """SH-4's falsifier: the grid's count, the grounding's count and the grounding's filter run as SQL agree."""
-    from aughor.sheets import chat, projection, service
-    from aughor.sheets.connection import SheetsConnection
-    from aughor.sheets.model import Condition, View
+    from pramanyx.sheets import chat, projection, service
+    from pramanyx.sheets.connection import SheetsConnection
+    from pramanyx.sheets.model import Condition, View
     sheet = _orders(env)
     view = View(id="", name="Overdue, still open",
                 filter=[Condition(column=sheet.column(c["column"]).id, op=c["op"], value=c["value"]) for c in OPEN])
@@ -75,7 +75,7 @@ def test_the_view_the_chat_is_handed_counts_the_rows_the_grid_shows(env):
 
 
 def test_a_computed_column_is_an_expression_over_the_rows_own_values_only(env):
-    from aughor.sheets import chat
+    from pramanyx.sheets import chat
     sheet = _orders(env)
     ok = chat.check_expression(sheet, "date_diff('day', \"order_estimated_delivery_date\", DATE '2018-10-17')")
     assert "DATE_DIFF" in ok.upper()
@@ -89,8 +89,8 @@ def test_a_computed_column_is_an_expression_over_the_rows_own_values_only(env):
 
 
 def test_a_proposal_is_checked_and_counted_then_applied_in_part_as_one_change(env, faux):
-    from aughor.llm.faux import set_responses
-    from aughor.sheets import chat, model, projection, service
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.sheets import chat, model, projection, service
     sheet = _orders(env)
     changes = [
         {"type": "view", "name": "Overdue, still open", "filter": OPEN},
@@ -122,8 +122,8 @@ def test_a_proposal_is_checked_and_counted_then_applied_in_part_as_one_change(en
 
 
 def test_a_refused_change_goes_back_to_the_model_and_is_repaired(env, faux):
-    from aughor.llm.faux import set_responses
-    from aughor.sheets import chat
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.sheets import chat
     sheet = _orders(env)
     set_responses([_call(op="options"),
                    _call(op="propose", changes=[{"type": "computed_column", "name": "Bad",
@@ -135,8 +135,8 @@ def test_a_refused_change_goes_back_to_the_model_and_is_repaired(env, faux):
 
 
 def test_when_nothing_is_staged_the_reasons_are_the_platforms(env, faux):
-    from aughor.llm.faux import set_responses
-    from aughor.sheets import chat
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.sheets import chat
     sheet = _orders(env)
     set_responses([_call(op="options"), "About 40% of these are late, nothing to add."])
     out = chat.propose(sheet, "what should I change", by="user:ana", provider=faux)
@@ -145,8 +145,8 @@ def test_when_nothing_is_staged_the_reasons_are_the_platforms(env, faux):
 
 
 def test_a_dropped_file_becomes_one_proposal_and_undo_removes_the_sheet_whole(env, faux):
-    from aughor.llm.faux import set_responses
-    from aughor.sheets import chat, files, model, service
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.sheets import chat, files, model, service
     path = env / "olist_order_reviews.csv"
     path.write_text("review_id,order_id,review_score,review_comment_message\nr1,o1,1,late\nr2,o2,5,\n"
                     "r3,o3,2,broken\nr4,o4,4,\n")
@@ -173,8 +173,8 @@ def test_the_explain_tool_explains_a_sheet_without_it_joining_the_rosters_kinds(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.agent.spotlight_explain import KINDS, explain_object
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.agent.spotlight_explain import KINDS, explain_object
+    from pramanyx.routers import sheets as sheets_router
     sheet = _orders(env)
     assert "sheet" not in KINDS                       # the explain tool a model calls reads as it did
     assert explain_object("sheets", {"kind": "sheet", "id": sheet.id})["found"] is True
@@ -186,9 +186,9 @@ def test_the_explain_tool_explains_a_sheet_without_it_joining_the_rosters_kinds(
 # ── a rule, proposed (SH-3's rules in SH-4's chat) ───────────────────────────────────────────────────────────────────
 
 def test_a_proposed_rule_is_counted_as_the_grid_counts_and_applied_as_the_assistants(env, faux):
-    from aughor.llm.faux import set_responses
-    from aughor.sheets import chat, model, projection, views
-    from aughor.sheets.model import Condition
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.sheets import chat, model, projection, views
+    from pramanyx.sheets.model import Condition
     sheet = _orders(env)
     set_responses([_call(op="options"),
                    _call(op="propose", changes=[{"type": "rule", "name": "Late and still open", "tone": "red",
@@ -208,7 +208,7 @@ def test_a_proposed_rule_is_counted_as_the_grid_counts_and_applied_as_the_assist
 
 
 def test_a_rule_in_a_colour_marks_do_not_have_is_not_proposed(env, faux):
-    from aughor.sheets import chat, projection
+    from pramanyx.sheets import chat, projection
     sheet = _orders(env)
     cur = projection.cursor()
     try:
@@ -219,8 +219,8 @@ def test_a_rule_in_a_colour_marks_do_not_have_is_not_proposed(env, faux):
 
 
 def test_a_dropped_file_can_come_with_a_rule_for_the_rows_that_need_attention(env, faux):
-    from aughor.llm.faux import set_responses
-    from aughor.sheets import chat, files, model, views
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.sheets import chat, files, model, views
     path = env / "olist_order_reviews.csv"
     path.write_text("review_id,order_id,review_score,review_comment_message\nr1,o1,1,late\nr2,o2,5,\n"
                     "r3,o3,2,broken\nr4,o4,4,\n")

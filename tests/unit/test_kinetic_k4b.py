@@ -6,9 +6,9 @@ loader are faked; no model, no store.
 """
 from __future__ import annotations
 
-from aughor.agent import investigate as I
-from aughor.actions.propose import Proposal
-from aughor.ontology.models import KineticAction, OntologyGraph, SubmissionCriterion
+from pramanyx.agent import investigate as I
+from pramanyx.actions.propose import Proposal
+from pramanyx.ontology.models import KineticAction, OntologyGraph, SubmissionCriterion
 
 
 def _ar(**kw) -> dict:
@@ -25,8 +25,8 @@ def _graph_with_action() -> OntologyGraph:
 
 
 def test_attaches_staged_proposals_when_flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda *a, **k: _graph_with_action())
     seen = {}
 
@@ -35,7 +35,7 @@ def test_attaches_staged_proposals_when_flag_on(monkeypatch):
         seen["scope"] = scope
         return [Proposal("refund", "proposed", {"amount_eur": 480.0}, "clear duplicate charge")]
 
-    monkeypatch.setattr("aughor.actions.propose.propose_actions", _fake_propose)
+    monkeypatch.setattr("pramanyx.actions.propose.propose_actions", _fake_propose)
 
     ar = _ar()
     I._attach_kinetic_proposals(ar, "conn-1")
@@ -48,15 +48,15 @@ def test_attaches_staged_proposals_when_flag_on(monkeypatch):
 
 
 def test_noop_when_flag_off(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: False)
     ar = _ar()
     I._attach_kinetic_proposals(ar, "c")
     assert "proposals" not in ar
 
 
 def test_noop_when_connection_declares_no_actions(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda *a, **k: OntologyGraph(connection_id="c", schema_fingerprint="fp"))
     ar = _ar()
     I._attach_kinetic_proposals(ar, "c")
@@ -64,12 +64,12 @@ def test_noop_when_connection_declares_no_actions(monkeypatch):
 
 
 def test_fails_open_on_a_loader_error(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "kinetic.agent_actions")
 
     def boom(*a, **k):
         raise RuntimeError("store down")
 
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", boom)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", boom)
     ar = _ar()
     I._attach_kinetic_proposals(ar, "c")   # must not raise
     assert "proposals" not in ar

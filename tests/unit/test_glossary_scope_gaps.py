@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.db.schema_cache import compute_fingerprint, scope_key
-from aughor.semantic import retriever
-from aughor.semantic.dbt import _table_key
-from aughor.semantic.glossary import _align_keys
+from pramanyx.db.schema_cache import compute_fingerprint, scope_key
+from pramanyx.semantic import retriever
+from pramanyx.semantic.dbt import _table_key
+from pramanyx.semantic.glossary import _align_keys
 
 
 # ── Gap 3: the autoseed fingerprint ───────────────────────────────────────────
@@ -109,12 +109,12 @@ def test_dbt_description_actually_survives_the_merge(tmp_path, monkeypatch):
     """End to end through `load_merged_glossary`: the layering, not just the alignment."""
     import yaml as _yaml
 
-    from aughor.semantic import glossary as G
+    from pramanyx.semantic import glossary as G
 
     gpath = tmp_path / "glossary.yaml"
     gpath.write_text(_yaml.dump({"tables": {"lux.orders": {"grain": "one row per order"}}}))
     monkeypatch.setattr(G, "_load_raw", lambda path=None: _yaml.safe_load(gpath.read_text()))
-    monkeypatch.setattr("aughor.semantic.dbt.load_dbt_glossary",
+    monkeypatch.setattr("pramanyx.semantic.dbt.load_dbt_glossary",
                         lambda: {"tables": {"orders": {"description": "from dbt"}}})
 
     tables = G.load_merged_glossary()["tables"]
@@ -127,12 +127,12 @@ def test_manual_yaml_still_outranks_dbt(tmp_path, monkeypatch):
     """Alignment must not disturb the documented precedence: manual > dbt > auto-seed."""
     import yaml as _yaml
 
-    from aughor.semantic import glossary as G
+    from pramanyx.semantic import glossary as G
 
     gpath = tmp_path / "glossary.yaml"
     gpath.write_text(_yaml.dump({"tables": {"lux.orders": {"description": "hand written"}}}))
     monkeypatch.setattr(G, "_load_raw", lambda path=None: _yaml.safe_load(gpath.read_text()))
-    monkeypatch.setattr("aughor.semantic.dbt.load_dbt_glossary",
+    monkeypatch.setattr("pramanyx.semantic.dbt.load_dbt_glossary",
                         lambda: {"tables": {"orders": {"description": "from dbt"}}})
 
     assert G.load_merged_glossary()["tables"]["lux.orders"]["description"] == "hand written"
@@ -159,16 +159,16 @@ def test_a_scoped_search_is_filtered():
 def _fake_index(monkeypatch):
     """Capture what would be written to Qdrant."""
     captured: dict = {}
-    monkeypatch.setattr("aughor.semantic.embedder.embed", lambda texts: [[0.0]] * len(texts))
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.semantic.vector_store.upsert",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed", lambda texts: [[0.0]] * len(texts))
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.upsert",
                         lambda coll, points: captured.update(points=points))
     return captured
 
 
 def test_indexed_points_carry_their_scope(monkeypatch):
     captured = _fake_index(monkeypatch)
-    monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
+    monkeypatch.setattr("pramanyx.semantic.glossary.load_merged_glossary",
                         lambda path=None, connection_id=None: {"tables": {"lux.orders": {"description": "d"}}})
 
     n = retriever.build_schema_index(connection_id="connA", schema_name="lux")
@@ -181,7 +181,7 @@ def test_indexed_points_carry_their_scope(monkeypatch):
 def test_two_connections_no_longer_write_the_same_point(monkeypatch):
     """THE BUG. Identical qualified table, two connections — one point id, so indexing the
     second silently replaced the first's embedding and retrieval ranked by the wrong text."""
-    monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
+    monkeypatch.setattr("pramanyx.semantic.glossary.load_merged_glossary",
                         lambda path=None, connection_id=None: {"tables": {"lux.orders": {"description": "d"}}})
 
     captured = _fake_index(monkeypatch)
@@ -199,14 +199,14 @@ def test_retrieval_passes_the_scope_filter_to_qdrant(monkeypatch):
     """Wiring: the filter is worthless if the search never receives it."""
     seen: dict = {}
 
-    monkeypatch.setattr("aughor.semantic.embedder.embed_one", lambda q: [0.0])
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_count", lambda c: 5)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", lambda q: [0.0])
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_count", lambda c: 5)
 
     def fake_search(collection, vector, top_k=10, query_filter=None):
         seen["filter"] = query_filter
         return [{"score": 1.0, "payload": {"table": "lux.orders"}}]
 
-    monkeypatch.setattr("aughor.semantic.vector_store.search", fake_search)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.search", fake_search)
 
     schema_str = "".join(f"TABLE: t{i}\n  id INTEGER\n" for i in range(20))
     retriever.retrieve_relevant_schema("why did orders drop", schema_str,
@@ -220,7 +220,7 @@ def test_small_schemas_still_skip_retrieval_entirely(monkeypatch):
     def boom(*a, **k):                                   # noqa: ARG001
         raise AssertionError("retrieval must not run below TABLE_THRESHOLD")
 
-    monkeypatch.setattr("aughor.semantic.embedder.embed_one", boom)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", boom)
     small = "TABLE: orders\n  id INTEGER\n"
     assert retriever.retrieve_relevant_schema("q", small, connection_id="c",
                                               schema_name="s") == small

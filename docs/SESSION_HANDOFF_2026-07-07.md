@@ -35,11 +35,11 @@ still supported. Both are now built, wired, tested, reviewed, merged.
 | Piece | Where | What | Evidence |
 |---|---|---|---|
 | **B1 probe-and-repair** (eval) | `evals/spider2_probes.py`, `--probes` | SOMA's missing back half (I2+I3+I7): deterministic sqlglot AST-diff disagreement extraction → taxonomy triples, **zero model calls**; deterministic-first probe battery (reuses owned value/grain guards); evidence-typed `resolve()` behind **4 gates** — executes · clears-the-probe · no-regress (subject-granular) · AST-faithful → any fails ⇒ keep seed. **Monotonic by construction.** | 19 pure tests + live (5 instances, 0 regressions) |
-| **The Ambiguity Ledger** (I1) | `aughor/semantic/ambiguity_ledger.py` | Resolutions crystallize per connection (house SQLite idiom): idempotent natural key = **one row per dimension** (burn-down), **override-wins** authority (verdict > user > probe). | 14 unit tests |
-| **Read path** (I1) | `aughor/feedback/priors.py::build_corrections_section` | The resolution block **leads** the plan-time prior on the **LIVE** answer paths (chat `investigations.py`, plan node `nodes.py`). #113 fixed the dead-wiring gap (it was only in `retrieve_priors`, which nothing live calls). | burn-down validated |
+| **The Ambiguity Ledger** (I1) | `pramanyx/semantic/ambiguity_ledger.py` | Resolutions crystallize per connection (house SQLite idiom): idempotent natural key = **one row per dimension** (burn-down), **override-wins** authority (verdict > user > probe). | 14 unit tests |
+| **Read path** (I1) | `pramanyx/feedback/priors.py::build_corrections_section` | The resolution block **leads** the plan-time prior on the **LIVE** answer paths (chat `investigations.py`, plan node `nodes.py`). #113 fixed the dead-wiring gap (it was only in `retrieve_priors`, which nothing live calls). | burn-down validated |
 | **Write sources** (I4 + bridge) | `_stream_ask`, `record_verdict` | User clarify choice → `crystallize_user_choice` (source=user); reviewer verdict → `crystallize_verdict` (source=verdict, highest authority); B1 probes. | router + verdict tests |
 | **I6 receipt** | `_write_answer_receipt` + `web/components/TrustReceipt.tsx` | Every answer records + renders any resolved ambiguity it applied ("followed a previously-resolved reading, settled by X"). | endpoint + capture tests |
-| **soma previews** | `aughor/agent/soma.py` + `ChatPanel.tsx` | Clarify chips carry a result preview per reading (`= 68` vs `= 1131`) so the divergence is visible. | 8 soma tests |
+| **soma previews** | `pramanyx/agent/soma.py` + `ChatPanel.tsx` | Clarify chips carry a result preview per reading (`= 68` vs `= 1131`) so the divergence is visible. | 8 soma tests |
 
 Design specs (all current): [`SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md`](SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md)
 · [`SPIDER2_B1_PROBE_REPAIR_2026-07-06.md`](SPIDER2_B1_PROBE_REPAIR_2026-07-06.md) ·
@@ -108,15 +108,15 @@ first; C is deferrable indefinitely.
 ## 5 · Environment / gotchas (carry forward)
 
 - **Model:** the runtime pins **glm-5.2:cloud** (`provider._cfg()['models']['coder']`), overriding
-  `.env`'s `AUGHOR_CODER_MODEL`. Verify with `get_provider('coder')._model`, never the env var.
+  `.env`'s `PRAMANYX_CODER_MODEL`. Verify with `get_provider('coder')._model`, never the env var.
 - **Endpoint:** Ollama Cloud throttles hard under sustained load (~5 inst/hr after several runs);
   iterate on the hard subset, full runs sparingly.
 - **The ledger flags:** `closed_loop` gates the ledger read **and** the I4/verdict writes **and** the
   I6 receipt surfacing (all no-op when off — default off). `ask.clarify` (default ON) gates the
-  clarify ask. `AUGHOR_SOMA_CLARIFY` (default off, **LLM cost** — one call per structural-suspect
+  clarify ask. `PRAMANYX_SOMA_CLARIFY` (default off, **LLM cost** — one call per structural-suspect
   deep turn) gates soma structural clarify. Eval flags: `--probes` (B1), `--ledger` (harness ledger).
 - **Reproduce the burn-down demo** (no LLM, proves compounding through the live seam): set
-  `AUGHOR_CLOSED_LOOP=1` + scratch `AUGHOR_AMBIGUITY_LEDGER_DB`/`AUGHOR_VERDICTS_DB`, then drive
+  `PRAMANYX_CLOSED_LOOP=1` + scratch `PRAMANYX_AMBIGUITY_LEDGER_DB`/`PRAMANYX_VERDICTS_DB`, then drive
   `crystallize_user_choice` / `record_verdict` (writes) and `build_corrections_section` (the live
   read) and print `ledger_stats` per round. (The session's script lived in scratch; the seams are the
   contract.)

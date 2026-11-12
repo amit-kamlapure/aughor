@@ -11,9 +11,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.org.context import current_org_id
-from aughor.routers import learning as L
-from aughor.semantic.ambiguity_ledger import (
+from pramanyx.org.context import current_org_id
+from pramanyx.routers import learning as L
+from pramanyx.semantic.ambiguity_ledger import (
     crystallize_user_choice,
     list_resolutions,
     purge_connections,

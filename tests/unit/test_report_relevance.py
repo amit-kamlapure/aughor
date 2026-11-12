@@ -7,7 +7,7 @@ This pass drops the noise classes and re-orders so the opportunity-bearing phase
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _finding_earns_place,
     _is_zero_variance_ranking,
     _phase_materiality,

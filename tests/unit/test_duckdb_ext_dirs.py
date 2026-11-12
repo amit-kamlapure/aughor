@@ -18,7 +18,7 @@ import tempfile
 import duckdb
 import pytest
 
-from aughor.db.duckdb_ext import fallback_home, prepare_extensions
+from pramanyx.db.duckdb_ext import fallback_home, prepare_extensions
 
 _HOME_VARS = ("HOME", "USERPROFILE", "DUCKDB_HOME")
 _MISSING_HOME = "home directory"

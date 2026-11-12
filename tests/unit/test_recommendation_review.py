@@ -19,8 +19,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from aughor.agent.investigate import _measurable_spec
-from aughor.playbook import outcomes as O
+from pramanyx.agent.investigate import _measurable_spec
+from pramanyx.playbook import outcomes as O
 
 SPEC = {"metric_label": "total sales", "metric_sql": "SUM(sale_price)", "metric_table": "thelook.order_items",
         "date_column": "thelook.order_items.created_at", "window_days": 14, "window_basis": "observation"}
@@ -64,7 +64,7 @@ class TestTheReportCarriesItsDefinition:
 
     def test_both_report_assemblers_carry_it(self):
         import inspect
-        from aughor.agent import investigate
+        from pramanyx.agent import investigate
         src = inspect.getsource(investigate)
         assert src.count("spec=_measurable_spec(intake_data),") == 2
 
@@ -151,7 +151,7 @@ class TestTheReviewRunsOnceOnItsDate:
 
     def test_the_metrics_owner_is_asked_when_the_catalog_can_route_one(self, path, monkeypatch):
         from types import SimpleNamespace
-        import aughor.semantic.metrics as M
+        import pramanyx.semantic.metrics as M
         monkeypatch.setattr(M, "get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="user:finance-lead"))
         self._accepted(path)
         run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c, **kw: _run_sql_returning(1200.0), path=path)
@@ -159,7 +159,7 @@ class TestTheReviewRunsOnceOnItsDate:
 
     def test_a_free_text_owner_does_not_route_so_the_accepter_is_asked(self, path, monkeypatch):
         from types import SimpleNamespace
-        import aughor.semantic.metrics as M
+        import pramanyx.semantic.metrics as M
         monkeypatch.setattr(M, "get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="Ana (logistics)"))
         self._accepted(path)
         run = O.run_due_reviews(NOW + timedelta(days=30), run_sql_for=lambda c, **kw: _run_sql_returning(1200.0), path=path)
@@ -177,11 +177,11 @@ class TestTheReviewRunsOnceOnItsDate:
 
 class TestTheHeartbeatAsksHourly:
     def test_once_an_hour_and_forceable(self, monkeypatch):
-        from aughor.automations import scheduler as S
+        from pramanyx.automations import scheduler as S
         calls: list[int] = []
         monkeypatch.setattr(O, "run_due_reviews", lambda now=None, *, run_sql_for, path=None: calls.append(1) or [])
         # every other due decision is reviewed in the same tick; what other tests left due is not this test's count
-        monkeypatch.setattr("aughor.record.reviews.review_due_decisions", lambda **k: [])
+        monkeypatch.setattr("pramanyx.record.reviews.review_due_decisions", lambda **k: [])
         monkeypatch.setattr(S, "_last_review_check", 0.0)
         assert S.run_due_reviews_hourly(now=10_000.0) == 0 and len(calls) == 1
         assert S.run_due_reviews_hourly(now=10_000.0 + 60) == 0 and len(calls) == 1      # a minute later: no
@@ -190,21 +190,21 @@ class TestTheHeartbeatAsksHourly:
         assert len(calls) == 3
 
     def test_the_tick_counts_reviews(self, monkeypatch):
-        from aughor.automations import scheduler as S
+        from pramanyx.automations import scheduler as S
         monkeypatch.setattr(S, "run_due_reviews_hourly", lambda **k: 2)
-        monkeypatch.setattr("aughor.automations.store.list_automations", lambda enabled_only=True: [])
-        monkeypatch.setattr("aughor.automations.adopt.list_adopted_automations", lambda: [])
-        monkeypatch.setattr("aughor.automations.engine.resume_parked_runs", lambda: 0)
+        monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda enabled_only=True: [])
+        monkeypatch.setattr("pramanyx.automations.adopt.list_adopted_automations", lambda: [])
+        monkeypatch.setattr("pramanyx.automations.engine.resume_parked_runs", lambda: 0)
         assert S.tick_once()["reviews"] == 2
 
 
 class TestTheDoorMeasuresOnAccept:
     def test_accepting_through_the_door_records_the_baseline(self, client, monkeypatch, tmp_path):
         monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "outcomes.json")
-        import aughor.routers.investigations as R
+        import pramanyx.routers.investigations as R
         monkeypatch.setattr(R, "get_investigation", lambda inv_id: {"id": inv_id, "connection_id": "fixture",
                                                                        "report": {"spec": SPEC}})
-        monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid, **kw: _run_sql_returning(42.0))
+        monkeypatch.setattr("pramanyx.db.measure.run_sql_for", lambda cid, **kw: _run_sql_returning(42.0))
         r = client.post("/investigations/invX/recommendations/0/outcome",
                         json={"rec_text": "Do the thing", "status": "accepted", "review_days": 14})
         assert r.status_code == 201, r.text
@@ -214,7 +214,7 @@ class TestTheDoorMeasuresOnAccept:
 
     def test_a_status_change_does_not_measure(self, client, monkeypatch, tmp_path):
         monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "outcomes.json")
-        import aughor.routers.investigations as R
+        import pramanyx.routers.investigations as R
         called = []
         monkeypatch.setattr(R, "_record_acceptance", lambda *a, **k: called.append(1))
         r = client.post("/investigations/invY/recommendations/0/outcome", json={"rec_text": "x", "status": "dismissed"})

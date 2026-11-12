@@ -4,10 +4,10 @@ The Swiss-Air run planned a seasonality sub-question, ran a query, and only THEN
 discovered the data was single-month June — wasted a planning slot and a round-trip.
 _data_span_months reads the date span from the DATA PORTRAIT; _prune_impossible_subqs
 drops temporal/seasonality steps when the span is under two months (never landscape or
-synthesis). See aughor/agent/explore.py.
+synthesis). See pramanyx/agent/explore.py.
 """
-from aughor.agent.explore import _data_span_months, _prune_impossible_subqs
-from aughor.agent.state import SubQuestion
+from pramanyx.agent.explore import _data_span_months, _prune_impossible_subqs
+from pramanyx.agent.state import SubQuestion
 
 
 def _sq(id, purpose, question, expected="agg"):

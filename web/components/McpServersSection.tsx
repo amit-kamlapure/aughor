@@ -3,7 +3,7 @@
 /**
  * VA-9d · the MCP servers surface — the catalog's last entry.
  *
- * Redone to `aughor-v2/CLARITY.md` (2026-10-13), like the Providers card above it: one card, a row per server — a dot,
+ * Redone to `pramanyx-v2/CLARITY.md` (2026-10-13), like the Providers card above it: one card, a row per server — a dot,
  * its name, its state, one muted line (what it reaches, when it was signed in, whether it renews itself, how many tools
  * and how many of them are callable here) — with its one next step, Manage (its controls) and Details (what it is, its
  * address, and the roster with every tool's verdict) on the row.

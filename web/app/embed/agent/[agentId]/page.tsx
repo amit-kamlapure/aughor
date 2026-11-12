@@ -17,7 +17,7 @@ import { displayCellValue, formatCount } from "@/lib/format";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 
-const KEY = (agentId: string) => `aughor.embed.key.${agentId}`;
+const KEY = (agentId: string) => `pramanyx.embed.key.${agentId}`;
 
 export default function EmbedAgentPage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = use(params);

@@ -13,18 +13,18 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.agent import platform_tools as pt
-from aughor.api import app
-from aughor.govern import departure_remedies as dr
-from aughor.govern.departure import GUARD_LABELS, GUARDS
-from aughor.govern.departure_store import record_departure
+from pramanyx.agent import platform_tools as pt
+from pramanyx.api import app
+from pramanyx.govern import departure_remedies as dr
+from pramanyx.govern.departure import GUARD_LABELS, GUARDS
+from pramanyx.govern.departure_store import record_departure
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
 
 
 # ── the laws are parsed, not retold ───────────────────────────────────────────────────
@@ -45,7 +45,7 @@ def test_every_guard_has_a_law_read_from_the_gate_docstring():
 def test_the_parser_reads_the_docstring_and_not_a_copy(monkeypatch):
     """Mutation: change the module's text and the law changes with it — proof the words
     are read from the one source rather than kept beside it."""
-    from aughor.govern import departure as gate
+    from pramanyx.govern import departure as gate
     doc = gate.__doc__.replace("every magnitude the text states", "EVERY NUMBER THE TEXT STATES")
     monkeypatch.setattr(gate, "__doc__", doc)
     assert "EVERY NUMBER THE TEXT STATES" in dr.laws()["remeasure"]["sentence"]
@@ -72,7 +72,7 @@ def _held_row(**over):
     fields = dict(
         id="dep-held-1", org_id="default", kind="briefing", state="held", conn_id="c1",
         automation_id="auto-1", automation_name="The Look - Daily Briefing",
-        actor="automation:auto-1", target="sb_1:#aughor_canvas",
+        actor="automation:auto-1", target="sb_1:#pramanyx_canvas",
         reasons=json.dumps(["re-measure: 1,648.08 not in analysis ecb56660"]),
         checks=json.dumps({"trust": "clean", "remeasure": "1,648.08 not in analysis ecb56660",
                            "definition": "cites metric revenue v1"}),

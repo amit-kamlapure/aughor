@@ -3,7 +3,7 @@
 /**
  * The sliders of a what-if on a dashboard made from a file. Each is one of the dashboard's values a query card reads as `{{name}}`,
  * bound by the engine, and the reader's own. "As it is" puts each back where the scenario equals the file, a promise the draft
- * was held to before it was offered (`aughor/sheets/dashboard_draft.py`). It says it is a scenario, because none of this is data.
+ * was held to before it was offered (`pramanyx/sheets/dashboard_draft.py`). It says it is a scenario, because none of this is data.
  */
 import { useState } from "react";
 

@@ -1,5 +1,5 @@
 /**
- * Where each metric of a connection stands, for the Semantic Layer's Metrics tab (`aughor-v2/CLARITY.md`): the figures
+ * Where each metric of a connection stands, for the Semantic Layer's Metrics tab (`pramanyx-v2/CLARITY.md`): the figures
  * it opens on, what goes under "Needs you", and the group each row of the list sits in.
  *
  * Read from what the tab already holds — the connection's catalogue (`GET /metrics/catalogue/{id}`) and its stored

@@ -21,7 +21,7 @@ other. Wave A makes **condition → effect** one declared, governed, inspectable
   declared `KineticAction`), with muting, pausing, expiry, jittered retries, a fallback effect, and
   **per-run history**.
 - **The write path stays governed**: an effect that writes goes through `execute_kinetic_action`
-  ([`kinetic/executor.py:222`](../aughor/actions/executor.py)) — the same criteria → approval → audit
+  ([`kinetic/executor.py:222`](../pramanyx/actions/executor.py)) — the same criteria → approval → audit
   pipeline a human gets. Wave A adds **no** second write path.
 - **A staged-proposal queue with an agent decision log**, so an autonomous write is *proposed*,
   recorded with its reasoning, and applied only on human accept.
@@ -50,17 +50,17 @@ agree**, plus one that is not a trigger at all.
 
 | Today | Reality | file:line |
 |---|---|---|
-| Monitor scheduling | Own `BackgroundScheduler`, own `_make_job_fn`, `misfire_grace_time=300` | [`monitors/scheduler.py:27`](../aughor/monitors/scheduler.py) |
-| Brief scheduling | A **near-verbatim copy** of the above — own scheduler, own `_make_job_fn`, `misfire_grace_time=3600`. Its own docstring says "Mirrors aughor.monitors.scheduler" | [`briefs/scheduler.py:21`](../aughor/briefing/scheduler.py) |
-| Conditions | **Six already exist** — `threshold_cross`, `trend_reversal`, `anomaly`, `segment_drift`, `data_freshness`, `any_change` — but as a `Literal` *inside* `Monitor`, reachable only by a monitor | [`monitors/models.py:49`](../aughor/monitors/models.py) |
-| Brief conditions | **Time only.** `resolved_cron()` — a brief cannot fire on a metric at all | [`briefs/models.py:39`](../aughor/briefing/models.py) |
-| Effects | Monitor → **exactly one**: append a `MonitorAlert`. Brief → **exactly one**: `deliver_subscription`. Neither can do the other's | [`monitors/scheduler.py:66`](../aughor/monitors/scheduler.py), [`briefs/scheduler.py:42`](../aughor/briefing/scheduler.py) |
-| Muting / pausing | `grace_period_hours` — a *severity-aware anti-flap debounce*, monitor-only. There is no pause, no expiry, no mute-until | [`monitors/models.py:40`](../aughor/monitors/models.py) |
-| Retries | **None.** A failed tick is logged and dropped; the next cron fire is the only retry | [`monitors/scheduler.py:84`](../aughor/monitors/scheduler.py) |
-| Run history | Monitors persist only **fired alerts**. A tick that evaluated cleanly, or crashed, leaves **no row** — "did it run?" is unanswerable | [`monitors/store.py:285`](../aughor/monitors/store.py) |
-| "Explorer re-arm" | **Not a trigger.** `explore_watermark.json` is a per-(conn,table) max-activity timestamp used to *narrow a scan* (`delta_clause`), consumed only inside an already-running exploration | [`explorer/watermark.py:42`](../aughor/explorer/watermark.py) |
-| Staged proposals | `Proposal` is a **dataclass, never persisted** — proposals are live per-answer and die with the response (recorded as a K5 follow-on) | [`kinetic/propose.py:39`](../aughor/actions/propose.py) |
-| `trigger_investigation` | *(was an open seam at the time of this recon; **closed by Wave H5**)* — K2 raised `KineticDispatchError` for it, because the only working runner lived inside A. H5 lifted that runner to `aughor/runners/investigation.py`, which both packages call | [`runners/investigation.py`](../aughor/runners/investigation.py) |
+| Monitor scheduling | Own `BackgroundScheduler`, own `_make_job_fn`, `misfire_grace_time=300` | [`monitors/scheduler.py:27`](../pramanyx/monitors/scheduler.py) |
+| Brief scheduling | A **near-verbatim copy** of the above — own scheduler, own `_make_job_fn`, `misfire_grace_time=3600`. Its own docstring says "Mirrors pramanyx.monitors.scheduler" | [`briefs/scheduler.py:21`](../pramanyx/briefing/scheduler.py) |
+| Conditions | **Six already exist** — `threshold_cross`, `trend_reversal`, `anomaly`, `segment_drift`, `data_freshness`, `any_change` — but as a `Literal` *inside* `Monitor`, reachable only by a monitor | [`monitors/models.py:49`](../pramanyx/monitors/models.py) |
+| Brief conditions | **Time only.** `resolved_cron()` — a brief cannot fire on a metric at all | [`briefs/models.py:39`](../pramanyx/briefing/models.py) |
+| Effects | Monitor → **exactly one**: append a `MonitorAlert`. Brief → **exactly one**: `deliver_subscription`. Neither can do the other's | [`monitors/scheduler.py:66`](../pramanyx/monitors/scheduler.py), [`briefs/scheduler.py:42`](../pramanyx/briefing/scheduler.py) |
+| Muting / pausing | `grace_period_hours` — a *severity-aware anti-flap debounce*, monitor-only. There is no pause, no expiry, no mute-until | [`monitors/models.py:40`](../pramanyx/monitors/models.py) |
+| Retries | **None.** A failed tick is logged and dropped; the next cron fire is the only retry | [`monitors/scheduler.py:84`](../pramanyx/monitors/scheduler.py) |
+| Run history | Monitors persist only **fired alerts**. A tick that evaluated cleanly, or crashed, leaves **no row** — "did it run?" is unanswerable | [`monitors/store.py:285`](../pramanyx/monitors/store.py) |
+| "Explorer re-arm" | **Not a trigger.** `explore_watermark.json` is a per-(conn,table) max-activity timestamp used to *narrow a scan* (`delta_clause`), consumed only inside an already-running exploration | [`explorer/watermark.py:42`](../pramanyx/explorer/watermark.py) |
+| Staged proposals | `Proposal` is a **dataclass, never persisted** — proposals are live per-answer and die with the response (recorded as a K5 follow-on) | [`kinetic/propose.py:39`](../pramanyx/actions/propose.py) |
+| `trigger_investigation` | *(was an open seam at the time of this recon; **closed by Wave H5**)* — K2 raised `KineticDispatchError` for it, because the only working runner lived inside A. H5 lifted that runner to `pramanyx/runners/investigation.py`, which both packages call | [`runners/investigation.py`](../pramanyx/runners/investigation.py) |
 
 **Three findings that change the plan:**
 
@@ -99,12 +99,12 @@ already shipped and flag-gated.
 
 ## PR-A1 — The Automation model + store + run history
 
-**Scope.** `aughor/automations/models.py`: `Automation` (id, org/conn scope, name, `conditions:
+**Scope.** `pramanyx/automations/models.py`: `Automation` (id, org/conn scope, name, `conditions:
 list[Condition]`, `condition_logic: all|any`, `effects: list[Effect]`, `fallback_effect`, `enabled`,
 `paused_until`, `expires_at`, `max_retries`, `retry_backoff_seconds`) · `Condition` (kind + typed
 config) · `Effect` (kind + target ref + params) · `AutomationRun` (append-only: outcome, which
-conditions fired, each effect's status, attempt count, duration, error). `aughor/automations/store.py`
-clones the [`monitors/store.py`](../aughor/monitors/store.py) idiom — `resolve_db_path`, forward-only
+conditions fired, each effect's status, attempt count, duration, error). `pramanyx/automations/store.py`
+clones the [`monitors/store.py`](../pramanyx/monitors/store.py) idiom — `resolve_db_path`, forward-only
 migrations, `purge_connection` for the catalog-delete cascade.
 
 The six condition kinds are **re-exported from the monitor vocabulary**, not redefined.
@@ -119,7 +119,7 @@ the gate fails — "did it run?" is the question this store exists to answer.
 
 ## PR-A2 — One condition→effect engine
 
-**Scope.** `aughor/automations/engine.py` — `run_automation(automation, *, probe=None, dispatch=None)`,
+**Scope.** `pramanyx/automations/engine.py` — `run_automation(automation, *, probe=None, dispatch=None)`,
 the **only** way an automation fires. Gate order is load-bearing and mirrors K2's discipline (cheap,
 side-effect-free gates first; the only step that can cause a side effect is last):
 
@@ -129,7 +129,7 @@ enabled → not expired → not paused/muted → evaluate conditions (all|any)
 ```
 
 Effect dispatch is injectable (`Dispatch` seam, exactly as
-[`kinetic/executor.py:159`](../aughor/actions/executor.py)). The default dispatcher wires
+[`kinetic/executor.py:159`](../pramanyx/actions/executor.py)). The default dispatcher wires
 `investigate` → a supervised `kernel()` job draining `build_ask_stream` at `depth="deep"` (the real
 answer path, via the same in-process technique the evals `ask_target` uses), `brief` →
 `deliver_subscription`, `notify` → `fire_action`, and `kinetic_action` →
@@ -142,7 +142,7 @@ kind raises rather than no-ops.
 > properly means lifting the runner into a module neither package owns — a follow-on, not a claim
 > A2 gets to make.
 >
-> *(Resolved: **Wave H5** did exactly that — [`aughor/runners/investigation.py`](../aughor/runners/investigation.py).
+> *(Resolved: **Wave H5** did exactly that — [`pramanyx/runners/investigation.py`](../pramanyx/runners/investigation.py).
 > The follow-on the note predicted, in the shape it predicted.)*
 
 **Flag** `automations.engine` · **Tests** ~34 · **Decision gate:** a paused, expired, or
@@ -173,11 +173,11 @@ muted, the gate fails.
 
 ## PR-A3 — Source version probes (change detection)
 
-**Scope.** `aughor/automations/probes.py` — a cheap per-(connection, table) **source version**:
+**Scope.** `pramanyx/automations/probes.py` — a cheap per-(connection, table) **source version**:
 `MAX(<pk>)` / `MAX(<ts>)` / `(row_count, MAX(ts))` fingerprint, chosen by what the table has, one
 bounded query. Persisted like the watermark, but as a *trigger* input rather than a scan narrower;
 the `source_change` condition fires when the version advanced since the last recorded run. Generalizes
-[`explorer/watermark.py`](../aughor/explorer/watermark.py) without changing its scan behaviour.
+[`explorer/watermark.py`](../pramanyx/explorer/watermark.py) without changing its scan behaviour.
 
 **Flag** `automations.source_probes` (default off) · **Tests** ~20 · **Decision gate:** inserting a
 row advances the probe and fires the condition exactly **once** (a second tick with no new rows does
@@ -218,7 +218,7 @@ recorded, never silently never-fires. If a probe costs a full scan on a large ta
 **Scope (redesigned per the program doc J1/J2 — this is no longer a plain proposal table).** Two
 new kinetic-plane stores behind `automations.proposals`:
 
-- **The inbox** ([`kinetic/inbox.py`](../aughor/actions/inbox.py)) persists K4's `Proposal` (today a
+- **The inbox** ([`kinetic/inbox.py`](../pramanyx/actions/inbox.py)) persists K4's `Proposal` (today a
   live-only dataclass) as a **durable, resolve-once** record. Accept/reject is a single conditional
   `UPDATE … WHERE status='pending'` — first-responder-wins; a second resolution updates zero rows and
   is a no-op, never a second dispatch. Idempotent by `(org, run_id, call_id)`, so a replayed run
@@ -226,7 +226,7 @@ new kinetic-plane stores behind `automations.proposals`:
   approval act**, so it executes with `approved=True` — bypassing the approval gate but **never the
   submission criteria** (those run at step 2, before approval at step 3). Both outcomes are audited
   with the actor, so a rejected proposal is evidence, not a gap.
-- **Standing grants** ([`kinetic/grants.py`](../aughor/actions/grants.py)) — a human accepting can
+- **Standing grants** ([`kinetic/grants.py`](../pramanyx/actions/grants.py)) — a human accepting can
   mint a **target-bound** grant: "allow this action → this *exact* target value," eligible only for a
   single-parameter action (no ambiguous target otherwise), **owned by the automation that minted it**
   (revoked with it), consulted by the executor before `govern.guard`, and **cited by id in the audit
@@ -258,7 +258,7 @@ through, the gate fails.
 > as `"500"`, but the executor matches against **coerced** params (`500.0` → `"500.0"`), so the
 > grant it had just minted never matched. Fixed by minting from coerced params;
 > `test_a_numeric_grant_minted_from_coerced_params_actually_matches` locks it. (Also: my proof
-> harness omitted `AUGHOR_AUTOMATIONS_DB`, leaking an empty `data/automations.db` — the store-drift
+> harness omitted `PRAMANYX_AUTOMATIONS_DB`, leaking an empty `data/automations.db` — the store-drift
 > class already filed as a task; deleted, and the `dump_openapi.py` isolation was extended.)
 
 ---

@@ -1,6 +1,6 @@
 """VA-3 rot guard — our hardcoded GenAI keys against the installed spec package.
 
-`aughor/obs/genai.py` writes the OpenTelemetry GenAI attribute names as string
+`pramanyx/obs/genai.py` writes the OpenTelemetry GenAI attribute names as string
 literals rather than importing them, because upstream ships them under
 `opentelemetry.semconv._incubating`, a private path that may move in any release —
 and an ImportError inside the telemetry layer breaks the thing it observes.
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.obs import genai
+from pramanyx.obs import genai
 
 semconv = pytest.importorskip(
     "opentelemetry.semconv._incubating.attributes.gen_ai_attributes",
@@ -104,7 +104,7 @@ def test_unknown_backends_pass_through_rather_than_being_mislabelled():
 def test_every_backend_the_provider_ships_gets_a_nonempty_provider_name():
     """Guard against a new backend arriving with no telemetry identity at all —
     the pass-through is what makes this hold, so it must keep holding."""
-    from aughor.llm.provider import BACKENDS
+    from pramanyx.llm.provider import BACKENDS
     for backend in BACKENDS:
         assert genai.provider_name(backend), f"{backend} produced an empty provider name"
 

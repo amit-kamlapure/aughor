@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.report_checks import check_grounding, reader_disclosure, withhold_untraced
-from aughor.tools.postproc import column_totals
+from pramanyx.agent.report_checks import check_grounding, reader_disclosure, withhold_untraced
+from pramanyx.tools.postproc import column_totals
 
 Q2_SQL = ("SELECT p.category, SUM(oi.sale_price) AS total_revenue, "
           "SUM(oi.sale_price) / COUNT(DISTINCT oi.order_id) AS average_order_value "
@@ -62,7 +62,7 @@ def test_a_sum_named_through_a_cte_is_still_a_sum():
 
 
 def test_the_writer_evidence_carries_the_total():
-    from aughor.agent.investigate import _one_phase_evidence
+    from pramanyx.agent.investigate import _one_phase_evidence
     finding = {"sql": Q2_SQL, "columns": Q2_COLS, "rows": Q2_ROWS, "row_count": 10, "error": "",
                "stat_note": "", "trust_caveat": "", "interpretation": ""}
     block = _one_phase_evidence({"phase_name": "Top categories", "findings": [finding]})
@@ -153,7 +153,7 @@ def test_what_is_withheld_is_kept_as_written_for_the_record():
 
 def _a_describe_run(monkeypatch, conclusion: str) -> dict:
     """An Agent answer in the analyst's own words, synthesized with no model to call."""
-    import aughor.agent.investigate as I
+    import pramanyx.agent.investigate as I
 
     def _no_model(role):
         raise AssertionError(f"a describe answer asked a model ({role})")
@@ -177,7 +177,7 @@ def test_the_report_keeps_the_withheld_sentence_and_never_prints_it(monkeypatch)
     assert report.get("withheld") == [{"from": "headline", "figures": ["59,911"],
                                    "text": "Across all 59,911 orders, every centre ships in 1.49–1.50 days"}]
     assert "59,911" not in report["headline"] + report["executive_summary"]
-    from aughor.export.document import build_export_doc
+    from pramanyx.export.document import build_export_doc
     doc = build_export_doc({"question": "q", "report": report})
     assert not any("59,911" in str(vars(b)) for b in doc.blocks)
 
@@ -189,7 +189,7 @@ def test_an_answer_with_nothing_withheld_carries_no_record(monkeypatch):
 def test_an_untraced_figure_under_a_table_takes_its_line_and_leaves_the_table():
     """2026-10-01, 22:37: a note under the answer's table said "38,047 order items" (the rows hold 43,907), and the
     sentence cut — from a header cell's "Avg." to the note's full stop — took the whole table out with it."""
-    from aughor.agent.report_checks import Violation
+    from pramanyx.agent.report_checks import Violation
     table = ("| Distribution Center | Avg. Days (Placed to Shipped) |\n| :--- | :--- |\n"
              "| Chicago IL | 1.48 |\n| Memphis TN | 1.47 |")
     summary = ("The table shows the average days by centre.\n\n" + table

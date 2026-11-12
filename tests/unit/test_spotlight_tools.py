@@ -9,8 +9,8 @@ worse than the dead-end it replaces.
 """
 from __future__ import annotations
 
-import aughor.agent.spotlight_tools as spot
-from aughor.sql.popularity import PopularitySignal, save_popularity
+import pramanyx.agent.spotlight_tools as spot
+from pramanyx.sql.popularity import PopularitySignal, save_popularity
 
 
 def _llm_event(*, model="m:free", pt=100, ct=50, provider="openrouter") -> dict:
@@ -34,7 +34,7 @@ class _StubLedger:
 
 def test_platform_usage_windows_the_read_and_totals_the_rollup(monkeypatch):
     stub = _StubLedger([_llm_event(), _llm_event(model="b:free", pt=10, ct=5)])
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         classmethod(lambda cls: stub))
     out = spot.platform_usage({"days": 7, "by": "model"})
     assert out["window_days"] == 7 and out["grouped_by"] == "model"
@@ -52,7 +52,7 @@ def test_platform_usage_cost_honesty_travels(monkeypatch):
     """An unpriced call makes the total a floor, and the result must say so —
     cost_is_complete flips false rather than the unpriced call counting as free."""
     stub = _StubLedger([_llm_event(model="unpriced-model", provider="nowhere")])
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         classmethod(lambda cls: stub))
     out = spot.platform_usage({})
     assert out["unpriced_calls"] == 1
@@ -62,7 +62,7 @@ def test_platform_usage_cost_honesty_travels(monkeypatch):
 
 def test_platform_usage_refuses_an_unknown_axis(monkeypatch):
     stub = _StubLedger([])
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         classmethod(lambda cls: stub))
     out = spot.platform_usage({"by": "nonsense"})
     assert "error" in out and "known_axes" in out
@@ -74,7 +74,7 @@ def test_platform_usage_refuses_an_unknown_axis(monkeypatch):
 def test_platform_runs_counts_both_planes(monkeypatch):
     """The automation half is a store-level windowed COUNT, never a row scan — the
     live drive caught the scan variant reporting 5 fired where the truth was 83."""
-    from aughor.db.history import create_investigation, fail_investigation
+    from pramanyx.db.history import create_investigation, fail_investigation
     inv = create_investigation("q1", "conn-spot")
     create_investigation("q2", "conn-spot")
     fail_investigation(inv)
@@ -83,7 +83,7 @@ def test_platform_runs_counts_both_planes(monkeypatch):
     def _count(day_floor):
         asked["floor"] = day_floor
         return {"fired": 83, "not_fired": 10_562, "gated": 1}
-    monkeypatch.setattr("aughor.automations.store.count_runs_since", _count)
+    monkeypatch.setattr("pramanyx.automations.store.count_runs_since", _count)
 
     out = spot.platform_runs({"days": 7})
     assert out["deep_runs"]["started"] >= 2
@@ -98,7 +98,7 @@ def test_platform_runs_counts_both_planes(monkeypatch):
 
 
 def test_cadence_lists_zero_months_and_averages_over_all_of_them():
-    from aughor.db.history import create_investigation
+    from pramanyx.db.history import create_investigation
     create_investigation("q-cadence", "conn-spot2")
     out = spot.investigation_cadence({"months": 3})
     assert len(out["series"]) == 3
@@ -115,9 +115,9 @@ def test_cadence_lists_zero_months_and_averages_over_all_of_them():
 
 def test_accuracy_with_no_gradings_says_there_is_no_number(monkeypatch):
     monkeypatch.setattr(
-        "aughor.feedback.verdicts.verdict_stats",
+        "pramanyx.feedback.verdicts.verdict_stats",
         lambda cid=None: {"counts": {}, "total": 0, "acceptance_rate": None, "trend": []})
-    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted", lambda cid: [])
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.list_trusted", lambda cid: [])
     out = spot.answer_accuracy("c1", {})
     assert out["graded_total"] == 0 and out["acceptance_rate"] is None
     assert "no graded verdicts yet" in out["caveat"]
@@ -127,10 +127,10 @@ def test_accuracy_with_no_gradings_says_there_is_no_number(monkeypatch):
 
 def test_accuracy_thin_sample_carries_the_caveat(monkeypatch):
     monkeypatch.setattr(
-        "aughor.feedback.verdicts.verdict_stats",
+        "pramanyx.feedback.verdicts.verdict_stats",
         lambda cid=None: {"counts": {"accept": 4, "reject": 1}, "total": 5,
                           "acceptance_rate": 0.8, "trend": [{"week": "2026-W36"}] * 9})
-    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted",
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.list_trusted",
                         lambda cid: [object()] * 3)
     out = spot.answer_accuracy("c1", {})
     assert out["acceptance_rate"] == 0.8 and out["graded_total"] == 5
@@ -143,7 +143,7 @@ def test_accuracy_thin_sample_carries_the_caveat(monkeypatch):
 # ── table_popularity — Q3, the not-mined distinction ───────────────────────────────
 
 def test_popularity_empty_store_reports_not_mined_not_unpopular(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_POPULARITY_DB", str(tmp_path / "pop.db"))
+    monkeypatch.setenv("PRAMANYX_POPULARITY_DB", str(tmp_path / "pop.db"))
     out = spot.table_popularity("conn-x", {})
     assert out["mined"] is False
     assert "not mined yet" in out["answer"]
@@ -152,7 +152,7 @@ def test_popularity_empty_store_reports_not_mined_not_unpopular(tmp_path, monkey
 
 
 def test_popularity_mined_counts_rank_and_cap(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_POPULARITY_DB", str(tmp_path / "pop.db"))
+    monkeypatch.setenv("PRAMANYX_POPULARITY_DB", str(tmp_path / "pop.db"))
     save_popularity(PopularitySignal(
         connection_id="conn-x",
         table_counts={"orders": 40, "users": 12, "refunds": 55},
@@ -188,7 +188,7 @@ def test_traces_listing_is_windowed_and_says_metadata_only(monkeypatch):
     def fake_recent(**kw):
         seen.update(kw)
         return rows
-    monkeypatch.setattr("aughor.obs.session_log.recent_sessions", fake_recent)
+    monkeypatch.setattr("pramanyx.obs.session_log.recent_sessions", fake_recent)
     out = spot.platform_traces({"days": 7})
     assert seen["since"] and seen["limit"] == 10          # windowed at the reader
     assert "2 runs" in out["summary"] and "1 of them not ok" in out["summary"]
@@ -198,7 +198,7 @@ def test_traces_listing_is_windowed_and_says_metadata_only(monkeypatch):
 
 
 def test_trace_lookup_absent_is_honest_about_the_two_causes(monkeypatch):
-    monkeypatch.setattr("aughor.obs.session_log.recover_session",
+    monkeypatch.setattr("pramanyx.obs.session_log.recover_session",
                         lambda tid, org_id=None: [])
     out = spot.platform_traces({"trace_id": "nope"})
     assert out["found"] is False
@@ -206,9 +206,9 @@ def test_trace_lookup_absent_is_honest_about_the_two_causes(monkeypatch):
 
 
 def test_trace_anatomy_quotes_timing_and_errors_without_payloads(monkeypatch):
-    monkeypatch.setattr("aughor.obs.session_log.recover_session",
+    monkeypatch.setattr("pramanyx.obs.session_log.recover_session",
                         lambda tid, org_id=None: [{"kind": "user_request"}])
-    monkeypatch.setattr("aughor.obs.trace_summary.build_summary",
+    monkeypatch.setattr("pramanyx.obs.trace_summary.build_summary",
                         lambda tid, events: {
                             "trace_id": tid, "question": "why slow", "ok": False,
                             "started_at": "2026-09-06T00:00:00Z",
@@ -245,7 +245,7 @@ def test_audit_feed_rows_are_compact_and_the_scope_is_disclosed(monkeypatch):
     events = [SimpleNamespace(category="model_call", kind="llm_call",
                               at="2026-09-06T01:00:00Z", actor="local",
                               summary="a call", detail={"huge": "blob"})]
-    monkeypatch.setattr("aughor.govern.audit_categories.feed",
+    monkeypatch.setattr("pramanyx.govern.audit_categories.feed",
                         lambda category=None, limit=100: events)
     out = spot.platform_audit({"limit": 5})
     assert out["events"] == [{"category": "model_call", "kind": "llm_call",
@@ -262,9 +262,9 @@ def test_premortem_finds_an_error_streak_with_its_evidence_rows(monkeypatch):
     # caps' own honesty — "scanned N of M" — has its own receipt below).
     monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 100_000)
     monkeypatch.setattr(spot, "_PREMORTEM_MAX_FINDINGS", 100_000)
-    from aughor.actions.inbox import list_proposals
-    from aughor.automations.models import Automation, AutomationRun, Condition, Effect
-    from aughor.automations.store import append_run, upsert_automation
+    from pramanyx.actions.inbox import list_proposals
+    from pramanyx.automations.models import Automation, AutomationRun, Condition, Effect
+    from pramanyx.automations.store import append_run, upsert_automation
 
     a = upsert_automation(Automation(
         conn_id="pm-conn", name="always-breaking",
@@ -295,7 +295,7 @@ def test_premortem_finds_an_error_streak_with_its_evidence_rows(monkeypatch):
 def test_premortem_flags_zero_document_agents_and_a_broken_store_is_not_clean(monkeypatch):
     monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 100_000)
     monkeypatch.setattr(spot, "_PREMORTEM_MAX_FINDINGS", 100_000)
-    from aughor.custom_agents.store import create_agent
+    from pramanyx.custom_agents.store import create_agent
     ag = create_agent("premortem-bare", instructions="A scope and a stance.")
 
     out = spot.platform_premortem({})
@@ -305,7 +305,7 @@ def test_premortem_flags_zero_document_agents_and_a_broken_store_is_not_clean(mo
 
     def boom():
         raise RuntimeError("agents store gone")
-    monkeypatch.setattr("aughor.custom_agents.store.list_agents", boom)
+    monkeypatch.setattr("pramanyx.custom_agents.store.list_agents", boom)
     out2 = spot.platform_premortem({})
     assert "agents" in out2["stores_unavailable"]
     assert "not a clean bill of health" in out2["summary"]
@@ -315,8 +315,8 @@ def test_premortem_discloses_a_partial_scan_instead_of_a_clean_bill(monkeypatch)
     """A capped sweep must say what it did NOT check — the confident-clean-report
     class, refused. Force the cap below the store's population and read the words."""
     monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 1)
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import upsert_automation
     for n in ("scan-cap-a", "scan-cap-b"):
         upsert_automation(Automation(
             conn_id="pm-conn", name=n,
@@ -339,7 +339,7 @@ def test_spotlight_roster_names_and_read_contract():
 
 
 def test_conversation_gets_the_spotlight_roster():
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     names = {t.name for t in converse_tools("c1")}
     for expected in ("platform_usage", "list_platform_connections", "table_popularity",
                      "answer_accuracy", "platform_runs", "investigation_cadence",

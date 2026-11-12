@@ -1,6 +1,6 @@
 """Pin-from-Query-Builder endpoint (Briefing dashboard, Slice 2 — Door 2).
 
-Verifies the ENDPOINT's contract, not the guard battery (tested in aughor/sql): the
+Verifies the ENDPOINT's contract, not the guard battery (tested in pramanyx/sql): the
 user-authored SQL is re-run through execute_guarded, a query that errors is REFUSED (422,
 nothing stored), a clean pin is stored with source=query_builder and its opaque render spec,
 and `kind` is derived from the result shape (scalar → kpi, otherwise chart). The connection
@@ -12,16 +12,16 @@ import types
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.cards.store import get_card, list_cards
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.api import app
+from pramanyx.cards.store import get_card, list_cards
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 client = TestClient(app)
 
 
 def _patch(monkeypatch, *, result=None):
     monkeypatch.setattr(
-        "aughor.db.connection.open_connection_for",
+        "pramanyx.db.connection.open_connection_for",
         lambda conn: types.SimpleNamespace(close=lambda: None),
     )
     if result is None:
@@ -29,7 +29,7 @@ def _patch(monkeypatch, *, result=None):
             hypothesis_id="pinq", sql="SELECT 0.32 AS rate",
             columns=["rate"], rows=[[0.32]], row_count=1,
         )
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: result)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda db, sql, **kw: result)
 
 
 def test_pin_query_creates_guarded_kpi_card(monkeypatch):

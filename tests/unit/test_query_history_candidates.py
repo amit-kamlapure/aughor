@@ -1,6 +1,6 @@
 """Arc NV-3 — the warehouse's own query history reaches the candidate door, and nothing else.
 
-Three seams, each pinned: the history read (`aughor.db.query_history`) says when an engine keeps none and keeps the
+Three seams, each pinned: the history read (`pramanyx.db.query_history`) says when an engine keeps none and keeps the
 engine's error as a value; the miner (`candidates.mine_from_query_log`) proposes only what recurs and what the join
 map lacks, typed, with its frequency as evidence; and the door (`POST /ontology/candidates/mine`) refuses by name
 while the organisation has not allowed the read, binds every candidate before offering it, and writes nothing.
@@ -10,10 +10,10 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor.db.query_history import (
+from pramanyx.db.query_history import (
     HistoryRow, QueryHistory, not_platform_statement, read_query_history, rows_from_result, unsupported,
 )
-from aughor.ontology.candidates import (
+from pramanyx.ontology.candidates import (
     ORIGINS, QUERY_LOG_MIN_SUPPORT, Candidate, known_join_edges, mine, mine_from_query_log,
 )
 
@@ -34,7 +34,7 @@ def test_an_engine_without_history_says_so():
 
 
 def test_the_base_connection_answers_unsupported_by_default():
-    from aughor.db.connection import DatabaseConnection
+    from pramanyx.db.connection import DatabaseConnection
     assert "query_history" in DatabaseConnection.__dict__
     class Bare(DatabaseConnection):
         dialect = "duckdb"
@@ -76,8 +76,8 @@ def test_the_five_engines_carry_a_reader_and_the_files_say_so():
     """A capability added to one connector class misses the others (ROADMAP §7, ×3) — every engine with a history
     overrides the base, by name. Postgres joined on 2026-11-04: `pg_stat_statements` where it is installed."""
     import inspect
-    from aughor.connectors.warehouse import bigquery, clickhouse, databricks, snowflake
-    from aughor.db import connection as C
+    from pramanyx.connectors.warehouse import bigquery, clickhouse, databricks, snowflake
+    from pramanyx.db import connection as C
     for mod, cls in ((snowflake, "SnowflakeConnection"), (clickhouse, "ClickHouseConnection"),
                      (bigquery, "BigQueryConnection"), (databricks, "DatabricksConnection"),
                      (C, "PostgresConnection")):
@@ -93,7 +93,7 @@ def test_the_five_engines_carry_a_reader_and_the_files_say_so():
 
 
 def test_an_aggregate_row_stands_for_its_calls_and_is_weighed_up_to_the_cap():
-    from aughor.db.query_history import CALLS_CAP
+    from pramanyx.db.query_history import CALLS_CAP
     h = rows_from_result(_Result(rows=[["2026-11-04 08:02", "SELECT a FROM t JOIN u ON t.id = u.t_id", "lux", "250"],
                                        ["2026-11-04 08:02", "SELECT 1", "lux", None]]),
                          "postgres", source="pg_stat_statements", hours=24, limit=10,
@@ -106,7 +106,7 @@ def test_an_aggregate_row_stands_for_its_calls_and_is_weighed_up_to_the_cap():
 
 
 def test_postgres_without_the_extension_says_what_installs_one(monkeypatch):
-    from aughor.db import connection as C
+    from pramanyx.db import connection as C
     pg = C.PostgresConnection.__new__(C.PostgresConnection)
     seen = []
     def fake_bounded(label, sql, limit, *, sql_dialect=None, internal=False):
@@ -119,7 +119,7 @@ def test_postgres_without_the_extension_says_what_installs_one(monkeypatch):
 
 
 def test_postgres_with_the_extension_reads_the_aggregate_and_names_its_reset(monkeypatch):
-    from aughor.db import connection as C
+    from pramanyx.db import connection as C
     pg = C.PostgresConnection.__new__(C.PostgresConnection)
     sqls = []
     def fake_bounded(label, sql, limit, *, sql_dialect=None, internal=False):
@@ -229,8 +229,8 @@ def test_every_origin_named_has_a_miner():
 # ── the door ──────────────────────────────────────────────────────────────────────────────
 
 def test_the_door_refuses_by_name_while_the_organisation_has_not_allowed_the_read(monkeypatch):
-    from aughor.orgsettings import allows as A
-    from aughor.routers import ontology as R
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import ontology as R
     monkeypatch.setattr(A, "allows", lambda setting: False)
     with pytest.raises(HTTPException) as exc:
         R.mine_ontology_candidates(None, connection_id="c1", schema_name="main")
@@ -240,8 +240,8 @@ def test_the_door_refuses_by_name_while_the_organisation_has_not_allowed_the_rea
 
 
 def test_the_setting_is_an_organisations_choice_off_by_default():
-    from aughor.orgsettings.allows import FORMER_ENV
-    from aughor.orgsettings.models import OrgSettings
+    from pramanyx.orgsettings.allows import FORMER_ENV
+    from pramanyx.orgsettings.models import OrgSettings
     assert "read_query_history" in FORMER_ENV and FORMER_ENV["read_query_history"] == ()
     assert OrgSettings().read_query_history is None
 
@@ -249,9 +249,9 @@ def test_the_setting_is_an_organisations_choice_off_by_default():
 def test_the_door_mines_binds_and_writes_nothing(monkeypatch, tmp_path):
     """Allowed: the history is read through the connection, the graph's own edges are the known joins, every
     candidate is dry-run on the connection, and the report counts offered and refused."""
-    from aughor.orgsettings import allows as A
-    from aughor.routers import ontology as R
-    from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyRelationship
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import ontology as R
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyRelationship
 
     monkeypatch.setattr(A, "allows", lambda setting: setting == "read_query_history")
     graph = OntologyGraph(
@@ -283,7 +283,7 @@ def test_the_door_mines_binds_and_writes_nothing(monkeypatch, tmp_path):
             return ("regions" not in sql, "" if "regions" not in sql else "table regions has no column code")
         def close(self):
             closed.append(True)
-    import aughor.db.connection as C
+    import pramanyx.db.connection as C
     monkeypatch.setattr(C, "open_connection_for_with_schema", lambda cid, s=None: Conn())
 
     out = R.mine_ontology_candidates(None, connection_id="c1", schema_name="main")
@@ -306,9 +306,9 @@ def test_the_door_mines_binds_and_writes_nothing(monkeypatch, tmp_path):
 
 
 def test_an_engine_without_history_is_said_through_the_door(monkeypatch):
-    from aughor.orgsettings import allows as A
-    from aughor.routers import ontology as R
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.orgsettings import allows as A
+    from pramanyx.routers import ontology as R
+    from pramanyx.ontology.models import OntologyGraph
     monkeypatch.setattr(A, "allows", lambda setting: True)
     monkeypatch.setattr(R, "_served_scope", lambda cid, s: "main")
     monkeypatch.setattr(R, "_get_ontology_graph",
@@ -316,7 +316,7 @@ def test_an_engine_without_history_is_said_through_the_door(monkeypatch):
     class Duck:
         dialect = "duckdb"
         def close(self): pass
-    import aughor.db.connection as C
+    import pramanyx.db.connection as C
     monkeypatch.setattr(C, "open_connection_for_with_schema", lambda cid, s=None: Duck())
     out = R.mine_ontology_candidates(None, connection_id="c1")
     assert out["history"]["supported"] is False and out["offered"] == [] and out["mined"] == 0

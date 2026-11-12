@@ -16,7 +16,7 @@ from datetime import date
 import duckdb
 import pytest
 
-from aughor.briefing import ranges
+from pramanyx.briefing import ranges
 
 TODAY = date(2026, 10, 23)
 LAST, FIRST = date(2018, 10, 17), date(2016, 9, 4)          # Olist's last and first purchase day
@@ -99,7 +99,7 @@ def test_a_custom_range_over_ended_data_is_final_and_cut_at_the_last_row():
 
 
 def test_the_narrator_is_told_the_figures_are_final_and_never_to_mention_settling():
-    from aughor.knowledge.period_brief import period_note
+    from pramanyx.knowledge.period_brief import period_note
     note = period_note(ranges.range_block(_ended("last_month")), today=TODAY)
     assert "The data ended on 2018-10-17" in note and "every figure in it is final" in note
     assert "settling lag" not in note
@@ -109,8 +109,8 @@ def test_the_narrator_is_told_the_figures_are_final_and_never_to_mention_settlin
 
 
 def test_the_sent_markdown_and_the_narrator_context_say_final():
-    from aughor.briefing.delivery import render_period_markdown
-    from aughor.knowledge.brief_context import _period_lines
+    from pramanyx.briefing.delivery import render_period_markdown
+    from pramanyx.knowledge.brief_context import _period_lines
     block = ranges.range_block(_ended("last_year"))
     md = render_period_markdown(block, [], 0)
     assert "*Not compared: the data starts on 2016-09-04" in md and "every figure here is final" in md
@@ -124,12 +124,12 @@ def test_the_sent_markdown_and_the_narrator_context_say_final():
 @pytest.fixture
 def olist(monkeypatch, tmp_path):
     """One order a day worth 100 from Olist's first day to its last, and an approved revenue."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="gmv", connection="c1", label="GMV", sql="SUM(amount)", tables=["orders"],
                                  unit="BRL", status="approved", approved_by="test",
                                  time_kind="flow", time_column="orders.created_at"))   # dated, as Olist's GMV is
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: {
+    monkeypatch.setattr("pramanyx.tools.profile_cache.latest_profile_entry", lambda cid: {
         "tables": {"orders": {"primary_timestamp": "created_at"}},
         "columns": {f"orders.{c}": {"table": "orders", "column": c, "dtype": d}
                     for c, d in (("created_at", "TIMESTAMP"), ("amount", "DOUBLE"))}})
@@ -172,7 +172,7 @@ def test_a_withheld_comparison_is_measured_without_its_earlier_value_and_says_wh
 
 
 def test_nothing_is_predicted_after_the_data_ended():
-    from aughor.briefing.expected import expected_next
+    from pramanyx.briefing.expected import expected_next
     got = expected_next("c1", _ended("last_month"), today=TODAY)
     assert got == {"target": None, "items": [],
                    "why": "the data ended on 2018-10-17: no later range will have rows to predict"}
@@ -195,7 +195,7 @@ def test_what_each_edition_covers_lists_six_with_the_lead_figure(olist, monkeypa
 # ── the send and Now ────────────────────────────────────────────────────────────────────────
 
 def _sub(**kw):
-    from aughor.briefing.models import BriefSubscription
+    from pramanyx.briefing.models import BriefSubscription
     return BriefSubscription(id="s1", conn_id="c1", name="Olist daily", period="day", content="briefing",
                              trigger_id="t1", schema_name="olist", **kw)
 
@@ -204,7 +204,7 @@ def _sub(**kw):
 def test_a_scheduled_send_pauses_while_ended_data_does_not_move(monkeypatch, ended, sent_before, paused):
     """Data that stopped sends the same edition every morning; the first goes, the repeats pause, and
     the send resumes by itself when new rows move the edge (the edition then covers new days)."""
-    from aughor.briefing import delivery
+    from pramanyx.briefing import delivery
     edge = ENDED if ended else {**ENDED, "through": date(2026, 10, 21), "tables": {"orders": date(2026, 10, 21)}}
     asked: dict = {}
 
@@ -212,7 +212,7 @@ def test_a_scheduled_send_pauses_while_ended_data_does_not_move(monkeypatch, end
         asked.update(preset=preset, schema=schema)
         return ranges.resolve_range(preset, today=TODAY, edge=edge, lag_days=2)
     monkeypatch.setattr(ranges, "resolve_for", resolve_for)
-    monkeypatch.setattr("aughor.briefing.deliveries.sent_at_for",
+    monkeypatch.setattr("pramanyx.briefing.deliveries.sent_at_for",
                         lambda conn_id, sub_id, covers: "2026-10-22T07:00:00Z" if sent_before else None)
     why = delivery._paused_on_ended_data(_sub())
     assert asked == {"preset": "yesterday", "schema": "olist"}         # the subscription's own dataset
@@ -223,10 +223,10 @@ def test_a_scheduled_send_pauses_while_ended_data_does_not_move(monkeypatch, end
 
 
 def test_a_paused_send_builds_nothing_and_records_why(monkeypatch):
-    from aughor.briefing import delivery
+    from pramanyx.briefing import delivery
     monkeypatch.setattr(delivery, "_paused_on_ended_data", lambda sub: "paused: the data ended on 2018-10-17")
     monkeypatch.setattr(delivery, "_turned_off", lambda sub: "")
-    monkeypatch.setattr("aughor.knowledge.period_brief.refusal", lambda period: "")
+    monkeypatch.setattr("pramanyx.knowledge.period_brief.refusal", lambda period: "")
     monkeypatch.setattr(delivery, "build_period_departure",
                         lambda sub: (_ for _ in ()).throw(AssertionError("a paused send built a Briefing")))
     result: dict = {"status": "failed", "error": None}
@@ -235,7 +235,7 @@ def test_a_paused_send_builds_nothing_and_records_why(monkeypatch):
 
 
 def test_now_names_what_the_kept_edition_covers_and_where_the_data_ended(monkeypatch):
-    from aughor.briefing import organisation
+    from pramanyx.briefing import organisation
     monkeypatch.setattr(organisation, "_visible_connections", lambda: [{"id": "c1", "name": "Olist"}])
     monkeypatch.setattr(organisation, "latest_kept", lambda cid: {"id": "a1", "version": 1, "payload": {
         "as_of": "2026-10-23", "briefing": {"narrative": "September GMV fell.", "period": {
@@ -263,8 +263,8 @@ def test_a_source_still_moving_when_it_stopped_has_paused_and_is_not_final():
 
 
 def test_a_pause_is_not_sent_or_narrated_as_final():
-    from aughor.briefing.delivery import render_period_markdown
-    from aughor.knowledge.period_brief import period_note
+    from pramanyx.briefing.delivery import render_period_markdown
+    from pramanyx.knowledge.period_brief import period_note
     edge = {"through": date(2026, 10, 29), "from": date(2019, 1, 1), "held_by": ["orders"], "tables": {"orders": date(2026, 10, 29)}}
     today = date(2026, 11, 30)
     spec, _ = ranges.resolve_range("last_week", today=today, lag_days=29, lag_source="beyond_horizon", still_moving=("orders",), edge=edge)
@@ -276,7 +276,7 @@ def test_a_pause_is_not_sent_or_narrated_as_final():
 
 
 def test_a_live_source_still_moving_is_not_sent_as_settling_as_late_rows_arrive():
-    from aughor.briefing.delivery import render_period_markdown
+    from pramanyx.briefing.delivery import render_period_markdown
     today = date(2026, 11, 4)
     moving, _ = ranges.resolve_range("last_week", today=today, lag_days=29, lag_source="beyond_horizon", still_moving=("orders",))
     md = render_period_markdown(ranges.range_block(moving), [], 0)

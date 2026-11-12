@@ -2,7 +2,7 @@
 
 /**
  * Actions — what Pramanyx may do on a connection (the Intelligence workspace's Actions tab), laid out to CLARITY
- * (`aughor-v2/CLARITY.md`) as the ledger it is. The declared actions come first, read like a document: each one's name
+ * (`pramanyx-v2/CLARITY.md`) as the ledger it is. The declared actions come first, read like a document: each one's name
  * and what it does in a line, what it changes as one muted line of facts, and its gate as a chip whose title is the rule.
  * Beside them, in amber, what waits for a person: the approvals, and an outbox call no retry will deliver. Then the edit
  * layer — the values actions and people set over the data, by the object they sit on, each withdrawable — and the calls

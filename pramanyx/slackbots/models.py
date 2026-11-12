@@ -1,0 +1,150 @@
+"""RC-5 — a Slack bot as a platform record.
+
+RC-1 put `@pramanyx` in a Slack thread and RC-2 gave its answers charts and cards, but
+both ran against ONE bot whose credentials lived in a `.env.local` on a laptop. Nothing
+about that is a platform object, so nothing about it is user-creatable — and the ask was
+for users to make as many bots as they want, from inside Pramanyx.
+
+The whole feature is this tuple::
+
+    {bot_token, app_token, signing_secret}  →  {agent_id, connection_id}
+
+and the two halves of that arrow are the design:
+
+* **The right half is a REFERENCE, never a copy.** A bot points at a `UserAgent`, which
+  already owns instructions, purpose, bound documents, packs, connection and its eval
+  chip. Copying any of that here would fork the governing configuration and silently
+  invalidate `config_rev` — the fingerprint the pass chip uses to say whether a
+  measurement is still about this agent. A bot is a DOOR onto an agent, not an agent.
+* **The left half is three credentials, and they are the credential.** Anyone holding a
+  bot token can post as that app, exactly as a Slack webhook URL *is* the credential
+  (`notifications/executor.py`). All three are encrypted at rest and masked on read.
+
+`agent_view` is here rather than inferred because it must match the Slack app's own
+manifest: the adapter's `agentView` requires an app in `agent_view` mode, and turning it
+on against an `assistant_view` app makes `stopStream` send a parameter that app cannot
+accept — which costs the final message of every answer. The manifest and the record are
+written in the same act, so the flag belongs with the record that act produces.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from pramanyx.secretvault import decrypt_secret, encrypt_secret, mask_secret
+from pramanyx.util.time import now_iso_z
+
+NAME_MAX = 80
+
+#: The Slack secrets. Named once so the encrypt / decrypt / mask paths cannot drift
+#: apart — a field added to one and missed by another is how a token leaks.
+#: `client_secret` (AO-2d) joins the three when Pramanyx created the app itself.
+SECRET_FIELDS = ("bot_token", "app_token", "signing_secret", "client_secret")
+
+
+class SlackBot(BaseModel):
+    """One Slack app bound to one Pramanyx agent."""
+    id: str = ""
+    name: str = ""
+    enabled: bool = True
+    #: AO-1e — WHY a bot is off, when the platform switched it off rather than a person
+    #: ("its agent 'X' was deleted"). Shown on the card beside "paused"; cleared the
+    #: moment a person resumes the bot. "" for a bot a person paused, or one that is on.
+    disabled_reason: str = ""
+
+    # ── the binding ──
+    agent_id: str = ""          # the UserAgent whose instructions/docs/packs answer
+    connection_id: str = ""     # the warehouse it answers over ("" = the ask's own)
+    #: The workspace that owns this bot. "" = UNOWNED — an org-level bot, listed in
+    #: every workspace because no workspace claimed it.
+    workspace_id: str = ""
+    #: VA-9b — whose connection this is. "" = the org's, which is every bot created
+    #: before this field and is the single-tenant behaviour byte-for-byte.
+    #:
+    #: A platform-user id, resolvable through RC-4's identity plane — so a Slack person
+    #: (`slack:U08N9EQ80UT`) who has been linked to a platform user is the same subject
+    #: here. That is what makes "my Slack" differ from yours without a second identity
+    #: scheme: the link table already answers who someone is, and this says whose
+    #: credential is being spent.
+    owner: str = ""
+
+    # ── the credentials (encrypted at rest, masked on read) ──
+    bot_token: str = ""         # xoxb-…  posts as the bot
+    app_token: str = ""         # xapp-…  opens the Socket Mode connection
+    signing_secret: str = ""
+
+    # ── what Slack told us at install time ──
+    team_id: str = ""
+    slack_app_id: str = ""
+    bot_user_id: str = ""       # the bot's own Slack user id, from auth.test
+    #: Must match the app's manifest mode. See the module docstring. AO-2c: True for an
+    #: app Pramanyx renders now (Slack closed the legacy view to new apps on 2026-08-20),
+    #: and one-way — an app switched to agent mode cannot be switched back.
+    agent_view: bool = False
+    #: AO-2d — set when Pramanyx created the app from a configuration token: the OAuth
+    #: client that installs it to a workspace. `client_secret` is encrypted like the rest.
+    client_id: str = ""
+    client_secret: str = ""
+    #: AO-2f — an optional home channel (`C…` id or `#name`): where an automation posting
+    #: AS this bot lands when it names no channel, and what the card shows as "posts to".
+    #: "" means no default; a bot answers mentions wherever it is invited regardless.
+    channel_id: str = ""
+    #: AO-6 — REHEARSE: a post from an automation AS this bot is held for a person first
+    #: (the departure gate's approval door) and reaches the channel on their click; the
+    #: held text is readable in Attention before anyone else sees it. A standing grant
+    #: ("always allow" on the card) lifts it per channel. False = posts as its effect says.
+    rehearse: bool = False
+
+    created_at: str = Field(default_factory=now_iso_z)
+    updated_at: str = Field(default_factory=now_iso_z)
+
+    def to_dict(self) -> dict:
+        return self.model_dump()
+
+    def to_safe_dict(self) -> dict:
+        """The API-facing form — every secret masked, so a raw token never leaves the
+        server. The client renders the mask and sends it back unchanged on save; the
+        update path detects that and keeps the stored value (see `merge_secrets`)."""
+        d = self.to_dict()
+        for f in SECRET_FIELDS:
+            d[f] = mask_secret(d.get(f) or "")
+        return d
+
+
+def encrypt_secrets(bot: SlackBot) -> SlackBot:
+    """Encrypt every secret field. Idempotent — `encrypt_secret` returns an already
+    encrypted value unchanged, so re-saving never double-encrypts."""
+    return bot.model_copy(update={f: encrypt_secret(getattr(bot, f) or "") or ""
+                                  for f in SECRET_FIELDS})
+
+
+def decrypt_secrets(bot: SlackBot) -> SlackBot:
+    """Plaintext secrets, for the supervisor that must actually open a socket."""
+    return bot.model_copy(update={f: decrypt_secret(getattr(bot, f) or "") or ""
+                                  for f in SECRET_FIELDS})
+
+
+def is_masked(value: str, stored: str) -> bool:
+    """Whether `value` is the mask the API handed out for `stored`, rather than a new
+    secret. Compared against the mask of the STORED value, not against a bullet-pattern:
+    a shape test would treat any bullet-containing string as "unchanged", and a caller
+    that genuinely wants to set a bullet-containing secret would be silently ignored."""
+    return bool(value) and bool(stored) and value == mask_secret(stored)
+
+
+def merge_secrets(incoming: SlackBot, stored: Optional[SlackBot]) -> SlackBot:
+    """Carry stored secrets through an update that echoed the mask back.
+
+    Three cases, and the middle one is the whole reason this exists:
+      * a new non-empty value  → take it (the caller is rotating the token)
+      * the mask we handed out → keep what is stored (an ordinary save of an edit form)
+      * empty                  → keep what is stored (the field was not in the payload)
+    """
+    if stored is None:
+        return incoming
+    updates = {}
+    for f in SECRET_FIELDS:
+        new, old = getattr(incoming, f) or "", getattr(stored, f) or ""
+        updates[f] = old if (not new or is_masked(new, old)) else new
+    return incoming.model_copy(update=updates)

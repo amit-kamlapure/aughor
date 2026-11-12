@@ -20,18 +20,18 @@ o6,shipped,2018-09-06 10:00:00,60.00
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _orders(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "orders.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -43,7 +43,7 @@ def _piece(offer, key):
 
 
 def test_each_card_offered_shows_what_the_grid_counts_and_sums(env):
-    from aughor.sheets import dashboard, projection
+    from pramanyx.sheets import dashboard, projection
     sheet = _orders(env)
     offer = dashboard.propose(sheet)
     assert offer["rows"] == 6 and offer["view"] == "" and offer["title"] == "Olist orders"
@@ -59,8 +59,8 @@ def test_each_card_offered_shows_what_the_grid_counts_and_sums(env):
 
 
 def test_a_dashboard_from_a_view_reads_only_the_views_rows(env):
-    from aughor.sheets import dashboard, projection, service
-    from aughor.sheets.model import Condition, View
+    from pramanyx.sheets import dashboard, projection, service
+    from pramanyx.sheets.model import Condition, View
     sheet = _orders(env)
     status = sheet.column("order_status").id
     sheet = service.save_view(sheet, View(name="Delivered", filter=[Condition(column=status, op="is",
@@ -75,9 +75,9 @@ def test_a_dashboard_from_a_view_reads_only_the_views_rows(env):
 
 def test_a_kept_card_follows_an_edit_to_the_sheet_on_its_next_read(env):
     """The falsifier: a card over a sheet never shows the value before an edit."""
-    from aughor.dashboards import queries
-    from aughor.db.connection import open_connection_for
-    from aughor.sheets import dashboard, model, service
+    from pramanyx.dashboards import queries
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.sheets import dashboard, model, service
     sheet = _orders(env)
     offer = dashboard.propose(sheet)
     paid = _piece(offer, "sum-")
@@ -98,7 +98,7 @@ def test_a_sheet_offers_a_dashboard_through_its_route(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.routers import sheets as sheets_router
     sheet = _orders(env)
     app = FastAPI()
     app.include_router(sheets_router.router)

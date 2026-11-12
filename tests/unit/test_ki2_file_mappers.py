@@ -12,8 +12,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.intake import mappers
+from pramanyx.api import app
+from pramanyx.intake import mappers
 
 client = TestClient(app)
 
@@ -30,12 +30,12 @@ CSV = (
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_INTAKE_DB", str(tmp_path / "intake.db"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
-    import aughor.semantic.connection_kb as kb
+    monkeypatch.setenv("PRAMANYX_INTAKE_DB", str(tmp_path / "intake.db"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    import pramanyx.semantic.connection_kb as kb
     monkeypatch.setattr(kb, "_DATA_DIR", tmp_path / "kb")
     monkeypatch.setattr(kb, "_index_entry", lambda e: None)
     monkeypatch.setattr(kb, "_delete_from_index", lambda c, i: None)
@@ -155,13 +155,13 @@ def test_csv_file_door_stages_and_accepts_into_the_stores(stores):
                             "accept": [c["id"] for c in body["candidates"]]})
     assert res.status_code == 200 and res.json()["errors"] == 0
 
-    from aughor.semantic.metrics import get_metric
+    from pramanyx.semantic.metrics import get_metric
     m = get_metric("net_revenue", connection_id=CONN)
     assert m is not None and m.status == "proposed"
-    from aughor.semantic.connection_kb import load_entries
+    from pramanyx.semantic.connection_kb import load_entries
     defs = {e.title for e in load_entries(CONN) if e.kind == "metric"}
     assert defs == {"Net Revenue", "Churn Rate"}
-    from aughor.ontology.vocabulary import synonyms_for
+    from pramanyx.ontology.vocabulary import synonyms_for
     assert {s.synonym for s in synonyms_for(CONN)} >= {"turnover", "attrition"}
 
     # Same file again: content-hash dedupe, nothing re-staged.
@@ -188,7 +188,7 @@ def test_dbt_manifest_file_door(stores):
 
     client.post(f"/intake/bundles/{r.json()['bundle']['id']}/resolve",
                 json={"actor": "ana@example.com", "accept": [cands[0]["id"]]})
-    from aughor.semantic.glossary import load_glossary
+    from pramanyx.semantic.glossary import load_glossary
     assert (load_glossary()["tables"]["customers"]["description"]
             == "One row per customer.")
 
@@ -196,7 +196,7 @@ def test_dbt_manifest_file_door(stores):
 def test_sheets_definitions_mode_feeds_the_same_lane(stores, monkeypatch):
     """KI-3's Sheets mode: the fetch is patched (unit tests stay off the network);
     everything after the fetch is the SAME mapper and the SAME lane."""
-    from aughor.intake import mappers
+    from pramanyx.intake import mappers
 
     fetched: dict = {}
 
@@ -217,7 +217,7 @@ def test_sheets_definitions_mode_feeds_the_same_lane(stores, monkeypatch):
 
 
 def test_sheets_mode_reports_a_private_sheet_plainly(stores, monkeypatch):
-    from aughor.intake import mappers
+    from pramanyx.intake import mappers
 
     def _login_page(spreadsheet, sheet=""):
         raise ValueError("the sheet is not link-shared — Google answered with a "
@@ -231,7 +231,7 @@ def test_sheets_mode_reports_a_private_sheet_plainly(stores, monkeypatch):
 
 
 def test_sheet_id_validation_refuses_junk():
-    from aughor.intake.mappers import fetch_gsheet_csv
+    from pramanyx.intake.mappers import fetch_gsheet_csv
     with pytest.raises(ValueError, match="spreadsheet id"):
         fetch_gsheet_csv("not a sheet!!")
 

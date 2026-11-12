@@ -26,10 +26,10 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations import versions as V
-from aughor.automations.engine import evaluate_conditions, run_automation
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-from aughor.automations.store import (
+from pramanyx.automations import versions as V
+from pramanyx.automations.engine import evaluate_conditions, run_automation
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import (
     get_automation,
     get_run,
     get_run_stamp,
@@ -38,9 +38,9 @@ from aughor.automations.store import (
     set_automation_enabled,
     upsert_automation,
 )
-from aughor.kernel.ledger import Ledger
-from aughor.monitors.models import Monitor
-from aughor.monitors.store import set_monitor_enabled, upsert_monitor
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.monitors.models import Monitor
+from pramanyx.monitors.store import set_monitor_enabled, upsert_monitor
 
 NOW = datetime(2026, 10, 26, 9, 0, tzinfo=timezone.utc)
 
@@ -101,7 +101,7 @@ def _artifact_count() -> int:
 # ── every save keeps the definition before it ────────────────────────────────────
 
 def test_every_save_keeps_the_earlier_definition_numbered_with_who_and_when():
-    from aughor.org.context import reset_actor, set_actor
+    from pramanyx.org.context import reset_actor, set_actor
     token = set_actor("amit")
     try:
         a = upsert_automation(_auto())
@@ -223,7 +223,7 @@ def test_a_run_from_before_versions_is_refused_by_name(monkeypatch):
 
 
 def test_a_runs_stamp_goes_with_its_run_and_a_removed_connection_takes_its_versions():
-    from aughor.automations.store import delete_automation, purge_connection
+    from pramanyx.automations.store import delete_automation, purge_connection
     a = upsert_automation(_auto(conn_id="conn-tc3-del"))
     one = run_automation(a, now=NOW, probe=_probe(), dispatch=_stub(), manual=True)
     assert get_run_stamp(one.id) is not None
@@ -243,7 +243,7 @@ def test_a_runs_stamp_goes_with_its_run_and_a_removed_connection_takes_its_versi
 
 def _no_dispatch(monkeypatch):
     """Every real dispatcher raises: a replay that reached one would fail the test loudly."""
-    from aughor.automations import engine
+    from pramanyx.automations import engine
 
     def refuse(effect, automation):
         raise AssertionError(f"a replay dispatched {effect.kind}")
@@ -324,7 +324,7 @@ def test_a_monitor_save_keeps_versions_and_switching_it_off_is_not_one():
 
 
 def test_a_monitors_run_names_the_monitors_version_and_replays_as_it(monkeypatch):
-    from aughor.automations.adopt import monitor_as_automation
+    from pramanyx.automations.adopt import monitor_as_automation
     m = upsert_monitor(_monitor())
     run = run_automation(monitor_as_automation(m), now=NOW, dispatch=_stub())
     assert run.outcome == "fired", run.reason
@@ -354,7 +354,7 @@ def test_evaluate_conditions_answers_the_same_with_a_verdict_list():
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

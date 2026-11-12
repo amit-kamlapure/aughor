@@ -95,7 +95,7 @@ def test_query_run_executes_select(client: TestClient, builtin_conn_id: str) -> 
 def test_query_run_rejects_destructive(client: TestClient, builtin_conn_id: str) -> None:
     r = client.post("/query/run", json={
         "conn_id": builtin_conn_id,
-        "sql": "DROP TABLE IF EXISTS __test_aughor",
+        "sql": "DROP TABLE IF EXISTS __test_pramanyx",
         "limit": 10,
         "use_cache": False,
         "use_bulk": False,

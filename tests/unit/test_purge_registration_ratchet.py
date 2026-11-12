@@ -2,9 +2,9 @@
 
 **Scope corrected during the build.** The arc doc scoped V5 as *"replace `bootstrap.py`'s
 hand-maintained call list with a registry"*. Reading the code first showed a registry already
-exists and is good: ``aughor/kernel/registries/purge_hooks`` with
+exists and is good: ``pramanyx/kernel/registries/purge_hooks`` with
 ``register_purge_hook`` / ``register_schema_purge_hook``, orchestrated by
-``aughor/db/purge.py``, which keeps the platform from importing the agent. Building a second
+``pramanyx/db/purge.py``, which keeps the platform from importing the agent. Building a second
 registry beside it would have been Wave V's own headline mistake — dialect #14.
 
 The real gap is narrower and sharper: ``purge.py``'s docstring *instructs* an author to
@@ -34,8 +34,8 @@ def _force_register():
     calling again would silently register nothing (which is how the vacuous-pass guard below
     earned its place).
     """
-    from aughor.agent import bootstrap
-    from aughor.kernel.registries import purge_hooks
+    from pramanyx.agent import bootstrap
+    from pramanyx.kernel.registries import purge_hooks
 
     purge_hooks.clear()
     bootstrap._REGISTERED = False
@@ -49,7 +49,7 @@ def _registered():
     Teardown matters here: leaving the registry cleared while bootstrap's guard still says
     "registered" would hand every later test in the session an empty purge cascade.
     """
-    from aughor.kernel.registries import purge_hooks
+    from pramanyx.kernel.registries import purge_hooks
 
     _force_register()
     try:
@@ -76,7 +76,7 @@ _EXEMPT = {
 def _modules_exposing_an_invalidator() -> dict[str, list[str]]:
     """Every module that offers a connection-scoped invalidate/purge entry point."""
     found: dict[str, list[str]] = {}
-    for path in (REPO / "aughor").rglob("*.py"):
+    for path in (REPO / "pramanyx").rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
         src = path.read_text()
@@ -102,8 +102,8 @@ def test_every_store_with_an_invalidator_is_registered_or_exempt():
     assert not unregistered, (
         "these modules expose a connection-scoped invalidator but nothing in the delete "
         f"cascade reaches them: {sorted(unregistered)}. Register an agent hook in "
-        "aughor/agent/bootstrap.py (register_purge_hook / register_schema_purge_hook), or "
-        "purge it inline in aughor/db/purge.py if the PLATFORM owns it — or add the module "
+        "pramanyx/agent/bootstrap.py (register_purge_hook / register_schema_purge_hook), or "
+        "purge it inline in pramanyx/db/purge.py if the PLATFORM owns it — or add the module "
         "to _EXEMPT with the reason it is not connection-keyed."
     )
 
@@ -117,8 +117,8 @@ def _cascade_source() -> str:
     reported ``type_overrides`` before learning to read ``purge.py:108`` too.
     """
     return "\n".join((
-        (REPO / "aughor" / "agent" / "bootstrap.py").read_text(),
-        (REPO / "aughor" / "db" / "purge.py").read_text(),
+        (REPO / "pramanyx" / "agent" / "bootstrap.py").read_text(),
+        (REPO / "pramanyx" / "db" / "purge.py").read_text(),
     ))
 
 
@@ -148,8 +148,8 @@ def test_registered_hook_names_are_the_real_labels(_registered):
 def test_repeat_registration_cannot_duplicate_hooks():
     """A second registration must not double the hook list — duplicate hooks would
     double-count a purge and report more deleted than there was."""
-    from aughor.agent import bootstrap
-    from aughor.kernel.registries import purge_hooks
+    from pramanyx.agent import bootstrap
+    from pramanyx.kernel.registries import purge_hooks
 
     _force_register()
     first = len(purge_hooks._CONN)

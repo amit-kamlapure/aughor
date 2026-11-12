@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.candidates import (
+from pramanyx.ontology.candidates import (
     CANDIDATE_KINDS,
     ORIGINS,
     Candidate,
@@ -21,7 +21,7 @@ from aughor.ontology.candidates import (
     offerable,
     to_inbox_items,
 )
-from aughor.ontology.interchange import (
+from pramanyx.ontology.interchange import (
     BUNDLE_VERSION,
     SECTIONS,
     bundle_from_yaml,
@@ -34,7 +34,7 @@ from aughor.ontology.interchange import (
 @pytest.fixture(autouse=True)
 def vocab_root(tmp_path, monkeypatch):
 
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
 
 
 def _c(**kw) -> Candidate:
@@ -123,7 +123,7 @@ def test_the_vocabularies_are_typed_and_closed():
 def test_inbox_items_are_returned_not_written():
     """J10 — ONE queue. Returning items keeps the A4 inbox the single writer, so O4 does
     not become a second suggestion store."""
-    import aughor.ontology.candidates as C
+    import pramanyx.ontology.candidates as C
 
     c = bind(_c(), lambda _c: (True, ""))
     items = to_inbox_items([c])
@@ -145,7 +145,7 @@ class TestInterchange:
         assert set(b["sections"]) == set(SECTIONS)
 
     def test_export_carries_the_real_store_contents(self):
-        from aughor.ontology.vocabulary import add_synonym
+        from pramanyx.ontology.vocabulary import add_synonym
 
         add_synonym("c1", "metric", "gmv_eur", "revenue", source="human")
         b = export_bundle("c1").to_dict()
@@ -154,7 +154,7 @@ class TestInterchange:
     def test_export_import_export_is_identical(self):
         """THE gate. Anything less means one direction is lossy, and a lossy round-trip
         is worse than no interchange because it looks like a backup."""
-        from aughor.ontology.vocabulary import add_synonym, set_value_dictionary
+        from pramanyx.ontology.vocabulary import add_synonym, set_value_dictionary
 
         add_synonym("c1", "metric", "gmv_eur", "revenue", source="human")
         add_synonym("c1", "table", "orders", "sales", source="mined")
@@ -162,7 +162,7 @@ class TestInterchange:
         assert round_trips("c1")
 
     def test_importing_into_a_fresh_connection_adds_everything(self):
-        from aughor.ontology.vocabulary import add_synonym
+        from pramanyx.ontology.vocabulary import add_synonym
 
         add_synonym("src", "metric", "m", "revenue", source="human")
         bundle = export_bundle("src").to_dict()
@@ -173,7 +173,7 @@ class TestInterchange:
         """Overwriting a human's curation with a file's version is a decision a human
         makes. An importer that silently won is how connection-as-code becomes
         whoever-imported-last-wins."""
-        from aughor.ontology.vocabulary import add_synonym
+        from pramanyx.ontology.vocabulary import add_synonym
 
         add_synonym("dest", "metric", "m", "revenue", source="human")
         bundle = {"version": BUNDLE_VERSION, "connection_id": "src", "sections": {
@@ -197,7 +197,7 @@ class TestInterchange:
     def test_a_bundle_is_stable_yaml(self):
         """Two exports of one state must be byte-comparable or the round-trip gate means
         nothing."""
-        from aughor.ontology.vocabulary import add_synonym
+        from pramanyx.ontology.vocabulary import add_synonym
 
         add_synonym("c1", "metric", "m", "b")
         add_synonym("c1", "metric", "m", "a")

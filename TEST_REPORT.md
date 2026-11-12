@@ -1,4 +1,4 @@
-# Aughor — Platform Test Report
+# Pramanyx — Platform Test Report
 
 **Scope:** Exhaustive verification after the reusable-component refactor (Phases 1–3) — every backend endpoint, the write/background flows, the 8 Qdrant collections, and a walkthrough of every UI tab — mapped to the 75 features in `FEATURES.md`.
 
@@ -27,12 +27,12 @@
 | Collection | Count | Source feature |
 |---|---|---|
 | `sql_knowledge_base` | 252 | SQL KB (#21) |
-| `aughor_schema` | 1650 | Vector search over schema (#10) |
+| `pramanyx_schema` | 1650 | Vector search over schema (#10) |
 | `schema_suggestions` | 150 | Suggestions cache (#41) |
-| `aughor_investigations` | 9 | Prior investigations RAG (#11) |
-| `aughor_sql_examples` | 5 | KB pattern enrichment (#27) |
-| `aughor_documents` | populates on upload ✅ | Document ingestion (#57) |
-| `aughor_connection_kb` | feature-gated (knowledge connector) | Connection KB |
+| `pramanyx_investigations` | 9 | Prior investigations RAG (#11) |
+| `pramanyx_sql_examples` | 5 | KB pattern enrichment (#27) |
+| `pramanyx_documents` | populates on upload ✅ | Document ingestion (#57) |
+| `pramanyx_connection_kb` | feature-gated (knowledge connector) | Connection KB |
 | `org_intelligence` | feature-gated (promote insight) | Org-level ontology (#68) |
 
 ---
@@ -80,13 +80,13 @@ No console errors on any of the 16 surfaces.
 Coverage is layered: backend features by Part A (smoke + flows), UI features by Part B, refactor-touched components verified with real data.
 
 - **Verified rendering / responding (≈55 of 75):** all 16 UI surfaces in Part B (features cross-referenced inline), the four refactored components with real data, every GET endpoint, and the write flows in Part A (metric validate, monitor create+trigger, knowledge, document upload).
-- **Verified by construction (refactor):** #10 vector search (`aughor_schema` 1650), #11 prior-investigations RAG, #21 SQL KB (252), #27 KB enrichment, #41 suggestions cache (150) — all Qdrant-backed, counts confirmed.
+- **Verified by construction (refactor):** #10 vector search (`pramanyx_schema` 1650), #11 prior-investigations RAG, #21 SQL KB (252), #27 KB enrichment, #41 suggestions cache (150) — all Qdrant-backed, counts confirmed.
 - **LLM flows — focused driven pass:**
   - **#43 Business Ontology (auto-built)** — **VERIFIED**: rebuilt the analytics ontology fresh → **20 entities + 38 relationships** (HTTP 200). The LLM ontology build works end-to-end on a persistent connection.
   - **#1 Autonomous Investigative Loop — VERIFIED end-to-end.** Drove a Deep-Analysis investigation ("why do some franchises sell much more?") on the bakehouse canvas → **completed in 31.5s** with a full report: streaming AGENT TRACE (#18), question intake, baseline/anomaly assessment, collapsible SQL/evidence (#23), confidence + verdict. The agent ran 3 queries, hit a real data limitation (`sales_franchises` has no date column — `Binder Error: order_ts not found, candidate: zipcode`), **self-corrected (#2), and honestly returned "Not measurable (data gap)" at HIGH CONFIDENCE rather than hallucinating** — exactly the grounded behavior of #34 / #74. Baseline/statistical assessment (#3) ran.
   - **#42 background explorer / #47 state persistence** — workspace shows a persisted complete run (11 tables, 71 queries).
   - Still not separately driven: #44 domain build (rides the same loop, exercised partially by the above).
-- **Feature-gated (no applicable data here, not failures):** #57 doc ingestion populates on upload ✅; `aughor_connection_kb` needs a knowledge connector; `org_intelligence` needs a promoted insight.
+- **Feature-gated (no applicable data here, not failures):** #57 doc ingestion populates on upload ✅; `pramanyx_connection_kb` needs a knowledge connector; `org_intelligence` needs a promoted insight.
 
 **Bug found & fixed in this focused pass:** `/ontology/rebuild` returned a confusing **500** for an in-memory `local_upload` connection (the build re-opens the connection, which is empty for `local://` uploads, while the ERD works off cached schema). Now a graceful **422** with guidance ("re-upload to refresh"); persistent connections (analytics) unaffected → still 200.
 

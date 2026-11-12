@@ -32,29 +32,29 @@ import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_BACKEND = _ROOT / "aughor" / "routers" / "investigations.py"
+_BACKEND = _ROOT / "pramanyx" / "routers" / "investigations.py"
 #: The tool layer emits too (SP-9). The converse relay's `_forward` claims every frame it
 #: carries "was declared literally at an emit call the parser already read" — these files
 #: are where a TOOL's own frames are declared, so the parser must actually read them or
 #: the claim quietly stops being checked. `converse_tools` re-emits the core's names
 #: (sql/columns/rows/…); `spotlight_act` mints `proposal_staged`, the approval card's cue.
 _TOOL_SOURCES = [
-    _ROOT / "aughor" / "agent" / "converse_tools.py",
-    _ROOT / "aughor" / "agent" / "spotlight_act.py",
+    _ROOT / "pramanyx" / "agent" / "converse_tools.py",
+    _ROOT / "pramanyx" / "agent" / "spotlight_act.py",
     # AV-2 — `present` mints `answer_parts`, the answer vocabulary's frame.
-    _ROOT / "aughor" / "agent" / "present_tool.py",
+    _ROOT / "pramanyx" / "agent" / "present_tool.py",
     # Arc CT-5 — `draft_dashboard` announces its proposal with `proposal_staged`.
-    _ROOT / "aughor" / "agent" / "dashboard_tool.py",
+    _ROOT / "pramanyx" / "agent" / "dashboard_tool.py",
     # Arc SH, SH-4 — `show_rows` puts the rows a sheet question is about under the answer with `sheet_rows`.
-    _ROOT / "aughor" / "sheets" / "answer.py",
+    _ROOT / "pramanyx" / "sheets" / "answer.py",
 ]
 # CA-1 retired the 107-case reducer; the consumer side is now three artifacts.
 # `chatTurn.ts` PROJECTS a frame into the turn, `uiMessageAdapter.ts` routes the
-# prose frames to text channels, and `aughorUIDataTypes.ts` declares the frames
+# prose frames to text channels, and `pramanyxUIDataTypes.ts` declares the frames
 # that deliberately render nothing.
 _PROJECTION = _ROOT / "web" / "lib" / "chatTurn.ts"
 _ADAPTER = _ROOT / "web" / "lib" / "uiMessageAdapter.ts"
-_DATA_TYPES = _ROOT / "web" / "lib" / "aughorUIDataTypes.ts"
+_DATA_TYPES = _ROOT / "web" / "lib" / "pramanyxUIDataTypes.ts"
 
 _NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.briefing.compose import spec as P
-from aughor.briefing.compose.sources import BREAKDOWN_COLUMNS, Source
+from pramanyx.briefing.compose import spec as P
+from pramanyx.briefing.compose.sources import BREAKDOWN_COLUMNS, Source
 
 SOURCES = {
     "sales": Source(id="sales", label="Sales", kind="check", columns=["start", "value", "this_range"],

@@ -38,18 +38,18 @@
 
 ## Calls that write or spend when a page opens
 
-- **GET /control-room/needs-human** (`aughor/routers/control_room.py:432`) expires lapsed proposals and resumes parked automation runs whose approvals are answered. A resumed run can finish its remaining chain steps, including governed writes and sends. Three timers call it:
+- **GET /control-room/needs-human** (`pramanyx/routers/control_room.py:432`) expires lapsed proposals and resumes parked automation runs whose approvals are answered. A resumed run can finish its remaining chain steps, including governed writes and sends. Three timers call it:
   - the Agent Ops badge, every 20 s on every layer;
   - the Overview, every 15 s and on every `job.state` event;
   - Attention, every 10 s.
 
   The shell does not poll it, on purpose (`web/components/shell/useNavCounts.ts:17`).
-- **GET /catalog/tree** (`aughor/routers/catalog.py:273-279`) introspects every connection's warehouse and reconciles the metastore's schema rows. It fires from:
+- **GET /catalog/tree** (`pramanyx/routers/catalog.py:273-279`) introspects every connection's warehouse and reconciles the metastore's schema rows. It fires from:
   - opening the Create-agent dialog (Roster);
   - the Brain map / Intelligence when a connection has no declared schema;
   - expanding a pack in Settings ▸ System.
 - **POST /mcp-servers/{id}/discover** fires automatically on Settings ▸ Integrations for any MCP server that is signed in but was never discovered. It contacts the remote server and stores its tool list.
-- **GET /workspaces** (`aughor/routers/workspace.py:49`) runs `ensure_default_workspace()` on every call. That call creates the Default workspace if it is absent and adds newly registered connections to it.
+- **GET /workspaces** (`pramanyx/routers/workspace.py:49`) runs `ensure_default_workspace()` on every call. That call creates the Default workspace if it is absent and adds newly registered connections to it.
 - **GET /connections/{id}/health-scorecard** (Health) runs every targeted metric's SQL on the warehouse on every visit. This is warehouse spend; there is no model call.
 - **Outbound fetches on open that write nothing:** Spend and Models fetch the provider's price list (`/usage`, `/obs/usage-summary`, `/llm/models`), at most hourly.
 - **No model spend on open was found on any page.** Model spend happens only on a click:
@@ -143,7 +143,7 @@ _Source: web/components/ProcessHealthPanel.tsx (rendered from web/app/page.tsx:2
 - [ ] "no value" chip — a metric whose query failed or returned nothing (web/components/ProcessHealthPanel.tsx:154)
 
 ### Loads on open
-- [ ] GET /connections/{conn_id}/health-scorecard — every targeted metric scored against its target (web/lib/api.ts:1212 → aughor/routers/metrics.py:1357) [SPENDS ON OPEN (warehouse): runs each targeted metric's governed SQL on the connection every visit and on Retry; no write, no model call]
+- [ ] GET /connections/{conn_id}/health-scorecard — every targeted metric scored against its target (web/lib/api.ts:1212 → pramanyx/routers/metrics.py:1357) [SPENDS ON OPEN (warehouse): runs each targeted metric's governed SQL on the connection every visit and on Retry; no write, no model call]
 
 **Top rows today:** no header or toolbar row — the page opens straight on the four figures (On target · Warning · Off target · Not computed); its only actions are per-row Ask why and the empty-state Set a target.
 
@@ -221,7 +221,7 @@ _Source: web/components/MonitorsPanel.tsx (rendered by web/components/Operations
 
 ### URL params / deep links
 - [ ] No URL params read or written by the panel; reached as `?tab=operations&layer=monitors` via the shell
-- [ ] sessionStorage `aughor.monitorDraft.v1` — one-shot hand-off from the SQL editor's Schedule, consumed on mount, only for the same connection (web/lib/query/monitorDraft.ts:20, read web/components/MonitorsPanel.tsx:154)
+- [ ] sessionStorage `pramanyx.monitorDraft.v1` — one-shot hand-off from the SQL editor's Schedule, consumed on mount, only for the same connection (web/lib/query/monitorDraft.ts:20, read web/components/MonitorsPanel.tsx:154)
 
 ### Empty / error / loading / withheld states
 - [ ] "Loading monitors…" — first read (web/components/MonitorsPanel.tsx:359)
@@ -235,16 +235,16 @@ _Source: web/components/MonitorsPanel.tsx (rendered by web/components/Operations
 - [ ] "Alerts stay in-app until a webhook or Slack trigger exists under Operations ▸ Notifications." — no triggers (web/components/MonitorsPanel.tsx:937)
 - [ ] "\"<channel>\" names no destination, so these alerts are sent nowhere. Choose one." — stranded channel (web/components/MonitorsPanel.tsx:942)
 - [ ] Backtest/drill outcomes: "The backtest could not run.", "The rule did not fire on a synthetic outlier: …", "The rule fired, but delivery failed: …", "The rule fired on a synthetic outlier — no message was sent.", "Delivered a [DRILL] alert through <channel>." (web/components/MonitorsPanel.tsx:625-631)
-- [ ] Withheld-by-scope: monitors and alerts filtered fail-closed by workspace and organisation server-side (an unknown workspace returns nothing, not an error) (aughor/routers/monitors.py:139-146, :327-339)
+- [ ] Withheld-by-scope: monitors and alerts filtered fail-closed by workspace and organisation server-side (an unknown workspace returns nothing, not an error) (pramanyx/routers/monitors.py:139-146, :327-339)
 
 ### Loads on open
-- [ ] GET /monitors?conn_id=&workspace_id= — the monitors (web/lib/api.ts:5495 → aughor/routers/monitors.py:135)
-- [ ] GET /alerts?conn_id=&limit=100&workspace_id= — latest 100 alerts, recovery-annotated (web/lib/api.ts:5637 → aughor/routers/monitors.py:318)
-- [ ] GET /metrics — metric labels for rows (failure tolerated) (web/lib/api.ts:1218 → aughor/routers/metrics.py:106)
-- [ ] GET /actions/triggers — notification destinations, credential URL masked (failure tolerated → null) (web/lib/api.ts:7468 → aughor/routers/actions.py:103)
-- [ ] GET /monitors/{id}/proof — one per monitor, after the list (web/lib/api.ts:5594 → aughor/routers/monitors.py:388)
+- [ ] GET /monitors?conn_id=&workspace_id= — the monitors (web/lib/api.ts:5495 → pramanyx/routers/monitors.py:135)
+- [ ] GET /alerts?conn_id=&limit=100&workspace_id= — latest 100 alerts, recovery-annotated (web/lib/api.ts:5637 → pramanyx/routers/monitors.py:318)
+- [ ] GET /metrics — metric labels for rows (failure tolerated) (web/lib/api.ts:1218 → pramanyx/routers/metrics.py:106)
+- [ ] GET /actions/triggers — notification destinations, credential URL masked (failure tolerated → null) (web/lib/api.ts:7468 → pramanyx/routers/actions.py:103)
+- [ ] GET /monitors/{id}/proof — one per monitor, after the list (web/lib/api.ts:5594 → pramanyx/routers/monitors.py:388)
 - [ ] GET /metrics?connection_id= — only when the form opens, the form connection's metrics (cached) (web/components/MonitorsPanel.tsx:756 → web/components/metrics/MetricField.tsx)
-- [ ] No GET found that writes; Run now (POST /monitors/{id}/trigger) runs the monitor's query on the warehouse but files and sends nothing (aughor/routers/monitors.py:286)
+- [ ] No GET found that writes; Run now (POST /monitors/{id}/trigger) runs the monitor's query on the warehouse but files and sends nothing (pramanyx/routers/monitors.py:286)
 
 **Top rows today:** one row — tab strip "Overview | Alerts (badge)" on the left, "+ New monitor" at its right end; then the four figures (Monitors · Open alerts · Proven to fire · Checks a day).
 
@@ -261,7 +261,7 @@ _Source: web/components/AgenticOpsWorkspace.tsx, web/components/Workspace.tsx, w
 - [ ] Layer tab "By duty" (`duties`) — the week by duty (web/components/AgenticOpsWorkspace.tsx:97)
 - [ ] Layer tab "Action centre" (`action-centre`) — every declared action and its level (web/components/AgenticOpsWorkspace.tsx:101)
 - [ ] Layer tab "Developer" (`developer`) — packs, doors, service principals, kits, agent contract (web/components/AgenticOpsWorkspace.tsx:102)
-- [ ] "?" help button (aria "What is this layer?") at the tab row's right end — opens Spotlight (the ⌘K palette) on the question "help ao", a deterministic platform help topic, not a model call (web/components/AgenticOpsWorkspace.tsx:230; web/components/Workspace.tsx:84-89; aughor/agent/platform_tools.py:563)
+- [ ] "?" help button (aria "What is this layer?") at the tab row's right end — opens Spotlight (the ⌘K palette) on the question "help ao", a deterministic platform help topic, not a model call (web/components/AgenticOpsWorkspace.tsx:230; web/components/Workspace.tsx:84-89; pramanyx/agent/platform_tools.py:563)
 - [ ] "Connection" select in the context bar — sets the shell's selected connection; options are every connection by name, "choose…" when none is chosen; hover says "Scopes Automations and the Action centre; the Hub and Departures stay hub-wide"; rendered only when the shell passes the setter AND at least one connection was read (web/components/AgenticOpsWorkspace.tsx:231-243)
 - [ ] "Range" segmented control 1h / 6h / 24h / 7d / 30d — the ONE time window every layer reads (Overview figures, chart, runs, Roster); tooltips "Last hour" … "Last 30 days"; none selected while a brush stands (web/components/agentops/RangePicker.tsx:29-32; web/components/agentops/useTimeRange.ts:20-26)
 - [ ] "brushed · clear" link — appears while a chart brush narrows the range; returns to the named range (web/components/agentops/RangePicker.tsx:33-38)
@@ -301,9 +301,9 @@ _Source: web/components/AgenticOpsWorkspace.tsx, web/components/Workspace.tsx, w
 - [ ] Badge reads fail silently (`.catch(() => {})`) — a failed read shows no badge, indistinguishable from zero (web/components/AgenticOpsWorkspace.tsx:194-197)
 
 ### Loads on open
-- [ ] GET /connections — once, for the picker and run names (web/lib/api.ts:30 → aughor/routers/connections.py:82)
-- [ ] GET /control-room/needs-human?limit=1 — on mount and every 20 s while the browser tab is visible, from EVERY layer, for the Attention badge (web/components/AgenticOpsWorkspace.tsx:193-200; web/lib/api.ts:11429 → aughor/routers/control_room.py:432) [WRITES ON OPEN: runs `expire_stale()` — flips every lapsed pending proposal to `expired` (aughor/actions/inbox.py:562) — and `resume_parked_runs()` — resumes every parked automation run whose approvals are all answered, i.e. finishes those chains' remaining steps, which can dispatch governed writes/sends and any model step they hold (aughor/automations/engine.py:3266). `limit=1` trims rows only; counts still scan 500 per source (control_room.py:427-449)]
-- [ ] GET /departures/summary — on mount and every 20 s, for the Departures badge; read-only (also reads ask-door uptake from the session log) (web/lib/api.ts:6975 → aughor/routers/departures.py:75)
+- [ ] GET /connections — once, for the picker and run names (web/lib/api.ts:30 → pramanyx/routers/connections.py:82)
+- [ ] GET /control-room/needs-human?limit=1 — on mount and every 20 s while the browser tab is visible, from EVERY layer, for the Attention badge (web/components/AgenticOpsWorkspace.tsx:193-200; web/lib/api.ts:11429 → pramanyx/routers/control_room.py:432) [WRITES ON OPEN: runs `expire_stale()` — flips every lapsed pending proposal to `expired` (pramanyx/actions/inbox.py:562) — and `resume_parked_runs()` — resumes every parked automation run whose approvals are all answered, i.e. finishes those chains' remaining steps, which can dispatch governed writes/sends and any model step they hold (pramanyx/automations/engine.py:3266). `limit=1` trims rows only; counts still scan 500 per source (control_room.py:427-449)]
+- [ ] GET /departures/summary — on mount and every 20 s, for the Departures badge; read-only (also reads ask-door uptake from the session log) (web/lib/api.ts:6975 → pramanyx/routers/departures.py:75)
 - [ ] Each layer's chunk and reads load on its first visit, then stay mounted (keep-alive); hidden layers and a background browser tab stop polling (web/components/Workspace.tsx:65-102; web/lib/useVisiblePoll.ts)
 
 **Top rows today:** context bar: "Connection" select · layer tab row: Overview · Roster · Attention [badge] · Automations · Hub · Departures [badge] · By duty · Action centre · Developer · "?" (right end) · toolbar: "Range" 1h/6h/24h/7d/30d · "brushed · clear" (when brushed) · "+ Create agent" (right end).
@@ -485,22 +485,22 @@ Waterfall
 - [ ] Kill failure is swallowed (`.catch(() => {})`) — nothing is said (web/components/FleetOverviewPanel.tsx:686)
 
 ### Loads on open
-- [ ] GET /control-room/fleet?range=…|since&until[&include_runners=true] — on open, every 15 s while visible, and on every `job.state` kernel event; read-only (web/lib/api.ts:11383 → aughor/routers/control_room.py:138)
-- [ ] SSE /events/stream — the shared kernel event stream, filtered to `job.state`, drives refetches (web/components/FleetOverviewPanel.tsx:291-295; web/lib/events.ts → aughor/routers/events.py:69)
-- [ ] GET /jobs?state=active&limit=200 — same 15 s / event cycle (web/lib/api.ts:9219 → aughor/routers/jobs.py:71)
-- [ ] GET /obs/timeseries?source=jobs&range — same cycle (web/lib/api.ts:11550 → aughor/routers/obs.py:678)
-- [ ] GET /control-room/needs-human?limit=100 — same 15 s cycle plus every `job.state` event (web/lib/api.ts:11429 → aughor/routers/control_room.py:432) [WRITES ON OPEN: expires lapsed proposals and resumes parked automation runs whose approvals are answered — see chrome; this layer adds its own calls on top of the workspace's 20 s badge poll]
-- [ ] GET /obs/usage-summary?range — same cycle (web/lib/api.ts:11616 → aughor/routers/obs.py:716) [outbound on open: `ensure_catalogue_prices()` fetches the provider (OpenRouter) model catalogue at most hourly into an in-process price cache (aughor/obs/usage.py:177, 223); no model spend]
-- [ ] GET /activity?limit=1 — once, for the Live events fold's count (web/lib/api.ts:11627 → aughor/routers/obs.py:828)
-- [ ] GET /traces?limit=1 — once, for the Every trace fold's count (web/lib/api.ts:11235 → aughor/routers/obs.py:176)
-- [ ] GET /investigations?limit=30 — Deep runs, on open and every 20 s (web/lib/api.ts:11701 → aughor/routers/investigations.py:6384)
+- [ ] GET /control-room/fleet?range=…|since&until[&include_runners=true] — on open, every 15 s while visible, and on every `job.state` kernel event; read-only (web/lib/api.ts:11383 → pramanyx/routers/control_room.py:138)
+- [ ] SSE /events/stream — the shared kernel event stream, filtered to `job.state`, drives refetches (web/components/FleetOverviewPanel.tsx:291-295; web/lib/events.ts → pramanyx/routers/events.py:69)
+- [ ] GET /jobs?state=active&limit=200 — same 15 s / event cycle (web/lib/api.ts:9219 → pramanyx/routers/jobs.py:71)
+- [ ] GET /obs/timeseries?source=jobs&range — same cycle (web/lib/api.ts:11550 → pramanyx/routers/obs.py:678)
+- [ ] GET /control-room/needs-human?limit=100 — same 15 s cycle plus every `job.state` event (web/lib/api.ts:11429 → pramanyx/routers/control_room.py:432) [WRITES ON OPEN: expires lapsed proposals and resumes parked automation runs whose approvals are answered — see chrome; this layer adds its own calls on top of the workspace's 20 s badge poll]
+- [ ] GET /obs/usage-summary?range — same cycle (web/lib/api.ts:11616 → pramanyx/routers/obs.py:716) [outbound on open: `ensure_catalogue_prices()` fetches the provider (OpenRouter) model catalogue at most hourly into an in-process price cache (pramanyx/obs/usage.py:177, 223); no model spend]
+- [ ] GET /activity?limit=1 — once, for the Live events fold's count (web/lib/api.ts:11627 → pramanyx/routers/obs.py:828)
+- [ ] GET /traces?limit=1 — once, for the Every trace fold's count (web/lib/api.ts:11235 → pramanyx/routers/obs.py:176)
+- [ ] GET /investigations?limit=30 — Deep runs, on open and every 20 s (web/lib/api.ts:11701 → pramanyx/routers/investigations.py:6384)
 - [ ] GET /obs/timeseries?group=model&measure=tokens — only after "Tokens by model" is chosen, then every 15 s (web/components/FleetOverviewPanel.tsx:256-263)
 - [ ] GET /jobs?kind=<k>&range&limit=200 — one per agent kind, only when the run filter is not "Running", every 30 s (web/components/FleetOverviewPanel.tsx:308-321)
-- [ ] On a deep run's Open: GET /traces?investigation_id&limit=1, GET /investigations/{id}/graph, GET /traces/{id} (web/components/agentops/DeepRuns.tsx:141; web/components/agentops/RunPhases.tsx:76 → aughor/routers/investigations.py:6417; aughor/routers/obs.py:246)
-- [ ] On Live events' first open: GET /activity?kind&errors_only&limit=100|300&model&provider&role&range + SSE /activity/stream?kind&errors_only&since_seq, 15 s fallback poll when the stream is down (web/components/ActivityStreamPanel.tsx:93-137 → aughor/routers/obs.py:828, 868)
+- [ ] On a deep run's Open: GET /traces?investigation_id&limit=1, GET /investigations/{id}/graph, GET /traces/{id} (web/components/agentops/DeepRuns.tsx:141; web/components/agentops/RunPhases.tsx:76 → pramanyx/routers/investigations.py:6417; pramanyx/routers/obs.py:246)
+- [ ] On Live events' first open: GET /activity?kind&errors_only&limit=100|300&model&provider&role&range + SSE /activity/stream?kind&errors_only&since_seq, 15 s fallback poll when the stream is down (web/components/ActivityStreamPanel.tsx:93-137 → pramanyx/routers/obs.py:828, 868)
 - [ ] On Every trace's first open: GET /traces?filters&limit&offset; on selecting a trace GET /traces/{id} (web/components/TraceExplorerPanel.tsx:78-98, 345-353)
-- [ ] Logs tab: GET /traces/{id}/logs; Feedback tab: GET /traces/{id}/feedback and GET /verify/verdicts?connection_id&limit=50 (web/lib/api.ts:11783, 11754, 11680 → aughor/routers/obs.py:499, 473; aughor/routers/verify.py:56)
-- [ ] Writes by controls (not on open): PATCH /agents/{id} or /agents/custom/{id} (Pause/Resume); POST /jobs/{id}/cancel (Kill); POST /kinetic-actions/inbox/{id}/accept|reject; POST /traces/{id}/feedback (also pins the run's evidence past the 14-day sweep, aughor/routers/obs.py:427, 469); POST /verify/verdict (web/lib/api.ts:9291, 10433, 9238, 7401, 7434, 11739, 428)
+- [ ] Logs tab: GET /traces/{id}/logs; Feedback tab: GET /traces/{id}/feedback and GET /verify/verdicts?connection_id&limit=50 (web/lib/api.ts:11783, 11754, 11680 → pramanyx/routers/obs.py:499, 473; pramanyx/routers/verify.py:56)
+- [ ] Writes by controls (not on open): PATCH /agents/{id} or /agents/custom/{id} (Pause/Resume); POST /jobs/{id}/cancel (Kill); POST /kinetic-actions/inbox/{id}/accept|reject; POST /traces/{id}/feedback (also pins the run's evidence past the 14-day sweep, pramanyx/routers/obs.py:427, 469); POST /verify/verdict (web/lib/api.ts:9291, 10433, 9238, 7401, 7434, 11739, 428)
 
 **Top rows today:** the Overview has no header or toolbar of its own (it lives under the workspace chrome); its top is the four figure tiles Runs · Failed · Running now · Model spend, then the "Needs you" card whose label row carries "N items waiting · Open Attention". Card-level header controls further down: the chart's "Runs by agent / Tokens by model" segmented + range caption, and the Runs card's "Running / Failed or stopped / Succeeded / All" segmented.
 
@@ -743,7 +743,7 @@ The Roster is an INDEX (one table, two groups); clicking a row replaces the inde
 - [ ] "No runs in <window>." (Overview strip, Recent runs, Runs tab) (web/components/AgenticAgentsPanel.tsx:641, :810, :820)
 - [ ] Overview Model calls / Tokens / Cost tiles are omitted when spend is not measured — nothing on screen says why (web/components/AgenticAgentsPanel.tsx:796)
 - [ ] Cost sub "no price is declared for the model it ran on" / "N calls unpriced — a floor, not a total" / "a floor — some calls unpriced" (web/components/AgenticAgentsPanel.tsx:784, :740)
-- [ ] Spend footnote: "Priced from each provider's published catalogue, or a rate the operator declared (AUGHOR_MODEL_PRICES). A model nothing prices counts as unpriced, never as free." (web/components/AgenticAgentsPanel.tsx:751)
+- [ ] Spend footnote: "Priced from each provider's published catalogue, or a rate the operator declared (PRAMANYX_MODEL_PRICES). A model nothing prices counts as unpriced, never as free." (web/components/AgenticAgentsPanel.tsx:751)
 - [ ] Details rail "any — the asker's connection", "all schemas", "nothing — no grants", "No instructions — the agent answers on the platform's defaults." (web/components/AgenticAgentsPanel.tsx:577, :598)
 - [ ] Quality "The learning loop is off (Settings ▸ Organization ▸ What Pramanyx may do): verdicts … are recorded but teach it nothing as itself — N so far." (web/components/AgenticAgentsPanel.tsx:936)
 - [ ] Quality "Candidates — waiting for a person's SQL … A candidate counts for nothing until you certify it" (web/components/AgenticAgentsPanel.tsx:945)
@@ -774,22 +774,22 @@ The Roster is an INDEX (one table, two groups); clicking a row replaces the inde
 - [ ] Reach "Clipboard blocked by the browser — the JSON is selected, press ⌘C."; Slack errors in red; success "Slack bot X is live…" / "created and verified against Slack" (web/components/agentops/AgentSlackDoor.tsx:139, :412, :300, :375)
 
 ### Loads on open
-- [ ] GET /agents?workspace_id&range|since|until — built-in roster with governance and windowed spend (web/lib/api.ts:9278 → aughor/routers/agents.py:67)
-- [ ] GET /agents/custom — custom agents of the active workspace (web/lib/api.ts:10268 → aughor/routers/agents.py:273)
-- [ ] GET /control-room/fleet?range… — the row figures, one read for the whole table, re-read on range change (web/lib/api.ts:11383 → aughor/routers/control_room.py:138)
-- [ ] Workspace poll, every 20 s while the browser tab is visible, from any layer including this one: GET /control-room/needs-human?limit=1 — WRITES ON OPEN: expires stale proposals and resumes parked runs (web/components/AgenticOpsWorkspace.tsx:194, :200 → web/lib/api.ts:11429 → aughor/routers/control_room.py:432)
-- [ ] Same poll: GET /departures/summary — Departures badge (web/components/AgenticOpsWorkspace.tsx:196 → web/lib/api.ts:6975 → aughor/routers/departures.py:75)
-- [ ] Workspace once: GET /connections — the connection picker (web/components/AgenticOpsWorkspace.tsx:177 → web/lib/api.ts:30 → aughor/routers/connections.py:82)
-- [ ] Custom agent page: GET /connections (connection name), GET /agents/custom/{id}/observability?range… (Overview; also MLflow trace stats when configured), GET /documents, GET /packs (Details rail) (web/components/AgenticAgentsPanel.tsx:448, :621, :550 → aughor/routers/agents.py:738, aughor/routers/knowledge.py:598, aughor/routers/packs.py:66)
-- [ ] Runs / Spend tab: GET /agents/custom/{id}/observability again (each tab its own read) (web/components/AgenticAgentsPanel.tsx:634, :729 → aughor/routers/agents.py:738)
-- [ ] Doors tab: GET /slack-bots, GET /automations, GET /agents/custom/{id}/doors (web/components/agentops/AgentDoors.tsx:68 → aughor/routers/slackbots.py:40, aughor/routers/automations.py:219, aughor/routers/agents.py:657)
-- [ ] Map tab: GET /slack-bots, GET /automations, GET /obs/agent-alerts/rules, GET /connections (web/components/agentops/AgentMap.tsx:148 → aughor/routers/obs.py:952)
-- [ ] Alerts tab: GET /obs/agent-alerts/rules, GET /obs/agent-alerts/metrics (web/components/agentops/AgentAlertRulesPanel.tsx:83, :93 → web/lib/api.ts:11473, :11482 → aughor/routers/obs.py:952, :942)
-- [ ] Quality tab: GET /agents/custom/{id}/goldens, GET /agents/custom/{id}/learning (web/components/AgenticAgentsPanel.tsx:877 → web/lib/api.ts:10572, :10542 → aughor/routers/agents.py:570, :725)
-- [ ] Setup tab: GET /connections, /documents, /packs; GET /ontology/kinetic-actions?conn… (grants roster, failure read as none); GET /agents/custom/{id}/guardrails; GET /agents/custom/{id}/revisions (web/components/AgenticAgentsPanel.tsx:1104, :1116, :1377, :1466 → web/lib/api.ts:10297, :10227, :10248 → aughor/routers/ontology.py:1469, aughor/routers/agents.py:504, :449)
-- [ ] Built-in agent page: GET /jobs?kind=<k>&limit=20&range… once per owned job kind; GET /obs/agent-alerts/rules (Map); GET /llm/config (model pin, non-reserved only) (web/components/AgenticAgentsPanel.tsx:1595, :685, :1861 → web/lib/api.ts:9219, :8903 → aughor/routers/jobs.py:71, aughor/routers/llm.py:21)
-- [ ] Create dialog: GET /agents/templates, GET /connections, GET /documents, GET /packs, GET /catalog/tree — WRITES ON OPEN: the tree introspects every connection's warehouse and reconciles the metastore's schema rows (set_catalog_schemas) (web/components/agentops/CreateAgentFlow.tsx:148 → web/lib/api.ts:10345, :945 → aughor/routers/agents.py:281, aughor/routers/catalog.py:234, :276)
-- [ ] Clicks that SPEND: "Draft it" / "Draft again" (POST /agents/custom/propose), "Draft questions" (POST /agents/custom/{id}/goldens/draft), "Run evaluation" (POST /agents/custom/{id}/evaluate) (web/lib/api.ts:10406, :10560, :10596 → aughor/routers/agents.py:332, :641, :810)
+- [ ] GET /agents?workspace_id&range|since|until — built-in roster with governance and windowed spend (web/lib/api.ts:9278 → pramanyx/routers/agents.py:67)
+- [ ] GET /agents/custom — custom agents of the active workspace (web/lib/api.ts:10268 → pramanyx/routers/agents.py:273)
+- [ ] GET /control-room/fleet?range… — the row figures, one read for the whole table, re-read on range change (web/lib/api.ts:11383 → pramanyx/routers/control_room.py:138)
+- [ ] Workspace poll, every 20 s while the browser tab is visible, from any layer including this one: GET /control-room/needs-human?limit=1 — WRITES ON OPEN: expires stale proposals and resumes parked runs (web/components/AgenticOpsWorkspace.tsx:194, :200 → web/lib/api.ts:11429 → pramanyx/routers/control_room.py:432)
+- [ ] Same poll: GET /departures/summary — Departures badge (web/components/AgenticOpsWorkspace.tsx:196 → web/lib/api.ts:6975 → pramanyx/routers/departures.py:75)
+- [ ] Workspace once: GET /connections — the connection picker (web/components/AgenticOpsWorkspace.tsx:177 → web/lib/api.ts:30 → pramanyx/routers/connections.py:82)
+- [ ] Custom agent page: GET /connections (connection name), GET /agents/custom/{id}/observability?range… (Overview; also MLflow trace stats when configured), GET /documents, GET /packs (Details rail) (web/components/AgenticAgentsPanel.tsx:448, :621, :550 → pramanyx/routers/agents.py:738, pramanyx/routers/knowledge.py:598, pramanyx/routers/packs.py:66)
+- [ ] Runs / Spend tab: GET /agents/custom/{id}/observability again (each tab its own read) (web/components/AgenticAgentsPanel.tsx:634, :729 → pramanyx/routers/agents.py:738)
+- [ ] Doors tab: GET /slack-bots, GET /automations, GET /agents/custom/{id}/doors (web/components/agentops/AgentDoors.tsx:68 → pramanyx/routers/slackbots.py:40, pramanyx/routers/automations.py:219, pramanyx/routers/agents.py:657)
+- [ ] Map tab: GET /slack-bots, GET /automations, GET /obs/agent-alerts/rules, GET /connections (web/components/agentops/AgentMap.tsx:148 → pramanyx/routers/obs.py:952)
+- [ ] Alerts tab: GET /obs/agent-alerts/rules, GET /obs/agent-alerts/metrics (web/components/agentops/AgentAlertRulesPanel.tsx:83, :93 → web/lib/api.ts:11473, :11482 → pramanyx/routers/obs.py:952, :942)
+- [ ] Quality tab: GET /agents/custom/{id}/goldens, GET /agents/custom/{id}/learning (web/components/AgenticAgentsPanel.tsx:877 → web/lib/api.ts:10572, :10542 → pramanyx/routers/agents.py:570, :725)
+- [ ] Setup tab: GET /connections, /documents, /packs; GET /ontology/kinetic-actions?conn… (grants roster, failure read as none); GET /agents/custom/{id}/guardrails; GET /agents/custom/{id}/revisions (web/components/AgenticAgentsPanel.tsx:1104, :1116, :1377, :1466 → web/lib/api.ts:10297, :10227, :10248 → pramanyx/routers/ontology.py:1469, pramanyx/routers/agents.py:504, :449)
+- [ ] Built-in agent page: GET /jobs?kind=<k>&limit=20&range… once per owned job kind; GET /obs/agent-alerts/rules (Map); GET /llm/config (model pin, non-reserved only) (web/components/AgenticAgentsPanel.tsx:1595, :685, :1861 → web/lib/api.ts:9219, :8903 → pramanyx/routers/jobs.py:71, pramanyx/routers/llm.py:21)
+- [ ] Create dialog: GET /agents/templates, GET /connections, GET /documents, GET /packs, GET /catalog/tree — WRITES ON OPEN: the tree introspects every connection's warehouse and reconciles the metastore's schema rows (set_catalog_schemas) (web/components/agentops/CreateAgentFlow.tsx:148 → web/lib/api.ts:10345, :945 → pramanyx/routers/agents.py:281, pramanyx/routers/catalog.py:234, :276)
+- [ ] Clicks that SPEND: "Draft it" / "Draft again" (POST /agents/custom/propose), "Draft questions" (POST /agents/custom/{id}/goldens/draft), "Run evaluation" (POST /agents/custom/{id}/evaluate) (web/lib/api.ts:10406, :10560, :10596 → pramanyx/routers/agents.py:332, :641, :810)
 
 **Top rows today:** (workspace, above the layer) context bar: Connection select (scopes Automations and Action centre, not the Roster) · layer tabs: Overview, Roster, Attention (badge), Automations, Hub, Departures (badge), By duty, Action centre, Developer, "?" help · toolbar: Range picker … "+ Create agent" (right end). Roster index has no header of its own — its first row is the in-table group row "Custom agents" … "+ Create agent". An agent page's header row: "Agents" / <name> · chips (custom agent, eval chip, active/paused; or built-in, state) … "Chat", "Pause/Resume"; then the tab row Overview · Runs · Doors · Map · Alerts · Quality · Spend · Setup (custom agents only).
 
@@ -863,14 +863,14 @@ Approval card (inbox proposals, and automation approvals that carry a proposal i
 - [ ] Connection names fail silently (row shows the label helper's fallback) (web/components/NeedsHumanPanel.tsx:81, 205)
 
 ### Loads on open
-- [ ] GET /control-room/needs-human?limit=100 — on open and every 10 s while the layer is visible; overlapping replies ordered so a stale one never replaces a newer one (web/components/NeedsHumanPanel.tsx:91-108; web/lib/api.ts:11429 → aughor/routers/control_room.py:432) [WRITES ON OPEN: `expire_stale()` flips lapsed pending proposals to `expired`; `resume_parked_runs()` resumes parked automation runs whose approvals are answered (can dispatch their remaining governed steps). With the workspace's 20 s badge poll, this sweep runs about every 10 s and 20 s concurrently while Attention is open]
+- [ ] GET /control-room/needs-human?limit=100 — on open and every 10 s while the layer is visible; overlapping replies ordered so a stale one never replaces a newer one (web/components/NeedsHumanPanel.tsx:91-108; web/lib/api.ts:11429 → pramanyx/routers/control_room.py:432) [WRITES ON OPEN: `expire_stale()` flips lapsed pending proposals to `expired`; `resume_parked_runs()` resumes parked automation runs whose approvals are answered (can dispatch their remaining governed steps). With the workspace's 20 s badge poll, this sweep runs about every 10 s and 20 s concurrently while Attention is open]
 - [ ] GET /connections — once, for row connection names (web/components/NeedsHumanPanel.tsx:81; web/lib/api.ts:30)
-- [ ] GET /obs/agent-alerts/rules?enabled_only=false (web/components/agentops/AgentAlertRulesPanel.tsx:83; web/lib/api.ts:11473 → aughor/routers/obs.py:952)
-- [ ] GET /agents/custom — for the Scope select and rule labels (web/components/agentops/AgentAlertRulesPanel.tsx:86; web/lib/api.ts:10268 → aughor/routers/agents.py:273)
-- [ ] GET /obs/agent-alerts/metrics — the metric and comparator vocabulary (web/components/agentops/AgentAlertRulesPanel.tsx:93; web/lib/api.ts:11482 → aughor/routers/obs.py:942)
-- [ ] GET /kinetic-actions/inbox/{id} — per approval card, then every 15 s while it stays pending (web/components/ProposalCard.tsx:619-637; web/lib/api.ts:7415 → aughor/routers/kinetic.py:249)
+- [ ] GET /obs/agent-alerts/rules?enabled_only=false (web/components/agentops/AgentAlertRulesPanel.tsx:83; web/lib/api.ts:11473 → pramanyx/routers/obs.py:952)
+- [ ] GET /agents/custom — for the Scope select and rule labels (web/components/agentops/AgentAlertRulesPanel.tsx:86; web/lib/api.ts:10268 → pramanyx/routers/agents.py:273)
+- [ ] GET /obs/agent-alerts/metrics — the metric and comparator vocabulary (web/components/agentops/AgentAlertRulesPanel.tsx:93; web/lib/api.ts:11482 → pramanyx/routers/obs.py:942)
+- [ ] GET /kinetic-actions/inbox/{id} — per approval card, then every 15 s while it stays pending (web/components/ProposalCard.tsx:619-637; web/lib/api.ts:7415 → pramanyx/routers/kinetic.py:249)
 - [ ] GET /rbac/me — cached once per token, to word "by you" on cards (web/components/ProposalCard.tsx:363; web/lib/useMe.ts:25; web/lib/api.ts:9786)
-- [ ] Writes by controls (not on open): POST /obs/agent-alerts/rules (save, enable/disable); DELETE /obs/agent-alerts/rules/{id}; POST /obs/agent-alerts/rules/{id}/test [evaluates with the quiet period OFF — a crossing rule fires a real alert event (and its channel)] (aughor/routers/obs.py:998-1014); POST /obs/agent-alerts/events/{id}/ack; POST /kinetic-actions/inbox/{id}/accept (actor "control-room", mint flag, open-choice fills) | /reject (web/lib/api.ts:11488, 11498, 11506, 11518, 7401, 7434)
+- [ ] Writes by controls (not on open): POST /obs/agent-alerts/rules (save, enable/disable); DELETE /obs/agent-alerts/rules/{id}; POST /obs/agent-alerts/rules/{id}/test [evaluates with the quiet period OFF — a crossing rule fires a real alert event (and its channel)] (pramanyx/routers/obs.py:998-1014); POST /obs/agent-alerts/events/{id}/ack; POST /kinetic-actions/inbox/{id}/accept (actor "control-room", mint flag, open-choice fills) | /reject (web/lib/api.ts:11488, 11498, 11506, 11518, 7401, 7434)
 
 **Top rows today:** no header or toolbar of its own (under the workspace chrome). The first block is the "Alert rules" card whose header row holds "Alert rules · N of M enabled" and "New rule"; under it the stat row Waiting on a human · Inbox proposals · Paused deep runs · Automation approvals · Agent alerts · Broken automations · Oldest waiting.
 
@@ -964,8 +964,8 @@ _Source: web/components/AutomationsPanel.tsx (+ web/components/AutomationGraph.t
 - [ ] Binding-filter banner "can bind <step.key>" with clear × (web/components/automations/AutomationPalette.tsx:303)
 - [ ] Row "+" add button (click adds at viewport centre) and drag-to-canvas (ready rows only) (web/components/automations/AutomationPalette.tsx:167, :207)
 - [ ] Fold "N steps need setup" per group (gated rows collapsed when not searching) (web/components/automations/AutomationPalette.tsx:372)
-- [ ] Trigger rows (server-served, aughor/automations/palette.py:69): Schedule, Webhook, Metric, Source change, New entity, Promise breached, Objects admitted, New finding (web/components/automations/AutomationPalette.tsx:365)
-- [ ] Action rows (aughor/automations/palette.py:103): Investigate, Post to Slack, Notify, Deliver briefing, Declared action, Run a chain, Use an integration, Governed metric, Call an MCP tool, Synthesize, Trusted query, Measure expectations (web/components/automations/AutomationPalette.tsx:365)
+- [ ] Trigger rows (server-served, pramanyx/automations/palette.py:69): Schedule, Webhook, Metric, Source change, New entity, Promise breached, Objects admitted, New finding (web/components/automations/AutomationPalette.tsx:365)
+- [ ] Action rows (pramanyx/automations/palette.py:103): Investigate, Post to Slack, Notify, Deliver briefing, Declared action, Run a chain, Use an integration, Governed metric, Call an MCP tool, Synthesize, Trusted query, Measure expectations (web/components/automations/AutomationPalette.tsx:365)
 
 #### Step editor dialog — trigger node ("When (all match|any match)")
 - [ ] Trigger kind select per condition: Schedule, Webhook, Metric, Source change, New entity, Promise breached, New finding, Objects admitted (web/components/automations/AutomationRows.tsx:613)
@@ -1097,7 +1097,7 @@ _Source: web/components/AutomationsPanel.tsx (+ web/components/AutomationGraph.t
 - [ ] Runs: "Pick an automation to see its tick history." / "No ticks yet — hit “Run now”." (web/components/AutomationsPanel.tsx:723)
 - [ ] Versions: "Its versions could not be read." / "None kept yet." / why_not line (web/components/AutomationsPanel.tsx:689)
 - [ ] Inbox without a connection: "Select a connection to see its proposal queue." (web/components/AutomationsPanel.tsx:800)
-- [ ] Inbox empty: "No staged proposals. When the agent proposes a declared action, it lands here for you to accept or reject." + "(Requires the automations.proposals flag.)" — stale: that flag was retired (aughor/kernel/flags.py:61) (web/components/AutomationsPanel.tsx:811)
+- [ ] Inbox empty: "No staged proposals. When the agent proposes a declared action, it lands here for you to accept or reject." + "(Requires the automations.proposals flag.)" — stale: that flag was retired (pramanyx/kernel/flags.py:61) (web/components/AutomationsPanel.tsx:811)
 - [ ] Inbox read failure is swallowed — shows as empty, not as an error (web/components/AutomationsPanel.tsx:228)
 - [ ] Propose refusal banner: server reason, or "nothing here can do that yet" (web/components/AutomationsPanel.tsx:252)
 - [ ] Propose success banner "Proposed N steps — dry-run checked, nothing saved yet. Note: …" (web/components/AutomationsPanel.tsx:262)
@@ -1126,22 +1126,22 @@ _Source: web/components/AutomationsPanel.tsx (+ web/components/AutomationGraph.t
 - [ ] ProposalCard: "Fill the open choices first — accepting would arm a placeholder" (Accept tooltip) (web/components/ProposalCard.tsx:576)
 
 ### Loads on open
-- [ ] GET /automations?conn_id= — the list, on open and after every verb (web/lib/api.ts:7013 → aughor/routers/automations.py:219)
-- [ ] GET /automations (unscoped) + GET /connections — only when the scoped list is empty, to say where the others are (web/components/AutomationsPanel.tsx:197; web/lib/api.ts:30 → aughor/routers/connections.py:83)
-- [ ] GET /kinetic-actions/inbox?connection_id= + GET /kinetic-actions/grants?connection_id= — when the Inbox tab opens (web/lib/api.ts:7384, :7442 → aughor/routers/kinetic.py:242, :305); pure reads
-- [ ] GET /integrations/connections — Inbox account labels (useIntegrationGrants), and integration step editor (web/lib/api.ts:6283 → aughor/routers/integrations.py:286)
-- [ ] GET /automations/{id}/runs?limit= + GET /automations/{id}/versions — when an automation is picked in Runs/History (web/lib/api.ts:7234, :6676 → aughor/routers/automations.py:826, :946)
-- [ ] GET /automations/vocabulary — canvas open (cached module-side) (web/lib/api.ts:5796 → aughor/routers/automations.py:93)
-- [ ] GET /automations/{id}/layout — saved canvas arrangement (web/lib/api.ts:5894 → aughor/routers/automations.py:197)
-- [ ] GET /automations/{id}/graph?run=latest|<id> — Execution mode, and on a pending open-set bind (web/lib/api.ts:7314 → aughor/routers/automations.py:774); read-only
-- [ ] GET /automations/palette?conn_id= — each time the palette opens (not cached) (web/lib/api.ts:5875 → aughor/routers/automations.py:141)
-- [ ] GET /agents/custom + GET /slack-bots — step editor dialog open (web/lib/api.ts:10268, :6356 → aughor/routers/agents.py:273, aughor/routers/slackbots.py:40)
-- [ ] GET /integrations/operations?connection_id= / GET /mcp-servers / GET /metrics?connection_id= — only for those step kinds' editors (web/lib/api.ts:6273, :6081, :1218 → aughor/routers/integrations.py:313, aughor/routers/mcpservers.py:133)
-- [ ] GET /automations/{id}/doors — when the Deploy dialog opens (web/lib/api.ts:7149 → aughor/routers/automations.py:604); "Reading this opens nothing"
-- [ ] POST /automations/{id}/picture-preview — fires automatically (debounced 450ms) whenever a saved chain's Slack step editor is open and its config changes; a POST on open but read-only by its docstring ("nothing runs, nothing is sent, no model is called") (web/lib/api.ts:7224 → aughor/routers/automations.py:885)
-- [ ] GET /activity?trace_id=<run>&limit=200 — POLLS every 1s while a canvas "Run now" is in flight (web/components/AutomationGraph.tsx:1248 → aughor/routers/obs.py:828)
-- [ ] PUT /automations/{id}/layout — WRITES on drag/undo/palette-drop (debounced 500ms), not on open (web/lib/api.ts:5900 → aughor/routers/automations.py:209)
-- [ ] SPENDS on click (not on open): POST /automations/propose (model drafts a chain), POST /automations/{id}/run ("Run now", real run through the gates) (web/lib/api.ts:7035, :7198 → aughor/routers/automations.py:278, :690)
+- [ ] GET /automations?conn_id= — the list, on open and after every verb (web/lib/api.ts:7013 → pramanyx/routers/automations.py:219)
+- [ ] GET /automations (unscoped) + GET /connections — only when the scoped list is empty, to say where the others are (web/components/AutomationsPanel.tsx:197; web/lib/api.ts:30 → pramanyx/routers/connections.py:83)
+- [ ] GET /kinetic-actions/inbox?connection_id= + GET /kinetic-actions/grants?connection_id= — when the Inbox tab opens (web/lib/api.ts:7384, :7442 → pramanyx/routers/kinetic.py:242, :305); pure reads
+- [ ] GET /integrations/connections — Inbox account labels (useIntegrationGrants), and integration step editor (web/lib/api.ts:6283 → pramanyx/routers/integrations.py:286)
+- [ ] GET /automations/{id}/runs?limit= + GET /automations/{id}/versions — when an automation is picked in Runs/History (web/lib/api.ts:7234, :6676 → pramanyx/routers/automations.py:826, :946)
+- [ ] GET /automations/vocabulary — canvas open (cached module-side) (web/lib/api.ts:5796 → pramanyx/routers/automations.py:93)
+- [ ] GET /automations/{id}/layout — saved canvas arrangement (web/lib/api.ts:5894 → pramanyx/routers/automations.py:197)
+- [ ] GET /automations/{id}/graph?run=latest|<id> — Execution mode, and on a pending open-set bind (web/lib/api.ts:7314 → pramanyx/routers/automations.py:774); read-only
+- [ ] GET /automations/palette?conn_id= — each time the palette opens (not cached) (web/lib/api.ts:5875 → pramanyx/routers/automations.py:141)
+- [ ] GET /agents/custom + GET /slack-bots — step editor dialog open (web/lib/api.ts:10268, :6356 → pramanyx/routers/agents.py:273, pramanyx/routers/slackbots.py:40)
+- [ ] GET /integrations/operations?connection_id= / GET /mcp-servers / GET /metrics?connection_id= — only for those step kinds' editors (web/lib/api.ts:6273, :6081, :1218 → pramanyx/routers/integrations.py:313, pramanyx/routers/mcpservers.py:133)
+- [ ] GET /automations/{id}/doors — when the Deploy dialog opens (web/lib/api.ts:7149 → pramanyx/routers/automations.py:604); "Reading this opens nothing"
+- [ ] POST /automations/{id}/picture-preview — fires automatically (debounced 450ms) whenever a saved chain's Slack step editor is open and its config changes; a POST on open but read-only by its docstring ("nothing runs, nothing is sent, no model is called") (web/lib/api.ts:7224 → pramanyx/routers/automations.py:885)
+- [ ] GET /activity?trace_id=<run>&limit=200 — POLLS every 1s while a canvas "Run now" is in flight (web/components/AutomationGraph.tsx:1248 → pramanyx/routers/obs.py:828)
+- [ ] PUT /automations/{id}/layout — WRITES on drag/undo/palette-drop (debounced 500ms), not on open (web/lib/api.ts:5900 → pramanyx/routers/automations.py:209)
+- [ ] SPENDS on click (not on open): POST /automations/propose (model drafts a chain), POST /automations/{id}/run ("Run now", real run through the gates) (web/lib/api.ts:7035, :7198 → pramanyx/routers/automations.py:278, :690)
 - [ ] No poll on the list, Runs or Inbox views; no WRITES ON OPEN found for this layer
 
 **Top rows today:** above the layer, the workspace's three shared rows — context bar [Connection select]; layer tabs [Overview · Roster · Attention(badge) · Automations · Hub · Departures(badge) · By duty · Action centre · Developer · "?"]; toolbar [RangePicker (no effect on this layer) … "+ Create agent"]. Then the panel's own row: tabs [Automations · Runs · Inbox(badge)] with, on the list tab only, trailing [describe-it input · Propose · Import flow… · + New automation]. Inside a canvas the strip is [← Automations · name · ● enabled · Design|Execution · status chips … unsaved/incomplete · Discard · Dry run · Save design/Create automation · Deploy · Run now].
@@ -1193,7 +1193,7 @@ _Source: web/components/agentops/HubMapPanel.tsx (+ web/lib/hubMap.ts text helpe
 - [ ] Cost caveat "<…> — a floor, not a total" (web/lib/hubMap.ts:43)
 
 ### Loads on open
-- [ ] GET /hub/map — one read on first open and on Refresh/Retry; 7-day failure window by default; no poll (web/lib/api.ts:6799 → aughor/routers/hub.py:15); read-only (no write found in aughor/hub/map.py)
+- [ ] GET /hub/map — one read on first open and on Refresh/Retry; 7-day failure window by default; no poll (web/lib/api.ts:6799 → pramanyx/routers/hub.py:15); read-only (no write found in pramanyx/hub/map.py)
 
 **Top rows today:** above the layer, the workspace's shared rows — context bar [Connection select (does not scope Hub)]; layer tabs [Overview · Roster · Attention(badge) · Automations · Hub · Departures(badge) · By duty · Action centre · Developer · "?"]; toolbar [RangePicker (no effect on Hub) … "+ Create agent"]. Then the panel's own header row: [title "Every automation and monitor, one screen" · totals line … Refresh].
 
@@ -1265,10 +1265,10 @@ _Source: web/components/agentops/DeparturesPanel.tsx (+ web/lib/departures.ts sh
 - [ ] "Marked. It has graduated — its next sends reach the channel." / "Marked." / "Remembered: {reading}." / error text — after an action (web/components/agentops/DeparturesPanel.tsx:303-305, 331, 340)
 
 ### Loads on open
-- [ ] GET /departures?limit=200 — the ledger rows (web/lib/api.ts:6964 → aughor/routers/departures.py:59) read-only
-- [ ] GET /departures/summary — counts by state + awaiting (+ Spotlight ask-door uptake read from the session log) (web/lib/api.ts:6975 → aughor/routers/departures.py:75) read-only
-- [ ] Workspace poll, every 20 s while visible, on every Agent Ops layer: GET /departures/summary (badge) and GET /control-room/needs-human?limit=1 (Attention badge) (web/components/AgenticOpsWorkspace.tsx:193-200) [WRITES ON OPEN: needs-human expires stale proposals and resumes parked runs — aughor/routers/control_room.py:432-470]
-- [ ] On action: POST /departures/{id}/verdict (web/lib/api.ts:6983 → aughor/routers/departures.py:98); POST /departures/{id}/answer (web/lib/api.ts:6997 → aughor/routers/departures.py:146)
+- [ ] GET /departures?limit=200 — the ledger rows (web/lib/api.ts:6964 → pramanyx/routers/departures.py:59) read-only
+- [ ] GET /departures/summary — counts by state + awaiting (+ Spotlight ask-door uptake read from the session log) (web/lib/api.ts:6975 → pramanyx/routers/departures.py:75) read-only
+- [ ] Workspace poll, every 20 s while visible, on every Agent Ops layer: GET /departures/summary (badge) and GET /control-room/needs-human?limit=1 (Attention badge) (web/components/AgenticOpsWorkspace.tsx:193-200) [WRITES ON OPEN: needs-human expires stale proposals and resumes parked runs — pramanyx/routers/control_room.py:432-470]
+- [ ] On action: POST /departures/{id}/verdict (web/lib/api.ts:6983 → pramanyx/routers/departures.py:98); POST /departures/{id}/answer (web/lib/api.ts:6997 → pramanyx/routers/departures.py:146)
 
 **Top rows today:** the panel's own header row — title "What left the platform, and what was held" · summary counts · (spacer) · filter group All / Needs a person / Held / Departed · Refresh. Above it the Agent Ops chrome: context bar "Connection" picker (does not scope this layer — its hover says Departures stays hub-wide), layer tabs (Departures with its badge, "?"), toolbar range picker (not applied to this layer) and "+ Create agent".
 
@@ -1330,14 +1330,14 @@ _Source: web/components/operations/WorkPanel.tsx (+ web/components/operations/Fi
 - [ ] "What is running now, each run's trace and a deep run's phases are on the Overview." (web/components/operations/WorkPanel.tsx:220)
 
 ### Loads on open
-- [ ] GET /record/duties — the week by duty (web/components/operations/WorkPanel.tsx:46-50 → aughor/routers/record.py:884) read-only
-- [ ] GET /departures/summary (web/lib/api.ts:6975 → aughor/routers/departures.py:75) read-only
-- [ ] GET /record/claims?limit=1000 — every author (web/lib/record.ts:149 → aughor/routers/record.py:87) read-only
-- [ ] GET /ledger/v1/principals/service (web/lib/record.ts:824 → aughor/routers/ledger.py:396) read-only
-- [ ] GET /ledger/v1/principals/{principal}/record — one call per principal, up to 40 in parallel, each scanning 5,000 claims + calibration (web/components/operations/WorkPanel.tsx:87-88; web/lib/record.ts:825 → aughor/routers/ledger.py:322) read-only, heavy fan-out
-- [ ] GET /links?status=open&limit=200 — open filings (web/lib/api.ts:6828 → aughor/routers/links.py:47) read-only
-- [ ] GET /hub/map — probation totals, hub-wide (web/lib/api.ts:6799 → aughor/routers/hub.py:15) read-only
-- [ ] GET /rbac/me — who a close is recorded as, shared once per page (web/lib/useMe.ts:22-31; web/lib/api.ts:9786 → aughor/routers/roles.py:49)
+- [ ] GET /record/duties — the week by duty (web/components/operations/WorkPanel.tsx:46-50 → pramanyx/routers/record.py:884) read-only
+- [ ] GET /departures/summary (web/lib/api.ts:6975 → pramanyx/routers/departures.py:75) read-only
+- [ ] GET /record/claims?limit=1000 — every author (web/lib/record.ts:149 → pramanyx/routers/record.py:87) read-only
+- [ ] GET /ledger/v1/principals/service (web/lib/record.ts:824 → pramanyx/routers/ledger.py:396) read-only
+- [ ] GET /ledger/v1/principals/{principal}/record — one call per principal, up to 40 in parallel, each scanning 5,000 claims + calibration (web/components/operations/WorkPanel.tsx:87-88; web/lib/record.ts:825 → pramanyx/routers/ledger.py:322) read-only, heavy fan-out
+- [ ] GET /links?status=open&limit=200 — open filings (web/lib/api.ts:6828 → pramanyx/routers/links.py:47) read-only
+- [ ] GET /hub/map — probation totals, hub-wide (web/lib/api.ts:6799 → pramanyx/routers/hub.py:15) read-only
+- [ ] GET /rbac/me — who a close is recorded as, shared once per page (web/lib/useMe.ts:22-31; web/lib/api.ts:9786 → pramanyx/routers/roles.py:49)
 - [ ] Plus the workspace's 20 s badge poll (GET /control-room/needs-human?limit=1 + GET /departures/summary) (web/components/AgenticOpsWorkspace.tsx:193-200) [WRITES ON OPEN: needs-human expires stale proposals and resumes parked runs]
 - [ ] On action: POST /links/{id}/close (web/lib/api.ts:6835)
 
@@ -1410,13 +1410,13 @@ _Source: web/components/operations/ActionCentrePanel.tsx (+ web/components/recor
 - [ ] "Loading the authority table…" / "Could not read the authority table — …" + Retry, and the same for the standing grants, demotions, the gateway's writes, the action's record (web/components/record/kit.tsx:59-65)
 
 ### Loads on open
-- [ ] GET /authority?connection_id= — the authority table; 404 = no ontology (web/lib/record.ts:759 → aughor/routers/authority.py:34) read-only
-- [ ] GET /authority/writes — gateway and MCP writes (web/lib/record.ts:777 → aughor/routers/authority.py:125) read-only
-- [ ] GET /kinetic-actions/grants?connection_id= (web/lib/api.ts:7442 → aughor/routers/kinetic.py:305) read-only
-- [ ] On opening a record: GET /authority/{action}/record?connection_id= and the grants again (web/lib/record.ts:761 → aughor/routers/authority.py:75) read-only
-- [ ] GET /rbac/me — the actor line (web/lib/api.ts:9786 → aughor/routers/roles.py:49)
+- [ ] GET /authority?connection_id= — the authority table; 404 = no ontology (web/lib/record.ts:759 → pramanyx/routers/authority.py:34) read-only
+- [ ] GET /authority/writes — gateway and MCP writes (web/lib/record.ts:777 → pramanyx/routers/authority.py:125) read-only
+- [ ] GET /kinetic-actions/grants?connection_id= (web/lib/api.ts:7442 → pramanyx/routers/kinetic.py:305) read-only
+- [ ] On opening a record: GET /authority/{action}/record?connection_id= and the grants again (web/lib/record.ts:761 → pramanyx/routers/authority.py:75) read-only
+- [ ] GET /rbac/me — the actor line (web/lib/api.ts:9786 → pramanyx/routers/roles.py:49)
 - [ ] Plus the workspace's 20 s badge poll (GET /control-room/needs-human?limit=1 + GET /departures/summary) (web/components/AgenticOpsWorkspace.tsx:193-200) [WRITES ON OPEN: needs-human expires stale proposals and resumes parked runs]
-- [ ] On action: POST /kinetic-actions/grants/{id}/revoke; POST /authority/{id}/graduate; POST /authority/{id}/executions/{entry}/undo; POST /authority/{id}/ceiling; POST /authority/{id}/widen; POST /authority/{id}/demote (web/lib/api.ts:7449; web/lib/record.ts:763-776 → aughor/routers/authority.py:91, 109, 142, 163, 192)
+- [ ] On action: POST /kinetic-actions/grants/{id}/revoke; POST /authority/{id}/graduate; POST /authority/{id}/executions/{entry}/undo; POST /authority/{id}/ceiling; POST /authority/{id}/widen; POST /authority/{id}/demote (web/lib/api.ts:7449; web/lib/record.ts:763-776 → pramanyx/routers/authority.py:91, 109, 142, 163, 192)
 
 **Top rows today:** ledger view — no toolbar of its own; the first row is the section head "The authority table" · connection name · (spacer) · Declared actions · Approval trail. Record view — back header "Authority / {action} [L-chip]". Above both, the Agent Ops chrome: context bar "Connection" picker (this layer's scope), layer tabs + "?", toolbar range picker (not applied here) and "+ Create agent".
 
@@ -1485,14 +1485,14 @@ _Source: web/components/operations/DeveloperPanel.tsx (+ web/components/record/k
 - [ ] Red error lines (role=alert) in the page or inside a dialog after a failed mint / revoke / register / withdraw (web/components/operations/DeveloperPanel.tsx:322, 327, 468, 491)
 
 ### Loads on open
-- [ ] GET /packs/listing (web/components/operations/DeveloperPanel.tsx:64 → aughor/routers/packs.py:117) read-only
-- [ ] GET /ledger/v1/contract — doors + the agent contract (web/lib/record.ts:822 → aughor/routers/ledger.py:65) read-only
-- [ ] GET /ledger/v1/events/catalogue (web/lib/record.ts:823 → aughor/routers/ledger.py:72) read-only
-- [ ] GET /ledger/v1/principals/service (web/lib/record.ts:824 → aughor/routers/ledger.py:396) read-only
-- [ ] GET /packs/kit (web/components/operations/DeveloperPanel.tsx:68 → aughor/routers/packs.py:91) read-only
-- [ ] GET /ledger/v1/methods (web/lib/record.ts:845 → aughor/routers/ledger.py:444) read-only
+- [ ] GET /packs/listing (web/components/operations/DeveloperPanel.tsx:64 → pramanyx/routers/packs.py:117) read-only
+- [ ] GET /ledger/v1/contract — doors + the agent contract (web/lib/record.ts:822 → pramanyx/routers/ledger.py:65) read-only
+- [ ] GET /ledger/v1/events/catalogue (web/lib/record.ts:823 → pramanyx/routers/ledger.py:72) read-only
+- [ ] GET /ledger/v1/principals/service (web/lib/record.ts:824 → pramanyx/routers/ledger.py:396) read-only
+- [ ] GET /packs/kit (web/components/operations/DeveloperPanel.tsx:68 → pramanyx/routers/packs.py:91) read-only
+- [ ] GET /ledger/v1/methods (web/lib/record.ts:845 → pramanyx/routers/ledger.py:444) read-only
 - [ ] Plus the workspace's 20 s badge poll (GET /control-room/needs-human?limit=1 + GET /departures/summary) (web/components/AgenticOpsWorkspace.tsx:193-200) [WRITES ON OPEN: needs-human expires stale proposals and resumes parked runs]
-- [ ] On action: POST /packs/check (writes nothing) (aughor/routers/packs.py:98); POST /packs/upload (aughor/routers/packs.py:105); POST /ledger/v1/principals/service (aughor/routers/ledger.py:360); DELETE /ledger/v1/principals/service/{name}?why= (aughor/routers/ledger.py:403); POST /ledger/v1/methods (aughor/routers/ledger.py:452); DELETE /ledger/v1/methods/{name} (aughor/routers/ledger.py:464) (web/lib/record.ts:826-859)
+- [ ] On action: POST /packs/check (writes nothing) (pramanyx/routers/packs.py:98); POST /packs/upload (pramanyx/routers/packs.py:105); POST /ledger/v1/principals/service (pramanyx/routers/ledger.py:360); DELETE /ledger/v1/principals/service/{name}?why= (pramanyx/routers/ledger.py:403); POST /ledger/v1/methods (pramanyx/routers/ledger.py:452); DELETE /ledger/v1/methods/{name} (pramanyx/routers/ledger.py:464) (web/lib/record.ts:826-859)
 
 **Top rows today:** no header or toolbar of its own — the page opens on the "Packs" section head ({n} packs · Manage packs); each later section carries its one action at its head (Integrations · Mint a principal and Register a method sit at the foot of their sections, Declare an action inline). Above it the Agent Ops chrome: Connection picker (does not scope this layer), layer tabs + "?", toolbar range picker (not applied) and "+ Create agent".
 
@@ -1554,8 +1554,8 @@ _Source: web/components/ActionHubPanel.tsx (rendered by web/components/Operation
 - [ ] Withheld: "since removed" is not said when the triggers could not be read (web/components/ActionHubPanel.tsx:258)
 
 ### Loads on open
-- [ ] GET /actions/triggers — the triggers, URLs masked (direct fetch web/components/ActionHubPanel.tsx:182 → aughor/routers/actions.py:103)
-- [ ] GET /actions/logs?limit=50 — latest sends (direct fetch web/components/ActionHubPanel.tsx:183 → aughor/routers/actions.py:365)
+- [ ] GET /actions/triggers — the triggers, URLs masked (direct fetch web/components/ActionHubPanel.tsx:182 → pramanyx/routers/actions.py:103)
+- [ ] GET /actions/logs?limit=50 — latest sends (direct fetch web/components/ActionHubPanel.tsx:183 → pramanyx/routers/actions.py:365)
 - [ ] Neither GET writes or spends; the page uses raw fetch, not web/lib/api.ts
 
 **Top rows today:** no header or toolbar — the page opens on three figures (Triggers · Delivered · Failed); "+ New trigger" sits at the right of the Triggers section label further down.
@@ -1600,7 +1600,7 @@ _Source: web/components/SpendPanel.tsx (rendered by web/components/OperationsWor
 - [ ] Governance card — one fold per kind of event, icon by tone (warning / bolt / check / dot), count, View on amber (web/components/SpendPanel.tsx:460-488)
 - [ ] Full feed (inline under Governance) — filter bar, count, focus line, sortable table (max 58vh), per-row detail JSON (web/components/SpendPanel.tsx:564-704)
 - [ ] Details fold — route mix sentence and "The cost query" SQL block with Copy (web/components/SpendPanel.tsx:713-737)
-- [ ] Hover titles: unpriced explainer "A price is declared by the operator (AUGHOR_MODEL_PRICES) or published in the provider's catalogue…"; cap meter "<observed> of <limit> in the last Nh"; bars' titles; date inputs "From this day" / "To this day, inclusive"; Export "Every event in the chosen dates and category, as a CSV file" (web/components/SpendPanel.tsx:208, :319, :650-652, :670)
+- [ ] Hover titles: unpriced explainer "A price is declared by the operator (PRAMANYX_MODEL_PRICES) or published in the provider's catalogue…"; cap meter "<observed> of <limit> in the last Nh"; bars' titles; date inputs "From this day" / "To this day, inclusive"; Export "Every event in the chosen dates and category, as a CSV file" (web/components/SpendPanel.tsx:208, :319, :650-652, :670)
 
 ### Figures, counts, badges, status chips, freshness
 - [ ] Figure "Spent" / "Spent · at least" — cost, grey when unknown; sub = amber caveat chip (share priced) or a note, or "could not be read" (web/components/SpendPanel.tsx:172-176)
@@ -1638,16 +1638,16 @@ _Source: web/components/SpendPanel.tsx (rendered by web/components/OperationsWor
 - [ ] Withheld: date filters and server export are absent unless the org setting is on; an unreadable setting leaves them out (web/components/SpendPanel.tsx:432-434, :444)
 
 ### Loads on open
-- [ ] GET /usage?by=provider,model — usage and cost rollup (web/lib/api.ts:12115 → aughor/routers/governance.py:22) [NETWORK ON OPEN: `ensure_catalogue_prices()` fetches the provider's price catalogue at most hourly before pricing; in-memory, no model call]
-- [ ] GET /obs/usage-summary?range=24h — Where tokens go (web/lib/api.ts:11616 → aughor/routers/obs.py:716) [same hourly catalogue fetch]
-- [ ] GET /obs/usage-summary?range=7d — the 7-day call line (failure drops the line) (web/lib/api.ts:11616 → aughor/routers/obs.py:716)
-- [ ] GET /governance/caps — caps with observed usage per window (web/lib/api.ts:12059 → aughor/routers/governance.py:164)
-- [ ] GET /audit/feed?limit=500 — the governance window (web/lib/api.ts:12142 → aughor/routers/governance.py:66)
-- [ ] GET /connections — names for folded rows (web/lib/api.ts:30 → aughor/routers/connections.py:82)
-- [ ] GET /org-settings/allows — whether dated feed + export is on (web/lib/api.ts:224 → aughor/routers/orgsettings.py:29)
-- [ ] On Details open: GET /obs/route-mix (web/lib/api.ts:12191 → aughor/routers/obs.py:581) and GET /usage/cost-sql (web/lib/api.ts:12121 → aughor/routers/governance.py:53)
+- [ ] GET /usage?by=provider,model — usage and cost rollup (web/lib/api.ts:12115 → pramanyx/routers/governance.py:22) [NETWORK ON OPEN: `ensure_catalogue_prices()` fetches the provider's price catalogue at most hourly before pricing; in-memory, no model call]
+- [ ] GET /obs/usage-summary?range=24h — Where tokens go (web/lib/api.ts:11616 → pramanyx/routers/obs.py:716) [same hourly catalogue fetch]
+- [ ] GET /obs/usage-summary?range=7d — the 7-day call line (failure drops the line) (web/lib/api.ts:11616 → pramanyx/routers/obs.py:716)
+- [ ] GET /governance/caps — caps with observed usage per window (web/lib/api.ts:12059 → pramanyx/routers/governance.py:164)
+- [ ] GET /audit/feed?limit=500 — the governance window (web/lib/api.ts:12142 → pramanyx/routers/governance.py:66)
+- [ ] GET /connections — names for folded rows (web/lib/api.ts:30 → pramanyx/routers/connections.py:82)
+- [ ] GET /org-settings/allows — whether dated feed + export is on (web/lib/api.ts:224 → pramanyx/routers/orgsettings.py:29)
+- [ ] On Details open: GET /obs/route-mix (web/lib/api.ts:12191 → pramanyx/routers/obs.py:581) and GET /usage/cost-sql (web/lib/api.ts:12121 → pramanyx/routers/governance.py:53)
 - [ ] On full-feed category/date change: GET /audit/feed?category=&limit=500&since=&until= (web/components/SpendPanel.tsx:590)
-- [ ] On Export: GET /audit/feed/export?format=csv&category=&since=&until= (404 unless the org setting is on) (web/lib/api.ts:12160 → aughor/routers/governance.py:113)
+- [ ] On Export: GET /audit/feed/export?format=csv&category=&since=&until= (404 unless the org setting is on) (web/lib/api.ts:12160 → pramanyx/routers/governance.py:113)
 
 **Top rows today:** no header or toolbar — the page opens on four figure cards (Spent · Model calls · Failed · Spend cap with an Edit at its right); Full feed / CSV sit in the Governance card's label, Details at the page foot.
 
@@ -1706,7 +1706,7 @@ _Source: web/components/SecurityAuditPanel.tsx (rendered by web/components/Opera
 - [ ] Agents › Change it — navigates to Settings (`requestTab("settings")`) (web/components/operations/GateMapPanel.tsx:335, wired web/components/SecurityAuditPanel.tsx:803)
 - [ ] Spending › Spend — navigates to Operations ▸ Spend (web/components/operations/GateMapPanel.tsx:356)
 - [ ] Groups › Access — navigates to Settings (not to the Access section specifically) (web/components/operations/GateMapPanel.tsx:374)
-- [ ] The ledger › Download (link) — downloads `aughor-ledger.jsonl` from /ledger/v1/export (web/components/operations/GateMapPanel.tsx:416)
+- [ ] The ledger › Download (link) — downloads `pramanyx-ledger.jsonl` from /ledger/v1/export (web/components/operations/GateMapPanel.tsx:416)
 - [ ] Retry on any failed read (Gate / ReadFailed) across lenses (web/components/record/kit.tsx:62, web/components/SecurityAuditPanel.tsx:363, :485, :677, :713)
 
 ### Dialogs, drawers, popovers, panels
@@ -1745,7 +1745,7 @@ _Source: web/components/SecurityAuditPanel.tsx (rendered by web/components/Opera
 - [ ] Gate map: "N places in the code" + "N with no guard" / "each one guarded"; per door "N places · N uses · last <d>" or "not used since <d>"; "uses since <d>" / "uses not counted yet" chip (web/components/operations/GateMapPanel.tsx:143-151, :225)
 - [ ] Gate map: "Leaving · newest N checked"; per law "N held · n asked · n passed · last <d>" or "met none"; dot filled when met (web/components/operations/GateMapPanel.tsx:176, :192-200)
 - [ ] Gate map: per dialect bar "N places — <meaning>"; Places nothing guards count (web/components/operations/GateMapPanel.tsx:255, :262)
-- [ ] Policies chips: level, "on N connections only"/"every connection", "N tools only"/"every tool its level allows", "the default · nobody has set it" / "set by <who> · <d>", "narrowed by <env>"; "no cap" (amber); per group members + "N permissions"; "narrow nothing while identity is off"; "AUGHOR_REQUIRE_IDENTITY=1 turns it on" (web/components/operations/GateMapPanel.tsx:343-408)
+- [ ] Policies chips: level, "on N connections only"/"every connection", "N tools only"/"every tool its level allows", "the default · nobody has set it" / "set by <who> · <d>", "narrowed by <env>"; "no cap" (amber); per group members + "N permissions"; "narrow nothing while identity is off"; "PRAMANYX_REQUIRE_IDENTITY=1 turns it on" (web/components/operations/GateMapPanel.tsx:343-408)
 
 ### Keyboard shortcuts
 - [ ] Enter in the Activity retry guidance input runs the fix (web/components/ActivityLog.tsx:270)
@@ -1763,29 +1763,29 @@ _Source: web/components/SecurityAuditPanel.tsx (rendered by web/components/Opera
 - [ ] "Nothing in the log yet." — Who ran them (web/components/SecurityAuditPanel.tsx:577)
 - [ ] "Loading the limits…" / "Could not read the limits…"; "These are the defaults — saving sets this connection's own."; "Not saved — <error>" (web/components/SecurityAuditPanel.tsx:363-364, :399, :411)
 - [ ] Withheld (said): "N probes not listed" — internal statements counted but not listed; "withheld · sensitive values" verdict; "the result held sensitive values and was held back" (web/components/SecurityAuditPanel.tsx:536, :142, :314)
-- [ ] Withheld (403): an explicit cross-org connection filter is refused server-side rather than shown empty (aughor/routers/security.py:41-46)
+- [ ] Withheld (403): an explicit cross-org connection filter is refused server-side rather than shown empty (pramanyx/routers/security.py:41-46)
 - [ ] Activity: "No activity recorded yet." / "Activity appears here as background exploration runs." (web/components/ActivityLog.tsx:681-682)
 - [ ] Activity with NO connection selected: the panel is given `connectionId=""`, reads `/exploration//episodes` (a non-OK answer becomes `[]`) and says "No activity recorded yet." — an implied-empty, not a "choose a connection" (web/components/SecurityAuditPanel.tsx:796, web/lib/api.ts:3837)
 - [ ] Activity: "No entries match the current filters." (web/components/ActivityLog.tsx:757)
 - [ ] Activity: amber run error "The run did not continue" / "The run did not restart" / server reason (spent budget) (web/components/ActivityLog.tsx:622, :632, :679)
 - [ ] Approvals: "Revoke failed: <error>" (web/components/SecurityAuditPanel.tsx:670)
 - [ ] Approvals: "Loading/Could not read the pre-approved actions", "No action is pre-approved." (web/components/SecurityAuditPanel.tsx:677-679)
-- [ ] Approvals: "Loading/Could not read the approval decisions", "No high-risk action attempted yet." + chip "the gate is on unless the server switched it off" (hover "AUGHOR_ACTION_APPROVAL=0 on the server switches the approval gate off") (web/components/SecurityAuditPanel.tsx:713-718)
+- [ ] Approvals: "Loading/Could not read the approval decisions", "No high-risk action attempted yet." + chip "the gate is on unless the server switched it off" (hover "PRAMANYX_ACTION_APPROVAL=0 on the server switches the approval gate off") (web/components/SecurityAuditPanel.tsx:713-718)
 - [ ] Gate map: "Loading the gate map…" / "Could not read the gate map…" (web/components/operations/GateMapPanel.tsx:217)
 - [ ] Gate map: "<census note>." when the install has no census; "The departure gate declares no law."; "No place is recorded."; "Every statement declares its dialect, is written for its engine, or is rendered for it."; "no reason recorded" (web/components/operations/GateMapPanel.tsx:231, :241, :254, :264, :267)
 - [ ] Policies: per rule Loading/Could not read "the agent policy" / "the spend caps" / "the groups" / "who you are to the platform" (web/components/operations/GateMapPanel.tsx:336, :357, :375, :399)
 - [ ] Policies: "Nothing alerts or blocks on usage." (no cap); "Off: nobody is asked who they are, and every caller is treated as the owner."; groups "nobody assigned" (web/components/operations/GateMapPanel.tsx:361, :404, :385)
 
 ### Loads on open
-- [ ] GET /connections — names for the chip, filter and rows (web/lib/api.ts:30 → aughor/routers/connections.py:82)
-- [ ] Queries: GET /security/audit/stats?connection_id= (direct fetch web/components/SecurityAuditPanel.tsx:85 → aughor/routers/security.py:53)
-- [ ] Queries: GET /security/audit?limit=500&connection_id=&verdict= (web/components/SecurityAuditPanel.tsx:77 → aughor/routers/security.py:28)
+- [ ] GET /connections — names for the chip, filter and rows (web/lib/api.ts:30 → pramanyx/routers/connections.py:82)
+- [ ] Queries: GET /security/audit/stats?connection_id= (direct fetch web/components/SecurityAuditPanel.tsx:85 → pramanyx/routers/security.py:53)
+- [ ] Queries: GET /security/audit?limit=500&connection_id=&verdict= (web/components/SecurityAuditPanel.tsx:77 → pramanyx/routers/security.py:28)
 - [ ] Queries: GET /security/audit?limit=50&verdict=blocked — blocked rows on their own read (web/components/SecurityAuditPanel.tsx:455)
-- [ ] Queries (connection selected): GET /security/budget/{conn} (web/components/SecurityAuditPanel.tsx:91 → aughor/routers/security.py:80)
-- [ ] Activity: GET /exploration/{conn}/episodes?phase=&limit=1000 + GET /exploration/{conn}/status, re-read every 60 s and on `exploration.*` kernel events (web/lib/api.ts:3829, :2530 → aughor/routers/exploration.py:1236, :438; poll web/components/ActivityLog.tsx:595-598)
-- [ ] Approvals: GET /approvals/audit?limit=100 + GET /approvals/allowlist (web/lib/api.ts:409, :414 → aughor/routers/approvals.py:43, :37)
-- [ ] Gate map: GET /governance/gate-map (direct fetch web/components/operations/GateMapPanel.tsx:214 → aughor/routers/governance.py:142)
-- [ ] Policies: GET /org-settings/agent-policy, GET /governance/caps, GET /rbac/roles, GET /rbac/assignments, GET /rbac/me (web/components/operations/GateMapPanel.tsx:326-329 → aughor/routers/orgsettings.py:222, aughor/routers/governance.py:164, aughor/routers/roles.py:37, :67, :49)
+- [ ] Queries (connection selected): GET /security/budget/{conn} (web/components/SecurityAuditPanel.tsx:91 → pramanyx/routers/security.py:80)
+- [ ] Activity: GET /exploration/{conn}/episodes?phase=&limit=1000 + GET /exploration/{conn}/status, re-read every 60 s and on `exploration.*` kernel events (web/lib/api.ts:3829, :2530 → pramanyx/routers/exploration.py:1236, :438; poll web/components/ActivityLog.tsx:595-598)
+- [ ] Approvals: GET /approvals/audit?limit=100 + GET /approvals/allowlist (web/lib/api.ts:409, :414 → pramanyx/routers/approvals.py:43, :37)
+- [ ] Gate map: GET /governance/gate-map (direct fetch web/components/operations/GateMapPanel.tsx:214 → pramanyx/routers/governance.py:142)
+- [ ] Policies: GET /org-settings/agent-policy, GET /governance/caps, GET /rbac/roles, GET /rbac/assignments, GET /rbac/me (web/components/operations/GateMapPanel.tsx:326-329 → pramanyx/routers/orgsettings.py:222, pramanyx/routers/governance.py:164, pramanyx/routers/roles.py:37, :67, :49)
 - [ ] No GET on this page found to write or spend; every spend is behind a button (Resume, Restart, Fix all, Run fix)
 
 **Top rows today:** one header row — lens segmented (Queries · Activity · Approvals · Gate map · Policies), the connection chip, then Refresh at the right (Queries only). The Activity lens adds its own status bar (phase chips · counters · Stop/Resume/Restart) and a filter bar (dates · status · errors · Fix all · count · Show all) beneath it; Queries puts its Verdict + Connection filters inside the Query checks card.
@@ -1841,7 +1841,7 @@ Spend summary: nothing on Evals calls a model. The two run controls (Suites row 
 - [ ] Compare detail "Cases that changed": "Copy" / "CSV" (TableActions) (web/components/EvalExperimentsPanel.tsx:304)
 - [ ] Compare detail table: pagination, 50 per page, when over 50 rows (web/components/EvalExperimentsPanel.tsx:312)
 - [ ] "Retry" on a failed experiments read (web/components/EvalExperimentsPanel.tsx:133)
-- [ ] (absent, for the record) no search, filter, sort, rename, or start-an-experiment control on any Evals layer; backend PATCH /evals/suites/{id} (rename) and POST /evals/flags/{flag}/graduate have no UI here (aughor/routers/evals.py:149, 280)
+- [ ] (absent, for the record) no search, filter, sort, rename, or start-an-experiment control on any Evals layer; backend PATCH /evals/suites/{id} (rename) and POST /evals/flags/{flag}/graduate have no UI here (pramanyx/routers/evals.py:149, 280)
 
 ### Dialogs, drawers, popovers, panels
 - [ ] New suite dialog (FormDialog, 600px, "New suite") — Name, Description, Connection, Create suite / Cancel; its own error line inside (web/components/EvalSuitesPanel.tsx:217-221, 408-441)
@@ -1951,31 +1951,31 @@ Spend summary: nothing on Evals calls a model. The two run controls (Suites row 
 - [ ] "No case changed verdict between the two — N agreed." (web/components/EvalExperimentsPanel.tsx:307)
 - [ ] "Suite no longer listed" (web/components/EvalExperimentsPanel.tsx:114)
 #### All layers
-- [ ] Every /evals route is gated by Capability.EVAL_SUITE — an unlicensed install gets a 402 on open (aughor/routers/evals.py:127)
+- [ ] Every /evals route is gated by Capability.EVAL_SUITE — an unlicensed install gets a 402 on open (pramanyx/routers/evals.py:127)
 
 ### Loads on open
 #### Suites
-- [ ] GET /evals/suites — the suite list (web/lib/api.ts:10875 → aughor/routers/evals.py:127)
-- [ ] GET /connections — connection names + the dialog's options (web/lib/api.ts:30 → aughor/routers/connections.py:82)
-- [ ] GET /evals/evaluators — deterministic check count (web/lib/api.ts:10961 → aughor/routers/evals.py:346)
-- [ ] GET /evals/runs?limit=500 — each suite's last result (web/lib/api.ts:10946 → aughor/routers/evals.py:233)
-- [ ] GET /evals/suites/{id} once PER SUITE — case counts (N+1 reads) (web/components/EvalSuitesPanel.tsx:103; web/lib/api.ts:10881 → aughor/routers/evals.py:139)
+- [ ] GET /evals/suites — the suite list (web/lib/api.ts:10875 → pramanyx/routers/evals.py:127)
+- [ ] GET /connections — connection names + the dialog's options (web/lib/api.ts:30 → pramanyx/routers/connections.py:82)
+- [ ] GET /evals/evaluators — deterministic check count (web/lib/api.ts:10961 → pramanyx/routers/evals.py:346)
+- [ ] GET /evals/runs?limit=500 — each suite's last result (web/lib/api.ts:10946 → pramanyx/routers/evals.py:233)
+- [ ] GET /evals/suites/{id} once PER SUITE — case counts (N+1 reads) (web/components/EvalSuitesPanel.tsx:103; web/lib/api.ts:10881 → pramanyx/routers/evals.py:139)
 #### Runs
 - [ ] GET /evals/runs?limit=200 + GET /evals/suites — list and names (web/components/EvalRunPanel.tsx:50-53)
 - [ ] Polls the same every 60 s via setInterval (not visibility-gated; keeps running while the layer is hidden but mounted) (web/components/EvalRunPanel.tsx:72)
 - [ ] Subscribes to the shared EventSource /events/stream for `eval.` and `job.state` events (web/components/EvalRunPanel.tsx:73; web/lib/events.ts:47)
-- [ ] On "Cases": GET /evals/runs/{id} + GET /evals/suites/{id} (web/lib/api.ts:10955 → aughor/routers/evals.py:238)
+- [ ] On "Cases": GET /evals/runs/{id} + GET /evals/suites/{id} (web/lib/api.ts:10955 → pramanyx/routers/evals.py:238)
 #### Experiments
-- [ ] GET /evals/experiments?limit=50 — pairs derived from run history on read, not stored (web/lib/api.ts:11005 → aughor/routers/evals.py:248)
+- [ ] GET /evals/experiments?limit=50 — pairs derived from run history on read, not stored (web/lib/api.ts:11005 → pramanyx/routers/evals.py:248)
 - [ ] GET /evals/suites, GET /evals/runs?limit=500 — names and noise floors (web/components/EvalExperimentsPanel.tsx:89-90)
-- [ ] GET /system/flags — flag labels for axis names (web/lib/api.ts:9745 → aughor/routers/system.py:235)
-- [ ] On "Details": GET /evals/experiments/compare?a=&b= (web/lib/api.ts:11014 → aughor/routers/evals.py:261)
+- [ ] GET /system/flags — flag labels for axis names (web/lib/api.ts:9745 → pramanyx/routers/system.py:235)
+- [ ] On "Details": GET /evals/experiments/compare?a=&b= (web/lib/api.ts:11014 → pramanyx/routers/evals.py:261)
 #### Writes, on action only (nothing writes or spends on open)
-- [ ] POST /evals/suites — Create suite (web/lib/api.ts:10887 → aughor/routers/evals.py:132)
-- [ ] POST /evals/suites/{id}/cases — Add case (web/lib/api.ts:10905 → aughor/routers/evals.py:169)
-- [ ] DELETE /evals/cases/{id} — Remove (no confirm) (web/lib/api.ts:10918 → aughor/routers/evals.py:177)
-- [ ] DELETE /evals/suites/{id} — Delete suite (browser confirm) (web/lib/api.ts:10900 → aughor/routers/evals.py:160)
-- [ ] POST /evals/suites/{id}/run — Run / Run suite: synchronous SQL replay on the suite's connection, persists a run; SPENDS warehouse queries (cases x iterations), no model calls, no confirm (web/lib/api.ts:10923 → aughor/routers/evals.py:186)
+- [ ] POST /evals/suites — Create suite (web/lib/api.ts:10887 → pramanyx/routers/evals.py:132)
+- [ ] POST /evals/suites/{id}/cases — Add case (web/lib/api.ts:10905 → pramanyx/routers/evals.py:169)
+- [ ] DELETE /evals/cases/{id} — Remove (no confirm) (web/lib/api.ts:10918 → pramanyx/routers/evals.py:177)
+- [ ] DELETE /evals/suites/{id} — Delete suite (browser confirm) (web/lib/api.ts:10900 → pramanyx/routers/evals.py:160)
+- [ ] POST /evals/suites/{id}/run — Run / Run suite: synchronous SQL replay on the suite's connection, persists a run; SPENDS warehouse queries (cases x iterations), no model calls, no confirm (web/lib/api.ts:10923 → pramanyx/routers/evals.py:186)
 
 **Top rows today:** Evals has no context bar, no toolbar and no "?" help — only the layer tab row "Suites · Runs · Experiments" (web/components/EvalsWorkspace.tsx:67-78). Each layer then opens on its four-figure row; Suites' list card header carries the chip "a run replays SQL · no model calls" + "New suite"; Runs' card header carries "N runs as M rows" + "Refresh"; Experiments' card header carries "A is the baseline" + "Refresh". Detail views open with a row: back button ("All suites"/"All runs"/"All experiments") · title · chips.
 
@@ -2029,10 +2029,10 @@ _Source: web/components/BrainMapPanel.tsx (+ web/lib/brainMap.ts; mounted by web
 - [ ] "No fact has changed since it was first seen." (web/components/BrainMapPanel.tsx:184-185)
 
 ### Loads on open
-- [ ] GET /brain/map?connection_id=&workspace_id= — every store's count and the measured edges (web/lib/api.ts:7832 → aughor/routers/brain.py:14) read-only ("a read, never a build")
-- [ ] Workspace scope, connection with a declared schema: GET /ontology/schemas?connection_id= (web/lib/objectTypes.ts:1396 → aughor/routers/ontology.py:866) read-only
-- [ ] Workspace scope, connection with no declared schema: GET /catalog/tree?workspace_id= — introspects every connection in the workspace (web/components/IntelligenceWorkspace.tsx:167-179; web/lib/api.ts:945 → aughor/routers/catalog.py:234) [WRITES ON OPEN: reconciles the metastore's schema rows via set_catalog_schemas — aughor/routers/catalog.py:273-279]
-- [ ] GET /exploration/{conn}/datasets — the Maturity mark (web/components/DatasetProgram.tsx:360; web/lib/api.ts:2486 → aughor/routers/datasets.py:155) read-only
+- [ ] GET /brain/map?connection_id=&workspace_id= — every store's count and the measured edges (web/lib/api.ts:7832 → pramanyx/routers/brain.py:14) read-only ("a read, never a build")
+- [ ] Workspace scope, connection with a declared schema: GET /ontology/schemas?connection_id= (web/lib/objectTypes.ts:1396 → pramanyx/routers/ontology.py:866) read-only
+- [ ] Workspace scope, connection with no declared schema: GET /catalog/tree?workspace_id= — introspects every connection in the workspace (web/components/IntelligenceWorkspace.tsx:167-179; web/lib/api.ts:945 → pramanyx/routers/catalog.py:234) [WRITES ON OPEN: reconciles the metastore's schema rows via set_catalog_schemas — pramanyx/routers/catalog.py:273-279]
+- [ ] GET /exploration/{conn}/datasets — the Maturity mark (web/components/DatasetProgram.tsx:360; web/lib/api.ts:2486 → pramanyx/routers/datasets.py:155) read-only
 - [ ] No polling
 
 **Top rows today:** no layer tabs and no toolbar (hidden on the main screen); one context bar holding "Connection" select (only when >1 briefings-enabled connection) · "Schema" select (only when >1 schema; no effect on this layer) · "Maturity" mark. The page then opens on the heading "Where Pramanyx's knowledge lives" with its "read live …" note at the right.
@@ -2079,7 +2079,7 @@ _Source: web/app/page.tsx (SettingsScreen 591-635; section state 1083; URL routi
 
 ### Loads on open
 - [ ] none at chrome level; each section loads its own (see sections)
-- [ ] (App-wide, not on open) GET /me/preferences at app load and after each chat turn — syncs theme + look into the shell (web/app/page.tsx:1359-1388 → web/lib/api.ts:45 → aughor/routers/preferences.py:18)
+- [ ] (App-wide, not on open) GET /me/preferences at app load and after each chat turn — syncs theme + look into the shell (web/app/page.tsx:1359-1388 → web/lib/api.ts:45 → pramanyx/routers/preferences.py:18)
 
 **Top rows today:** the section tab strip only (Organization · Access · Appearance · Models · System · Integrations), padded 10px 16px 0, no title row and no toolbar (web/app/page.tsx:609-610); each section draws its own header/figures below it.
 
@@ -2119,7 +2119,7 @@ Note: the section rides `?layer=`, not `?settings=` (the old name is still read,
 #### Exploration budget card (app scope; saved by the one Save)
 - [ ] "Monthly budget (model tokens)" numeric input (blank = none) (web/components/OrgSettingsPanel.tsx:383-390)
 - [ ] "Details" fold — the per-connection budget and Start rules (web/components/OrgSettingsPanel.tsx:394-397; web/components/settings/parts.tsx:62-77)
-#### What Pramanyx may do card (app scope; saved by the one Save; the org switches of aughor/orgsettings/allows.py:15-22)
+#### What Pramanyx may do card (app scope; saved by the one Save; the org switches of pramanyx/orgsettings/allows.py:15-22)
 - [ ] "Share summary statistics with other installs" checkbox (`share_aggregates`) (web/components/OrgSettingsPanel.tsx:208-209)
 - [ ] "Send row text to an outside, cheaper model" checkbox (`outside_row_model`) (web/components/OrgSettingsPanel.tsx:210-211)
 - [ ] "Ask for a reason before anyone reads a run's details" checkbox (`reason_to_read_runs`) (web/components/OrgSettingsPanel.tsx:212-213)
@@ -2221,17 +2221,17 @@ Note: the section rides `?layer=`, not `?settings=` (the old name is still read,
 - [ ] Owners: "Reading the declarations…" / "No declaration names an owner yet." / red error line (web/components/OwnersPanel.tsx:96-97, 129)
 
 ### Loads on open
-- [ ] GET /org-settings — the app settings (re-read on every scope switch and after Save) (web/lib/api.ts:233 → aughor/routers/orgsettings.py:23)
-- [ ] GET /org-settings/allows — each allow's answer and whether set (web/lib/api.ts:224 → aughor/routers/orgsettings.py:29)
-- [ ] GET /workspaces/{id} — workspace scope only, the override (web/lib/api.ts:178 → aughor/routers/workspace.py:68)
-- [ ] GET /capabilities — multi-tenant? (shows BYOK) (web/lib/api.ts:93 → aughor/routers/system.py:206)
-- [ ] GET /owners — read TWICE: once by OrgSettingsPanel for the figure/needs-you, once by OwnersPanel; both re-read on every link/unlink (web/components/OrgSettingsPanel.tsx:122-131; web/components/OwnersPanel.tsx:42-55; web/lib/api.ts:3934 → aughor/routers/owners.py:37)
-- [ ] GET /org-settings/industries (web/lib/api.ts:272 → aughor/routers/orgsettings.py:106)
-- [ ] GET /playbook — the count, raw fetch; a second GET /playbook when "Show the plays" mounts PlaybookPanel (web/components/OrgPlaybookSection.tsx:41; web/components/PlaybookPanel.tsx:65 → aughor/routers/metrics.py:1437)
-- [ ] GET /org-settings/agent-policy + GET /rbac/me (web/lib/api.ts:4971, 9786 → aughor/routers/orgsettings.py:222, aughor/routers/roles.py:49)
-- [ ] GET /org-settings/llm — multi-tenant only (web/lib/api.ts:314 → aughor/routers/orgsettings.py:158)
-- [ ] On version-history open: GET /playbook/{id}/versions (web/lib/api.ts:9693 → aughor/routers/metrics.py:1452)
-- [ ] After Save: GET /org-settings/effective (formatter cache) (web/lib/api.ts:529 → aughor/routers/orgsettings.py:137)
+- [ ] GET /org-settings — the app settings (re-read on every scope switch and after Save) (web/lib/api.ts:233 → pramanyx/routers/orgsettings.py:23)
+- [ ] GET /org-settings/allows — each allow's answer and whether set (web/lib/api.ts:224 → pramanyx/routers/orgsettings.py:29)
+- [ ] GET /workspaces/{id} — workspace scope only, the override (web/lib/api.ts:178 → pramanyx/routers/workspace.py:68)
+- [ ] GET /capabilities — multi-tenant? (shows BYOK) (web/lib/api.ts:93 → pramanyx/routers/system.py:206)
+- [ ] GET /owners — read TWICE: once by OrgSettingsPanel for the figure/needs-you, once by OwnersPanel; both re-read on every link/unlink (web/components/OrgSettingsPanel.tsx:122-131; web/components/OwnersPanel.tsx:42-55; web/lib/api.ts:3934 → pramanyx/routers/owners.py:37)
+- [ ] GET /org-settings/industries (web/lib/api.ts:272 → pramanyx/routers/orgsettings.py:106)
+- [ ] GET /playbook — the count, raw fetch; a second GET /playbook when "Show the plays" mounts PlaybookPanel (web/components/OrgPlaybookSection.tsx:41; web/components/PlaybookPanel.tsx:65 → pramanyx/routers/metrics.py:1437)
+- [ ] GET /org-settings/agent-policy + GET /rbac/me (web/lib/api.ts:4971, 9786 → pramanyx/routers/orgsettings.py:222, pramanyx/routers/roles.py:49)
+- [ ] GET /org-settings/llm — multi-tenant only (web/lib/api.ts:314 → pramanyx/routers/orgsettings.py:158)
+- [ ] On version-history open: GET /playbook/{id}/versions (web/lib/api.ts:9693 → pramanyx/routers/metrics.py:1452)
+- [ ] After Save: GET /org-settings/effective (formatter cache) (web/lib/api.ts:529 → pramanyx/routers/orgsettings.py:137)
 - [ ] Writes on action only — PUT /org-settings (orgsettings.py:38), PUT /workspaces/{id} (workspace.py:77), PUT /org-settings/industries (orgsettings.py:113; may drop business profiles, rebuilt later with a model call), POST /playbook/seed (metrics.py:1502), PUT /playbook/{id} (metrics.py:1473), PUT/DELETE /org-settings/agent-policy (orgsettings.py:229, 244), PUT/DELETE /org-settings/llm (orgsettings.py:167, 180; gated SECURITY_SUITE), PUT/DELETE /owners/links (owners.py). Nothing writes or spends on open.
 
 **Top rows today:** no toolbar; the shell's settings section tab strip sits above (web/app/page.tsx:609). The panel opens on the four-figure row (Industries · Priorities · Owners reachable · Exploration budget), then the Needs-you block, then — only with a workspace active — the "Scope: App default | <workspace>" switch. The one "Save" is at the BOTTOM of the form cards (after What Pramanyx may do), not in a top row; Industries, Outside agents, BYOK and Owners each save in their own card.
@@ -2324,14 +2324,14 @@ Note: every write control here appears only with `admin.manage_roles` (`canManag
 - [ ] Refusal lines (the server's own reason, "The change was refused" fallback) in the card or dialog the write came from (web/components/RolesPanel.tsx:36-45, 335, 430, 449, 463, 482, 508)
 
 ### Loads on open
-- [ ] GET /rbac/me — who you are, roles, permissions (web/lib/api.ts:9786 → aughor/routers/roles.py:49)
-- [ ] GET /rbac/roles — the role catalogue (web/lib/api.ts:9793 → aughor/routers/roles.py:37)
-- [ ] GET /admin/users — users measured from the ledger (scans up to 5,000 ledger rows by default) (web/lib/api.ts:10726 → aughor/routers/admin.py:22)
-- [ ] GET /groups — built-in + function groups + the level ladder (web/lib/api.ts:9851 → aughor/routers/groups.py:68)
-- [ ] GET /actions/triggers — channel names (web/lib/api.ts:7468 → aughor/routers/actions.py:103)
-- [ ] GET /rbac/assignments — only when you hold `admin.manage_roles` (web/lib/api.ts:9801 → aughor/routers/roles.py:67)
-- [ ] GET /groups/{id}/members once PER function group — member counts (N+1 reads) (web/components/RolesPanel.tsx:87-92; web/lib/api.ts:9872 → aughor/routers/groups.py:112)
-- [ ] On group "Open": GET /groups/{id}/members + GET /access/grants?principal=group:<id> (web/lib/api.ts:9896 → aughor/routers/groups.py:140)
+- [ ] GET /rbac/me — who you are, roles, permissions (web/lib/api.ts:9786 → pramanyx/routers/roles.py:49)
+- [ ] GET /rbac/roles — the role catalogue (web/lib/api.ts:9793 → pramanyx/routers/roles.py:37)
+- [ ] GET /admin/users — users measured from the ledger (scans up to 5,000 ledger rows by default) (web/lib/api.ts:10726 → pramanyx/routers/admin.py:22)
+- [ ] GET /groups — built-in + function groups + the level ladder (web/lib/api.ts:9851 → pramanyx/routers/groups.py:68)
+- [ ] GET /actions/triggers — channel names (web/lib/api.ts:7468 → pramanyx/routers/actions.py:103)
+- [ ] GET /rbac/assignments — only when you hold `admin.manage_roles` (web/lib/api.ts:9801 → pramanyx/routers/roles.py:67)
+- [ ] GET /groups/{id}/members once PER function group — member counts (N+1 reads) (web/components/RolesPanel.tsx:87-92; web/lib/api.ts:9872 → pramanyx/routers/groups.py:112)
+- [ ] On group "Open": GET /groups/{id}/members + GET /access/grants?principal=group:<id> (web/lib/api.ts:9896 → pramanyx/routers/groups.py:140)
 - [ ] Writes on action only — POST /rbac/assignments (roles.py:78), DELETE /rbac/assignments (roles.py:91), POST /groups (groups.py:85), DELETE /groups/{id} (groups.py:96), POST/DELETE /groups/{id}/members (groups.py:120, 132), POST/DELETE /access/grants (groups.py:152, 171). Nothing writes or spends on open.
 
 **Top rows today:** no toolbar; the shell's settings section tab strip sits above (web/app/page.tsx:609). The panel opens on the four-figure row (You · Role assignments · Function groups · Calls attributed), then Needs you. Actions live in card headers further down: "Create group" (Groups card) and "Assign a role" (Role assignments card), both manager-only.
@@ -2374,8 +2374,8 @@ _Source: web/components/settings/AppearancePanel.tsx (+ web/components/LookPanel
 - none rendered
 
 ### Loads on open
-- [ ] none on open — reads the in-memory/localStorage look (`useLook`) and the shell's theme; the shell's GET /me/preferences at app load is what fills them (web/lib/look.ts getLook/useLook; web/app/page.tsx:1365-1380 → aughor/routers/preferences.py:18)
-- [ ] Writes on change only: PUT /me/preferences/{key} (web/lib/api.ts:51 → aughor/routers/preferences.py:28)
+- [ ] none on open — reads the in-memory/localStorage look (`useLook`) and the shell's theme; the shell's GET /me/preferences at app load is what fills them (web/lib/look.ts getLook/useLook; web/app/page.tsx:1365-1380 → pramanyx/routers/preferences.py:18)
+- [ ] Writes on change only: PUT /me/preferences/{key} (web/lib/api.ts:51 → pramanyx/routers/preferences.py:28)
 
 **Top rows today:** no header or toolbar; the section opens straight onto two cards side by side — "Theme" (Dark / Light) and "Look" (with "Back to the default" at the Look card's top right) (web/components/settings/AppearancePanel.tsx:26-51; web/components/LookPanel.tsx:94-95).
 
@@ -2433,7 +2433,7 @@ _Source: web/components/InferencePanel.tsx (+ ProviderDialog/ProviderForm/Remove
 - [ ] Figure "Fallback" — first link "+N", hover "Tried in order: …"; sub fallback model / "then …" / "the built-in order" / "a failing primary fails the call"; chip "set by the environment" (web/components/InferencePanel.tsx:841-851)
 - [ ] Figure "Keys" — "<usable> of <keyed>"; sub chip "<n> keys unreadable" or "providers with a usable key" (web/components/InferencePanel.tsx:852-855)
 - [ ] Needs-you row "<provider> has no API key" — "Every call to it fails until a key is pasted." (web/components/InferencePanel.tsx:721-725)
-- [ ] Needs-you row "<provider>'s stored key cannot be decrypted" — AUGHOR_SECRET_KEY missing/changed (built-in and added variants) (web/components/InferencePanel.tsx:726-736)
+- [ ] Needs-you row "<provider>'s stored key cannot be decrypted" — PRAMANYX_SECRET_KEY missing/changed (built-in and added variants) (web/components/InferencePanel.tsx:726-736)
 - [ ] Needs-you row "<n> roles have no model · Coder, …" — "Nothing is assumed: a blank role fails its calls, saying so." (web/components/InferencePanel.tsx:737-742)
 - [ ] Needs-you row "The fallback, <X>, has no model" — "this link is skipped" (web/components/InferencePanel.tsx:743-747)
 - [ ] Needs-you row "The fallback provider(s) have no usable key · …" (web/components/InferencePanel.tsx:748-752)
@@ -2465,18 +2465,18 @@ _Source: web/components/InferencePanel.tsx (+ ProviderDialog/ProviderForm/Remove
 - [ ] "Nothing needs you · prices not checked (the usage ledger could not be read)" — withheld said when /usage failed (web/components/InferencePanel.tsx:859)
 - [ ] Added providers empty: "None yet. Any endpoint that speaks the OpenAI API can be added — Azure OpenAI, Mistral, DeepSeek, xAI, Fireworks, your own vLLM…" (web/components/InferencePanel.tsx:1089-1093)
 - [ ] Dialog refusal: the server's own reason in a red alert (web/components/InferencePanel.tsx:284-288)
-- [ ] Key notes: "Stored encrypted on the server (secretvault). Save before testing a new key." / "A key is stored but cannot be decrypted — AUGHOR_SECRET_KEY is missing or has changed…" (web/components/InferencePanel.tsx:920-926)
+- [ ] Key notes: "Stored encrypted on the server (secretvault). Save before testing a new key." / "A key is stored but cannot be decrypted — PRAMANYX_SECRET_KEY is missing or has changed…" (web/components/InferencePanel.tsx:920-926)
 - [ ] "Any model id works — the list is what this provider serves. A blank role fails its calls, saying so." (web/components/InferencePanel.tsx:957)
 - [ ] Fallback notes: "One model for every role; without one this link is skipped." / "No fallback — a failing primary fails the call." / "Agents in Agent Ops inherit this…" (web/components/InferencePanel.tsx:1021-1027)
-- [ ] Env pin note: "AUGHOR_FALLBACK_BACKENDS is set in the environment and overrides the choice above…" (web/components/InferencePanel.tsx:1028-1033)
+- [ ] Env pin note: "PRAMANYX_FALLBACK_BACKENDS is set in the environment and overrides the choice above…" (web/components/InferencePanel.tsx:1028-1033)
 - [ ] Paid warning: "<model> is a paid model — every paid call bills your OpenRouter credit (:free models are the default)." (web/components/InferencePanel.tsx:1046-1051)
 - [ ] Save disabled hover: "A paid model is bound — tick the acknowledgment above to save" (web/components/InferencePanel.tsx:1063-1065)
 - [ ] Test failure "✗ <error or 'test failed'>"; probe failure "✗ <error or 'probe failed'>" (web/components/InferencePanel.tsx:794, 806)
 
 ### Loads on open
-- [ ] GET /llm/config — the saved binding, keys state, capabilities, fallback chain, added providers (web/lib/api.ts:8903 → aughor/routers/llm.py:21)
-- [ ] GET /usage?by=provider,model — only to name bound models with no price; asks the provider's price catalogue at most hourly (outbound fetch, in-memory, no write, no model spend) (web/lib/api.ts:12115 → aughor/routers/governance.py:22, 49; aughor/obs/usage.py:223)
-- [ ] GET /llm/models?backend=<selected> — live model list fetched from the provider (outbound call, cached in memory; no write, no spend) (web/lib/api.ts:8930 → aughor/routers/llm.py:135)
+- [ ] GET /llm/config — the saved binding, keys state, capabilities, fallback chain, added providers (web/lib/api.ts:8903 → pramanyx/routers/llm.py:21)
+- [ ] GET /usage?by=provider,model — only to name bound models with no price; asks the provider's price catalogue at most hourly (outbound fetch, in-memory, no write, no model spend) (web/lib/api.ts:12115 → pramanyx/routers/governance.py:22, 49; pramanyx/obs/usage.py:223)
+- [ ] GET /llm/models?backend=<selected> — live model list fetched from the provider (outbound call, cached in memory; no write, no spend) (web/lib/api.ts:8930 → pramanyx/routers/llm.py:135)
 - [ ] GET /llm/models?backend=<fallback> — when a fallback provider is chosen (web/components/InferencePanel.tsx:514-521)
 - [ ] On click only: POST /llm/config (llm.py:45), POST /llm/config/test (SPENDS: real completions, llm.py:116), POST /llm/config/cache-probe (SPENDS + persists verdict, llm.py:188), POST|DELETE /llm/models (llm.py:153, 170), POST /llm/providers (llm.py:73), PUT|DELETE /llm/providers/{id} (llm.py:88, 98) (web/lib/api.ts:8855-9022)
 
@@ -2568,14 +2568,14 @@ _Source: web/components/SystemPanel.tsx (+ Backend, FeatureFlags, FlagRow, Gradu
 - [ ] Installs block renders nothing when installs cannot be read (web/components/PackInstalls.tsx:135, 144)
 
 ### Loads on open
-- [ ] GET /dev/stats — in-process counters; re-read every 60s and on each `node.span` / `job.` kernel event (web/lib/api.ts:3853 → aughor/routers/system.py:269; web/components/SystemPanel.tsx:203-209)
+- [ ] GET /dev/stats — in-process counters; re-read every 60s and on each `node.span` / `job.` kernel event (web/lib/api.ts:3853 → pramanyx/routers/system.py:269; web/components/SystemPanel.tsx:203-209)
 - [ ] EventSource /events/stream — kernel journal subscription that triggers the stats re-read (web/lib/events.ts:47-48)
-- [ ] GET /system/flags (web/lib/api.ts:9745 → aughor/routers/system.py:235)
-- [ ] GET /evals/graduations — graduation evidence for queued flags (web/lib/api.ts:12320 → aughor/routers/evals.py:340)
-- [ ] GET /packs (web/lib/api.ts:9950 → aughor/routers/packs.py:66)
-- [ ] On expanding a pack: GET /connections, GET /packs/{id}/deltas?status=proposed, GET /packs/{id}/installs (web/components/PacksManager.tsx:100-107; web/components/PackInstalls.tsx:133-142 → aughor/routers/connections.py:82, packs.py:552, 382)
-- [ ] On expanding a pack: GET /catalog/tree — WRITES ON OPEN (on expand): introspects every connection's warehouse and reconciles the metastore's schema rows (web/components/PacksManager.tsx:109-117 → web/lib/api.ts:945 → aughor/routers/catalog.py:234, 263-278)
-- [ ] On "What changed"/"Check": GET /packs/{id}/upgrade?connection_id=… — read-only, no model call (web/lib/api.ts:10110 → aughor/routers/packs.py:400)
+- [ ] GET /system/flags (web/lib/api.ts:9745 → pramanyx/routers/system.py:235)
+- [ ] GET /evals/graduations — graduation evidence for queued flags (web/lib/api.ts:12320 → pramanyx/routers/evals.py:340)
+- [ ] GET /packs (web/lib/api.ts:9950 → pramanyx/routers/packs.py:66)
+- [ ] On expanding a pack: GET /connections, GET /packs/{id}/deltas?status=proposed, GET /packs/{id}/installs (web/components/PacksManager.tsx:100-107; web/components/PackInstalls.tsx:133-142 → pramanyx/routers/connections.py:82, packs.py:552, 382)
+- [ ] On expanding a pack: GET /catalog/tree — WRITES ON OPEN (on expand): introspects every connection's warehouse and reconciles the metastore's schema rows (web/components/PacksManager.tsx:109-117 → web/lib/api.ts:945 → pramanyx/routers/catalog.py:234, 263-278)
+- [ ] On "What changed"/"Check": GET /packs/{id}/upgrade?connection_id=… — read-only, no model call (web/lib/api.ts:10110 → pramanyx/routers/packs.py:400)
 - [ ] On click only: POST /dev/stats/reset (system.py:276), PUT /system/flags/{name} (system.py:247), POST /packs/{id}/propose-bindings, /bind, /evaluate (SPENDS), /upgrade, POST /packs/deltas/{id}/status (web/lib/api.ts:3859-10117)
 
 **Top rows today:** the panel's own header row — "System Stats" with "Uptime … · refreshed …" on the left and "Reset counters" on the right (web/components/SystemPanel.tsx:244-261); next the Backend section (URL field, Save, Test, Reset to default).
@@ -2664,7 +2664,7 @@ _Source: web/components/IntegrationsPanel.tsx (+ web/components/agentops/AgentSl
 - [ ] Manifest JSON block + the server's numbered steps (web/components/agentops/AgentSlackDoor.tsx:339-363)
 - [ ] Bot edit form (inline) (web/components/IntegrationsPanel.tsx:775-831)
 - [ ] Supervisor Details: Run by, Why / Start it (`cd bots/slack && npm run dev`), Process pid, Since, Restarts, Last heartbeat (open/failed), Last exit, Last error, Missing, Its log, and the key row when managed (web/components/IntegrationsPanel.tsx:917-940)
-- [ ] Fresh supervisor key shown once (`AUGHOR_RUNTIME_KEY=…`) with copy-now warning and grace-until line (web/components/IntegrationsPanel.tsx:857-872)
+- [ ] Fresh supervisor key shown once (`PRAMANYX_RUNTIME_KEY=…`) with copy-now warning and grace-until line (web/components/IntegrationsPanel.tsx:857-872)
 - [ ] window.confirm "Delete the Slack bot "<name>"? Its tokens are removed and its socket closes…" (web/components/IntegrationsPanel.tsx:255-258)
 - [ ] ConnectMenu dropdown (web/components/IntegrationsPanel.tsx:118-127)
 - [ ] MCP Manage controls block with health line (web/components/McpServersSection.tsx:359-396)
@@ -2723,13 +2723,13 @@ _Source: web/components/IntegrationsPanel.tsx (+ web/components/agentops/AgentSl
 - [ ] Tool roster grant failure text (web/components/McpServersSection.tsx:563-567)
 
 ### Loads on open
-- [ ] GET /integrations/catalog — providers, products, grants, redirect URI (web/lib/api.ts:6182 → aughor/routers/integrations.py:67)
-- [ ] GET /slack-bots, GET /agents/custom, GET /connections — only when a provider routes to the Slack app door (web/lib/api.ts:6356, 10268, 30 → aughor/routers/slackbots.py:40, agents.py:273, connections.py:82)
-- [ ] GET /slack-bots/supervisor and GET /slack-bots/supervisor-key (status only, never the key) (web/lib/api.ts:6428, 6348 → aughor/routers/slackbots.py:248, 293)
+- [ ] GET /integrations/catalog — providers, products, grants, redirect URI (web/lib/api.ts:6182 → pramanyx/routers/integrations.py:67)
+- [ ] GET /slack-bots, GET /agents/custom, GET /connections — only when a provider routes to the Slack app door (web/lib/api.ts:6356, 10268, 30 → pramanyx/routers/slackbots.py:40, agents.py:273, connections.py:82)
+- [ ] GET /slack-bots/supervisor and GET /slack-bots/supervisor-key (status only, never the key) (web/lib/api.ts:6428, 6348 → pramanyx/routers/slackbots.py:248, 293)
 - [ ] All of the above re-run on every window focus (web/components/IntegrationsPanel.tsx:210-214)
-- [ ] GET /mcp-servers — when the MCP servers tab opens; polled every 3s while a sign-in is pending (web/lib/api.ts:6081 → aughor/routers/mcpservers.py:133; web/components/McpServersSection.tsx:134-142)
-- [ ] POST /mcp-servers/{id}/discover — WRITES ON OPEN: fired automatically, once per server per mount, for any server signed in but never discovered (contacts the remote server and stores its roster) (web/components/McpServersSection.tsx:206-217 → aughor/routers/mcpservers.py:243)
-- [ ] On click only: GET /mcp-servers/{id}/health — a live probe that also refreshes the stored roster (a GET that writes) (web/lib/api.ts:6159 → aughor/routers/mcpservers.py:263-269)
+- [ ] GET /mcp-servers — when the MCP servers tab opens; polled every 3s while a sign-in is pending (web/lib/api.ts:6081 → pramanyx/routers/mcpservers.py:133; web/components/McpServersSection.tsx:134-142)
+- [ ] POST /mcp-servers/{id}/discover — WRITES ON OPEN: fired automatically, once per server per mount, for any server signed in but never discovered (contacts the remote server and stores its roster) (web/components/McpServersSection.tsx:206-217 → pramanyx/routers/mcpservers.py:243)
+- [ ] On click only: GET /mcp-servers/{id}/health — a live probe that also refreshes the stored roster (a GET that writes) (web/lib/api.ts:6159 → pramanyx/routers/mcpservers.py:263-269)
 - [ ] On click only: PUT /integrations/{p}/app (integrations.py:191), POST /integrations/{p}/connect (214), POST /integrations/connections/{id}/revoke (291), POST /slack-bots/apps (slackbots.py:116), GET /slack-bots/manifest (53), POST /slack-bots (402), PATCH /slack-bots/{id} (417), DELETE /slack-bots/{id} (451), POST /slack-bots/supervisor/restart (257), POST /slack-bots/supervisor-key (273), POST/PUT/DELETE /mcp-servers… (mcpservers.py:140-321)
 
 **Top rows today:** no header; the section opens on the Figures row (Connected · Slack bots · Supervisor), then "Needs you", then the sub-tab strip (Providers · Slack bots · MCP servers); the Providers card carries "tokens held encrypted · never shown" and the MCP card "Custom MCP" at their top right (web/components/IntegrationsPanel.tsx:951-986; web/components/McpServersSection.tsx:460-465).
@@ -2754,7 +2754,7 @@ _Source: web/app/page.tsx (Topbar, Sidebar, Home), web/app/layout.tsx, web/compo
 - [ ] LIVE activity strip — clickable (role=link, Enter too) opens Agent Ops (Overview); hidden entirely when the series cannot be read (web/components/shell/ActivityStrip.tsx:104, :113, web/app/page.tsx:274)
 - [ ] Per-tick hover — "<N>h ago · <n> agent runs · mostly <agent>" (web/components/shell/ActivityStrip.tsx:120)
 - [ ] "Search, ask, or run a command ⌘K" button — opens the command palette (web/app/page.tsx:278)
-- [ ] Theme segmented control "dark | light" — applies the theme, stores it in localStorage `aughor_theme` and PUTs /me/preferences/theme (web/app/page.tsx:285, :1404)
+- [ ] Theme segmented control "dark | light" — applies the theme, stores it in localStorage `pramanyx_theme` and PUTs /me/preferences/theme (web/app/page.tsx:285, :1404)
 - [ ] User menu (AuthControl), three states: static "AU" avatar when no identity is configured (tooltip "No identity configured") (web/components/AuthControl.tsx:41, :104)
 - [ ] User menu: "Sign in with Google" button (Google Identity Services) when OIDC=google and signed out; on credential → POST sign-in, page reloads (web/components/AuthControl.tsx:77, :109)
 - [ ] User menu: signed-in chip (initials + email local part + caret) → popover with full email, "verified by the server on every call", and "Sign out" (signs out, reloads) (web/components/AuthControl.tsx:123, :139, :143)
@@ -2864,10 +2864,10 @@ _Source: web/app/page.tsx (Topbar, Sidebar, Home), web/app/layout.tsx, web/compo
 - [ ] `?departure=<id>` — written by the shell's openDepartures (from Now) before opening Agent Ops ▸ Departures (web/app/page.tsx:1769)
 - [ ] `?create=agent` — written by the palette's "Create agent"; consumed by Agent Ops (web/components/CommandPalette.tsx:416)
 - [ ] Bare `/` with org setting `chat_first_home` — redirects once to `/chat` (web/app/page.tsx:1536)
-- [ ] `aughor:navigate` window event — a nested surface asks the shell to change screen (validated against VALID_TABS; may carry conn, id, run) (web/app/page.tsx:1200)
-- [ ] `aughor:ask-spotlight` window event — opens the palette straight into Spotlight with a parked question (askSpotlight) (web/app/page.tsx:1400)
-- [ ] `aughor:turn-complete` window event — re-reads /me/preferences so a theme set in chat applies without reload (web/app/page.tsx:1391)
-- [ ] localStorage keys: `aughor_last_conn`, `aughor_last_workspace`, `aughor_theme`, the rail's collapsed key (web/app/page.tsx:877, web/lib/themeSwitch.ts:14, web/lib/navCollapse.ts:14)
+- [ ] `pramanyx:navigate` window event — a nested surface asks the shell to change screen (validated against VALID_TABS; may carry conn, id, run) (web/app/page.tsx:1200)
+- [ ] `pramanyx:ask-spotlight` window event — opens the palette straight into Spotlight with a parked question (askSpotlight) (web/app/page.tsx:1400)
+- [ ] `pramanyx:turn-complete` window event — re-reads /me/preferences so a theme set in chat applies without reload (web/app/page.tsx:1391)
+- [ ] localStorage keys: `pramanyx_last_conn`, `pramanyx_last_workspace`, `pramanyx_theme`, the rail's collapsed key (web/app/page.tsx:877, web/lib/themeSwitch.ts:14, web/lib/navCollapse.ts:14)
 
 ### Empty / error / loading / withheld states
 - [ ] "No connections in the org yet — add one first, then pick it here." — membership editor with no connections (web/components/WorkspaceSwitcher.tsx:186)
@@ -2887,23 +2887,23 @@ _Source: web/app/page.tsx (Topbar, Sidebar, Home), web/app/layout.tsx, web/compo
 - [ ] Failed rail-count reads are swallowed: the badge is simply absent (same look as zero) (web/components/shell/useNavCounts.ts:57)
 
 ### Loads on open
-- [ ] GET /connections — the connection list (web/lib/api.ts:30 → aughor/routers/connections.py:82)
-- [ ] GET /workspaces — the workspace list (web/lib/api.ts:172 → aughor/routers/workspace.py:49) [WRITES ON OPEN: ensure_default_workspace() creates the Default workspace if absent and adds newly registered connections to it, on every call]
-- [ ] GET /me/preferences — theme and look (accent, grey, corners, scaling); again after every chat turn (web/lib/api.ts:45 → aughor/routers/preferences.py:18)
-- [ ] GET /org-settings/effective — currency/date formats and the chat-first-home redirect; again on workspace switch (web/lib/api.ts:529 → aughor/routers/orgsettings.py:137)
-- [ ] GET /business-profile/currency — the dataset's confirmed currency, per connection + schema (web/lib/api.ts:8517 → aughor/routers/profile.py:30)
+- [ ] GET /connections — the connection list (web/lib/api.ts:30 → pramanyx/routers/connections.py:82)
+- [ ] GET /workspaces — the workspace list (web/lib/api.ts:172 → pramanyx/routers/workspace.py:49) [WRITES ON OPEN: ensure_default_workspace() creates the Default workspace if absent and adds newly registered connections to it, on every call]
+- [ ] GET /me/preferences — theme and look (accent, grey, corners, scaling); again after every chat turn (web/lib/api.ts:45 → pramanyx/routers/preferences.py:18)
+- [ ] GET /org-settings/effective — currency/date formats and the chat-first-home redirect; again on workspace switch (web/lib/api.ts:529 → pramanyx/routers/orgsettings.py:137)
+- [ ] GET /business-profile/currency — the dataset's confirmed currency, per connection + schema (web/lib/api.ts:8517 → pramanyx/routers/profile.py:30)
 - [ ] GET /auth/config — which identity control to draw (web/components/AuthControl.tsx:59)
-- [ ] GET /obs/timeseries?source=jobs&range=24h — LIVE ticks; on job/exploration kernel events (throttled 10 s) and every 60 s (web/lib/api.ts:11550 → aughor/routers/obs.py:678)
-- [ ] GET /jobs?state=active&limit=200 — LIVE "<n> live" (Worker jobs excluded) (web/lib/api.ts:9219 → aughor/routers/jobs.py:71)
-- [ ] GET /exploration/{conn}/status — LIVE "exploring" (web/lib/api.ts:2530 → aughor/routers/exploration.py:438)
-- [ ] GET /alerts?limit=100&workspace_id= — Monitors badge; on monitor/investigation/inquiry/outcome events (throttled 5 s), every 60 s and on the waiting-changed event (web/lib/api.ts:5637 → aughor/routers/monitors.py:318)
-- [ ] GET /investigations?workspace_id= — Agent runs badge (web/components/shell/useNavCounts.ts:58 → aughor/routers/investigations.py:6384)
-- [ ] GET /record/decisions?due=true, GET /record/inquiries?due=true, GET /record/set-aside — Now badge (web/lib/record.ts:383, :203, :665 → aughor/routers/record.py:274, :560, :846)
-- [ ] GET /departures/summary (or GET /departures?awaiting=true&limit=200 when a departure is set aside) — Now badge (web/lib/api.ts:6975, :6964 → aughor/routers/departures.py:75)
-- [ ] GET /canvases?workspace_id= — only when a `?canvas=` link is pending (web/lib/api.ts:4426 → aughor/routers/canvas.py:55)
+- [ ] GET /obs/timeseries?source=jobs&range=24h — LIVE ticks; on job/exploration kernel events (throttled 10 s) and every 60 s (web/lib/api.ts:11550 → pramanyx/routers/obs.py:678)
+- [ ] GET /jobs?state=active&limit=200 — LIVE "<n> live" (Worker jobs excluded) (web/lib/api.ts:9219 → pramanyx/routers/jobs.py:71)
+- [ ] GET /exploration/{conn}/status — LIVE "exploring" (web/lib/api.ts:2530 → pramanyx/routers/exploration.py:438)
+- [ ] GET /alerts?limit=100&workspace_id= — Monitors badge; on monitor/investigation/inquiry/outcome events (throttled 5 s), every 60 s and on the waiting-changed event (web/lib/api.ts:5637 → pramanyx/routers/monitors.py:318)
+- [ ] GET /investigations?workspace_id= — Agent runs badge (web/components/shell/useNavCounts.ts:58 → pramanyx/routers/investigations.py:6384)
+- [ ] GET /record/decisions?due=true, GET /record/inquiries?due=true, GET /record/set-aside — Now badge (web/lib/record.ts:383, :203, :665 → pramanyx/routers/record.py:274, :560, :846)
+- [ ] GET /departures/summary (or GET /departures?awaiting=true&limit=200 when a departure is set aside) — Now badge (web/lib/api.ts:6975, :6964 → pramanyx/routers/departures.py:75)
+- [ ] GET /canvases?workspace_id= — only when a `?canvas=` link is pending (web/lib/api.ts:4426 → pramanyx/routers/canvas.py:55)
 - [ ] Palette, on every open: GET /investigations (recent runs) and GET /connections/{id}/schema/rich (tables, shared cache) (web/components/CommandPalette.tsx:282, :292)
 - [ ] Palette, while typing (2+ chars): POST /objects/find (read-only search, POST body) (web/lib/objects.ts:449)
-- [ ] Palette "Ask Spotlight", follow-ups, and selecting a recent run or a table: start a chat turn via POST /api/chat, which forwards to the API's /ask or /chat [SPENDS: each is a model-backed chat turn; Spotlight pins depth "quick", a recent run or a table opens a full chat turn on the chat screen] (web/lib/useAughorChat.ts:85, web/app/api/chat/route.ts:247, web/components/CommandPalette.tsx:228)
+- [ ] Palette "Ask Spotlight", follow-ups, and selecting a recent run or a table: start a chat turn via POST /api/chat, which forwards to the API's /ask or /chat [SPENDS: each is a model-backed chat turn; Spotlight pins depth "quick", a recent run or a table opens a full chat turn on the chat screen] (web/lib/usePramanyxChat.ts:85, web/app/api/chat/route.ts:247, web/components/CommandPalette.tsx:228)
 - [ ] Not polled by the shell on purpose: GET /control-room/needs-human (it writes), which stays inside Agent Ops (web/components/shell/useNavCounts.ts:17)
 
 ### In flight on 2026-11-10 (uncommitted in the live checkout, not part of the baseline; listed so it is not double-counted)

@@ -12,17 +12,17 @@ import json
 
 import pytest
 
-from aughor.llm import org_config as oc
-from aughor.llm import provider as prov
-from aughor.org.context import using_org
+from pramanyx.llm import org_config as oc
+from pramanyx.llm import provider as prov
+from pramanyx.org.context import using_org
 
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     """Every test starts with no org rows, an empty overlay cache, and the faux
     deployment backend — so provider construction never builds a real client."""
-    monkeypatch.setenv("AUGHOR_BACKEND", "faux")
-    monkeypatch.delenv("AUGHOR_CODER_MODEL", raising=False)
+    monkeypatch.setenv("PRAMANYX_BACKEND", "faux")
+    monkeypatch.delenv("PRAMANYX_CODER_MODEL", raising=False)
     for org in ("acme", "globex", "default"):
         oc.clear_org_config(org)
     yield
@@ -69,12 +69,12 @@ def test_the_org_overlay_wins_and_the_neighbour_is_untouched():
 
 
 def test_an_org_backend_disables_the_env_model_overrides(monkeypatch):
-    """The CI-5a precedence trap, one layer up: AUGHOR_*_MODEL names were tuned for
+    """The CI-5a precedence trap, one layer up: PRAMANYX_*_MODEL names were tuned for
     the ENV backend — applying them to an org's openrouter binding would 404 every
     call. The env layer stays skipped; with no built-in defaults left underneath it,
     the org simply has no model until it sets one (and gets NoModelConfigured), which
     is a better outcome than a call dispatched to the wrong vendor's id."""
-    monkeypatch.setenv("AUGHOR_CODER_MODEL", "llama3:8b")
+    monkeypatch.setenv("PRAMANYX_CODER_MODEL", "llama3:8b")
     oc.save_org_config("acme", {"backend": "openrouter"})
 
     with using_org("acme"):
@@ -186,8 +186,8 @@ def _deployment_keys(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-operator-anthropic")
     monkeypatch.setenv("GEMINI_API_KEY", "sk-operator-gemini")
     monkeypatch.setenv("GROQ_API_KEY", "sk-operator-groq")
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_BACKENDS", raising=False)
 
 
 def _candidates(backend="openrouter", role="coder"):
@@ -242,7 +242,7 @@ def test_scoping_does_not_disable_the_fallback_kill_switch(_deployment_keys,
     oc.save_org_config("acme", {"backend": "openrouter",
                                 "keys": {"openrouter": "sk-or-acme",
                                          "anthropic": "sk-ant-acme"}})
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
 
     with using_org("acme"):
         assert _candidates(backend="openrouter") == []
@@ -251,7 +251,7 @@ def test_scoping_does_not_disable_the_fallback_kill_switch(_deployment_keys,
 def test_scoping_leaves_keyless_local_backends_reachable(_deployment_keys, monkeypatch):
     """Local backends cost nothing to try, so excluding them would shorten a BYOK
     org's chain for no benefit."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "ollama,anthropic")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "ollama,anthropic")
     oc.save_org_config("acme", {"backend": "openrouter",
                                 "keys": {"openrouter": "sk-or-acme"}})
 

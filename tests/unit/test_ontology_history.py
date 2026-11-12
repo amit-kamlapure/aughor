@@ -18,13 +18,13 @@ import itertools
 
 import pytest
 
-from aughor.kernel import lifecycle
-from aughor.ontology import dependents as DEP
-from aughor.ontology import history as H
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import KineticAction, Undo
-from aughor.ontology.overrides import OntologyOverride, find_override, save_override
-from aughor.ontology.processes import process_fields, process_from_fields
+from pramanyx.kernel import lifecycle
+from pramanyx.ontology import dependents as DEP
+from pramanyx.ontology import history as H
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import KineticAction, Undo
+from pramanyx.ontology.overrides import OntologyOverride, find_override, save_override
+from pramanyx.ontology.processes import process_fields, process_from_fields
 from tests.unit.test_object_processes import FULFILMENT, fresh_graph
 
 CONN, SCHEMA = "history-t", "ecommerce"
@@ -32,13 +32,13 @@ CONN, SCHEMA = "history-t", "ecommerce"
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_SEED_ROOT", tmp_path / "seed")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")     # the gate is on by default since 2026-10-04
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")     # the gate is on by default since 2026-10-04
 
 
 def _in_force(ov: OntologyOverride) -> None:
@@ -77,7 +77,7 @@ def _key() -> str:
 # ── every save and withdrawal kept ────────────────────────────────────────────────────────
 
 def test_a_promise_declared_changed_twice_and_withdrawn_reads_back_four_versions(monkeypatch, clock):
-    from aughor.org.context import reset_actor, set_actor
+    from pramanyx.org.context import reset_actor, set_actor
     token = set_actor("person:ana")
     try:
         for days in (2, 3, 4):
@@ -139,7 +139,7 @@ def test_a_history_that_cannot_be_kept_never_undoes_the_declaration(monkeypatch)
     def broken(*a, **k):
         raise OSError("disk full")
     monkeypatch.setattr(lifecycle, "record", broken)
-    monkeypatch.setattr("aughor.kernel.errors.tolerate", lambda exc, reason, **k: said.append(reason))
+    monkeypatch.setattr("pramanyx.kernel.errors.tolerate", lambda exc, reason, **k: said.append(reason))
     _in_force(_dispatch(2))
     assert find_override(CONN, SCHEMA, "process", "dispatch") is not None
     assert said and "could not be kept" in said[0]
@@ -148,7 +148,7 @@ def test_a_history_that_cannot_be_kept_never_undoes_the_declaration(monkeypatch)
 def test_the_generic_lifecycle_doors_read_a_declaration_and_refuse_to_write_one(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     _in_force(_dispatch(2))
     client = TestClient(app)
     assert client.get("/lifecycle/ontology_declaration/history", params={"natural_key": _key()}).status_code == 200
@@ -161,14 +161,14 @@ def test_the_generic_lifecycle_doors_read_a_declaration_and_refuse_to_write_one(
 # ── what depends on a declaration ─────────────────────────────────────────────────────────────
 
 def _automation(name: str, **kw):
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.models import Automation, Condition, Effect
     conditions = kw.get("conditions") or [Condition(kind="schedule", config={"cron": "0 7 * * *"})]
     effects = kw.get("effects") or [Effect(kind="investigate", config={"question": "why"})]
     return Automation(name=name, conn_id=CONN, conditions=conditions, effects=effects)
 
 
 def _watch():
-    from aughor.automations.models import Condition
+    from pramanyx.automations.models import Condition
     return _automation("Dispatch promise watch",
                        conditions=[Condition(kind="promise_breached", config={"process": "order_fulfilment"})])
 
@@ -204,7 +204,7 @@ def test_a_link_a_promise_walks_is_depended_on(graph):
 
 
 def test_an_action_a_step_runs_or_another_undoes_with_is_depended_on(graph):
-    from aughor.automations.models import Effect
+    from pramanyx.automations.models import Effect
     graph.kinetic_actions = {
         "flag_order": KineticAction(id="flag_order", kind="annotate", object_type="Order"),
         "notify": KineticAction(id="notify", kind="side_effect", undo=Undo(action_id="flag_order", window_hours=24)),
@@ -225,7 +225,7 @@ def test_a_process_nothing_watches_has_no_dependents(graph):
 
 @pytest.fixture
 def served(graph, monkeypatch):
-    from aughor.routers import ontology as ONT
+    from pramanyx.routers import ontology as ONT
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda conn, schema=None: graph)
     monkeypatch.setattr(ONT, "_resolve_schema", lambda conn, schema=None: SCHEMA)
     monkeypatch.setattr(DEP, "_automations", lambda conn: [_watch()])
@@ -233,7 +233,7 @@ def served(graph, monkeypatch):
                                fields={"declared": True, **process_fields(FULFILMENT)}))
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

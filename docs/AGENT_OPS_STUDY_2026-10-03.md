@@ -25,7 +25,7 @@ result against what the field now ships.
 - **Every layer opened**, every tab of a custom agent opened, the Create flow walked end to
   end, the Slack door rendered, Integrations → Slack read.
 - **A throwaway agent was created and deleted** (`ua_1fd66217a786`, `POST /agents/custom` →
-  `DELETE`, both 200; the create route makes no model call — `aughor/routers/agents.py:327-340`
+  `DELETE`, both 200; the create route makes no model call — `pramanyx/routers/agents.py:327-340`
   is validation plus an INSERT). Nothing else was written.
 - **No model call was spent.** "Draft it", "Run evaluation", "Propose" and "Run now" were not
   pressed — each is a model call (`custom_agents/propose.py:220-223`, `quality.py:31`).
@@ -40,8 +40,8 @@ result against what the field now ships.
 | Surface | What it holds | Size |
 |---|---|---|
 | Seven layers | Overview · Roster · Attention · Activity (Usage · Stream · Traces · Phases) · Automations · Hub · Departures | 11.6k lines of TSX across 26 files |
-| Agents | **6 built-in "charters"** — static Python (`aughor/kernel/agents.py:103-204`), governable only by enable/budget/model pin · **custom agents** — rows in `data/agents.db` with instructions, connection, schema scope, documents, packs, grants, goldens, guardrails, revisions (`aughor/custom_agents/models.py:33-117`) | 19 `/agents*` routes |
-| Doors to an agent | Web chat · HTTP `/ask` · AG-UI · Slack (Socket Mode, one app per bot record) · an automation's `investigate` step. **Not** MCP (the `ask` tool has no agent parameter, `aughor/mcp/server.py:61-79`), **not** email, **not** Teams | 9 `/slack-bots*` routes |
+| Agents | **6 built-in "charters"** — static Python (`pramanyx/kernel/agents.py:103-204`), governable only by enable/budget/model pin · **custom agents** — rows in `data/agents.db` with instructions, connection, schema scope, documents, packs, grants, goldens, guardrails, revisions (`pramanyx/custom_agents/models.py:33-117`) | 19 `/agents*` routes |
+| Doors to an agent | Web chat · HTTP `/ask` · AG-UI · Slack (Socket Mode, one app per bot record) · an automation's `investigate` step. **Not** MCP (the `ask` tool has no agent parameter, `pramanyx/mcp/server.py:61-79`), **not** email, **not** Teams | 9 `/slack-bots*` routes |
 | Slack runtime | A Node process in `bots/slack/` (1.5k lines TS) that reads `GET /slack-bots/runtime` every 30 s and opens one socket per bot | started by hand, by nobody else |
 | Live estate (this machine) | 6 charters · 2 custom agents · 1 Slack bot (`sb_f4755b5da613` → The Look Analyst) · 6 automations (4 live, 3 on probation) · 52 departures (24 departed, 28 held) · 0 alert rules · 0 MCP servers | — |
 | Tests | Python: 19 unit files touch these routers and stores. Web: `DeparturesPanel` (5 tests) and `TraceFlow` (724 lines) render a panel; `AgenticAgentsPanel.test.tsx` and `AutomationsPanel.test.tsx` test helpers only. **7 of 8 panels and both Create/Slack-door components have no rendering test.** | — |
@@ -56,7 +56,7 @@ REPORTED = an audit's claim, cited but not re-read.
 | # | Finding | Evidence | How verified |
 |---|---|---|---|
 | A1 | **Twenty manual steps across four surfaces** to get one @mention answered from a fresh install: Pramanyx UI → api.slack.com (manifest paste, install, three separate pages for three secrets) → Pramanyx UI (paste three) → Pramanyx UI (mint a supervisor key, shown once) → terminal (`cp .env.local.example`, paste key, `npm install`, `npm run dev`) → Slack (`/invite`). Five hand-copied secrets/blobs. | Ledger in §8; `AgentSlackDoor.tsx:178-253`; `routers/slackbots.py:67-76`; `IntegrationsPanel.tsx:438-476`; `bots/slack/package.json` | LIVE + CODE |
-| A2 | **Nothing starts or watches the supervisor.** `start.sh` starts API and web only; no Dockerfile, no service unit, no launch entry, no installer step. On this machine it is **not running** (`ps` shows no `bots/slack` process) while the bot card reads enabled and "Answers as The Look Analyst". There is no heartbeat, `last_seen` or "listening" field anywhere in the store, the API or the UI — a dead bot is indistinguishable from a live one. | `start.sh:4-8`; grep of `heartbeat|last_seen|running` across `aughor/slackbots`, `routers/slackbots.py`, `IntegrationsPanel.tsx`, `AgentSlackDoor.tsx` = 0 hits | LIVE + CODE |
+| A2 | **Nothing starts or watches the supervisor.** `start.sh` starts API and web only; no Dockerfile, no service unit, no launch entry, no installer step. On this machine it is **not running** (`ps` shows no `bots/slack` process) while the bot card reads enabled and "Answers as The Look Analyst". There is no heartbeat, `last_seen` or "listening" field anywhere in the store, the API or the UI — a dead bot is indistinguishable from a live one. | `start.sh:4-8`; grep of `heartbeat|last_seen|running` across `pramanyx/slackbots`, `routers/slackbots.py`, `IntegrationsPanel.tsx`, `AgentSlackDoor.tsx` = 0 hits | LIVE + CODE |
 | A3 | **The success message omits the process.** After "Create Slack bot" the UI says *invite it, then add a Post-to-Slack action* — not that a supervisor must run, nor that a key must be minted. The key control appears only once a bot exists, one screen away. | `AgentSlackDoor.tsx:221-226`; `IntegrationsPanel.tsx:438-476` | CODE |
 | A4 | **Every UI-made bot is in "legacy compat" mode.** `render_manifest(agent_view=True)` exists and adds `assistant:write` + the Agents & AI Apps feature, but neither the manifest call nor the create call from the UI ever sends `agent_view`; the live bot has `agent_view: false`. Progress cards and the native stop button are therefore "silently absent" — the README's own words. Slack announced on 2026-08-20 that `assistant_view` retires in February 2027, that **new apps can no longer use it**, and that the move to `agent_view` is one-way. | `slackbots/manifest.py:45-81`; `AgentSlackDoor.tsx:96-100,136-143`; `bots/slack/README.md:17-31`; `GET /slack-bots` live | LIVE + CODE + web |
 | A5 | **Manifest and README disagree on what agent mode needs.** The manifest adds one scope; the README lists four extra events (`app_home_opened`, `app_context_changed`, `agent_session_stopped`, `agent_session_title_changed`). Nobody has run the agent-mode manifest against Slack. | `manifest.py:73-80` vs `README.md:39-41` | CODE |
@@ -141,9 +141,9 @@ ahead or unusual:
 - **Configuration revisions with restore**, guardrails saved apart from configuration, grants
   that only ever *propose*.
 - **The Map**: one read-only graph of what an agent is scoped to, what reaches it, what it runs.
-- **Spend by call site and by role** (`aughor.agent.tool_loop:run_tool_loop 238K`) — an
+- **Spend by call site and by role** (`pramanyx.agent.tool_loop:run_tool_loop 238K`) — an
   attribution most consoles stop short of.
-- **Model-agnostic by rule** (no model id in `aughor/`), free-by-default pins.
+- **Model-agnostic by rule** (no model id in `pramanyx/`), free-by-default pins.
 
 ## 4 · Against the bar
 
@@ -189,7 +189,7 @@ Three conclusions:
    verdicts land in the connection's pool, indistinguishable from any other asker's.
 2. **The human half is starved, not broken.** The corrections loop works but has seen six
    verdicts in two months; the Slack reaction path posts a verdict with no `sql_source` and a
-   connection of `""` while the ask path uses `"workspace"` (`bots/slack/src/aughor.ts:103,351`),
+   connection of `""` while the ask path uses `"workspace"` (`bots/slack/src/pramanyx.ts:103,351`),
    so a Slack ❌ evicts a memory but never teaches a correction; the message→turn map is in
    memory and lost on restart.
 3. **"Self-recursive" has a definition the repo already fixed:** no weights, no online learning

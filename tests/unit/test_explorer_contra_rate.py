@@ -20,10 +20,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent.loss_signals import (
+from pramanyx.agent.loss_signals import (
     classify_contra_columns, contra_kinds_from_ranges, contra_rate_columns,
 )
-from aughor.explorer.agent import SchemaExplorer
+from pramanyx.explorer.agent import SchemaExplorer
 
 SCHEMA = """TABLE: superstore
   Order ID  VARCHAR

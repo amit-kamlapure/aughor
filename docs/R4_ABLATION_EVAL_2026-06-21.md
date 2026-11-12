@@ -3,7 +3,7 @@
 > Makes the moat **measurable** (R4 of [`AGENTIC_ARCHITECTURE.md`](AGENTIC_ARCHITECTURE.md) §7).
 > The thesis: accuracy reaches its ceiling only when domain knowledge moves into a **governed
 > layer** — a semantic-layer failure is an error message; a text-to-SQL failure is a
-> plausible wrong answer. This eval tests that thesis on a real Aughor warehouse, and
+> plausible wrong answer. This eval tests that thesis on a real Pramanyx warehouse, and
 > sharpens it: **the durable moat is the *deterministic* guard layer, not LLM-derived context.**
 >
 > Harness: [`evals/ablation_eval.py`](../evals/ablation_eval.py) · dataset:
@@ -24,7 +24,7 @@ classifies every answer three ways, not two:
 ## Headline: deterministic guard-efficacy on the canonical traps
 
 The exact plausible-wrong SQL a naive text-to-SQL agent writes, executed **unguarded** vs through
-Aughor's deterministic guard battery. No LLM — fully reproducible (`--traps`):
+Pramanyx's deterministic guard battery. No LLM — fully reproducible (`--traps`):
 
 | Trap | Naive answer (unguarded) | True answer | Guarded |
 |------|--------------------------|-------------|---------|
@@ -90,6 +90,6 @@ uv run python evals/ablation_eval.py --output evals/ablation_missimi_results.jso
 
 The governed layer's value is **not** a few accuracy points on easy questions — it's that the
 **deterministic guards make the plausible-wrong-answer class impossible to ship silently**, at zero
-downside, while keeping LLM-derived (drift-prone) context on a separate, gated axis. Aughor's Trust
+downside, while keeping LLM-derived (drift-prone) context on a separate, gated axis. Pramanyx's Trust
 Receipts surface exactly which guards fired — so every governed answer carries its own proof. That
-is the thesis, measured and sharpened on Aughor's own data.
+is the thesis, measured and sharpened on Pramanyx's own data.

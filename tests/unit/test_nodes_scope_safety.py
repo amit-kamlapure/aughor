@@ -16,7 +16,7 @@ right branch exposes them. These AST/structural guards catch them statically."""
 import ast
 import inspect
 
-from aughor.agent import nodes as N
+from pramanyx.agent import nodes as N
 
 
 def test_re_imported_at_module_scope():

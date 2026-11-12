@@ -15,22 +15,22 @@ KIND, NK = "savedquery", "savedquery:q1"
 
 @pytest.fixture
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
 
     return TestClient(app)
 
 
 @pytest.fixture
 def _pub(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
 
 
 @pytest.fixture
 def _frz(monkeypatch, tmp_path):
-    from aughor.kernel import freeze as fz
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.kernel import freeze as fz
+    from pramanyx.util.json_store import KeyedJsonStore
 
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
     monkeypatch.setattr(fz, "_store",
                         KeyedJsonStore(tmp_path / "freeze.json", max_entries=50))
 
@@ -41,15 +41,15 @@ class _Conn:
 
 
 def _storage(monkeypatch, *, token, as_of=False):
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _Conn())
-    monkeypatch.setattr("aughor.db.snapshot.data_version", lambda conn, tables: token)
-    monkeypatch.setattr("aughor.db.snapshot.as_of_supported", lambda conn: as_of)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _Conn())
+    monkeypatch.setattr("pramanyx.db.snapshot.data_version", lambda conn, tables: token)
+    monkeypatch.setattr("pramanyx.db.snapshot.as_of_supported", lambda conn: as_of)
 
 
 # ── Flags off: the default surface is unchanged ────────────────────────────────
 
 def test_history_reports_published_and_editor_versions_separately(client, _pub):
-    from aughor.kernel.lifecycle import publish, save_draft
+    from pramanyx.kernel.lifecycle import publish, save_draft
 
     save_draft(KIND, NK, {"t": "v1"})
     publish(KIND, NK)
@@ -70,7 +70,7 @@ def test_history_of_an_unknown_artifact_is_empty_not_an_error(client, _pub):
 
 
 def test_diff_route_reports_a_move_as_a_move(client, _pub):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"cards": ["a", "b", "c"]})
     save_draft(KIND, NK, {"cards": ["c", "a", "b"]})
@@ -84,7 +84,7 @@ def test_diff_route_reports_a_move_as_a_move(client, _pub):
 
 
 def test_diff_route_404s_on_a_missing_version(client, _pub):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"a": 1})
     r = client.get(f"/lifecycle/{KIND}/diff",
@@ -93,7 +93,7 @@ def test_diff_route_404s_on_a_missing_version(client, _pub):
 
 
 def test_publish_then_revert_round_trip(client, _pub):
-    from aughor.kernel.lifecycle import resolve, save_draft
+    from pramanyx.kernel.lifecycle import resolve, save_draft
 
     save_draft(KIND, NK, {"t": "original"})
     assert client.post(f"/lifecycle/{KIND}/publish",
@@ -112,7 +112,7 @@ def test_publish_with_nothing_saved_404s(client, _pub):
 
 
 def test_revert_to_a_missing_version_404s(client, _pub):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"a": 1})
     r = client.post(f"/lifecycle/{KIND}/revert",
@@ -123,7 +123,7 @@ def test_revert_to_a_missing_version_404s(client, _pub):
 # ── Freeze: refusal and gone-data are errors WITH reasons ──────────────────────
 
 def test_freeze_route_returns_the_pin_and_its_mode(client, _frz, monkeypatch):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"a": 1})
     _storage(monkeypatch, token="dl:cat:3", as_of=True)
@@ -153,7 +153,7 @@ def test_unfrozen_artifact_reports_frozen_false(client, _frz):
 
 
 def test_unfreeze_returns_to_live(client, _frz, monkeypatch):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"a": 1})
     _storage(monkeypatch, token="fp:x")
@@ -167,7 +167,7 @@ def test_unfreeze_returns_to_live(client, _frz, monkeypatch):
 
 
 def test_drifted_detect_only_pin_is_reported_as_drifted(client, _frz, monkeypatch):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"a": 1})
     _storage(monkeypatch, token="fp:before")
@@ -181,7 +181,7 @@ def test_drifted_detect_only_pin_is_reported_as_drifted(client, _frz, monkeypatc
 
 
 def test_frozen_content_returns_the_pinned_body(client, _frz, monkeypatch):
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"t": "pinned"})
     _storage(monkeypatch, token="fp:x")
@@ -197,7 +197,7 @@ def test_frozen_content_returns_the_pinned_body(client, _frz, monkeypatch):
 def test_gone_pin_is_a_410_carrying_the_as_of(client, _frz, monkeypatch):
     """The route has no live fall-back on purpose — a frozen label over live numbers is
     worse than an error, because the reader cannot tell."""
-    from aughor.kernel.lifecycle import save_draft
+    from pramanyx.kernel.lifecycle import save_draft
 
     save_draft(KIND, NK, {"t": "pinned"})
     _storage(monkeypatch, token="dl:cat:3", as_of=True)

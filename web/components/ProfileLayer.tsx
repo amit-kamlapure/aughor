@@ -2,7 +2,7 @@
 
 /**
  * ProfileLayer.tsx — Intelligence › Profile: what Pramanyx knows about this business, beside the domains its findings
- * are filed under. Redone to `aughor-v2/CLARITY.md` (2026-10-13).
+ * are filed under. Redone to `pramanyx-v2/CLARITY.md` (2026-10-13).
  *
  * A column on the left lists the domains as CLARITY's filter column — name · count · a 6px bar — under "Overview", which
  * is the profile itself (ProfilePanel), read like a page. A domain opens its own page beside the column: one line of

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * New dashboard → From a pack template (Arc FA, FA-6; `aughor/packs/templates.py`).
+ * New dashboard → From a pack template (Arc FA, FA-6; `pramanyx/packs/templates.py`).
  * The templates of the packs bound on this connection, each card saying whether this connection can make it. Drafting
  * one asks no model: the server stages it as one proposal, a card whose metric the connection lacks left out and said,
  * and the person keeps it in the draft review beside every other draft.

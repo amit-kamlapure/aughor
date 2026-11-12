@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.tools.concept import CONFIDENT, LAYER_VALUE, resolve_concept
-from aughor.tools.shape import (
+from pramanyx.tools.concept import CONFIDENT, LAYER_VALUE, resolve_concept
+from pramanyx.tools.shape import (
     MIN_VALUES,
     as_float,
     decimals,
@@ -252,7 +252,7 @@ def test_no_shape_can_type_a_column_by_itself():
 def test_the_value_layer_supplies_the_second_witness_a_name_cannot():
     """The point of the whole wave: `Latitude` is VARCHAR and named like a geo code. Its
     values plus its name are two layers, and two layers decide."""
-    from aughor.tools.concept import LAYER_NAME, Witness
+    from pramanyx.tools.concept import LAYER_NAME, Witness
 
     name = Witness(layer=LAYER_NAME, concept="geo.latitude", confidence=0.55,
                    evidence="named like a latitude")
@@ -286,7 +286,7 @@ def test_us_state_codes_beat_country_codes_on_the_same_values():
     """`Customer State` is 96% US states and 50% ISO-3166. Both are the VALUE layer talking
     about the same values, so only the better-supported list is reported — a layer says one
     thing about one column."""
-    from aughor.tools.vocab import US_STATE_CODES, membership
+    from pramanyx.tools.vocab import US_STATE_CODES, membership
     values = ["AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA", "HI", "IA", "ID",
               "IL", "IN", "KS", "KY", "LA", "MA", "MD", "MI", "MN", "MO", "MT", "NC", "ND",
               "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "PR", "RI", "SC", "TN", "TX",

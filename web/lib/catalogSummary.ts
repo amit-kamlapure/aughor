@@ -1,5 +1,5 @@
 /**
- * The Catalog's right panel, read the way `aughor-v2/CLARITY.md` says a screen reads — every catalog, one catalog (or
+ * The Catalog's right panel, read the way `pramanyx-v2/CLARITY.md` says a screen reads — every catalog, one catalog (or
  * one schema of it), one table. Pure functions over what the screen already reads: the catalog tree, each
  * connection's datasets (maturity, stage, off, program), its metrics, its ontology and the search index's status.
  * Nothing here fetches or decides what to draw.
@@ -221,7 +221,7 @@ export interface CatalogRow {
 /** What a catalog is, in a few words — never its connection string. */
 export function whatItIs(entry: CatalogEntry, label: (connType: string) => string, copyOf?: string | null): string {
   if (copyOf) return `the same tables as ${copyOf}`;
-  if (entry.conn_type === "aughor_ops") return "the platform itself";
+  if (entry.conn_type === "pramanyx_ops") return "the platform itself";
   const n = entry.schemas.length;
   const where = n === 1 ? entry.schemas[0].name : n ? `${n} schemas` : "";
   const kind = entry.conn_type === "local_upload" ? "uploaded files" : label(entry.conn_type);

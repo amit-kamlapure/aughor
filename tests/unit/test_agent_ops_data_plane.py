@@ -23,8 +23,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.kernel.ledger import Ledger
-from aughor.obs.timeseries import (
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.obs.timeseries import (
     RUNNER_CHARTER_ID, bucket_edges, fold, is_runner, resolve_window,
 )
 
@@ -86,7 +86,7 @@ def test_attribution_migration_applies_to_a_store_already_at_version_9(tmp_path)
 
 def test_migration_versions_are_unique_and_ordered():
     """Two migrations sharing a version means one of them silently never runs."""
-    from aughor.kernel.ledger import _MIGRATIONS
+    from pramanyx.kernel.ledger import _MIGRATIONS
 
     versions = [m.version for m in _MIGRATIONS]
     assert versions == sorted(versions), "migrations must be in ascending order"
@@ -140,11 +140,11 @@ def test_a_real_job_run_stamps_its_charter_onto_emitted_events(tmp_path, monkeyp
     """
     import asyncio
 
-    from aughor.kernel.jobs import JobKernel, JobState
-    from aughor.obs import session_log
+    from pramanyx.kernel.jobs import JobKernel, JobState
+    from pramanyx.obs import session_log
 
     led = Ledger(tmp_path / "system.db")
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", staticmethod(lambda: led))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", staticmethod(lambda: led))
     monkeypatch.setattr(session_log, "enabled", lambda: True)
 
     kernel = JobKernel(led)
@@ -171,7 +171,7 @@ def test_a_real_job_run_stamps_its_charter_onto_emitted_events(tmp_path, monkeyp
 
 def test_run_attribution_reads_the_job_contextvar():
     """The write half: `run_attribution()` is what `emit` stamps from."""
-    from aughor.kernel import jobs as jobs_mod
+    from pramanyx.kernel import jobs as jobs_mod
 
     assert jobs_mod.run_attribution() == ("", "")      # outside a run
     t1 = jobs_mod._current_job.set("job-9")
@@ -292,7 +292,7 @@ def test_jobs_window_and_kind_filters(ledger):
 def test_the_unclaimed_kind_is_a_runner():
     """`charter_for_kind` returns the _UNKNOWN charter for a kind nothing claims — the
     automation tick. That id is the whole basis of the agents/runners split."""
-    from aughor.kernel.agents import charter_for_kind
+    from pramanyx.kernel.agents import charter_for_kind
 
     assert charter_for_kind("automation").id == RUNNER_CHARTER_ID
     assert is_runner(charter_for_kind("automation").id)
@@ -300,7 +300,7 @@ def test_the_unclaimed_kind_is_a_runner():
 
 
 def test_runner_role_says_the_ticks_are_not_work():
-    from aughor.routers.control_room import _runner_role
+    from pramanyx.routers.control_room import _runner_role
 
     text = _runner_role(["automation"], {"runs": 1291})
     assert "1,291" in text and "tick" in text.lower(), (
@@ -309,7 +309,7 @@ def test_runner_role_says_the_ticks_are_not_work():
 
 
 def test_runner_gets_its_own_name_not_the_lookup_that_produced_it():
-    from aughor.routers.control_room import _RUNNER_NAMES
+    from pramanyx.routers.control_room import _RUNNER_NAMES
 
     assert _RUNNER_NAMES["automation"] == "Automations"
     assert "Unassigned" not in "".join(_RUNNER_NAMES.values())
@@ -318,13 +318,13 @@ def test_runner_gets_its_own_name_not_the_lookup_that_produced_it():
 # ── prices come from the provider, never a hardcoded rate ─────────────────────────
 
 def test_catalogue_prices_fill_in_where_nothing_is_declared(monkeypatch):
-    from aughor.obs import usage
+    from pramanyx.obs import usage
 
     monkeypatch.setattr(usage, "_CATALOGUE_PRICES", {}, raising=False)
     usage.price_for.cache_clear()
     assert usage.price_for("openrouter", "vendor/some-paid-model") is None
 
-    monkeypatch.setattr("aughor.llm.models.list_models", lambda backend, refresh=False: {
+    monkeypatch.setattr("pramanyx.llm.models.list_models", lambda backend, refresh=False: {
         "models": [{"id": "vendor/some-paid-model", "price_in": 0.5, "price_out": 1.5}]})
     assert usage.refresh_catalogue_prices(backends=("openrouter",)) == 1
     price = usage.price_for("openrouter", "vendor/some-paid-model")
@@ -333,21 +333,21 @@ def test_catalogue_prices_fill_in_where_nothing_is_declared(monkeypatch):
 
 def test_a_declared_price_outranks_the_catalogue(monkeypatch):
     """A rate somebody wrote down on a date is a deliberate claim; a fetched one is not."""
-    from aughor.obs import usage
+    from pramanyx.obs import usage
 
-    monkeypatch.setattr("aughor.llm.models.list_models", lambda backend, refresh=False: {
+    monkeypatch.setattr("pramanyx.llm.models.list_models", lambda backend, refresh=False: {
         "models": [{"id": "vendor/thing:free", "price_in": 99.0, "price_out": 99.0}]})
     usage.refresh_catalogue_prices(backends=("openrouter",))
     assert usage.price_for("openrouter", "vendor/thing:free").input_per_1m == 0.0
 
 
 def test_an_unreachable_catalogue_leaves_models_unpriced_rather_than_free(monkeypatch):
-    from aughor.obs import usage
+    from pramanyx.obs import usage
 
     def _boom(backend, refresh=False):
         raise RuntimeError("network down")
 
-    monkeypatch.setattr("aughor.llm.models.list_models", _boom)
+    monkeypatch.setattr("pramanyx.llm.models.list_models", _boom)
     assert usage.refresh_catalogue_prices(backends=("openrouter",)) == 0
     assert usage.price_for("openrouter", "vendor/never-seen") is None, (
         "unpriced, never a confident zero — a missing rate that rounds to free makes "
@@ -356,7 +356,7 @@ def test_an_unreachable_catalogue_leaves_models_unpriced_rather_than_free(monkey
 
 def test_the_catalogue_converts_per_token_rates_to_per_million():
     """OpenRouter quotes USD per TOKEN as a string; every cost surface here is per 1M."""
-    from aughor.llm.models import _openai_style_models
+    from pramanyx.llm.models import _openai_style_models
 
 
     class _Resp:
@@ -387,8 +387,8 @@ def test_a_routers_minus_one_quote_leaves_the_model_unpriced(monkeypatch):
     dollar — the live Usage page read −$166,759.68 for 2026-09-27..10-04. Unpriced, and said."""
     import httpx
 
-    from aughor.llm.models import _openai_style_models
-    from aughor.obs import usage
+    from pramanyx.llm.models import _openai_style_models
+    from pramanyx.obs import usage
 
     class _Resp:
         @staticmethod
@@ -403,7 +403,7 @@ def test_a_routers_minus_one_quote_leaves_the_model_unpriced(monkeypatch):
     entry = _openai_style_models("http://x", "", timeout=1)[0]
     assert "price_in" not in entry and "price_out" not in entry
 
-    monkeypatch.setattr("aughor.llm.models.list_models",
+    monkeypatch.setattr("pramanyx.llm.models.list_models",
                         lambda backend, refresh=False: {"models": [entry]})
     usage.refresh_catalogue_prices(backends=("openrouter",))
     call = {"provider": "openrouter", "model": "vendor/router",

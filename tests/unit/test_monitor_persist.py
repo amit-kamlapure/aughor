@@ -3,8 +3,8 @@ via the `extra` JSON blob. Regression: reanchor_window was dropped on persist, s
 re-anchoring monitor reloaded as reanchor_window=False and never re-anchored at run time.
 """
 
-import aughor.monitors.store as store
-from aughor.monitors.models import Monitor
+import pramanyx.monitors.store as store
+from pramanyx.monitors.models import Monitor
 
 
 def _isolate(tmp_path, monkeypatch):

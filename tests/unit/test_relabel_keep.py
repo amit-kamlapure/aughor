@@ -5,8 +5,8 @@ mislabel with a REAL number survives corrected (the missimi 'email CRM AOV $69.1
 called 'ROAS'), while a mislabel whose number was ALSO fabricated is still dropped by grounding."""
 from __future__ import annotations
 
-from aughor.explorer.agent import verify_insight
-from aughor.explorer.metric_coherence import relabel_mislabeled_finding, metric_vocab_for
+from pramanyx.explorer.agent import verify_insight
+from pramanyx.explorer.metric_coherence import relabel_mislabeled_finding, metric_vocab_for
 
 _VOCAB = {
     "aov": ("Average Order Value", "SUM(order_value)/COUNT(DISTINCT order_id)"),

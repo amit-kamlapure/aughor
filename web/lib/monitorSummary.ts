@@ -6,7 +6,7 @@
 import type { MonitorAlert, MonitorDef, MonitorProof } from "@/lib/api";
 import { compactNumber, formatCount, MONTHS_SHORT, normalizeNumberPrecision } from "@/lib/format";
 
-/** Where a monitor's proof stands, from the server's own record (`aughor/monitors/drill.py::proof`):
+/** Where a monitor's proof stands, from the server's own record (`pramanyx/monitors/drill.py::proof`):
  *  proven — a drill fired and delivered; delivered — a real alert went out; checked — a drill fired, nothing sent;
  *  undelivered — a drill fired and delivery failed; silent — a drill did not fire; never — no drill, no delivery. */
 export type ProofState = "proven" | "delivered" | "checked" | "undelivered" | "silent" | "never" | "unknown";
@@ -141,7 +141,7 @@ export function removedWords(alerts: Pick<MonitorAlert, "monitor_id">[], live: R
 }
 
 /** Arc TC, TC-4 — the kind of the alert a monitor writes on its first check back within its limit after an alert: it
- *  closes that alert (`aughor/monitors/recovery.py`). Recorded here, never sent. */
+ *  closes that alert (`pramanyx/monitors/recovery.py`). Recorded here, never sent. */
 export const RECOVERED = "recovered";
 
 export const isRecovery = (a: Pick<MonitorAlert, "alert_on">): boolean => a.alert_on === RECOVERED;

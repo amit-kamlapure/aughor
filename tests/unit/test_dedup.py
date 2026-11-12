@@ -1,4 +1,4 @@
-"""Unit tests for ontology entity dedup (aughor/ontology/dedup).
+"""Unit tests for ontology entity dedup (pramanyx/ontology/dedup).
 
 The clustering core is pure (takes precomputed vectors), so these use hand-made embeddings — no
 model. `detect_duplicate_entities` is tested with a fake graph + an injected embed fn, including the
@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from types import SimpleNamespace
 
-from aughor.ontology.dedup import cluster_by_similarity, cosine, detect_duplicate_entities
+from pramanyx.ontology.dedup import cluster_by_similarity, cosine, detect_duplicate_entities
 
 
 def test_cosine_basic():

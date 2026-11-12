@@ -2,8 +2,8 @@
 `execute_query`. Regression for: every monitor check silently AttributeError'd on
 `db.execute_query`, returned None, and reported "No condition met" — monitors never ran.
 """
-from aughor.monitors.runner import _query, _scalar
-from aughor.db.connection import DatabaseConnection
+from pramanyx.monitors.runner import _query, _scalar
+from pramanyx.db.connection import DatabaseConnection
 
 
 class _Result:
@@ -39,7 +39,7 @@ def test_a_refused_query_is_not_an_empty_one():
     """GM-4 — the premise this test used to pin ([] on error) is reversed: a refused monitor query read as
     "no condition met", and theLook's two monitors recorded 1,737 failures as clean runs."""
     import pytest
-    from aughor.db.connection import QueryRefused
+    from pramanyx.db.connection import QueryRefused
     with pytest.raises(QueryRefused, match="boom"):
         _query(ConnLike([], error="boom"), "SELECT 1")
 
@@ -56,7 +56,7 @@ def test_scalar_handles_dict_rows():
 
 def test_a_refused_scalar_is_not_a_missing_one():
     import pytest
-    from aughor.db.connection import QueryRefused
+    from pramanyx.db.connection import QueryRefused
     with pytest.raises(QueryRefused, match="bad sql"):
         _scalar(ConnLike([], error="bad sql"), "SELECT nope")
     assert _scalar(ConnLike([]), "SELECT nothing") is None       # a query that ran and found nothing

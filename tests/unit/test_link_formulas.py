@@ -18,11 +18,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
-from aughor.ontology.expressions import expression_problem, probe_expression
-from aughor.ontology.link_formulas import formula_offers, offered_formula
-from aughor.ontology.models import (
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.expressions import expression_problem, probe_expression
+from pramanyx.ontology.link_formulas import formula_offers, offered_formula
+from pramanyx.ontology.models import (
     Backing,
     EntityProperty,
     ExpressionProperty,
@@ -30,7 +30,7 @@ from aughor.ontology.models import (
     OntologyGraph,
     OntologyRelationship,
 )
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_listing, compile_object_query
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_listing, compile_object_query
 
 CONN = "lf-29"
 RECENCY = "days_since_last_order"
@@ -204,7 +204,7 @@ def test_an_aggregate_across_a_to_one_link_or_an_unmeasured_one_is_refused():
 
 
 def test_a_sum_across_the_link_of_a_reading_at_a_moment_is_refused_as_through_any_link():
-    from aughor.ontology.models import SemiAdditive
+    from pramanyx.ontology.models import SemiAdditive
     graph = _graph()
     graph.entities["Order"].semiadditive = {"amount": SemiAdditive(over="placed_at")}
     _declare(graph, "Customer", "x", "SUM(customer_to_order.amount)")
@@ -302,9 +302,9 @@ def test_the_offer_the_door_stamps_is_read_from_the_graph_and_never_from_a_calle
 # ── a person declares it: the door verifies, stamps the offer, and the change waits in the draft ─────────────
 
 def _door(monkeypatch, warehouse, graph):
-    import aughor.db.connection as DBC
-    import aughor.govern as G
-    import aughor.routers.ontology as RO
+    import pramanyx.db.connection as DBC
+    import pramanyx.govern as G
+    import pramanyx.routers.ontology as RO
     monkeypatch.setattr(RO, "_get_ontology_graph", lambda cid, schema=None: graph)
     monkeypatch.setattr(G, "guard", lambda *a, **k: None)
     monkeypatch.setattr(DBC, "open_connection_for_with_schema",
@@ -314,7 +314,7 @@ def _door(monkeypatch, warehouse, graph):
 
 
 def test_declaring_an_offer_writes_it_with_the_offer_as_provenance_and_who_declared_it(monkeypatch, warehouse):
-    from aughor.security.authz import caller
+    from pramanyx.security.authz import caller
     RO = _door(monkeypatch, warehouse, _graph())
     out = RO.declare_ontology_expression("Customer", RECENCY, RO._ExpressionSpec(
         expression=RECENCY_SQL, semantic_type="measure", unit="days"), connection_id=CONN, schema_name="main")
@@ -344,7 +344,7 @@ def test_a_formula_the_platform_did_not_offer_carries_no_provenance(monkeypatch,
 # ── shown on the object page ───────────────────────────────────────────────────────────────────
 
 def test_the_object_page_shows_both_scores_with_where_they_came_from(db):
-    from aughor.semantic.object_instances import get_object
+    from pramanyx.semantic.object_instances import get_object
     graph = _graph()
     offered = {f["name"]: f for f in formula_offers(graph)["offers"][0]["formulas"]}
     for name in (RECENCY, WINDOW):
@@ -362,7 +362,7 @@ def test_the_object_page_shows_both_scores_with_where_they_came_from(db):
 def test_on_the_samples_warehouse_the_offers_are_what_its_shape_holds_and_equal_hand_sql(tmp_path):
     import json
 
-    from aughor.demo.setup import _seed_ecommerce
+    from pramanyx.demo.setup import _seed_ecommerce
     graph = OntologyGraph.model_validate(json.loads(
         (Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json").read_text()))
     offers = formula_offers(graph)

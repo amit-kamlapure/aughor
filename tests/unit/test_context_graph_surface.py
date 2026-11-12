@@ -3,8 +3,8 @@ graph, saves it to an isolated store, and calls the handler directly."""
 from __future__ import annotations
 
 
-from aughor.ontology.context_graph import project_graph
-from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
+from pramanyx.ontology.context_graph import project_graph
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
 
 
 def _graph():
@@ -24,11 +24,11 @@ def _graph():
 
 
 def test_graph_endpoint_serves_nodes_edges_and_domain_aggregation(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_graph())
 
-    from aughor.routers.ontology import get_context_graph
+    from pramanyx.routers.ontology import get_context_graph
     payload = get_context_graph("c", "main")
 
     assert "nodes" in payload and "edges" in payload
@@ -42,7 +42,7 @@ def test_graph_endpoint_serves_nodes_edges_and_domain_aggregation(monkeypatch, t
 
 
 def test_graph_domain_aggregation_collapses_cross_domain_edges():
-    from aughor.routers.ontology import _graph_domain_aggregation
+    from pramanyx.routers.ontology import _graph_domain_aggregation
     agg = _graph_domain_aggregation(_graph())
     # one aggregated edge per domain pair (never a per-table hairball)
     assert len(agg["domain_edges"]) == 1
@@ -54,11 +54,11 @@ def test_graph_domain_aggregation_collapses_cross_domain_edges():
 def test_graph_endpoint_stamps_a_warrant_on_every_node_and_edge(monkeypatch, tmp_path):
     """Derived at READ time: the artifact on disk is untouched, but no surface has to
     re-derive 'how do we know this' from a source name it cannot rank."""
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_graph())
 
-    from aughor.routers.ontology import get_context_graph
+    from pramanyx.routers.ontology import get_context_graph
     payload = get_context_graph("c", "main")
 
     assert all("warrant" in n for n in payload["nodes"].values())
@@ -74,11 +74,11 @@ def test_graph_endpoint_stamps_a_warrant_on_every_node_and_edge(monkeypatch, tmp
 
 
 def test_graph_audit_reports_the_warrant_mix_with_both_freshness_axes(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_graph())
 
-    from aughor.routers.ontology import get_context_graph_audit
+    from pramanyx.routers.ontology import get_context_graph_audit
     out = get_context_graph_audit("c", "main")
 
     assert out["totals"]["edges"] >= 1
@@ -95,11 +95,11 @@ def test_graph_audit_reports_the_warrant_mix_with_both_freshness_axes(monkeypatc
 def test_graph_review_route_serves_the_queue(monkeypatch, tmp_path):
     """Wave P5 — the fixture graph has a fully-measured join, so the queue is about what
     is genuinely open, not manufactured work."""
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     g = _graph()
     # An unprobed name-matched join: the item the queue exists to surface.
-    from aughor.ontology.context_graph import GraphEdge, GraphNode, Provenance
+    from pramanyx.ontology.context_graph import GraphEdge, GraphNode, Provenance
     g.add_node(GraphNode(id="table:Product", kind="table", label="Product",
                          summary="things sold",
                          provenance=Provenance(source="ontology.entity"),
@@ -110,7 +110,7 @@ def test_graph_review_route_serves_the_queue(monkeypatch, tmp_path):
                                                note="unprobed join_confidence=inferred")))
     store.save_graph(g)
 
-    from aughor.routers.ontology import get_context_graph_review
+    from pramanyx.routers.ontology import get_context_graph_review
     out = get_context_graph_review("c", "main")
 
     assert out["total"] >= 1

@@ -33,7 +33,7 @@ const sourceSans = Source_Sans_3({
 });
 
 /**
- * Absolute base for the relative URLs in `metadata` below. The OG image is `/aughor-logo.jpeg`
+ * Absolute base for the relative URLs in `metadata` below. The OG image is `/pramanyx-logo.jpeg`
  * — a relative path a crawler cannot fetch — so Next resolves it against this. Left unset, Next
  * warns at build time and falls back to `http://localhost:3000`, which would ship a localhost
  * image URL in the OG tags of every real deployment.
@@ -55,13 +55,13 @@ export const metadata: Metadata = {
   title: "Pramanyx — Autonomous Intelligence Platform",
   description: "Pramanyx is an Autonomous Intelligence Platform — continuously explores your data, builds a living business ontology, and answers complex analytical questions with evidence.",
   icons: {
-    icon: "/aughor-logo.jpeg",
-    apple: "/aughor-logo.jpeg",
+    icon: "/pramanyx-logo.jpeg",
+    apple: "/pramanyx-logo.jpeg",
   },
   openGraph: {
     title: "Pramanyx — Autonomous Intelligence Platform",
     description: "Your warehouse, always thinking.",
-    images: [{ url: "/aughor-logo.jpeg", width: 1024, height: 1024, alt: "Pramanyx" }],
+    images: [{ url: "/pramanyx-logo.jpeg", width: 1024, height: 1024, alt: "Pramanyx" }],
   },
 };
 

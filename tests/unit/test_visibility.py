@@ -15,12 +15,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.ontology import visibility as V
+from pramanyx.ontology import visibility as V
 
 
 @pytest.fixture(autouse=True)
 def _root(tmp_path, monkeypatch):
-    import aughor.ontology.recommendations as R
+    import pramanyx.ontology.recommendations as R
     monkeypatch.setattr(R, "_ROOT", tmp_path / "decisions")
     yield
 
@@ -91,10 +91,10 @@ class TestTheOneDefinitionHoldingTheMostBack:
 
 class TestTheGateRecordsWhatWouldClearAHold:
     def test_the_definition_check_names_the_missing_definitions_structurally(self, monkeypatch):
-        from aughor.govern import departure as G
-        import aughor.semantic.metrics as M
-        import aughor.explorer.metric_coherence as MC
-        import aughor.semantic.enforcement as EN
+        from pramanyx.govern import departure as G
+        import pramanyx.semantic.metrics as M
+        import pramanyx.explorer.metric_coherence as MC
+        import pramanyx.semantic.enforcement as EN
         draft = SimpleNamespace(name="revenue", status="draft", version=1, connection="c1")
         monkeypatch.setattr(M, "list_metrics", lambda path=None, connection_id=None: [draft])
         monkeypatch.setattr(G, "metric_is_approved", lambda m: False)
@@ -107,9 +107,9 @@ class TestTheGateRecordsWhatWouldClearAHold:
 
 class TestTheDoors:
     def test_visibility_and_exclusions(self, client, monkeypatch):
-        import aughor.agent.framing as F
-        import aughor.tools.profile_cache as PC
-        import aughor.govern.departure_store as DS
+        import pramanyx.agent.framing as F
+        import pramanyx.tools.profile_cache as PC
+        import pramanyx.govern.departure_store as DS
         monkeypatch.setattr(F, "served_graph", lambda cid, schema=None: _graph("orders", "users"))
         monkeypatch.setattr(PC, "latest_profiled_tables", lambda cid: ["orders", "users", "events_raw", "_dbt_tmp"])
         monkeypatch.setattr(DS, "list_departures", lambda **k: [_row("fixture", missing=["revenue"])])

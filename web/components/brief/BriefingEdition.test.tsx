@@ -20,7 +20,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeo
 vi.mock("@/components/brief/BriefSchedule", () => ({ BriefSchedule: () => null }));
 // The chat transport is a double: what each turn sends is kept, and the thread is what a test puts in it. No network.
 const chat = vi.hoisted(() => ({ sent: [] as { text: string; body?: Record<string, unknown> }[], messages: [] as unknown[] }));
-vi.mock("@/lib/useAughorChat", () => ({ useAughorChat: () => ({ messages: chat.messages, status: "ready",
+vi.mock("@/lib/usePramanyxChat", () => ({ usePramanyxChat: () => ({ messages: chat.messages, status: "ready",
   sendMessage: (m: { text: string }, o?: { body?: Record<string, unknown> }) => { chat.sent.push({ text: m.text, body: o?.body }); return Promise.resolve(); } }) }));
 // an answer under the page links its object keys from the same catalog: read from here, never from a server
 vi.mock("@/lib/objects", () => ({ getObjectCatalog: vi.fn(async () => ({ types: [] })), cachedObjectCatalog: vi.fn(async () => null) }));

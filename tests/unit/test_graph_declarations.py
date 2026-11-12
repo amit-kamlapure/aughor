@@ -17,10 +17,10 @@ from pathlib import Path
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology import release as R
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import OntologyOverride, save_override, viewing
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import release as R
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.overrides import OntologyOverride, save_override, viewing
 
 CONN, SCHEMA = "declarations-t", "ecommerce"
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -29,15 +29,15 @@ BASE = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_SEED_ROOT", tmp_path / "seed")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [])
-    from aughor.ontology import context_graph_store as store
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.explorer.store.get_findings", lambda key: [])
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
 
     def served(conn, schema=None):
@@ -45,7 +45,7 @@ def _isolated(tmp_path, monkeypatch):
         graph.connection_id = CONN
         OV.apply_overrides(graph, CONN, SCHEMA)
         return graph
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", served)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", served)
 
 
 def _in_force(ov: OntologyOverride) -> None:
@@ -73,7 +73,7 @@ def _declare_the_shop() -> None:
 
 
 def _build():
-    from aughor.ontology.context_graph_build import build_context_graph
+    from pramanyx.ontology.context_graph_build import build_context_graph
     return build_context_graph(CONN, SCHEMA, org_id="default", persist=False)
 
 
@@ -88,7 +88,7 @@ def _without_dates(items: dict) -> dict:
 
 
 def test_the_declarations_add_their_own_nodes_and_edges_and_change_nothing_else(monkeypatch):
-    from aughor.ontology import context_graph_build as B
+    from pramanyx.ontology import context_graph_build as B
     _declare_the_shop()
     on = _build()
     monkeypatch.setattr(B, "load_declarations", lambda *a, **k: [])
@@ -103,7 +103,7 @@ def test_the_declarations_add_their_own_nodes_and_edges_and_change_nothing_else(
 # ── each published declaration is a node about its entity ─────────────────────────────────
 
 def test_each_published_declaration_is_a_node_with_an_edge_to_its_entity(monkeypatch):
-    from aughor.ontology.graph_warrant import warrant_of_edge, warrant_of_node
+    from pramanyx.ontology.graph_warrant import warrant_of_edge, warrant_of_node
     _declare_the_shop()
     cg = _build()
     found = _declarations(cg)
@@ -130,7 +130,7 @@ def test_a_models_unconfirmed_proposal_is_not_a_declaration(monkeypatch):
 
 
 def test_the_graph_search_finds_a_declaration_by_its_own_words(monkeypatch):
-    from aughor.ontology import context_graph_search as S
+    from pramanyx.ontology import context_graph_search as S
     monkeypatch.setattr(S, "_vector_search", lambda *a, **k: [])
     _declare_the_shop()
     cg = _build()
@@ -157,11 +157,11 @@ def test_publishing_rebuilds_the_graph_from_the_release_it_made(monkeypatch):
     calls: list = []
 
     def refresh(conn, schema=None, **kw):
-        from aughor.ontology.graph_freshness import RefreshResult
-        from aughor.kernel.freshness import FreshnessVerdict
+        from pramanyx.ontology.graph_freshness import RefreshResult
+        from pramanyx.kernel.freshness import FreshnessVerdict
         calls.append((conn, schema, kw.get("force"), OV.draft_view()))
         return RefreshResult(verdict=FreshnessVerdict("fresh", "full"), rebuilt=True, indexed=7)
-    monkeypatch.setattr("aughor.ontology.graph_freshness.refresh_context_graph", refresh)
+    monkeypatch.setattr("pramanyx.ontology.graph_freshness.refresh_context_graph", refresh)
     with viewing("draft"):                                                   # the publish door reads the draft
         made = R.publish(CONN, SCHEMA, by="person:ana")
     assert made["graph"] == {"rebuilt": True, "indexed": 7}
@@ -173,7 +173,7 @@ def test_publishing_rebuilds_the_graph_from_the_release_it_made(monkeypatch):
 def test_a_graph_that_could_not_rebuild_says_why_and_the_publish_stands(monkeypatch):
     _in_force(_rule(values=("DE", "AT")))
     save_override(CONN, SCHEMA, _rule(values=("DE",)))
-    monkeypatch.setattr("aughor.ontology.graph_freshness.refresh_context_graph", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.ontology.graph_freshness.refresh_context_graph", lambda *a, **k: None)
     made = R.publish(CONN, SCHEMA, by="person:ana")
     assert made["number"] == 2 and made["graph"]["rebuilt"] is False and made["graph"]["why"]
 
@@ -181,8 +181,8 @@ def test_a_graph_that_could_not_rebuild_says_why_and_the_publish_stands(monkeypa
 # ── withheld with its entity's tables, at every door ──────────────────────────────────────────
 
 def _block(monkeypatch, table: str) -> None:
-    from aughor.govern import tags as T
-    from aughor.govern.tags import ClearanceDecision, Requirement
+    from pramanyx.govern import tags as T
+    from pramanyx.govern.tags import ClearanceDecision, Requirement
     req = Requirement(key="tier", value="restricted", clearance="clearance.restricted")
     monkeypatch.setattr(T, "check", lambda s, held, bypass=False: (
         ClearanceDecision(securable=s, allowed=False, requirements=[req], missing=[req]) if s.endswith(f".{table}")
@@ -190,12 +190,12 @@ def _block(monkeypatch, table: str) -> None:
 
 
 def test_a_declaration_over_a_withheld_table_is_withheld_at_the_knowledge_door_and_counted(monkeypatch):
-    from aughor.mcp import knowledge_tools as KT
+    from pramanyx.mcp import knowledge_tools as KT
     _declare_the_shop()
     cg = _build()
     _block(monkeypatch, "customers")
     monkeypatch.setattr(KT, "_load_graph", lambda *a, **k: cg)
-    monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+    monkeypatch.setattr("pramanyx.ontology.context_graph_search.search_graph",
                         lambda g, q, top_k=10: [(g.nodes[i], 1.0) for i in (
                             "declaration:rule:dach", "declaration:link:Customer_RELATES_TO_Order",
                             "declaration:segment:Order::active_orders")])
@@ -205,9 +205,9 @@ def test_a_declaration_over_a_withheld_table_is_withheld_at_the_knowledge_door_a
 
 
 def test_the_read_back_names_the_declarations_and_withholds_one_over_a_withheld_table(monkeypatch):
-    from aughor.ontology import context_graph_search as S
-    from aughor.ontology import context_graph_store as store
-    from aughor.ontology.context_graph_readback import build_graph_prior
+    from pramanyx.ontology import context_graph_search as S
+    from pramanyx.ontology import context_graph_store as store
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
     monkeypatch.setattr(S, "_vector_search", lambda *a, **k: [])
     _declare_the_shop()
     store.save_graph(_build())
@@ -223,7 +223,7 @@ def test_the_read_back_names_the_declarations_and_withholds_one_over_a_withheld_
 # ── the pack an agent reads offline ───────────────────────────────────────────────────────────
 
 def test_the_exported_skill_names_the_declaration_kind_only_when_the_graph_holds_one():
-    from aughor.ontology import context_graph_export as X
+    from pramanyx.ontology import context_graph_export as X
     plain = X._skill_answer_from_graph("fresh", "")
     assert plain == X._skill_answer_from_graph_text("fresh", "") and "`declaration`" not in plain
     told = X._skill_answer_from_graph("fresh", "", declarations=True)

@@ -1,7 +1,7 @@
 """Per-case diff of an A/B grid — the reading `flag_ab_grid.py` tells you to do and
 nothing produced.
 
-    AUGHOR_SYSTEM_DB=$PWD/data/system.db \\
+    PRAMANYX_SYSTEM_DB=$PWD/data/system.db \\
       .venv/bin/python scripts/grid_case_diff.py <suite_id> [<off_run_id> <on_run_id>]
 
 With only a suite id it takes the two most recent runs whose config differs on exactly
@@ -22,10 +22,10 @@ import os
 import sys
 import textwrap
 
-if not os.environ.get("AUGHOR_SYSTEM_DB"):
-    sys.exit("set AUGHOR_SYSTEM_DB (a bare script does not load conftest's isolation)")
+if not os.environ.get("PRAMANYX_SYSTEM_DB"):
+    sys.exit("set PRAMANYX_SYSTEM_DB (a bare script does not load conftest's isolation)")
 
-from aughor.evals import store  # noqa: E402
+from pramanyx.evals import store  # noqa: E402
 
 
 def _verdict(res: dict | None) -> str:

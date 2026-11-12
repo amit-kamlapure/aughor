@@ -11,7 +11,7 @@ Four approved metrics offered nothing. Each for its own reason, all read from th
 """
 from __future__ import annotations
 
-from aughor.semantic.metric_statement import date_candidates, dates_one_join_away, year_only
+from pramanyx.semantic.metric_statement import date_candidates, dates_one_join_away, year_only
 
 
 def _col(table, column, dtype):
@@ -63,7 +63,7 @@ def test_a_table_with_only_a_year_says_so():
 
 
 def test_the_route_says_where_the_date_is(client, monkeypatch):
-    monkeypatch.setattr("aughor.tools.profile_cache.profile_entry_for", lambda conn, tables: LUX)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.profile_entry_for", lambda conn, tables: LUX)
     r = client.post("/metrics/proposals", json={"connection": "c1", "sql": "SELECT SUM(unit_price_eur) FROM order_items"})
     body = r.json()
     assert body["candidates"] == [] and [x["grain"] for x in body["reachable"]] == ["orders.order_date"]

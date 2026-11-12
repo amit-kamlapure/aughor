@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import investigate as I
-from aughor.agent.analyst import analyst_system_prompt, analyst_tools
+from pramanyx.agent import investigate as I
+from pramanyx.agent.analyst import analyst_system_prompt, analyst_tools
 
 ASKED = [  # the five theLook questions, 2026-09-29
     "What was total revenue and how many units were sold in July 2026?",
@@ -218,11 +218,11 @@ def test_an_opener_that_does_not_answer_gives_way_to_the_ranked_rows(monkeypatch
 # ── Totals the analyst can quote ─────────────────────────────────────────────────────
 
 def test_run_sql_hands_the_model_code_computed_totals(monkeypatch):
-    from aughor.agent import converse_tools as ct
+    from pramanyx.agent import converse_tools as ct
     monkeypatch.setattr(ct, "_connection", lambda cid, **kw: SimpleNamespace(get_schema=lambda: ""))
     result = SimpleNamespace(sql="", columns=["centre", "revenue"], rows=[["a", "1200.5"], ["b", "800.25"]],
                              row_count=2, error=None, caveats=[])
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: result)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: result)
     out = ct.run_sql("c1", {"sql": SQL})
     assert out["totals"] == {"revenue": "2000.75"}
 
@@ -240,7 +240,7 @@ def test_the_describe_rule_leads_with_the_answer_and_shows_every_group():
 def test_a_sentence_about_sample_size_claims_no_cause():
     """Live, twice: "small sample sizes, which may lead to volatile rates" was refused as a
     causal claim under an associational licence, and the quote began at a table heading."""
-    from aughor.agent.claim_type import overreaching_sentences
+    from pramanyx.agent.claim_type import overreaching_sentences
     prose = ("| Country | Rate |\n| :--- | :--- |\n| Colombia | 25.0% |\n\n*Note: Some countries have "
              "very small sample sizes, which may lead to volatile rates.*\nThe promotion led to more orders.")
     hits = overreaching_sentences(prose, "associational")
@@ -248,7 +248,7 @@ def test_a_sentence_about_sample_size_claims_no_cause():
 
 
 def test_the_disclosure_says_whether_a_repair_was_attempted():
-    from aughor.agent.report_checks import Violation, reader_disclosure
+    from pramanyx.agent.report_checks import Violation, reader_disclosure
     v = [Violation("fix it", "a figure could not be traced (#36)")]
     assert reader_disclosure(v).startswith("Deterministic checks after the repair attempt:")
     assert reader_disclosure(v, repaired=False).startswith("Deterministic checks on this answer:")
@@ -258,7 +258,7 @@ def test_the_analyst_measures_on_the_measures_table_and_acts_on_a_caveat():
     """Q4's re-run (2026-10-01): the spec measured shipping time on `orders`; the analyst cut it
     by centre on `order_items`, kept the 30% of rows a guard flagged out of it twice, and opened
     with one centre's figure as the overall and a "slowest" over a 0.06-day spread."""
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     for shape in ("describe", "diagnose"):
         p = analyst_system_prompt("c", {}, 10, shape=shape)
         assert "JOIN that table to the measure's" in p
@@ -282,12 +282,12 @@ Q4_RERUN = ("WITH order_metrics AS (SELECT o.order_id, DATE_DIFF(CAST(o.shipped_
 def test_run_sql_says_which_columns_do_not_add_up_and_why(monkeypatch):
     """Q4's re-run counted distinct orders per centre; the centres' counts add to 59,911 where the
     orders number 43,457, and the sentence carrying such a sum was withheld."""
-    from aughor.agent import converse_tools as ct
+    from pramanyx.agent import converse_tools as ct
     monkeypatch.setattr(ct, "_connection", lambda cid, **kw: SimpleNamespace(get_schema=lambda: ""))
     result = SimpleNamespace(sql="", columns=["distribution_center", "avg_days_placed_to_shipped", "order_count"],
                              rows=[["Houston TX", "1.488", "7502"], ["Memphis TN", "1.502", "7836"]],
                              row_count=2, error=None, caveats=[])
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: result)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: result)
     out = ct.run_sql("c1", {"sql": Q4_RERUN})
     assert "totals" not in out
     assert out["no_total"]["order_count"].startswith("counts distinct values per row")
@@ -296,7 +296,7 @@ def test_run_sql_says_which_columns_do_not_add_up_and_why(monkeypatch):
 
 
 def test_a_ratio_holding_a_distinct_count_is_named_a_ratio_and_a_sum_is_totalled_not_named():
-    from aughor.tools.postproc import untotalled
+    from pramanyx.tools.postproc import untotalled
     sql = ("SELECT category, SUM(sale_price) AS total_revenue, SUM(sale_price) / COUNT(DISTINCT order_id) "
            "AS average_order_value FROM order_items GROUP BY 1")
     rows = [["Jeans", "220935.50", "100.79"], ["Swim", "114013.31", "57.76"]]
@@ -309,7 +309,7 @@ def test_the_describe_rules_give_an_answer_no_figure_to_copy():
     """Re-run #6 (2026-10-01): the alike rule's example, "every centre takes 3.95–4.01 days", was the fulfilment
     question's own range of total days — a sum of two averages no row holds — and that answer then had a sentence
     withheld as untraced. A figure in a rule is a figure an answer can copy; the range is read from the rows."""
-    from aughor.agent.analyst import _HEADLINE_WORDS, _describe_rules
+    from pramanyx.agent.analyst import _HEADLINE_WORDS, _describe_rules
     text = " ".join(_describe_rules(7))
     # the budget and the headline's length bound, and no other figure
     assert re.findall(r"\d", text) == ["7", *str(_HEADLINE_WORDS)]
@@ -317,7 +317,7 @@ def test_the_describe_rules_give_an_answer_no_figure_to_copy():
 
 
 def test_the_describe_rule_never_adds_up_a_column_under_no_total():
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     assert "a column under `no_total` is never added up at all" in analyst_system_prompt("c", {}, 10, shape="describe")
 
 
@@ -376,7 +376,7 @@ def test_a_check_takes_the_no_writer_door_like_a_describe():
 
 
 def test_the_ask_router_answers_a_check_quickly_unless_told_otherwise():
-    from aughor.agent.ask_router import decide_ask_route
+    from pramanyx.agent.ask_router import decide_ask_route
     auto = decide_ask_route("Do Event and Platform really join on these keys?")
     assert (auto.depth, auto.mode) == ("quick", "direct") and "verdict" in auto.why
     forced = decide_ask_route("Do Event and Platform really join on these keys?", depth_override="deep")
@@ -389,7 +389,7 @@ def test_the_ask_router_answers_a_check_quickly_unless_told_otherwise():
 # question was read differently at the two doors. The shape is now decided once, by code first,
 # in `agent/question_shape.py`, and the body is derived from it.
 
-from aughor.agent.question_shape import (  # noqa: E402
+from pramanyx.agent.question_shape import (  # noqa: E402
     CHECK_RULE, SHAPES, body_for, default_depth, is_wide, question_shape, shape_for_body,
 )
 
@@ -439,7 +439,7 @@ def test_the_body_is_derived_from_the_shape_and_the_depth():
 def test_the_router_and_the_agent_read_one_shape():
     """The same function at both doors: the route's shape is the analyst's shape, and a
     question code reads costs no model call at the door."""
-    from aughor.agent.ask_router import decide_ask_route
+    from pramanyx.agent.ask_router import decide_ask_route
     for q in ASKED + CHECKS + ["Why did revenue drop in August?", "Profile our product catalog",
                                "Which product category is weakest by revenue?"]:
         route = decide_ask_route(q, classifier=_no_model)
@@ -447,7 +447,7 @@ def test_the_router_and_the_agent_read_one_shape():
 
 
 def test_depth_follows_the_shape_under_auto():
-    from aughor.agent.ask_router import decide_ask_route
+    from pramanyx.agent.ask_router import decide_ask_route
     routes = [decide_ask_route(q, classifier=_no_model) for q in
               (ASKED[0], CHECKS[0], "Why did revenue drop in August?")]
     assert all(_routed_by_code(r) for r in routes)
@@ -464,7 +464,7 @@ def test_depth_follows_the_shape_under_auto():
 def test_the_check_rule_is_stated_once_for_every_body():
     """The analyst's system prompt and the conversation's carry the same stopping rule for a
     check — and the conversation's prompt for any other shape does not."""
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
     assert CHECK_RULE in analyst_system_prompt("c", {}, 12, shape="check")
     with_check = converse_system_prompt("c", question=CHECKS[0])
     assert CHECK_RULE in with_check and "verdict first" in with_check

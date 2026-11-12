@@ -1,6 +1,6 @@
 """DATA-06 — tenant enforcement on the connections read path.
 
-When AUGHOR_REQUIRE_IDENTITY is on, a caller sees/acts on only their own org's
+When PRAMANYX_REQUIRE_IDENTITY is on, a caller sees/acts on only their own org's
 connections; shared builtins stay visible to everyone; localhost mode (flag off)
 is unchanged.
 """
@@ -8,14 +8,14 @@ from __future__ import annotations
 
 
 def test_list_connections_store_filter(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     with using_org("orgX"):
-        cx = registry.add_connection("x-conn", "duckdb", "data/aughor.duckdb")
+        cx = registry.add_connection("x-conn", "duckdb", "data/pramanyx.duckdb")
     with using_org("orgY"):
-        cy = registry.add_connection("y-conn", "duckdb", "data/aughor.duckdb")
+        cy = registry.add_connection("y-conn", "duckdb", "data/pramanyx.duckdb")
     try:
         with using_org("orgX"):
             ids = {c["id"] for c in registry.list_connections()}
@@ -29,12 +29,12 @@ def test_list_connections_store_filter(monkeypatch):
 
 
 def test_list_connections_unfiltered_in_localhost_mode(monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     with using_org("orgX"):
-        cx = registry.add_connection("x-conn2", "duckdb", "data/aughor.duckdb")
+        cx = registry.add_connection("x-conn2", "duckdb", "data/pramanyx.duckdb")
     try:
         # identity off → no filtering, every connection visible regardless of org ctx
         with using_org("orgY"):
@@ -45,37 +45,37 @@ def test_list_connections_unfiltered_in_localhost_mode(monkeypatch):
 
 
 def test_connections_endpoint_is_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
-        cid = registry.add_connection("orgA-conn", "duckdb", "data/aughor.duckdb")
+        cid = registry.add_connection("orgA-conn", "duckdb", "data/pramanyx.duckdb")
     try:
         # orgA sees its connection in the list; orgB does not.
-        seen_a = {c["id"] for c in client.get("/connections", headers={"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"}).json()}
-        seen_b = {c["id"] for c in client.get("/connections", headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}).json()}
+        seen_a = {c["id"] for c in client.get("/connections", headers={"X-Pramanyx-Org": "orgA", "X-Pramanyx-User": "amit"}).json()}
+        seen_b = {c["id"] for c in client.get("/connections", headers={"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"}).json()}
         assert cid in seen_a
         assert cid not in seen_b
         assert "fixture" in seen_b  # shared builtin still visible
 
         # A by-id route is blocked for the wrong org, allowed for the owner.
-        r_forbidden = client.delete(f"/connections/{cid}", headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"})
+        r_forbidden = client.delete(f"/connections/{cid}", headers={"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"})
         assert r_forbidden.status_code == 403
-        r_ok = client.delete(f"/connections/{cid}", headers={"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"})
+        r_ok = client.delete(f"/connections/{cid}", headers={"X-Pramanyx-Org": "orgA", "X-Pramanyx-User": "amit"})
         assert r_ok.status_code == 204
     finally:
         registry.delete_connection(cid)  # idempotent cleanup
 
 
 def test_identity_required_returns_401_without_header(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    r = client.get("/connections")  # no X-Aughor-Org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    r = client.get("/connections")  # no X-Pramanyx-Org
     assert r.status_code == 401
 
 
 def test_investigations_carry_org_id_and_version():
-    from aughor.db.history import _conn, _ensure_schema
+    from pramanyx.db.history import _conn, _ensure_schema
 
     c = _conn()
     _ensure_schema(c)
@@ -88,9 +88,9 @@ def test_investigations_carry_org_id_and_version():
 
 
 def test_investigation_history_is_org_scoped(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import history
-    from aughor.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import history
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
         ia = history.create_investigation("why did orgA revenue drop", "fixture")
@@ -104,9 +104,9 @@ def test_investigation_history_is_org_scoped(monkeypatch):
 
 
 def test_investigation_history_unfiltered_in_localhost_mode(monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
-    from aughor.db import history
-    from aughor.org.context import using_org
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
+    from pramanyx.db import history
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
         ia = history.create_investigation("localhost-visible", "fixture")
@@ -121,18 +121,18 @@ def test_investigation_history_unfiltered_in_localhost_mode(monkeypatch):
 
 
 def test_the_ontology_and_object_doors_answer_only_the_org_that_owns_the_connection(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.ontology import overrides as OV
-    from aughor.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.ontology import overrides as OV
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
-        mine = registry.add_connection("orgA-onto", "duckdb", "data/aughor.duckdb")
+        mine = registry.add_connection("orgA-onto", "duckdb", "data/pramanyx.duckdb")
     with using_org("orgB"):
-        theirs = registry.add_connection("orgB-onto", "duckdb", "data/aughor.duckdb")
+        theirs = registry.add_connection("orgB-onto", "duckdb", "data/pramanyx.duckdb")
     OV.publish_override(mine, "main", OV.OntologyOverride(target_kind="entity", target_id="Order",   # in force
                                                           fields={"description": "orgA's words"}))
-    a, b = {"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"}, {"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}
+    a, b = {"X-Pramanyx-Org": "orgA", "X-Pramanyx-User": "amit"}, {"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"}
     scope = {"connection_id": mine, "schema_name": "main"}
     try:
         own = client.get("/ontology/overrides", params=scope, headers=a)
@@ -164,16 +164,16 @@ def test_the_ontology_and_object_doors_answer_only_the_org_that_owns_the_connect
 
 
 def test_the_ontology_doors_are_unchanged_in_localhost_mode(client, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
-    from aughor.db import registry
-    from aughor.org.context import using_org
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
-        mine = registry.add_connection("orgA-onto-local", "duckdb", "data/aughor.duckdb")
+        mine = registry.add_connection("orgA-onto-local", "duckdb", "data/pramanyx.duckdb")
     try:
         assert client.get("/ontology/overrides", params={"connection_id": mine, "schema_name": "main"}).status_code == 200
         assert client.get("/ontology/overrides", params={"connection_id": mine, "schema_name": "main"},
-                          headers={"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}).status_code == 200
+                          headers={"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"}).status_code == 200
     finally:
         registry.delete_connection(mine)
 

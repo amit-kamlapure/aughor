@@ -17,9 +17,9 @@ data/.serving.pid
 # The restart mutex (scripts/restart_api.py). Same story: one machine's runtime state.
 data/.restart.lock
 data/.hermes_key
-data/.aughor_key
+data/.pramanyx_key
 data/hermes.duckdb
-data/aughor.duckdb
+data/pramanyx.duckdb
 data/samples.duckdb
 data/history.db
 data/checkpoints.db
@@ -42,7 +42,7 @@ data/context_graph/
 # The per-column config is an install's own tree (punch list 74, 2026-11-09): what the repository
 # ships — the Workspace's tables — is the seed in data/shipped/ontology_column_config/, reviewed
 # there, and everything under data/ontology_column_config/ is what THIS install saved, moved into
-# the data home by `aughor migrate-state`. Nothing in it is tracked (test_seed_overlay_frozen), so
+# the data home by `pramanyx migrate-state`. Nothing in it is tracked (test_seed_overlay_frozen), so
 # it is ignored whole: it names one machine's connections and columns, and this repo is public.
 # (It was tracked for the named connections, with only the 8-hex ids of registered ones ignored —
 # which put shipped files in a tree the app rewrote, and none of an install's own in any backup.)
@@ -60,15 +60,15 @@ data/api_sync/
 data/uploads/
 data/smoke_*.json
 # The glossary is stored in TWO files, split by the `auto_generated` marker that already drove
-# its merge precedence (see aughor/semantic/glossary.py):
+# its merge precedence (see pramanyx/semantic/glossary.py):
 #   data/glossary.yaml            — hand-authored terms. TRACKED, and now small enough to review.
 #   data/glossary_generated.yaml  — the ontology autodoc's per-table output. Ignored below.
 # The autodoc appends an entry per table whenever a connection is explored, so before the split
 # merely RUNNING the app rewrote a tracked file (1,435 lines from one session on 2026-07-24) and
 # buried four real analyst notes in the churn. Tests were never the cause — conftest points
-# AUGHOR_GLOSSARY_PATH at a throwaway temp copy, and the sidecar follows it automatically.
+# PRAMANYX_GLOSSARY_PATH at a throwaway temp copy, and the sidecar follows it automatically.
 data/glossary_generated.yaml
-# The overlay (aughor/semantic/glossary.py): the seed ships in data/shipped/, data/glossary.yaml is
+# The overlay (pramanyx/semantic/glossary.py): the seed ships in data/shipped/, data/glossary.yaml is
 # FROZEN, and this install's own entries — and the marker of their one-time conversion — live here.
 data/glossary.instance.yaml
 data/glossary.instance.converted.yaml
@@ -88,9 +88,9 @@ web/.next/
 web/.env.local
 
 # The launcher's own files: a Node.js the installer downloaded when this computer had
-# none new enough, and the install and server logs that `aughor up` writes instead of
+# none new enough, and the install and server logs that `pramanyx up` writes instead of
 # filling the terminal. Deleting it costs a re-download, never data.
-/.aughor/
+/.pramanyx/
 
 # IDEs
 .idea/
@@ -171,7 +171,7 @@ evals/llm_exp/
 .vercelignore
 .env.local
 
-# Imported skill packs — third-party prose brought in by `aughor skills import`.
+# Imported skill packs — third-party prose brought in by `pramanyx skills import`.
 # Untracked on purpose: this repo is public, and redistributing a skill library inside
 # it is a deliberate decision, not a side effect of running an importer.
 data/packs/

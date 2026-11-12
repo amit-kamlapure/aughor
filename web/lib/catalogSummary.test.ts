@@ -34,7 +34,7 @@ const workspace = () => entry("workspace", "Workspace", "local_upload", [
   { name: "uber_ncr", tables: [{ name: "ncr_ride_bookings", row_count: null }] },
 ], true);
 const duckdb = () => entry("baef6c3e", "DuckDB", "duckdb", [{ name: "main", tables: [{ name: "superstore", row_count: 9994 }] }]);
-const ops = () => entry("aughor_ops", "Pramanyx Ops", "aughor_ops", [], true);
+const ops = () => entry("pramanyx_ops", "Pramanyx Ops", "pramanyx_ops", [], true);
 
 const bar = (share: number | null, note: string) => ({ share, note });
 const maturity = (over: Partial<Maturity> = {}): Maturity => ({
@@ -240,7 +240,7 @@ describe("every catalog", () => {
   const dups = findDuplicates(entries, id => pct[id]);
   const views = {
     workspace: view("workspace", [{ ...bqSchema(), name: "main", maturity: maturity({ percent: 54, stage: "exploring" }) }]),
-    aughor_ops: view("aughor_ops", []),
+    pramanyx_ops: view("pramanyx_ops", []),
     baef6c3e: view("baef6c3e", [{ ...bqSchema(), name: "main", maturity: maturity({ structure: bar(0.333, "partly"), percent: null, stage: "learning" }),
       tables: [dtable("superstore", maturity(), { table: "superstore", reason: "sensitive", note: "", declared_by: "amit" })] }]),
     "04465387": view("04465387", [bqSchema()]),
@@ -272,8 +272,8 @@ describe("every catalog", () => {
     expect(by.workspace.rows).toBeNull();
     expect(by.workspace.uncounted).toBe(3);
     expect(by.workspace.explored).toEqual({ percent: 54, given: 1, of: 1 });
-    expect(by.aughor_ops.what).toBe("the platform itself");
-    expect(by.aughor_ops.state.word).toBe("nothing to read");
+    expect(by.pramanyx_ops.what).toBe("the platform itself");
+    expect(by.pramanyx_ops.state.word).toBe("nothing to read");
     expect(by.baef6c3e.what).toBe("DuckDB · main");
     expect(by.baef6c3e.explored).toEqual({ percent: null, given: 0, of: 1 });
     expect(by["04465387"].what).toBe("the same tables as theLook");

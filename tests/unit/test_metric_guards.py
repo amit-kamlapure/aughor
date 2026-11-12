@@ -8,8 +8,8 @@ line-item average undercounts (the live $467-vs-$1108 mislabel).
 meanings (revenue↔cost). An LLM faithfulness check rates these "faithful"; the
 deterministic column-group swap is the reliable signal (cf. de-temporalisation).
 """
-from aughor.explorer.agent import _semantic_metric_drift
-from aughor.explorer.verify import mislabeled_per_grain
+from pramanyx.explorer.agent import _semantic_metric_drift
+from pramanyx.explorer.verify import mislabeled_per_grain
 
 
 # ── #6 per-grain mislabel ─────────────────────────────────────────────────────

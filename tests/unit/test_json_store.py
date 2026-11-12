@@ -1,5 +1,5 @@
-"""Shared JSON-store primitives — see aughor/util/json_store.py (C1)."""
-from aughor.util.json_store import KeyedJsonStore, JsonListStore
+"""Shared JSON-store primitives — see pramanyx/util/json_store.py (C1)."""
+from pramanyx.util.json_store import KeyedJsonStore, JsonListStore
 
 
 # ── KeyedJsonStore ────────────────────────────────────────────────────────────

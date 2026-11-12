@@ -6,7 +6,7 @@ surface. These pin: the scale-aware formatter, the percent-metric detector, the 
 """
 from __future__ import annotations
 
-import aughor.agent.investigate as I
+import pramanyx.agent.investigate as I
 
 
 # ── scale-aware formatter ────────────────────────────────────────────────────────

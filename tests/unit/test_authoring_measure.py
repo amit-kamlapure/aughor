@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from aughor.agent.authoring_measure import (
+from pramanyx.agent.authoring_measure import (
     DRAFT_KINDS,
     FINISHED_IN_FORM_MARK,
     authoring_funnel,
@@ -34,7 +34,7 @@ def _chain(channel="#ops", cron="0 9 * * *", tz=""):
 
 def _first_run(cron="0 9 * * *", tz=""):
     from datetime import datetime, timezone as _tz
-    from aughor.automations.engine import next_fire_utc
+    from pramanyx.automations.engine import next_fire_utc
     return next_fire_utc(cron, datetime(2026, 9, 16, tzinfo=_tz.utc), tz)\
         .strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -98,11 +98,11 @@ def test_each_dishonesty_class_is_caught():
 def test_the_scorer_grades_rows_the_real_tools_stage(monkeypatch):
     """End to end: draft through the actual tool, score the actual row — the scorer
     and the tools cannot drift apart."""
-    import aughor.agent.spotlight_act as act
-    from aughor.actions.inbox import get_proposal
+    import pramanyx.agent.spotlight_act as act
+    from pramanyx.actions.inbox import get_proposal
 
     monkeypatch.setattr(
-        "aughor.automations.propose.propose_chain",
+        "pramanyx.automations.propose.propose_chain",
         lambda outcome, conn_id, provider=None: SimpleNamespace(
             verdict="proposed", draft=_chain(channel=""), dry_run={"ok": True},
             reason="", notes=[],

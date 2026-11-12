@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm.models import _ollama_root
-from aughor.llm.provider import _ollama_openai_base
+from pramanyx.llm.models import _ollama_root
+from pramanyx.llm.provider import _ollama_openai_base
 
 
 @pytest.mark.parametrize("given", [
@@ -56,7 +56,7 @@ def test_it_is_the_inverse_of_the_native_root(given):
 
 def test_the_built_client_actually_targets_v1():
     """The outcome, not the helper: the constructed SDK client must carry /v1."""
-    from aughor.llm.provider import _build_ollama_client
+    from pramanyx.llm.provider import _build_ollama_client
     client = _build_ollama_client("qwen2.5-coder:14b", "http://localhost:11434")
     assert str(client.client.base_url).rstrip("/").endswith("/v1")
 
@@ -70,8 +70,8 @@ def test_the_built_client_actually_targets_v1():
 # `__cause__` the whole time.
 
 def test_a_wrapped_failure_keeps_the_diagnosis_its_cause_carries():
-    from aughor.llm.provider import classify_provider_error
-    from aughor.llm.reliability import Diagnosis, StructuredOutputError
+    from pramanyx.llm.provider import classify_provider_error
+    from pramanyx.llm.reliability import Diagnosis, StructuredOutputError
 
     real = RuntimeError("404 page not found")          # what Ollama actually said
     wrapped = StructuredOutputError(
@@ -85,15 +85,15 @@ def test_a_wrapped_failure_keeps_the_diagnosis_its_cause_carries():
 
 def test_the_wrapper_alone_is_still_unknown():
     """No cause, no evidence — the honest answer stays "unknown"."""
-    from aughor.llm.provider import classify_provider_error
-    from aughor.llm.reliability import Diagnosis, StructuredOutputError
+    from pramanyx.llm.provider import classify_provider_error
+    from pramanyx.llm.reliability import Diagnosis, StructuredOutputError
 
     bare = StructuredOutputError(Diagnosis(failure="unavailable", detail="something odd"))
     assert classify_provider_error(bare) == "unknown"
 
 
 def test_a_cyclic_cause_chain_terminates():
-    from aughor.llm.provider import classify_provider_error
+    from pramanyx.llm.provider import classify_provider_error
     a = RuntimeError("mystery a")
     b = RuntimeError("mystery b")
     a.__cause__ = b
@@ -135,8 +135,8 @@ def _failed_call(tool_calls):
 
 
 def test_no_tool_call_is_named_as_a_configuration_fault():
-    from aughor.llm.provider import ToolsDeclarationError, _raise_if_tools_declaration_false
-    from aughor.llm import provider as P
+    from pramanyx.llm.provider import ToolsDeclarationError, _raise_if_tools_declaration_false
+    from pramanyx.llm import provider as P
 
     assert P._is_structured_failure(_failed_call(None))          # premise
 
@@ -151,14 +151,14 @@ def test_no_tool_call_is_named_as_a_configuration_fault():
 
 def test_a_model_that_did_call_the_tool_is_never_accused():
     """A real tool call that merely failed its schema is ordinary flakiness."""
-    from aughor.llm.provider import _raise_if_tools_declaration_false
+    from pramanyx.llm.provider import _raise_if_tools_declaration_false
     exc = _failed_call(tool_calls=[{"id": "1"}])
     _raise_if_tools_declaration_false(_tools_client(), "ollama", "m:1", exc)   # no raise
 
 
 def test_no_reachable_response_means_no_accusation():
     """Absent evidence, stay silent — a guess here slanders a working model."""
-    from aughor.llm.provider import _raise_if_tools_declaration_false, _tool_call_absent
+    from pramanyx.llm.provider import _raise_if_tools_declaration_false, _tool_call_absent
     exc = InstructorRetryException("validation failed")   # no response attached
     assert _tool_call_absent(exc) is None
     _raise_if_tools_declaration_false(_tools_client(), "ollama", "m:1", exc)   # no raise
@@ -169,7 +169,7 @@ def test_an_empty_reply_is_not_evidence_against_the_model():
     2026-09-29), not a model answering a forced call in prose — the reply stays an empty
     one, never a configuration fault that tells the operator to change models."""
     from types import SimpleNamespace
-    from aughor.llm.provider import _raise_if_tools_declaration_false, _tool_call_absent
+    from pramanyx.llm.provider import _raise_if_tools_declaration_false, _tool_call_absent
     for content in ("", None, "  \n"):
         exc = InstructorRetryException("validation failed")
         exc.last_completion = SimpleNamespace(choices=[SimpleNamespace(
@@ -182,7 +182,7 @@ def test_json_mode_is_out_of_scope():
     """Only a TOOLS-mode call can disprove a tools declaration."""
     import instructor
     from types import SimpleNamespace
-    from aughor.llm.provider import _raise_if_tools_declaration_false
+    from pramanyx.llm.provider import _raise_if_tools_declaration_false
     exc = _failed_call(tool_calls=None)
     json_client = SimpleNamespace(mode=instructor.Mode.JSON, client=object())
     _raise_if_tools_declaration_false(json_client, "ollama", "m:1", exc)       # no raise
@@ -190,9 +190,9 @@ def test_json_mode_is_out_of_scope():
 
 def test_the_failure_reaches_the_operator_as_its_own_class():
     """A red cross with a paragraph is what this replaced — it must be actionable."""
-    from aughor.llm.provider import (ToolsDeclarationError, classify_provider_error,
+    from pramanyx.llm.provider import (ToolsDeclarationError, classify_provider_error,
                                      error_hint, PROVIDER_ERROR_CLASSES)
-    from aughor.agent import answer_errors as AE
+    from pramanyx.agent import answer_errors as AE
 
     exc = ToolsDeclarationError("ollama", "m:1", RuntimeError("no tool call"))
     reason = classify_provider_error(exc)
@@ -208,7 +208,7 @@ def test_the_failure_reaches_the_operator_as_its_own_class():
 def test_the_declaration_is_still_taken_at_face_value(monkeypatch):
     """No memo, no second-guessing: the model's answer picks the mode."""
     import instructor
-    from aughor.llm import provider as P
+    from pramanyx.llm import provider as P
     monkeypatch.setattr(P, "model_supports_tools", lambda m: True)
     assert P._build_ollama_client("m:1", "http://localhost:11434").mode == instructor.Mode.TOOLS
     monkeypatch.setattr(P, "model_supports_tools", lambda m: False)

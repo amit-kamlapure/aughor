@@ -27,8 +27,8 @@ from __future__ import annotations
 import threading
 import time as _time
 
-from aughor.automations.dataflow import BRANCH_SKIP
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.dataflow import BRANCH_SKIP
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
 def _post(alias="", when=None, else_of="", **config) -> Effect:
@@ -47,7 +47,7 @@ def _automation(*effects, scheduling="parallel", fallback=None, **kw) -> Automat
 
 
 def _run(automation, dispatch, **kwargs):
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     return run_automation(automation, dispatch=dispatch, persist=False,
                           probe=lambda *a, **k: True,
                           sleeper=lambda _s: None, rng=lambda: 0.0, **kwargs)
@@ -122,7 +122,7 @@ def test_outcomes_keep_declared_order_when_completion_inverts():
 
 
 def test_the_frontier_caps_concurrency_but_completes_everything():
-    from aughor.automations.engine import MAX_PARALLEL_STEPS
+    from pramanyx.automations.engine import MAX_PARALLEL_STEPS
     live = {"now": 0, "peak": 0}
     lock = threading.Lock()
 
@@ -213,7 +213,7 @@ def test_the_frontier_declares_its_fanout_region():
     parallel-safe. An undeclared fan-out is invisible to that checkpoint, and invisible
     is exactly the failure mode Wave R5 exists to remove. The ordered walk declares
     nothing: serial is the pre-DS-7 state, byte for byte."""
-    from aughor.kernel.parallel_safety import current_fanout
+    from pramanyx.kernel.parallel_safety import current_fanout
     regions: dict[str, str] = {}
     lock = threading.Lock()
 
@@ -236,8 +236,8 @@ def test_parallel_refused_is_a_verdict_never_retried(monkeypatch):
     the same inputs refuse identically next attempt, and retrying a refusal is another
     request against whatever just refused (the #200 lesson). First reachable from an
     automation now that steps can run concurrently."""
-    import aughor.actions.executor as kexec
-    import aughor.ontology.store as ostore
+    import pramanyx.actions.executor as kexec
+    import pramanyx.ontology.store as ostore
 
     class _Result:
         status = "parallel_refused"
@@ -258,7 +258,7 @@ def test_parallel_refused_is_a_verdict_never_retried(monkeypatch):
     monkeypatch.setattr(kexec, "execute_kinetic_action", _refuse)
     monkeypatch.setattr(ostore, "load_latest_ontology", lambda *a, **k: _Graph())
 
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     run = run_automation(_automation(
         Effect(kind="kinetic_action", alias="refund",
                config={"action_id": "refund_orders"}),
@@ -287,7 +287,7 @@ def test_a_dry_run_on_a_parallel_automation_walks_in_declared_order():
 # ── the store and the graph ──────────────────────────────────────────────────────
 
 def test_scheduling_round_trips_through_the_store():
-    from aughor.automations.store import get_automation, upsert_automation
+    from pramanyx.automations.store import get_automation, upsert_automation
     a = _automation(_post(alias="a"), scheduling="parallel")
     upsert_automation(a)
     stored = get_automation(a.id)
@@ -300,7 +300,7 @@ def test_scheduling_round_trips_through_the_store():
 
 
 def test_the_parallel_graph_draws_trigger_to_roots_and_no_false_spine():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     graph = build_graph(_automation(
         _post(alias="a"),
         _post(alias="b"),
@@ -314,7 +314,7 @@ def test_the_parallel_graph_draws_trigger_to_roots_and_no_false_spine():
 
 
 def test_the_ordered_graph_keeps_its_chain_spine_exactly():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     graph = build_graph(_automation(
         _post(alias="a"), _post(alias="b"), scheduling="ordered"))
     seq = [(e["from"], e["to"]) for e in graph["edges"] if e["type"] == "sequence"]

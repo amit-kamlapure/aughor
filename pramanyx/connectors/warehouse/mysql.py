@@ -1,0 +1,202 @@
+"""MySQL / MariaDB connector for Pramanyx.
+
+DSN format:  mysql://user:password@host:3306/database
+Meta fields: {"ssl_ca": "/path/to/ca.pem"}  (optional)
+
+Optional dep:
+  uv pip install 'PyMySQL>=1.0.0'
+"""
+from __future__ import annotations
+
+import time
+from urllib.parse import urlparse
+
+from pramanyx.connectors.base import Connector
+from pramanyx.db.signing import sign
+from pramanyx.db.doors import through_door
+from pramanyx.db.errors import classify_error
+from pramanyx.control_plane.contracts.execution import QueryResult
+
+MAX_ROWS = 2000
+
+
+class MySQLConnection(Connector):
+    connector_category = "warehouse"
+    dialect = "mysql"
+    writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    reads_one_schema = True   # its database, and `routers._shared.schemas_of_connection` lists no other
+    _SESSION_INIT: str | None = "SET SESSION TRANSACTION READ ONLY"
+
+    def __init__(
+        self,
+        dsn: str,
+        schema_name: str | None = None,
+        connection_id: str = "",
+        meta: dict | None = None,
+    ) -> None:
+        self.dep_check("pymysql", "PyMySQL>=1.0.0")
+        import pymysql
+
+        meta = meta or {}
+        self._connection_id = connection_id
+
+        # Parse DSN:  mysql://user:pass@host:3306/dbname
+        parsed = urlparse(dsn.replace("mysql://", "http://", 1))  # urlparse needs a scheme
+        self._host     = parsed.hostname or meta.get("host", "localhost")
+        self._port     = parsed.port or int(meta.get("port", 3306))
+        self._user     = parsed.username or meta.get("user", "root")
+        self._password = parsed.password or meta.get("password", "")
+        self._database = (parsed.path or "").lstrip("/") or meta.get("database", "")
+        self._schema_name = schema_name or self._database
+
+        ssl_opts = {}
+        if meta.get("ssl_ca"):
+            ssl_opts = {"ssl": {"ca": meta["ssl_ca"]}}
+
+        self._conn = pymysql.connect(
+            host=self._host, port=self._port,
+            user=self._user, password=self._password,
+            database=self._database,
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+            connect_timeout=30,
+            # DE-1 (ROADMAP §3.51) — the engine backs the door's promise, as Postgres's `default_transaction_read_only`
+            # does: every statement in this session runs in a read-only transaction and the server refuses a write
+            # (error 1792) the door did not. An `init_command` runs again on every reconnect — `ping(reconnect=True)`
+            # in `_execute` — so a dropped connection cannot come back writable.
+            init_command=self._SESSION_INIT,
+            **ssl_opts,
+        )
+        self.engine_read_only = True
+
+    param_style = "pyformat"
+
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe for the pool (DE-3d): the driver's own ping, WITHOUT reconnecting — a pooled
+        connection that would need reconnecting is one the pool should not hand out."""
+        try:
+            if self._conn is None or not getattr(self._conn, "open", False):
+                return False
+            self._conn.ping(reconnect=False)
+            return True
+        except Exception:
+            return False
+
+    def _bind_execute(self, sql: str, params: dict):
+        with self._conn.cursor() as cur:
+            cur.execute(sign(sql), params)
+            rows_raw = cur.fetchmany(self.max_rows + 1)   # one past the cap, so a cut read shows
+            # DictCursor: columns come from the first row, and from `description` when the
+            # result is empty — the same two-source read `execute` already does.
+            cols = (list(rows_raw[0].keys()) if rows_raw else
+                    ([d[0] for d in cur.description] if cur.description else []))
+            return cols, [list(r.values()) for r in rows_raw]
+
+    @staticmethod
+    def _stage_types(description) -> list[str]:
+        """Each column's type in the cross-source stage's names, from pymysql's type code and the precision and scale
+        its description carries."""
+        from pramanyx.connectors.base import stage_type
+        try:
+            from pymysql.constants import FIELD_TYPE
+        except ImportError:
+            return []
+        names = {code: name for name, code in vars(FIELD_TYPE).items() if name.isupper() and isinstance(code, int)}
+        return [stage_type(names.get(d[1], "") if len(d) > 1 else "",
+                           d[4] if len(d) > 4 else None, d[5] if len(d) > 5 else None) for d in description]
+
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)), internal=internal)
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        from pramanyx.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post
+
+        sql = sql.strip().rstrip(";")
+        if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
+            return blocked
+        sql, _rp = enforce_row_policy(self, hypothesis_id, sql)   # RBAC row-policy (Rec 7); no-op off
+        if _rp is not None:
+            return _rp
+
+        _t0 = time.monotonic()
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(sign(sql))
+                # one row past the cap: a read the cap cut counts more rows than it keeps
+                rows_raw = cur.fetchmany(max_rows + 1)
+                columns = list(rows_raw[0].keys()) if rows_raw else (
+                    [desc[0] for desc in cur.description] if cur.description else []
+                )
+                raw = [list(row.values()) for row in rows_raw]
+                offer_typed_rows(raw[:max_rows], truncated=len(raw) > max_rows,
+                                 types=self._stage_types(cur.description or []))
+                rows = [[str(v) if v is not None else "NULL" for v in row] for row in raw[:max_rows]]
+            result = QueryResult(
+                hypothesis_id=hypothesis_id, sql=sql,
+                columns=columns, rows=rows, row_count=len(rows_raw),
+            )
+        except Exception as e:
+            # Auto-reconnect on dropped connection
+            try:
+                self._conn.ping(reconnect=True)
+            except Exception:
+                pass
+            result = QueryResult(
+                hypothesis_id=hypothesis_id, sql=sql,
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
+            )
+        elapsed_ms = (time.monotonic() - _t0) * 1000
+        return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
+
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(f"EXPLAIN {sql.rstrip(';')}")
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def get_schema(self) -> str:
+        lines: list[str] = []
+        try:
+            with self._conn.cursor() as cur:
+                # Named twice because MySQL 8 hands these keys back in upper case, whatever the statement wrote.
+                cur.execute("""
+                    SELECT table_name AS table_name, column_name AS column_name, column_type AS column_type
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE table_schema = %s
+                    ORDER BY table_name, ordinal_position
+                """, (self._database,))
+                rows = cur.fetchall()
+            from collections import defaultdict
+            table_cols: dict[str, list[str]] = defaultdict(list)
+            for row in rows:
+                table_cols[row["table_name"]].append(
+                    f"{row['column_name']} {row['column_type']}"
+                )
+            for tname, cols in table_cols.items():
+                lines.append(f"TABLE: {tname} [{', '.join(cols)}]")
+        except Exception as e:
+            lines.append(f"# Schema introspection failed: {e}")
+        return "\n".join(lines)
+
+    def test(self) -> tuple[bool, str]:
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT VERSION()")
+                row = cur.fetchone()
+            version = list(row.values())[0] if row else "?"
+            return True, f"Connected to MySQL {version} @ {self._host}"
+        except Exception as e:
+            return False, str(e)
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass

@@ -23,7 +23,7 @@ import { useRichSchema } from "@/lib/schema-context";
 import { consumePendingAsk, useCommands, useRegisterCommands, type AskFocus, type Command } from "@/lib/commandRegistry";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { newSessionId, projectThread } from "@/lib/chatTurn";
-import { useAughorChat } from "@/lib/useAughorChat";
+import { usePramanyxChat } from "@/lib/usePramanyxChat";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -206,7 +206,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   const [followUp, setFollowUp] = useState("");
   const [spotlightSession] = useState(() => newSessionId());
   const spotScrollRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, error } = useAughorChat({
+  const { messages, sendMessage, status, error } = usePramanyxChat({
     connectionId: selectedConn,
     sessionId: spotlightSession,
     // depth:"quick" keeps the overlay snappy (the router honours it with no model

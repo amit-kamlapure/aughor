@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.hub import brain_map as bm
-from aughor.ontology.context_graph import (
+from pramanyx.hub import brain_map as bm
+from pramanyx.ontology.context_graph import (
     ContextGraph, FactRevision, GraphEdge, GraphNode, Provenance, RetiredNode,
 )
 
@@ -58,7 +58,7 @@ def test_a_connection_with_nothing_built_says_so_box_by_box(monkeypatch):
 
 def test_an_unreadable_store_is_said_never_a_zero(monkeypatch):
     monkeypatch.setattr(bm, "_graphs", lambda org, conn: [])
-    import aughor.semantic.metrics as metrics
+    import pramanyx.semantic.metrics as metrics
 
     def boom(**kw):
         raise RuntimeError("catalogue locked")
@@ -79,7 +79,7 @@ def test_facts_are_counted_dated_and_their_history_is_on_the_screen(graph):
 
 
 def test_every_edge_is_a_measured_count(graph, monkeypatch):
-    import aughor.explorer.store as store
+    import pramanyx.explorer.store as store
     monkeypatch.setattr(store, "get_findings", lambda key: [
         {"id": "f1", "domain": "Sales", "generated_at": "2026-09-20T10:00:00Z", "finding": "x"}])
     result = bm.brain_map(CONN)

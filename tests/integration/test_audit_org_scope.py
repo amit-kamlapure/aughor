@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.org.context import using_org
-from aughor.security.audit import AuditLogger
+from pramanyx.org.context import using_org
+from pramanyx.security.audit import AuditLogger
 
 
 @pytest.fixture()
@@ -35,25 +35,25 @@ def _sqls(payload) -> str:
 
 
 def test_audit_read_is_org_scoped(client, monkeypatch, two_org_rows):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     a = client.get("/security/audit", params={"limit": 500},
-                   headers={"X-Aughor-Org": "auditscope_a"})
+                   headers={"X-Pramanyx-Org": "auditscope_a"})
     assert a.status_code == 200
     text_a = _sqls(a.json())
     assert "secret_a" in text_a, "an org must still see its OWN statements"
     assert "secret_b" not in text_a, "another org's SQL text must never appear"
 
     b = client.get("/security/audit", params={"limit": 500},
-                   headers={"X-Aughor-Org": "auditscope_b"})
+                   headers={"X-Pramanyx-Org": "auditscope_b"})
     assert "secret_b" in _sqls(b.json()) and "secret_a" not in _sqls(b.json())
 
 
 def test_audit_stats_are_org_scoped(client, monkeypatch, two_org_rows):
     """The aggregate leaks too: how much SQL another tenant runs, and how much of it
     is blocked."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    a = client.get("/security/audit/stats", headers={"X-Aughor-Org": "auditscope_a"}).json()
-    b = client.get("/security/audit/stats", headers={"X-Aughor-Org": "auditscope_b"}).json()
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    a = client.get("/security/audit/stats", headers={"X-Pramanyx-Org": "auditscope_a"}).json()
+    b = client.get("/security/audit/stats", headers={"X-Pramanyx-Org": "auditscope_b"}).json()
     unfiltered = AuditLogger.stats()
     assert a["total"] >= 1 and b["total"] >= 1
     assert a["total"] < unfiltered["total"], "a tenant's total is not the whole log's"
@@ -63,16 +63,16 @@ def test_cross_org_connection_filter_is_403_not_empty(client, monkeypatch):
     """An explicit foreign connection_id must be refused, not answered with an empty
     list — "no rows" and "not yours" are different answers, and only one of them
     stops a probe."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
     with using_org("auditflt_a"):
-        cid = registry.add_connection("audit-flt-conn", "duckdb", "data/aughor.duckdb")
+        cid = registry.add_connection("audit-flt-conn", "duckdb", "data/pramanyx.duckdb")
     try:
         r = client.get("/security/audit", params={"connection_id": cid},
-                       headers={"X-Aughor-Org": "auditflt_b"})
+                       headers={"X-Pramanyx-Org": "auditflt_b"})
         assert r.status_code == 403
         assert client.get("/security/audit", params={"connection_id": cid},
-                          headers={"X-Aughor-Org": "auditflt_a"}).status_code == 200
+                          headers={"X-Pramanyx-Org": "auditflt_a"}).status_code == 200
     finally:
         registry.delete_connection(cid)
 
@@ -86,20 +86,20 @@ def test_localhost_mode_is_unfiltered(client, two_org_rows):
 
 
 def test_budget_routes_are_org_scoped(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.db import registry
-    from aughor.security.sandbox import QueryBudget, set_budget
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.security.sandbox import QueryBudget, set_budget
     with using_org("auditbud_a"):
-        cid = registry.add_connection("audit-bud-conn", "duckdb", "data/aughor.duckdb")
+        cid = registry.add_connection("audit-bud-conn", "duckdb", "data/pramanyx.duckdb")
     set_budget(cid, QueryBudget(max_rows=7))
     try:
-        wrong = {"X-Aughor-Org": "auditbud_b"}
+        wrong = {"X-Pramanyx-Org": "auditbud_b"}
         assert client.get(f"/security/budget/{cid}", headers=wrong).status_code == 403
         assert client.put(f"/security/budget/{cid}", json={"max_rows": 1},
                           headers=wrong).status_code == 403
         listed = client.get("/security/budget", headers=wrong).json()["budgets"]
         assert cid not in listed, "another org's budget must not be listed"
-        mine = client.get("/security/budget", headers={"X-Aughor-Org": "auditbud_a"}).json()
+        mine = client.get("/security/budget", headers={"X-Pramanyx-Org": "auditbud_a"}).json()
         assert cid in mine["budgets"], "the owner still sees it"
     finally:
         registry.delete_connection(cid)
@@ -108,9 +108,9 @@ def test_budget_routes_are_org_scoped(client, monkeypatch):
 def test_governance_feed_audit_sink_is_scoped(client, monkeypatch, two_org_rows):
     """`/audit/feed` reads the SAME audit rows (detail = the whole row, sql_full
     included). A guard whose sibling route is unguarded is not a guard."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     r = client.get("/audit/feed", params={"category": "data_access", "limit": 500},
-                   headers={"X-Aughor-Org": "auditscope_a"})
+                   headers={"X-Pramanyx-Org": "auditscope_a"})
     if r.status_code == 403:
         pytest.skip("RBAC denied the admin-gated feed for this principal")
     blob = str(r.json())
@@ -124,7 +124,7 @@ def test_ledger_events_are_tenant_stamped_and_filterable():
     filters on it. Asserted on `govern.tag` specifically: it is the kind whose PAYLOAD
     carried org_id on 0 of 4 live rows, so it is exactly what a payload filter would
     have silently emptied."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     ledger = Ledger.default()
     with using_org("ledgerscope_a"):
         ledger.emit("govern.tag", {"tag": "certified"}, conn_id="ledger-conn-a")
@@ -143,13 +143,13 @@ def test_ledger_events_are_tenant_stamped_and_filterable():
 
 def test_governance_feed_ledger_sink_is_scoped(client, monkeypatch):
     """The feed's third sink — the one this branch first left open — now scopes too."""
-    from aughor.kernel.ledger import Ledger
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    from pramanyx.kernel.ledger import Ledger
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     with using_org("ledgerfeed_b"):
         Ledger.default().emit("govern.tag", {"tag": "b-only-secret-tag"},
                               conn_id="ledgerfeed-conn-b")
     r = client.get("/audit/feed", params={"category": "governance_change", "limit": 500},
-                   headers={"X-Aughor-Org": "ledgerfeed_a"})
+                   headers={"X-Pramanyx-Org": "ledgerfeed_a"})
     if r.status_code == 403:
         pytest.skip("RBAC denied the admin-gated feed for this principal")
     assert "b-only-secret-tag" not in str(r.json())

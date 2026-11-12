@@ -8,7 +8,7 @@ served. The registry row is now the authority on both: whose a document is, and 
 still exists.
 
 Hermetic: the vector store, the embedder, the connection registry and the sign-in scope are
-stubbed at their module seams; the registry rides a temp `AUGHOR_DOCUMENTS_REGISTRY`.
+stubbed at their module seams; the registry rides a temp `PRAMANYX_DOCUMENTS_REGISTRY`.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import aughor.knowledge.indexer as idx
+import pramanyx.knowledge.indexer as idx
 
 CONNECTION_ORGS = {"connA": "orgA", "connB": "orgB", "samples": None}
 
@@ -25,18 +25,18 @@ CONNECTION_ORGS = {"connA": "orgA", "connB": "orgB", "samples": None}
 @pytest.fixture()
 def corpus(monkeypatch, tmp_path):
     registry = tmp_path / "documents.json"
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(registry))
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(registry))
     points: list[dict] = []
 
     def _search(coll, vector, top_k=10, query_filter=None):
         ranked = [{"payload": p, "score": round(0.99 - i * 0.01, 2)} for i, p in enumerate(points)]
         return ranked[:top_k]
 
-    monkeypatch.setattr("aughor.semantic.vector_store.search", _search)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_count", lambda coll: len(points))
-    monkeypatch.setattr("aughor.semantic.embedder.embed_one", lambda q: [0.0] * 8)
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", CONNECTION_ORGS.get)
-    monkeypatch.setattr("aughor.security.authz.tenant_scope", lambda: None)   # sign-in off
+    monkeypatch.setattr("pramanyx.semantic.vector_store.search", _search)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_count", lambda coll: len(points))
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", lambda q: [0.0] * 8)
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org", CONNECTION_ORGS.get)
+    monkeypatch.setattr("pramanyx.security.authz.tenant_scope", lambda: None)   # sign-in off
 
     def add(doc_id: str, *, org: object = "unset", registered: bool = True) -> None:
         points.append({"doc_id": doc_id, "text": f"passage of {doc_id}", "filename": doc_id,
@@ -78,7 +78,7 @@ def test_a_deleted_documents_leftover_vectors_are_not_served(corpus):
 
 
 def test_with_sign_in_on_only_the_callers_organisation_is_read(corpus, monkeypatch):
-    monkeypatch.setattr("aughor.security.authz.tenant_scope", lambda: "orgA")
+    monkeypatch.setattr("pramanyx.security.authz.tenant_scope", lambda: "orgA")
     corpus("u2", org="orgB")
     corpus("u1", org="orgA")
     corpus("doctree::samples::main", org="")         # a shared builtin's docs: every org reads them
@@ -87,7 +87,7 @@ def test_with_sign_in_on_only_the_callers_organisation_is_read(corpus, monkeypat
 
     assert _ids(idx.search_documents("revenue")) == ["u1", "doctree::samples::main"]
 
-    monkeypatch.setattr("aughor.security.authz.tenant_scope", lambda: "default")
+    monkeypatch.setattr("pramanyx.security.authz.tenant_scope", lambda: "default")
     assert _ids(idx.search_documents("revenue")) == ["doctree::samples::main", "old-upload"]
 
 
@@ -102,9 +102,9 @@ def test_the_filters_do_not_shrink_the_answer_below_top_k(corpus):
 
 
 def test_indexing_stamps_the_owner_and_a_reindex_keeps_it(monkeypatch, tmp_path):
-    from aughor.org.context import reset_org_id, set_org_id
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", CONNECTION_ORGS.get)
+    from pramanyx.org.context import reset_org_id, set_org_id
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org", CONNECTION_ORGS.get)
 
     token = set_org_id("orgA")
     try:
@@ -132,7 +132,7 @@ def test_indexing_stamps_the_owner_and_a_reindex_keeps_it(monkeypatch, tmp_path)
 
 
 def test_the_by_id_doors_refuse_another_organisations_document(corpus):
-    from aughor.security.authz import authorize_resource
+    from pramanyx.security.authz import authorize_resource
     corpus("u2", org="orgB")
     corpus("doctree::samples::main", org="")
     a_user_in_org_a = SimpleNamespace(org_id="orgA")
@@ -144,14 +144,14 @@ def test_the_by_id_doors_refuse_another_organisations_document(corpus):
 
 
 def test_the_list_door_shows_only_the_callers_documents(corpus, monkeypatch):
-    from aughor.routers.knowledge import list_documents_endpoint
+    from pramanyx.routers.knowledge import list_documents_endpoint
     corpus("u1", org="orgA")
     corpus("u2", org="orgB")
     corpus("doctree::samples::main", org="")
 
     assert sorted(d["doc_id"] for d in list_documents_endpoint()) == [
         "doctree::samples::main", "u1", "u2"]                     # sign-in off: unchanged
-    monkeypatch.setattr("aughor.security.authz.tenant_scope", lambda: "orgA")
+    monkeypatch.setattr("pramanyx.security.authz.tenant_scope", lambda: "orgA")
     assert sorted(d["doc_id"] for d in list_documents_endpoint()) == [
         "doctree::samples::main", "u1"]
 
@@ -161,12 +161,12 @@ def test_every_question_path_names_its_connection(monkeypatch):
     seen: list = []
     monkeypatch.setattr(idx, "search_documents",
                         lambda q, top_k=4, **kw: seen.append(kw.get("connection_id")) or [])
-    monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids", lambda: None)
+    monkeypatch.setattr("pramanyx.custom_agents.context.agent_doc_ids", lambda: None)
 
     idx.build_external_context_section("q", connection_id="connA")
-    from aughor.agent.grounding import external_docs
+    from pramanyx.agent.grounding import external_docs
     external_docs("q", connection_id="connA")
-    from aughor.agent import platform_tools
+    from pramanyx.agent import platform_tools
     platform_tools.search_documents("connA", {"query": "q"})
 
     assert seen == ["connA", "connA", "connA"]

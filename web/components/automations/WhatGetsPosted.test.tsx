@@ -38,7 +38,7 @@ import { readWords, WhatGetsPosted, writeWords } from "./WhatGetsPosted";
 
 const analysis = { kind: ANALYSIS_KIND, config: { question: "What changed in theLook in the last day?" } } as unknown as AutoEffect;
 const slack = (config: Record<string, unknown> = {}) => ({ kind: "slack_post",
-  config: { bot_id: "b", channel: "#ask_aughor", message: { $from: "step1.summary" }, ...config } }) as unknown as AutoEffect;
+  config: { bot_id: "b", channel: "#ask_pramanyx", message: { $from: "step1.summary" }, ...config } }) as unknown as AutoEffect;
 
 describe("the words", () => {
   it("are the bindings the message field holds, both ways", () => {

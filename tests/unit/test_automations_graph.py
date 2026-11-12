@@ -21,8 +21,8 @@ keep the picture honest:
 """
 from __future__ import annotations
 
-from aughor.automations.graph import build_graph, data_edges_only
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.graph import build_graph, data_edges_only
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
 def _effect(alias="", **config) -> Effect:
@@ -77,7 +77,7 @@ def test_a_binding_becomes_a_DATA_edge_labelled_with_the_key_it_carries():
 def test_a_GUARD_reference_draws_too_and_says_it_is_a_guard():
     """W1 — a guard reads the chain exactly as a param does. An arrow the engine follows
     that the picture omits is the disagreement this module exists to prevent."""
-    from aughor.automations.models import Effect
+    from pramanyx.automations.models import Effect
     g = build_graph(_automation(
         Effect(kind="investigate", alias="report", config={"question": "q"}),
         Effect(kind="slack_post", config={"bot_id": "sb_1", "channel": "C1"},
@@ -90,7 +90,7 @@ def test_a_GUARD_reference_draws_too_and_says_it_is_a_guard():
 def test_a_step_carries_its_guard_as_sentences_on_the_STRUCTURE_graph():
     """Whether a step will run at all is a DESIGN fact. A canvas that omits it draws a
     chain that always fires."""
-    from aughor.automations.models import Effect
+    from pramanyx.automations.models import Effect
     g = build_graph(_automation(
         Effect(kind="investigate", alias="report", config={"question": "q"}),
         Effect(kind="slack_post", config={"bot_id": "sb_1", "channel": "C1"},
@@ -104,7 +104,7 @@ def test_a_step_carries_its_guard_as_sentences_on_the_STRUCTURE_graph():
 def test_a_guarded_skip_is_MARKED_apart_from_an_upstream_skip():
     """Both are `skipped`, and they mean opposite things: one is the design working, the
     other is something breaking. Read off the engine's own constant, never sniffed."""
-    from aughor.automations.dataflow import GUARD_SKIP
+    from pramanyx.automations.dataflow import GUARD_SKIP
     run = _Run([
         EffectOutcome(kind="slack_post", target="a", status="skipped",
                       message=f"{GUARD_SKIP}: report.answer is set"),
@@ -151,7 +151,7 @@ def test_a_fan_in_draws_two_data_edges():
 def test_the_graph_and_the_engine_derive_the_SAME_edges():
     """The one that keeps the picture honest. Both read `collect_refs`; if the graph ever
     grew its own parser, a drawn arrow could stop matching a resolved one."""
-    from aughor.automations.dataflow import collect_refs
+    from pramanyx.automations.dataflow import collect_refs
     effect = _effect(alias="two", thread_ts={"$from": "one.ts"},
                      nested={"deep": [{"$from": "one.channel"}]})
     a = _automation(_effect(alias="one"), effect)
@@ -216,7 +216,7 @@ def test_a_structure_graph_carries_no_status_at_all():
 # ── the route ────────────────────────────────────────────────────────────────────
 
 def test_graph_route_returns_structure_by_default(client):
-    from aughor.automations.store import upsert_automation as save_automation
+    from pramanyx.automations.store import upsert_automation as save_automation
     a = save_automation(_automation(_effect(), _effect(thread_ts={"$from": "step1.ts"})))
     body = client.get(f"/automations/{a.id}/graph").json()
     assert body["mode"] == "structure"
@@ -226,7 +226,7 @@ def test_graph_route_returns_structure_by_default(client):
 def test_graph_route_for_an_automation_that_never_ran_is_an_honest_empty(client):
     """Not a 404: the automation exists and its structure is exactly what the caller asked
     to see decorated. Refusing the whole graph would hide the thing they came to look at."""
-    from aughor.automations.store import upsert_automation as save_automation
+    from pramanyx.automations.store import upsert_automation as save_automation
     a = save_automation(_automation(_effect()))
     body = client.get(f"/automations/{a.id}/graph", params={"run": "latest"}).json()
     assert body.get("run_missing") is True
@@ -290,8 +290,8 @@ def test_an_investigate_step_carries_the_run_that_holds_its_spend():
 
 
 def test_the_graph_route_offers_the_runs_rail(client):
-    from aughor.automations.store import upsert_automation as save_automation
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.store import upsert_automation as save_automation
+    from pramanyx.automations.engine import run_automation
     a = save_automation(_automation(_effect()))
     run_automation(a, persist=True, dispatch=lambda e, au: EffectOutcome(
         kind=e.kind, target="t", status="executed"),
@@ -312,10 +312,10 @@ def test_the_runs_rail_offers_executions_not_a_window_of_scheduler_ticks(client)
     steps, and the run that had posted to Slack that morning was unreachable from its own
     canvas. The tick history is still whole on `/runs`; the PICKER is what changed.
     """
-    from aughor.automations.store import (append_run, get_runs,
+    from pramanyx.automations.store import (append_run, get_runs,
                                           upsert_automation as save_automation)
-    from aughor.automations.models import AutomationRun
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.models import AutomationRun
+    from pramanyx.automations.engine import run_automation
 
     a = save_automation(_automation(_effect()))
     run_automation(a, persist=True, dispatch=lambda e, au: EffectOutcome(
@@ -352,7 +352,7 @@ def test_a_starved_skip_is_told_apart_from_a_guard_holding():
     for want of `step1.summary` — and the run was filed `fired` with failed=0. A briefing
     that never arrived, indistinguishable from a working automation in every surface.
     """
-    from aughor.automations.dataflow import BRANCH_SKIP, GUARD_SKIP, STARVED_SKIP
+    from pramanyx.automations.dataflow import BRANCH_SKIP, GUARD_SKIP, STARVED_SKIP
 
     a = _automation(_effect())
     starved = _Run([EffectOutcome(kind="slack_post", target="step2", status="skipped",
@@ -370,9 +370,9 @@ def test_a_starved_skip_is_told_apart_from_a_guard_holding():
 
 
 def test_the_rail_stops_calling_a_starved_run_clean(client):
-    from aughor.automations.dataflow import GUARD_SKIP, STARVED_SKIP
-    from aughor.automations.models import AutomationRun
-    from aughor.automations.store import append_run, upsert_automation as save_automation
+    from pramanyx.automations.dataflow import GUARD_SKIP, STARVED_SKIP
+    from pramanyx.automations.models import AutomationRun
+    from pramanyx.automations.store import append_run, upsert_automation as save_automation
 
     a = save_automation(_automation(_effect()))
     append_run(AutomationRun(automation_id=a.id, outcome="fired", effects=[

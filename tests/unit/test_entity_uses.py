@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.ontology.models import OntologyGraph
-from aughor.security.audit import AuditLogger
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.security.audit import AuditLogger
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 CONN = "uses-t"
@@ -25,7 +25,7 @@ def graph():
 
 @pytest.fixture
 def router(graph, monkeypatch):
-    from aughor.routers import objects as R
+    from pramanyx.routers import objects as R
     monkeypatch.setattr(R, "_served_graph", lambda conn, schema: graph)
     monkeypatch.setattr(R, "_accepted_edits", lambda conn: [])
     return R
@@ -39,10 +39,10 @@ def test_the_types_detail_carries_none_of_what_uses_it(router):
 
 def test_it_composes_the_two_doors_with_the_entity_and_counts_its_tables_by_month(router, graph, monkeypatch):
     seen: dict = {}
-    monkeypatch.setattr("aughor.ontology.dependents.dependents_of",
+    monkeypatch.setattr("pramanyx.ontology.dependents.dependents_of",
                         lambda g, conn, kind, target, **kw: seen.setdefault("dependents", (conn, kind, target)) and [
                             {"consumer": "rule", "id": "vip", "name": "VIP customers", "how": "the rule is defined over it"}])
-    monkeypatch.setattr("aughor.dashboards.pieces.dashboards_reading",
+    monkeypatch.setattr("pramanyx.dashboards.pieces.dashboards_reading",
                         lambda conn, names, graph=None: seen.setdefault("dashboards", (conn, set(names))) and [
                             {"id": "late", "title": "Late orders", "pieces": ["t"]}])
     table = graph.entities["Customer"].backing.table.rsplit(".", 1)[-1]
@@ -72,9 +72,9 @@ def test_reads_by_month_keeps_every_month_of_the_window_and_only_this_connection
 
 
 def test_a_type_with_no_bound_table_counts_nothing_and_says_so(graph, monkeypatch):
-    from aughor.ontology import entity_uses
-    monkeypatch.setattr("aughor.ontology.dependents.dependents_of", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.dashboards.pieces.dashboards_reading", lambda *a, **k: [])
+    from pramanyx.ontology import entity_uses
+    monkeypatch.setattr("pramanyx.ontology.dependents.dependents_of", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.dashboards.pieces.dashboards_reading", lambda *a, **k: [])
     out = entity_uses.uses_of(graph, CONN, {"id": "Ghost", "bindings": []})
     assert out["reads"] == {"tables": [], "months": [], "source": "the platform's log of statements run",
                             "said": "No table is bound to it, so nothing is counted."}

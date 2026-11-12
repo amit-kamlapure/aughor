@@ -7,7 +7,7 @@ flag gating.
 """
 from __future__ import annotations
 
-from aughor.agent import grounding as G
+from pramanyx.agent import grounding as G
 
 
 # ── the pure assembler ────────────────────────────────────────────────────────
@@ -62,17 +62,17 @@ def test_to_dict_and_markdown_shape():
 # ── no-drift: shared producers == the answer path's originals ──────────────────
 
 def test_dialect_rules_block_matches_original():
-    from aughor.rules import get_chat_rules_block
+    from pramanyx.rules import get_chat_rules_block
     assert G.dialect_rules_block() == (get_chat_rules_block() or "")
 
 
 def test_agent_brief_matches_original():
-    from aughor.custom_agents.context import agent_brief_block
+    from pramanyx.custom_agents.context import agent_brief_block
     assert G.agent_brief() == (agent_brief_block() or "")
 
 
 def test_correction_priors_matches_original():
-    from aughor.feedback.priors import build_corrections_section
+    from pramanyx.feedback.priors import build_corrections_section
     q, c = "why is refund rate high", "samples"
     assert G.correction_priors(q, c) == (build_corrections_section(q, c) or "")
 
@@ -81,10 +81,10 @@ def test_governed_metrics_matches_inline_assembly():
     # Byte-parity with the quick /ask path's former inline metrics_section
     # (unified bindings + grain block + feasibility gap), so the convergence into
     # _stream_chat cannot change the answer prompt.
-    from aughor.db.connection import open_connection_for
-    from aughor.semantic.canonical import unified_metric_grounding
-    from aughor.semantic.data_understanding import build_data_understanding
-    from aughor.semantic.metric_feasibility import unsupported_metric_gap
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.semantic.canonical import unified_metric_grounding
+    from pramanyx.semantic.data_understanding import build_data_understanding
+    from pramanyx.semantic.metric_feasibility import unsupported_metric_gap
     db = open_connection_for("samples")
     schema = db.get_schema()
     q, c = "why is revenue down by channel", "samples"
@@ -101,8 +101,8 @@ def test_governed_metrics_matches_inline_assembly():
 
 
 def test_schema_slice_matches_inline_link():
-    from aughor.db.connection import open_connection_for
-    from aughor.tools.schema_linker import link_schema_for_prompt
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.tools.schema_linker import link_schema_for_prompt
     db = open_connection_for("samples")
     schema = db.get_schema()
     q, c = "why is revenue down by channel", "samples"
@@ -113,7 +113,7 @@ def test_schema_slice_matches_inline_link():
 
 
 def test_schema_slice_falls_back_to_full_schema_on_failure(monkeypatch):
-    import aughor.tools.schema_linker as sl
+    import pramanyx.tools.schema_linker as sl
     monkeypatch.setattr(sl, "link_schema_for_prompt",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert G.schema_slice("q", "samples", schema="FULL SCHEMA TEXT") == "FULL SCHEMA TEXT"
@@ -121,8 +121,8 @@ def test_schema_slice_falls_back_to_full_schema_on_failure(monkeypatch):
 
 def test_governed_metrics_without_db_is_unified_only():
     # The endpoint passes db (rich receipt); a db-less caller gets just the bindings.
-    from aughor.db.connection import open_connection_for
-    from aughor.semantic.canonical import unified_metric_grounding
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.semantic.canonical import unified_metric_grounding
     db = open_connection_for("samples")
     schema = db.get_schema()
     q, c = "why is revenue down by channel", "samples"
@@ -133,7 +133,7 @@ def test_governed_metrics_without_db_is_unified_only():
 
 def test_producers_degrade_to_empty_not_raise(monkeypatch):
     # A failing producer must yield "" (never break the answer/receipt).
-    import aughor.semantic.kb_retriever as kb
+    import pramanyx.semantic.kb_retriever as kb
     monkeypatch.setattr(kb, "retrieve_for_planning", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     assert G.kb_patterns("q", "samples") == ""
 

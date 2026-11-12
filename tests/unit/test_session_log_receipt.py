@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.evaluator import EvalCase
-from aughor.evals.session_log_receipt import SCENARIOS, receipt_target
+from pramanyx.evals.evaluator import EvalCase
+from pramanyx.evals.session_log_receipt import SCENARIOS, receipt_target
 
 
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
@@ -47,8 +47,8 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
 def test_recording_is_unconditional():
     """The flag this suite once gated on was hardwired 2026-08-01. Pinning it here
     means a future edit re-introducing an off switch has to face this test."""
-    from aughor.kernel.flags import FLAG_ENV
-    from aughor.obs import session_log
+    from pramanyx.kernel.flags import FLAG_ENV
+    from pramanyx.obs import session_log
 
     assert "obs.session_log" not in FLAG_ENV
     assert session_log.enabled() is True

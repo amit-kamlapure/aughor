@@ -1,4 +1,4 @@
-"""Unit tests for the one governed-metric contract (REC-U10) — `aughor/semantic/contracts.py`.
+"""Unit tests for the one governed-metric contract (REC-U10) — `pramanyx/semantic/contracts.py`.
 
 The two metric shapes (curated `MetricDefinition`, ontology-derived `OntologyMetric`) both
 serialize to `SemanticContract` with the fields planning/enforcement/display rely on, and
@@ -6,10 +6,10 @@ each source's trust signal (governance approval / live verification) maps to `is
 """
 from __future__ import annotations
 
-from aughor.ontology.models import OntologyMetric
-from aughor.business_profile.models import NorthStarMetric
-from aughor.semantic.contracts import SemanticContract
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.ontology.models import OntologyMetric
+from pramanyx.business_profile.models import NorthStarMetric
+from pramanyx.semantic.contracts import SemanticContract
+from pramanyx.semantic.metrics import MetricDefinition
 
 
 # ── MetricDefinition → contract ──────────────────────────────────────────────────────────

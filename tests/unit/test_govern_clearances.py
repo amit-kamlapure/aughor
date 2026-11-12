@@ -1,7 +1,7 @@
 """Wave G2 — governed tags, clearances, and the refusal that says why.
 
-Hermetic on both halves by design: the policy (:mod:`aughor.govern.tags`) is pure over
-tag objects, and the store tests use the conftest-redirected ``AUGHOR_GOVERN_TAGS_DB``.
+Hermetic on both halves by design: the policy (:mod:`pramanyx.govern.tags`) is pure over
+tag objects, and the store tests use the conftest-redirected ``PRAMANYX_GOVERN_TAGS_DB``.
 
 The two that carry the wave's argument are
 :func:`test_a_refusal_names_what_would_unblock_it` (a refusal that is silence) and
@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.govern.tags import (
+from pramanyx.govern.tags import (
     ClearanceDecision,
     Tag,
     evaluate,
     is_securable,
     requirements_for,
 )
-from aughor.metastore.models import (
+from pramanyx.metastore.models import (
     artifact_securable,
     securable_kind,
     securable_table,
@@ -167,7 +167,7 @@ def test_check_is_allow_for_an_untagged_securable():
     """Governance is opt-in per object: an untagged securable is always allowed, so
     callers can wire the check in unconditionally. This is what made hardwiring the
     flag safe — a deployment that tags nothing sees no change."""
-    from aughor.govern import tags as T
+    from pramanyx.govern import tags as T
 
     d = T.check("table:c.s.never-tagged-anything", [])
     assert d.allowed and d.requirements == []
@@ -175,7 +175,7 @@ def test_check_is_allow_for_an_untagged_securable():
 
 def test_clearance_enforcement_is_unconditional():
     """The flag was hardwired 2026-08-02; pinned so a re-introduced switch faces this."""
-    from aughor.kernel.flags import FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_ENV
 
     assert "govern.clearances" not in FLAG_ENV
 
@@ -184,7 +184,7 @@ def test_clearance_enforcement_is_unconditional():
 
 class TestTagStore:
     def test_set_and_read_back(self):
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         tag_store.set_tag("table:c.s.salaries", "tier", "restricted", set_by="alice")
         tags = tag_store.tags_for("table:c.s.salaries")
@@ -193,19 +193,19 @@ class TestTagStore:
     def test_a_tag_without_an_author_is_refused(self):
         """An access-control fact that cannot say who asserted it is not evidence, and
         defaulting the author to 'system' would launder exactly that."""
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         with pytest.raises(ValueError, match="who set it"):
             tag_store.set_tag("table:c.s.x", "tier", "restricted", set_by="")
 
     def test_a_malformed_securable_is_refused(self):
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         with pytest.raises(ValueError, match="not a securable"):
             tag_store.set_tag("salaries", "tier", "restricted", set_by="alice")
 
     def test_setting_the_same_key_replaces_and_re_stamps(self):
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         tag_store.set_tag("table:c.s.r", "tier", "restricted", set_by="alice")
         tag_store.set_tag("table:c.s.r", "tier", "confidential", set_by="bob")
@@ -216,7 +216,7 @@ class TestTagStore:
     def test_clear_removes_the_gate(self):
         """A retracted tag must stop gating — a tombstone that still reads as present
         would keep denying access after governance decided it should not."""
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         tag_store.set_tag("table:c.s.cleared", "pii", "true", set_by="alice")
         assert tag_store.clear_tag("table:c.s.cleared", "pii", cleared_by="alice")
@@ -224,19 +224,19 @@ class TestTagStore:
         assert requirements_for(tag_store.tags_for("table:c.s.cleared")) == []
 
     def test_clearing_a_missing_tag_reports_it_did_nothing(self):
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         assert tag_store.clear_tag("table:c.s.never", "pii") is False
 
     def test_orgs_do_not_see_each_others_tags(self):
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         tag_store.set_tag("table:c.s.iso", "pii", "true", set_by="alice", org_id="org-a")
         assert tag_store.tags_for("table:c.s.iso", org_id="org-a")
         assert tag_store.tags_for("table:c.s.iso", org_id="org-b") == []
 
     def test_list_filters_by_key_and_kind(self):
-        from aughor.govern import tag_store
+        from pramanyx.govern import tag_store
 
         tag_store.set_tag("table:c.s.t1", "pii", "true", set_by="alice", org_id="org-f")
         tag_store.set_tag("catalog:c", "pii", "true", set_by="alice", org_id="org-f")
@@ -245,8 +245,8 @@ class TestTagStore:
         assert len(tag_store.list_tags(securable_prefix="table:", org_id="org-f")) == 2
 
     def test_check_reads_the_store_end_to_end(self, monkeypatch):
-        from aughor.govern import tag_store
-        from aughor.govern import tags as T
+        from pramanyx.govern import tag_store
+        from pramanyx.govern import tags as T
 
         tag_store.set_tag("table:c.s.e2e", "tier", "restricted", set_by="alice",
                           org_id="org-e2e")

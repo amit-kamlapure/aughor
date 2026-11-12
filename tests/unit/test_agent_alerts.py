@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.obs.agent_alerts import (
+from pramanyx.obs.agent_alerts import (
     AgentAlertRule,
     debounce_allows,
     evaluate,

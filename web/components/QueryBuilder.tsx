@@ -37,7 +37,7 @@ import { Checkbox } from "@/components/ui/checkbox";
  *  width/height attributes (size-auto → the SVG's intrinsic attribute size). */
 const SVG_SIZE_AUTO = "[&_svg:not([class*='size-'])]:size-auto";
 
-/** Client-side text-column detection mirroring aughor/semops/operators.py — the rows are already
+/** Client-side text-column detection mirroring pramanyx/semops/operators.py — the rows are already
  *  fetched, so the semantic-step UI can suggest operable columns without a server round-trip. */
 function detectTextColumnsLocal(columns: string[], rows: unknown[][], sample = 50, minFraction = 0.5): string[] {
   const numericRe = /^-?[\d,]*\.?\d+%?$/;

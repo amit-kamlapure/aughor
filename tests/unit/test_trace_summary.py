@@ -15,8 +15,8 @@ import json
 
 import pytest
 
-from aughor.obs import session_log
-from aughor.obs.trace_summary import build_summary, span_payload
+from pramanyx.obs import session_log
+from pramanyx.obs.trace_summary import build_summary, span_payload
 
 
 def _events() -> list[dict]:
@@ -160,8 +160,8 @@ def _fake_ledger(emitted: list):
 def test_both_trace_reads_are_audited(monkeypatch, call):
     """Decision ③ is about who read whose run, not about how much they got back — a
     reader who only ever fetched summaries must not be invisible in the audit trail."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
     emitted: list = []
@@ -182,7 +182,7 @@ def test_both_trace_reads_are_audited(monkeypatch, call):
 
 def test_an_unknown_span_route_is_a_404(monkeypatch):
     from fastapi import HTTPException
-    from aughor.routers import obs
+    from pramanyx.routers import obs
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
     with pytest.raises(HTTPException) as exc:
         obs.get_trace_span("t1", "nope")
@@ -195,7 +195,7 @@ def test_the_trace_tools_are_REGISTERED_not_merely_defined():
     """A tool defined and never registered is the built-but-not-wired shape: the module
     imports, the function exists, and no client can call it."""
     import asyncio
-    import aughor.mcp.server as srv
+    import pramanyx.mcp.server as srv
     names = {t.name for t in asyncio.run(srv.mcp.list_tools())}
     assert {"list_runs", "inspect_run", "read_run_span"} <= names
 
@@ -204,7 +204,7 @@ def test_there_is_no_whole_trace_tool():
     """Deliberate absence, pinned. A tool whose SUCCESS case is 1.2 MB exhausts the
     context that was going to read it."""
     import asyncio
-    import aughor.mcp.server as srv
+    import pramanyx.mcp.server as srv
     names = {t.name for t in asyncio.run(srv.mcp.list_tools())}
     assert "get_trace" not in names and "fetch_trace" not in names
 
@@ -213,10 +213,10 @@ def test_the_client_calls_the_digest_and_span_paths():
     """The tools are thin wrappers; if the path is wrong they fail only against a live
     API, which is the slowest possible place to find out."""
     import asyncio
-    from aughor.mcp.client import AughorClient
+    from pramanyx.mcp.client import PramanyxClient
 
     seen: list = []
-    c = AughorClient.__new__(AughorClient)
+    c = PramanyxClient.__new__(PramanyxClient)
 
     async def _get(path, params=None):
         seen.append((path, params))
@@ -233,9 +233,9 @@ def test_the_client_calls_the_digest_and_span_paths():
 # ── trace feedback ──────────────────────────────────────────────────────────────
 
 def test_a_run_judgement_is_recorded_with_who_clicked(monkeypatch):
-    from aughor.routers import obs
-    from aughor.org import context as octx
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    from pramanyx.org import context as octx
+    import pramanyx.kernel.ledger as _led
 
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
     emitted: list = []
@@ -260,8 +260,8 @@ def test_an_unidentified_install_records_an_empty_actor_not_a_guess(monkeypatch)
     """`user_id` is 0 of 8,198 rows on this store — the measurement that stopped
     OA·LF-2. Recording "" is the true answer; inventing an actor would make the trail
     assert something it does not know."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
     emitted: list = []
@@ -276,7 +276,7 @@ def test_an_unidentified_install_records_an_empty_actor_not_a_guess(monkeypatch)
 
 def test_an_unknown_verdict_is_a_400_not_a_silently_stored_string(monkeypatch):
     from fastapi import HTTPException
-    from aughor.routers import obs
+    from pramanyx.routers import obs
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
     with pytest.raises(HTTPException) as exc:
         obs.post_trace_feedback("t1", obs._TraceFeedbackRequest(verdict="meh"))
@@ -285,7 +285,7 @@ def test_an_unknown_verdict_is_a_400_not_a_silently_stored_string(monkeypatch):
 
 def test_feedback_on_a_trace_that_does_not_exist_is_a_404(monkeypatch):
     from fastapi import HTTPException
-    from aughor.routers import obs
+    from pramanyx.routers import obs
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: [])
     with pytest.raises(HTTPException) as exc:
         obs.post_trace_feedback("nope", obs._TraceFeedbackRequest(verdict="helpful"))
@@ -296,8 +296,8 @@ def test_the_run_vocabulary_is_NOT_the_finding_vocabulary():
     """A thumbs-down on a run that was slow but right is not a rejected finding.
     Folding them together would teach the planner's close-the-loop signal to read
     latency complaints as wrong answers."""
-    from aughor.routers.obs import TRACE_VERDICTS
-    from aughor.feedback.verdicts import VERDICTS as FINDING_VERDICTS
+    from pramanyx.routers.obs import TRACE_VERDICTS
+    from pramanyx.feedback.verdicts import VERDICTS as FINDING_VERDICTS
     assert set(TRACE_VERDICTS) == {"helpful", "unhelpful"}
     assert not set(TRACE_VERDICTS) & set(FINDING_VERDICTS)
 
@@ -305,8 +305,8 @@ def test_the_run_vocabulary_is_NOT_the_finding_vocabulary():
 def test_disagreement_is_kept_rather_than_collapsed(monkeypatch):
     """Two people disagreeing about a run is the fact worth keeping; the latest
     opinion is not the answer."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     rows = [{"at": "t2", "payload": {"verdict": "unhelpful", "note": "slow", "by": "b"}},
             {"at": "t1", "payload": {"verdict": "helpful", "note": "", "by": "a"}}]
@@ -328,8 +328,8 @@ def test_disagreement_is_kept_rather_than_collapsed(monkeypatch):
 def test_a_broken_journal_does_not_error_at_someone_trying_to_help(monkeypatch):
     """Fail-open, like `chat.feedback`. But it reports `recorded: False` rather than
     claiming success — a thumbs that silently vanished is worse than one that says so."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     monkeypatch.setattr(session_log, "recover_session", lambda *a, **k: _events())
 
@@ -368,8 +368,8 @@ def _ledger_with(rows):
 def test_a_swallowed_error_is_visible_in_the_runs_logs(monkeypatch):
     """A tolerated error is invisible in the waterfall BY CONSTRUCTION — the span it
     happened inside succeeded. The journal is the only place it exists."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     orig = _led.Ledger.default
     _led.Ledger.default = classmethod(lambda cls: _ledger_with(_ledger_rows()))
@@ -388,8 +388,8 @@ def test_a_swallowed_error_is_visible_in_the_runs_logs(monkeypatch):
 
 
 def test_ordinary_journal_lines_keep_their_payload_and_are_not_flagged(monkeypatch):
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     orig = _led.Ledger.default
     _led.Ledger.default = classmethod(lambda cls: _ledger_with(_ledger_rows()))
@@ -408,8 +408,8 @@ def test_the_logs_are_scoped_to_ONE_run(monkeypatch):
     journal is misleading: `explorer.grain_lint_failed` shows 959 NameErrors, which reads
     as a live dead guard until you notice the last was 2026-06-30 and the import has since
     been added. A run's own lines cannot mislead that way."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     seen: list = []
 

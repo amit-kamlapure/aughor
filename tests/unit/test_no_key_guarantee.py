@@ -5,14 +5,14 @@ environment, no fallback chain to walk, no runtime config inherited from the
 developer's machine. Discipline already failed once — a free primary's fallback
 chain reached a PAID Together backend because the developer's ``.env`` held a key
 (``provider-failover-chain``, 2026-07) — so the guarantee is enforcement in
-``tests/conftest.py`` (`_no_provider_credentials`, ``AUGHOR_LLM_CONFIG_PATH``), and
+``tests/conftest.py`` (`_no_provider_credentials`, ``PRAMANYX_LLM_CONFIG_PATH``), and
 this file is the proof that the enforcement holds.
 """
 from __future__ import annotations
 
 import os
 
-from aughor.llm import provider as P
+from pramanyx.llm import provider as P
 
 
 def test_every_registered_provider_credential_is_scrubbed():
@@ -25,7 +25,7 @@ def test_every_registered_provider_credential_is_scrubbed():
 
 
 def test_fallback_chain_is_pinned_empty():
-    assert os.environ.get("AUGHOR_FALLBACK_BACKENDS") == "none"
+    assert os.environ.get("PRAMANYX_FALLBACK_BACKENDS") == "none"
     assert P._fallback_backends() == ()
 
 
@@ -33,11 +33,11 @@ def test_none_sentinel_and_default_semantics(monkeypatch):
     """'none' is the explicit empty-chain spelling; '' keeps its historical meaning
     (the default order) — pinned so the sentinel can never silently swallow the
     production default."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "NONE")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "NONE")
     assert P._fallback_backends() == ()
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "")
     assert P._fallback_backends() == P._FALLBACK_ORDER
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini, nosuchbackend , groq")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini, nosuchbackend , groq")
     assert P._fallback_backends() == ("gemini", "groq")
 
 
@@ -45,10 +45,10 @@ def test_runtime_llm_config_is_isolated_from_the_developers_machine():
     """data/llm_config.json holds the operator's backend choice and encrypted keys,
     and api.py's import-time load_dotenv brings in the secret that decrypts them —
     so an unisolated config path is a paid binding with zero keys in the test env."""
-    isolated = os.environ.get("AUGHOR_LLM_CONFIG_PATH", "")
-    assert isolated, "conftest must pin AUGHOR_LLM_CONFIG_PATH before any app import"
+    isolated = os.environ.get("PRAMANYX_LLM_CONFIG_PATH", "")
+    assert isolated, "conftest must pin PRAMANYX_LLM_CONFIG_PATH before any app import"
     assert str(P._CONFIG_PATH) == isolated
-    assert "aughor-test-stores-" in isolated  # the throwaway temp tree, never data/
+    assert "pramanyx-test-stores-" in isolated  # the throwaway temp tree, never data/
 
 
 def test_no_keyed_backend_resolves_a_key(monkeypatch):

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm import provider as P
-from aughor.llm.cache_probe import verdict_for
-from aughor.control_plane import capability_for, vend_llm
+from pramanyx.llm import provider as P
+from pramanyx.llm.cache_probe import verdict_for
+from pramanyx.control_plane import capability_for, vend_llm
 
 
 # ── the pure verdict ──────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ class TestDeclineReason:
     def test_every_refusal_says_why_and_the_reason_matches_the_rule(self):
         """The report's sentence and the verdict come from ONE ordered rule list, so they
         cannot drift apart. Checked by asserting the reason names the rule that fired."""
-        from aughor.llm.cache_probe import _decline_reason, spread_of
+        from pramanyx.llm.cache_probe import _decline_reason, spread_of
 
         warm, cold = LIVE_RUNS["C"]
         reason = _decline_reason(warm, cold, ratio=0.137)
@@ -109,7 +109,7 @@ class TestDeclineReason:
         assert _decline_reason([300, 310], [1000, 1010], ratio=0.3) is None
 
     def test_spread_of_reads_the_noise_floor(self):
-        from aughor.llm.cache_probe import spread_of
+        from pramanyx.llm.cache_probe import spread_of
 
         assert spread_of([100, 200, 400]) == 4.0
         assert spread_of([500]) == 1.0          # nothing to compare
@@ -123,7 +123,7 @@ class TestDeclineReason:
 def clean_cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "_CONFIG_PATH", tmp_path / "llm_config.json")
     monkeypatch.setattr(P, "_runtime", None)
-    for v in ("AUGHOR_BACKEND", "AUGHOR_MODEL", "AUGHOR_CODER_MODEL"):
+    for v in ("PRAMANYX_BACKEND", "PRAMANYX_MODEL", "PRAMANYX_CODER_MODEL"):
         monkeypatch.delenv(v, raising=False)
     P._providers.clear()
     P._pinned_providers.clear()

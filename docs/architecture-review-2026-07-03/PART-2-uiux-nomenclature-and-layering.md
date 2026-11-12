@@ -1,4 +1,4 @@
-# Aughor — Part II: UI/UX 10x, Nomenclature, and Layer Consolidation
+# Pramanyx — Part II: UI/UX 10x, Nomenclature, and Layer Consolidation
 **Reviewer:** senior half of the pipeline · **Date:** 2026-07-03 · **Commit:** `9c06aa3`
 **Scope:** frontend `web/` (60 components, ~55k LOC TS/TSX) + the backend concept model. Companion to the Part I security/architecture handoff.
 
@@ -128,16 +128,16 @@ The render path is a hardcoded branch tree: `if (turn.adaReport) … else if (tu
 The SSE→reducer spine is genuinely good: immutable `updateLast`, exhaustive `ChatTurn` schema carrying the whole investigation lifecycle, resumable kernel event stream (`events.ts` with `since_seq` + backoff + fan-out subscriptions), last-3-turns history threading. Keep it; it's the substrate the registry plugs into. **Confidence: verified (agent).**
 
 ### Generative UI and the AG-UI protocol
-Aughor is **halfway to a generative-UI protocol** and, on one axis, *ahead*:
+Pramanyx is **halfway to a generative-UI protocol** and, on one axis, *ahead*:
 - **Ahead:** the chart-inference engine (UX-14) is real generative UI intelligence — it *derives* the right visualization from data, rather than leaving it to the LLM or the developer. The `Brief` "answer-is-a-document" model is a stronger opinion than generic slots.
-- **Behind:** no declarative agent→UI **render protocol** and no **component registry**. AG-UI-style protocols stream `{type: "component", name, props}` into a keyed registry; Aughor streams fat typed events (`ada_report: {…}`) into hardcoded branches. This is type-safe but not compositional — the backend can't introduce a render variant without a frontend release.
-- **The close-the-gap move (LAYER-05 + a protocol):** define one event `{type:"render", component:string, props:unknown, slot?:string}`, back it with the `TURN_RENDERERS` registry, and keep the fat typed events as the *first registered renderers* (no rewrite, additive). That yields full generative UI while keeping Aughor's type-safety and its chart-inference edge.
+- **Behind:** no declarative agent→UI **render protocol** and no **component registry**. AG-UI-style protocols stream `{type: "component", name, props}` into a keyed registry; Pramanyx streams fat typed events (`ada_report: {…}`) into hardcoded branches. This is type-safe but not compositional — the backend can't introduce a render variant without a frontend release.
+- **The close-the-gap move (LAYER-05 + a protocol):** define one event `{type:"render", component:string, props:unknown, slot?:string}`, back it with the `TURN_RENDERERS` registry, and keep the fat typed events as the *first registered renderers* (no rewrite, additive). That yields full generative UI while keeping Pramanyx's type-safety and its chart-inference edge.
 
 ---
 
-## 2·A. Architectural Layering — Aughor as a Layered Platform
+## 2·A. Architectural Layering — Pramanyx as a Layered Platform
 
-> This is the layering the request is really about: not frontend components, but the **system architecture** — taking the agent runtime (the flow diagram: Entry → Planner → Route/Processing decisions → SQL/Code/Metadata pipelines → validators → stores → outputs) and consolidating Aughor's ~20 agents+stores into a small set of **functional planes**. A plane is a block with one job, a stated contract (in/out), one owner, and a swap-point — which is exactly what makes it modular and independently *assessable* later. Section 2 (frontend layers) is a sub-case of this: it is the Experience Plane.
+> This is the layering the request is really about: not frontend components, but the **system architecture** — taking the agent runtime (the flow diagram: Entry → Planner → Route/Processing decisions → SQL/Code/Metadata pipelines → validators → stores → outputs) and consolidating Pramanyx's ~20 agents+stores into a small set of **functional planes**. A plane is a block with one job, a stated contract (in/out), one owner, and a swap-point — which is exactly what makes it modular and independently *assessable* later. Section 2 (frontend layers) is a sub-case of this: it is the Experience Plane.
 
 ### The problem the diagram shows
 The agent architecture is drawn — and built — as a **flat mesh of peer agents**. Inside one "CORE AGENTS" box sit twelve nodes at the same level of abstraction: a generator (`Code Generator`) next to a validator (`Code Validator`) next to a store-writer (`Chat History`) next to a router (`Planner`). Control, capability, validation, memory, and data access are interleaved, so there is no line you can cut to reason about, test, or replace one concern. Three symptoms, each grep-confirmed against the code:
@@ -200,7 +200,7 @@ Governance (④) is drawn as a spine because it must sit *between* every capabil
 | kernel/{jobs,concurrency,metering,flags}, llm/, secretvault, telemetry, org/, workspace/ | ⑧ Runtime Foundation | already the strongest part (Part I) |
 
 ### Why this shape
-Clean horizontal planes with one governance spine mean any band can be assessed or swapped without touching the others. Aughor has the *material* but presents (and is wired) as a flat agent mesh. Re-drawing it as these eight planes is what makes it a *platform*, not a pipeline.
+Clean horizontal planes with one governance spine mean any band can be assessed or swapped without touching the others. Pramanyx has the *material* but presents (and is wired) as a flat agent mesh. Re-drawing it as these eight planes is what makes it a *platform*, not a pipeline.
 
 ### What "assessable in the future" requires (the modularity payoff)
 Consolidation is only worth it if each plane becomes independently inspectable. Give every plane four things — the codebase already has the mechanism (`kernel/registries/` extension seams: `execution_hooks`, `ingestion`, `purge_hooks`, `schema_annotators`):
@@ -359,4 +359,4 @@ Ordering: the design layer (U1/U2/U4/U8) lands first because every structural re
 - **The foundational UI bet:** a **render protocol + registry** (REC-U6). If the agent→UI contract stays hardcoded branches, every new answer type is a frontend release and the AI-native "the agent composes its own UI" thesis is impossible. A registry keyed by semantic type is the thing that lets autonomous modeling ship a domain pack that renders custom surfaces without a web deploy — the same leapfrog Part I identified, expressed in the UI.
 - **The foundational nomenclature bet:** the `SemanticContract` + `Fact` unification (NOM-05/06). Part I ranked the ontology/metrics object model the #1 20-year bet; the *naming* is the same bet's surface. As long as "metric" has two shapes and "finding" has four, no downstream layer (governance, write-back, packs) can reason about them uniformly. Impose the noun model now, while there are dozens of call sites, not thousands.
 - **What to make cheap now:** (1) the lint gate (freezes drift), (2) the `<Workspace>` generalization + renderer registry (makes new surfaces additive, not invasive), (3) `@deprecated` aliasing at the type boundary (makes the concept renames reversible and incremental). All three convert "someday rewrite" into "this sprint, reversibly."
-- **What it could become:** the current split — a strong intelligence engine wearing an un-consolidated UI — is exactly the gap between "impressive demo" and "platform an enterprise standardizes on." Closing it (one enforced design layer, one shell pattern, one render protocol, one noun model) is what turns Aughor's real assets (chart-inference, the Brief document model, the ontology) into something that *looks and reads* like the category leader it's architected to be.
+- **What it could become:** the current split — a strong intelligence engine wearing an un-consolidated UI — is exactly the gap between "impressive demo" and "platform an enterprise standardizes on." Closing it (one enforced design layer, one shell pattern, one render protocol, one noun model) is what turns Pramanyx's real assets (chart-inference, the Brief document model, the ontology) into something that *looks and reads* like the category leader it's architected to be.

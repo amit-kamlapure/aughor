@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel import rebuild as rb
+from pramanyx.kernel import rebuild as rb
 
 
 @pytest.fixture(autouse=True)
 def _isolated_store(monkeypatch, tmp_path):
     """The rebuild state store must never touch data/ (two real data-loss incidents)."""
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(rb, "_store", KeyedJsonStore(tmp_path / "rebuild_state.json",
                                                      max_entries=50))
@@ -137,14 +137,14 @@ def test_probe_cap_is_reported_not_hidden(monkeypatch):
     """A bitten cap must name what it skipped — silent truncation reads as full coverage."""
     tables = [f"t{i}" for i in range(rb.MAX_PROBE_TABLES + 7)]
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: tables)
-    monkeypatch.setattr("aughor.automations.probes.current_version",
+    monkeypatch.setattr("pramanyx.automations.probes.current_version",
                         lambda conn, db, t, **k: (f"n=1|id={t}", "row count"))
 
     class _DB:
         def close(self):
             pass
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _DB())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _DB())
 
     version, how = rb.inputs_version("c")
     assert version and f"7 skipped (cap {rb.MAX_PROBE_TABLES})" in how
@@ -154,7 +154,7 @@ def test_partial_coverage_is_reported(monkeypatch):
     """Some tables versionable, some not: usable signal, but say what you cannot see."""
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: ["a", "b"])
     monkeypatch.setattr(
-        "aughor.automations.probes.current_version",
+        "pramanyx.automations.probes.current_version",
         lambda conn, db, t, **k: (("n=1", "row count") if t == "a" else (None, "no signal")),
     )
 
@@ -162,7 +162,7 @@ def test_partial_coverage_is_reported(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _DB())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _DB())
 
     version, how = rb.inputs_version("c")
     assert version and "1 unversionable" in how
@@ -170,14 +170,14 @@ def test_partial_coverage_is_reported(monkeypatch):
 
 def test_no_versionable_table_yields_none_not_a_hash_of_nothing(monkeypatch):
     monkeypatch.setattr(rb, "source_tables_for", lambda conn, db: ["a"])
-    monkeypatch.setattr("aughor.automations.probes.current_version",
+    monkeypatch.setattr("pramanyx.automations.probes.current_version",
                         lambda conn, db, t, **k: (None, "no signal column"))
 
     class _DB:
         def close(self):
             pass
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _DB())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _DB())
 
     version, how = rb.inputs_version("c")
     assert version is None and "no table could be versioned" in how
@@ -190,7 +190,7 @@ def test_no_tables_known_is_unresolvable(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _DB())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _DB())
     assert rb.inputs_version("c")[0] is None
 
 
@@ -198,7 +198,7 @@ def test_no_tables_known_is_unresolvable(monkeypatch):
 
 def test_briefing_serves_a_ttl_expired_brief_when_nothing_moved(monkeypatch):
     """The cost half, through the real briefing entry point."""
-    from aughor.knowledge import briefing
+    from pramanyx.knowledge import briefing
 
     _probe(monkeypatch, "v1")
     stale = {"generated_at": "2020-01-01T00:00:00+00:00"}
@@ -213,6 +213,6 @@ def test_briefing_serves_a_ttl_expired_brief_when_nothing_moved(monkeypatch):
 
 def test_briefing_logic_version_is_registered_in_the_v1_inventory():
     """V1's ratchet enforces this; asserting it here documents the coupling."""
-    from aughor.kernel.freshness import logic_versions
+    from pramanyx.kernel.freshness import logic_versions
 
     assert "briefing" in logic_versions()

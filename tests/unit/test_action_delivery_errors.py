@@ -16,15 +16,15 @@ import contextlib
 import httpx
 import pytest
 
-from aughor.actions.executor import execute_kinetic_action
-from aughor.govern import outbound
-from aughor.ontology.models import ActionParameter, KineticAction, SideEffect
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.govern import outbound
+from pramanyx.ontology.models import ActionParameter, KineticAction, SideEffect
 
 
 @pytest.fixture(autouse=True)
 def _gate_off_and_guard_open(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda u: True)
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda u: True)
 
 
 def _action(side_effect: SideEffect) -> KineticAction:

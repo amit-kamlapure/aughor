@@ -10,7 +10,7 @@ warrant (Wave N1).
 """
 from __future__ import annotations
 
-from aughor.ontology.finding_consolidation import (
+from pramanyx.ontology.finding_consolidation import (
     ConsolidationReport,
     consolidate,
     subject_key,
@@ -186,7 +186,7 @@ def test_finding_without_tables_is_never_stale():
 
 def _wire(monkeypatch, *, on: bool, calls: list):
     """Point the build path's loader at a spy and set the N3 flag."""
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
 
     def _loader(conn, org=None, *, limit=None):
         calls.append(limit)
@@ -209,7 +209,7 @@ def test_consolidation_overfetches_and_folds_repeats(monkeypatch):
 
 def test_consolidation_still_honours_the_cap(monkeypatch):
     """The artifact's size budget is not negotiable — consolidation changes WHAT it keeps."""
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_build as build_mod
 
     monkeypatch.setattr(build_mod, "load_investigation_findings",
                         lambda c, o=None, *, limit=None: [
@@ -220,14 +220,14 @@ def test_consolidation_still_honours_the_cap(monkeypatch):
 
 def test_projection_omits_consolidation_keys_when_absent():
     """A finding carrying no consolidation metadata serializes to the plain payload."""
-    from aughor.ontology.context_graph import finding_node_data
+    from pramanyx.ontology.context_graph import finding_node_data
 
     assert set(finding_node_data(_f("a"))) == {"sql", "tables", "generated_at"}
 
 
 def test_projection_carries_contested_variants_into_the_node():
     """A node that survived a disagreement has to say so in the committed artifact."""
-    from aughor.ontology.context_graph import finding_node_data
+    from pramanyx.ontology.context_graph import finding_node_data
 
     survivors, _ = consolidate([
         _f("new", text="45.4M", sql="SELECT sum(gmv) FROM orders"),

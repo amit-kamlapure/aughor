@@ -1,4 +1,4 @@
-"""Lifecycle SQL guard — a prompt is not a guard (aughor/sql/lifecycle_guard.py).
+"""Lifecycle SQL guard — a prompt is not a guard (pramanyx/sql/lifecycle_guard.py).
 
 The live planner ignored the probed lifecycle directive in BOTH prompt positions
 (plan_user, then plan_system) while obeying the grouping rule beside it — invs
@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import duckdb
 
-from aughor.agent.loss_signals import lifecycle_rules
-from aughor.sql.lifecycle_guard import enforce_lifecycle_filters, lifecycle_transform
+from pramanyx.agent.loss_signals import lifecycle_rules
+from pramanyx.sql.lifecycle_guard import enforce_lifecycle_filters, lifecycle_transform
 
 _RULES = [
     {"table": "tickets", "column": "segment_status", "keep": ["flown"],
@@ -124,7 +124,7 @@ def test_lens_wiring_reaches_run_analysis_phase_with_the_guard(monkeypatch):
     This exact path shipped a NameError in an instrumentation line: every unit test passed
     while the live lens died at its fail-open tolerate() and reports quietly lost their loss
     phases. Drive the function, not just its parts."""
-    import aughor.agent.investigate as inv
+    import pramanyx.agent.investigate as inv
 
     captured: dict = {}
 

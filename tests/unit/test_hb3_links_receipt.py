@@ -18,10 +18,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations import probes as P
-from aughor.automations.engine import run_automation
-from aughor.automations.models import Automation, Effect
-from aughor.hub import links as L
+from pramanyx.automations import probes as P
+from pramanyx.automations.engine import run_automation
+from pramanyx.automations.models import Automation, Effect
+from pramanyx.hub import links as L
 
 _NOW = datetime(2026, 9, 16, 9, 0, tzinfo=timezone.utc)
 _PROMISE = "promise:order_to_delivery.dispatch"
@@ -29,7 +29,7 @@ _PROMISE = "promise:order_to_delivery.dispatch"
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -75,7 +75,7 @@ def test_a_close_names_who_closed_it_and_every_open_filing_is_one_list(client, m
     42d). With no sign-in, the closer is the login the request acts for — the name a page carries
     is not read, and no close is left as the bare `user:` it used to write."""
     monkeypatch.setattr(L, "stamped_measures", lambda ref: {})
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana-op")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana-op")
     first = client.post("/links", json={"object_ref": "finding:late_dispatch", "kind": "ticket", "ref": "OPS-7"}).json()
     second = client.post("/links", json={"object_ref": "process:returns", "kind": "doc", "title": "Returns runbook"}).json()
     open_ids = {r["id"] for r in client.get("/links", params={"status": "open", "limit": 500}).json()["links"]}
@@ -105,17 +105,17 @@ def _stub_transport(monkeypatch, sent: list):
         return SimpleNamespace(status="ok", error=None, id="log1",
                                resource_ref="OPS-123" if trigger.type == "jira" else "",
                                recommendation=payload.recommendation)
-    monkeypatch.setattr("aughor.notifications.executor.fire_action", fake_fire)
+    monkeypatch.setattr("pramanyx.notifications.executor.fire_action", fake_fire)
     return fake_fire
 
 
 def test_the_receipt_chain(client, monkeypatch):
-    from aughor.metastore.models import group_principal
-    from aughor.metastore.store import add_grant
-    from aughor.notifications.models import ActionTrigger
-    from aughor.notifications.store import save_trigger
-    from aughor.org.context import current_org_id
-    from aughor.rbac.groups import upsert_group
+    from pramanyx.metastore.models import group_principal
+    from pramanyx.metastore.store import add_grant
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store import save_trigger
+    from pramanyx.org.context import current_org_id
+    from pramanyx.rbac.groups import upsert_group
 
     org = current_org_id()
 
@@ -177,7 +177,7 @@ def test_the_receipt_chain(client, monkeypatch):
     proposal_id = (step.data or {}).get("proposal_id")
     assert proposal_id, "the park staged no proposal"
 
-    from aughor.actions.inbox import accept_proposal
+    from pramanyx.actions.inbox import accept_proposal
     result, _grant = accept_proposal(proposal_id, actor="user:ana")
     assert result.status == "executed", result.message
     assert "OPS-123" in result.message
@@ -193,7 +193,7 @@ def test_the_receipt_chain(client, monkeypatch):
     assert closed["status"] == "closed"
 
     # Leg 6 — the Briefing's chain block: breach rate before and after, with the chain.
-    from aughor.knowledge.promise_chains import promise_chain_findings
+    from pramanyx.knowledge.promise_chains import promise_chain_findings
     findings = promise_chain_findings("olist")
     assert findings, "the chain block reported nothing"
     text = findings[0]["finding"]

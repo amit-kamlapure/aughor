@@ -10,9 +10,9 @@ sentence a reader would write. Older specs still parse: every reader falls back 
 """
 from types import SimpleNamespace
 
-from aughor.agent import investigate as I
-from aughor.agent.prompts_investigate import IntakeAsk, IntakeOutput
-from aughor.govern import departure_basis
+from pramanyx.agent import investigate as I
+from pramanyx.agent.prompts_investigate import IntakeAsk, IntakeOutput
+from pramanyx.govern import departure_basis
 
 
 def _intake(notes="original notes"):

@@ -12,18 +12,18 @@ are patched to spy on the calls the engine makes.
 """
 from __future__ import annotations
 
-from aughor.automations.adopt import (
+from pramanyx.automations.adopt import (
     adoption_active,
     list_adopted_automations,
     monitor_as_automation,
     subscription_as_automation,
 )
-from aughor.automations.engine import run_automation
-from aughor.automations.models import Effect
-from aughor.briefing.models import BriefSubscription
-from aughor.briefing.store import save_subscription
-from aughor.monitors.models import Monitor, MonitorAlert
-from aughor.monitors.store import upsert_monitor
+from pramanyx.automations.engine import run_automation
+from pramanyx.automations.models import Effect
+from pramanyx.briefing.models import BriefSubscription
+from pramanyx.briefing.store import save_subscription
+from pramanyx.monitors.models import Monitor, MonitorAlert
+from pramanyx.monitors.store import upsert_monitor
 
 
 def _monitor(**kw) -> Monitor:
@@ -78,17 +78,17 @@ def test_monitor_effect_appends_the_same_alert_the_monitor_produces(monkeypatch)
     seen_suppress = {}
 
     def fake_check_monitor(m, db, suppress=True):
-        from aughor.monitors.runner import MonitorRun
+        from pramanyx.monitors.runner import MonitorRun
         seen_suppress["value"] = suppress
         return MonitorRun(alert=alert)
 
     appended: list = []
-    monkeypatch.setattr("aughor.monitors.runner.check_monitor", fake_check_monitor)
-    monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: appended.append(a))
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    monkeypatch.setattr("pramanyx.monitors.runner.check_monitor", fake_check_monitor)
+    monkeypatch.setattr("pramanyx.monitors.store.append_alert", lambda a: appended.append(a))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda cid: type("D", (), {"close": lambda self: None})())
 
-    from aughor.automations.engine import _dispatch_monitor
+    from pramanyx.automations.engine import _dispatch_monitor
     out = _dispatch_monitor(Effect(kind="monitor", config={"monitor_id": "m-eq"}),
                             monitor_as_automation(_monitor(id="m-eq", conn_id="c-eq")))
     assert out.status == "executed"
@@ -99,12 +99,12 @@ def test_monitor_effect_appends_the_same_alert_the_monitor_produces(monkeypatch)
 def test_monitor_effect_appends_nothing_when_the_check_is_quiet(monkeypatch):
     upsert_monitor(_monitor(id="m-quiet", conn_id="c-q"))
     appended: list = []
-    from aughor.monitors.runner import MonitorRun
-    monkeypatch.setattr("aughor.monitors.runner.check_monitor", lambda m, db, suppress=True: MonitorRun())
-    monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: appended.append(a))
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    from pramanyx.monitors.runner import MonitorRun
+    monkeypatch.setattr("pramanyx.monitors.runner.check_monitor", lambda m, db, suppress=True: MonitorRun())
+    monkeypatch.setattr("pramanyx.monitors.store.append_alert", lambda a: appended.append(a))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda cid: type("D", (), {"close": lambda self: None})())
-    from aughor.automations.engine import _dispatch_monitor
+    from pramanyx.automations.engine import _dispatch_monitor
     out = _dispatch_monitor(Effect(kind="monitor", config={"monitor_id": "m-quiet"}),
                             monitor_as_automation(_monitor(id="m-quiet", conn_id="c-q")))
     assert out.status == "executed" and out.message == "no alert"
@@ -112,7 +112,7 @@ def test_monitor_effect_appends_nothing_when_the_check_is_quiet(monkeypatch):
 
 
 def test_monitor_effect_skips_a_missing_or_disabled_monitor(monkeypatch):
-    from aughor.automations.engine import _dispatch_monitor
+    from pramanyx.automations.engine import _dispatch_monitor
     out = _dispatch_monitor(Effect(kind="monitor", config={"monitor_id": "ghost"}),
                             monitor_as_automation(_monitor(id="ghost", conn_id="c")))
     assert out.status == "skipped"
@@ -128,8 +128,8 @@ def test_brief_effect_delivers_the_subscription(monkeypatch):
         delivered.append(sub.id)
         return {"status": "ok"}
 
-    monkeypatch.setattr("aughor.briefing.delivery.deliver_subscription", fake_deliver)
-    from aughor.automations.engine import _dispatch_brief
+    monkeypatch.setattr("pramanyx.briefing.delivery.deliver_subscription", fake_deliver)
+    from pramanyx.automations.engine import _dispatch_brief
     out = _dispatch_brief(Effect(kind="brief", config={"subscription_id": "s-eq"}),
                           subscription_as_automation(_sub(id="s-eq", conn_id="c-eq")))
     assert out.status == "executed"
@@ -143,10 +143,10 @@ def test_adopted_monitor_fires_its_effect_through_run_automation(monkeypatch):
     alert = MonitorAlert(monitor_id="m-e2e", triggered_at="2026-07-24T10:00:00Z",
                          severity="warning", message="edge")
     appended: list = []
-    from aughor.monitors.runner import MonitorRun
-    monkeypatch.setattr("aughor.monitors.runner.check_monitor", lambda m, db, suppress=True: MonitorRun(alert=alert))
-    monkeypatch.setattr("aughor.monitors.store.append_alert", lambda a: appended.append(a))
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    from pramanyx.monitors.runner import MonitorRun
+    monkeypatch.setattr("pramanyx.monitors.runner.check_monitor", lambda m, db, suppress=True: MonitorRun(alert=alert))
+    monkeypatch.setattr("pramanyx.monitors.store.append_alert", lambda a: appended.append(a))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda cid: type("D", (), {"close": lambda self: None})())
 
     a = monitor_as_automation(_monitor(id="m-e2e", conn_id="c-e2e"))
@@ -170,8 +170,8 @@ def test_the_legacy_job_factories_are_gone():
     A revived `_make_job_fn` (or the per-object schedule/unschedule helpers) in either
     scheduler module would mean the legacy path grew back beside the engine — the exact
     double-fire/double-send hazard the fire-time skip used to guard."""
-    import aughor.briefing.scheduler as brief_sched
-    import aughor.monitors.scheduler as mon_sched
+    import pramanyx.briefing.scheduler as brief_sched
+    import pramanyx.monitors.scheduler as mon_sched
 
     for mod, names in ((mon_sched, ("_make_job_fn", "run_monitor_job",
                                     "reload_monitor", "remove_monitor")),
@@ -186,6 +186,6 @@ def test_the_legacy_job_factories_are_gone():
 def test_the_manual_triggers_survive():
     """What deliberately remains of the legacy modules: the synchronous test-endpoint
     triggers (an operator's 'run it now' bypasses the debounce and answers inline)."""
-    from aughor.briefing.scheduler import trigger_now as brief_trigger
-    from aughor.monitors.scheduler import trigger_now as monitor_trigger
+    from pramanyx.briefing.scheduler import trigger_now as brief_trigger
+    from pramanyx.monitors.scheduler import trigger_now as monitor_trigger
     assert callable(monitor_trigger) and callable(brief_trigger)

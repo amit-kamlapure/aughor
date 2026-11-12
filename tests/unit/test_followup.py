@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.followup import is_followup
-from aughor.routers.investigations import build_history_section
+from pramanyx.agent.followup import is_followup
+from pramanyx.routers.investigations import build_history_section
 
 
 # ── is_followup ───────────────────────────────────────────────────────────────

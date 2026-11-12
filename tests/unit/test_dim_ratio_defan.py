@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import duckdb
 
-from aughor.sql.fanout import (
+from pramanyx.sql.fanout import (
     dimension_ratio_chasm, build_dim_ratio_rewrite, defan, detect_fanout,
 )
 
@@ -105,7 +105,7 @@ def test_rewrite_preserves_percent_scale():
 
 
 def test_defan_returns_none_for_non_dim_ratio_kind():
-    from aughor.sql.fanout import FanoutIssue
+    from pramanyx.sql.fanout import FanoutIssue
     assert build_dim_ratio_rewrite(_ROAS, FanoutIssue(hub_root="x", satellites=["a"], kind="chasm")) is None
 
 

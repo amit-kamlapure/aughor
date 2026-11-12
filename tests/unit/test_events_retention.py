@@ -2,7 +2,7 @@
 
 The journal shipped with no retention at all. Measured on the live install 2026-09-19:
 430,768 rows back to 2026-06-16, growing 23,287/day, in a `system.db` of 247 MB whose
-freelist was zero. The cost was not disk. `AughorOpsConnection` snapshots the NEWEST
+freelist was zero. The cost was not disk. `PramanyxOpsConnection` snapshots the NEWEST
 100,000 rows per curated table, so anything that will not fit under that cap is not
 merely old — it cannot be queried by the platform's own self-investigation surface at
 all. On that date the oldest visible event was five days back: 76.8% of the history was
@@ -16,8 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.kernel import ledger as ledger_mod
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel import ledger as ledger_mod
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()
@@ -86,15 +86,15 @@ class TestScope:
         assert _kinds(led).get("job.state") == 5
 
     def test_env_can_disable_the_sweep(self, led, monkeypatch):
-        monkeypatch.setenv("AUGHOR_EVENTS_PRUNE_KINDS", "")
+        monkeypatch.setenv("PRAMANYX_EVENTS_PRUNE_KINDS", "")
         _insert(led, "job.state", days_ago=90, n=5)
         assert led.events_prune() == 0
         assert _kinds(led).get("job.state") == 5
 
     def test_env_names_the_kinds(self, led, monkeypatch):
-        monkeypatch.setenv("AUGHOR_EVENTS_PRUNE_KINDS", "node.span")
-        monkeypatch.setenv("AUGHOR_EVENTS_OPS_KEEP_DAYS", "1")
-        monkeypatch.setenv("AUGHOR_EVENTS_OPS_MAX_ROWS", "0")
+        monkeypatch.setenv("PRAMANYX_EVENTS_PRUNE_KINDS", "node.span")
+        monkeypatch.setenv("PRAMANYX_EVENTS_OPS_KEEP_DAYS", "1")
+        monkeypatch.setenv("PRAMANYX_EVENTS_OPS_MAX_ROWS", "0")
         _insert(led, "node.span", days_ago=90)
         _insert(led, "job.state", days_ago=90)
 

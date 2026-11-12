@@ -8,10 +8,10 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db import snapshot as snap
-from aughor.db.connection import DuckDBConnection
-from aughor.explorer.grounding import numeric_cells_block
-from aughor.explorer.revalidate import revalidate_finding
+from pramanyx.db import snapshot as snap
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.explorer.grounding import numeric_cells_block
+from pramanyx.explorer.revalidate import revalidate_finding
 
 SQL = "SELECT SUM(amt) AS total FROM shop_orders"
 
@@ -48,7 +48,7 @@ def test_snapshot_receipts_are_unconditional(monkeypatch):
     """Hardwired by flag endgame Wave 2 (2026-08-06; receipt 2dee7a36c03f measured
     the probe at ~0.2ms vs the 5ms bar). The env var is dead on purpose — the
     consult point answers True regardless, and the emit stays fail-open."""
-    monkeypatch.setenv("AUGHOR_SNAPSHOT_RECEIPTS", "0")   # a stale .env must not resurrect the off-state
+    monkeypatch.setenv("PRAMANYX_SNAPSHOT_RECEIPTS", "0")   # a stale .env must not resurrect the off-state
     assert snap.snapshot_receipts_enabled() is True
 
 

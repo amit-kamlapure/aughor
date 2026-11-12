@@ -5,7 +5,7 @@ The house guards expressed inside ``mlflow.genai.evaluate``'s harness (A1-P2):
 - ``make_execution_accuracy(db)`` — the golden-reference comparator
   (``evals.sql_accuracy.score_single``, multi-reference aware) as a 0..1 scorer.
 - ``trust_verify`` — the Trust plane's full SQL guard battery
-  (``aughor.trust.verify``: read-only gate, E1 footguns, preflight checks) as a
+  (``pramanyx.trust.verify``: read-only gate, E1 footguns, preflight checks) as a
   pass/fail scorer. The deterministic-guards-as-scorers principle: an answer
   that only a mutation or a footgun query could produce scores 0 regardless of
   how accurate its numbers look.
@@ -53,7 +53,7 @@ def trust_verify(inputs: dict, outputs: dict) -> Feedback:
     sql = ((outputs or {}).get("sql") or "").strip()
     if not sql:
         return Feedback(value=False, rationale="no SQL generated")
-    from aughor.trust import Scope, verify
+    from pramanyx.trust import Scope, verify
     record = (inputs or {}).get("record") or {}
     verdict = verify(
         sql,

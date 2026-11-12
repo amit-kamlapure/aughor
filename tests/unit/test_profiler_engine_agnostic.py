@@ -14,8 +14,8 @@ applies the door's step exactly as a native connector does.
 
 from types import SimpleNamespace
 
-from aughor.db.dialects import sql_for_engine
-from aughor.tools.profiler import (
+from pramanyx.db.dialects import sql_for_engine
+from pramanyx.tools.profiler import (
     _NATIVE_PROFILER_DIALECTS,
     _parse_columns,
     build_column_profiles,
@@ -111,11 +111,11 @@ def test_every_connector_can_build_intelligence():
     # The explorer's ontology gate and the birth rite both call
     # db.build_intelligence(); it lived only on the DuckDB family, so no
     # warehouse engine could ever build an ontology (or a briefing).
-    from aughor.connectors.base import Connector
+    from pramanyx.connectors.base import Connector
 
     assert hasattr(Connector, "build_intelligence")
-    from aughor.connectors.warehouse.bigquery import BigQueryConnection
-    from aughor.connectors.warehouse.snowflake import SnowflakeConnection
+    from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
+    from pramanyx.connectors.warehouse.snowflake import SnowflakeConnection
 
     for cls in (BigQueryConnection, SnowflakeConnection):
         assert hasattr(cls, "build_intelligence")
@@ -125,7 +125,7 @@ def test_numeric_regex_matches_bigquery_type_names():
     # \bINT\b has no word boundary before "64", so INT64/FLOAT64 typed as "unknown",
     # no column was ever a measure on BigQuery, and the Phase-8 coverage manifest
     # came out empty — the LLM loop then re-asked the same questions with no memory.
-    from aughor.tools.profiler import _NUMERIC_TYPES
+    from pramanyx.tools.profiler import _NUMERIC_TYPES
 
     for t in ("INT64", "FLOAT64", "NUMERIC", "BIGNUMERIC", "BIGDECIMAL",
               "BIGINT", "DOUBLE", "UINTEGER", "DECIMAL(10,2)"):
@@ -137,7 +137,7 @@ def test_numeric_regex_matches_bigquery_type_names():
 def test_manifest_builds_cells_from_bigquery_shaped_profiles():
     # A measure with a range + a low-cardinality dimension must yield cells; with
     # zero cells Phase 8 has no deterministic questions and no coverage memory.
-    from aughor.explorer.coverage_manifest import build_manifest
+    from pramanyx.explorer.coverage_manifest import build_manifest
 
     tp = {"order_items": SimpleNamespace(date_columns=["created_at"])}
     cp = {
@@ -161,7 +161,7 @@ def test_schema_filter_extracts_tables_from_backticked_sql():
     # BigQuery/MySQL findings quote tables with backticks; the extractor knew only
     # double quotes and returned nothing, so the schema post-filter dropped every
     # warehouse finding and the Briefing emptied itself one fetch after rendering.
-    from aughor.routers.exploration import _tables_from_sql
+    from pramanyx.routers.exploration import _tables_from_sql
 
     assert _tables_from_sql("SELECT s, COUNT(*) FROM `order_items` GROUP BY 1") == {"order_items"}
     assert _tables_from_sql("SELECT s FROM `thelook`.`orders`") == {"orders", "thelook.orders"}
@@ -180,9 +180,9 @@ def test_no_lowercase_information_schema_anywhere():
     import pathlib
     import re
 
-    import aughor
+    import pramanyx
 
-    root = pathlib.Path(aughor.__file__).parent
+    root = pathlib.Path(pramanyx.__file__).parent
     pat = re.compile(r"information_schema\.(tables|columns|schemata)")
     offenders = []
     for p in root.rglob("*.py"):

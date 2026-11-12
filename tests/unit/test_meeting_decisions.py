@@ -1,4 +1,4 @@
-"""Decisions taken in meetings (the decision-framework study §3.2; `aughor/record/meetings.py`), with the evidence
+"""Decisions taken in meetings (the decision-framework study §3.2; `pramanyx/record/meetings.py`), with the evidence
 envelope's two kinds (`record/claims.said_warrant`).
 
 What these hold, on the scripted model (no spend): a person brings the notes and the model's one read is kept as
@@ -13,10 +13,10 @@ import uuid
 
 import pytest
 
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import meetings as MT
-from aughor.record import inquiry_view as T
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import meetings as MT
+from pramanyx.record import inquiry_view as T
 
 NOTES = """Weekly trading meeting, Berlin.
 Ana: margin on the ultra tier fell two points in July.
@@ -109,7 +109,7 @@ def test_a_said_warrant_carries_a_hash_and_the_words_only_when_shared():
 def test_the_routes_bring_confirm_and_refuse_as_the_person_signed_in(faux_llm, monkeypatch):
     from fastapi import HTTPException
 
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     monkeypatch.setattr(R, "_who", lambda principal: "user:amit")
     _script(faux_llm)
     out = R.propose_meeting_candidates(R.MeetingNotesRequest(title="Weekly trading", held_on="2026-07-29", text=NOTES),

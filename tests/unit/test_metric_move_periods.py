@@ -13,7 +13,7 @@ from datetime import date
 import duckdb
 import pytest
 
-from aughor.knowledge import metric_moves as MM
+from pramanyx.knowledge import metric_moves as MM
 
 CONVERSION_SQL = ("SELECT date_trunc('month', session_start::date) AS month, "
                   "SUM(CASE WHEN converted THEN 1 ELSE 0 END)::numeric/NULLIF(COUNT(*),0) AS conversion_rate "
@@ -108,8 +108,8 @@ def test_the_rows_behind_each_period_are_counted_by_the_charts_own_statement(ses
 
 
 def test_a_recorded_move_opens_onto_its_derivation_and_the_joins_its_table_stands_on(sessions):
-    from aughor.explorer.dossier import _key, record_measured, update_dossier
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.explorer.dossier import _key, record_measured, update_dossier
+    from pramanyx.kernel.ledger import Ledger
 
     [move] = MM.compute_metric_moves([METRIC], _runner(sessions), "EUR", settled_through=DAY, scope="lux")
     dossier = move.pop("dossier")
@@ -130,10 +130,10 @@ def test_a_recorded_move_opens_onto_its_derivation_and_the_joins_its_table_stand
 
 
 def test_the_briefing_records_each_moves_derivation_and_keeps_the_candidate_lean(monkeypatch):
-    from aughor.routers import exploration as R
+    from pramanyx.routers import exploration as R
 
     recorded = []
-    monkeypatch.setattr("aughor.explorer.dossier.record_measured",
+    monkeypatch.setattr("pramanyx.explorer.dossier.record_measured",
                         lambda conn, finding, dossier, *, state: recorded.append((conn, finding["id"], dossier)))
     monkeypatch.setattr(R, "_load_state", lambda conn, schema: {"schema": schema})
     moves = [{"id": "metric-move::lux.gmv", "sql": "SELECT 1", "dossier": {"question": "q"}}]

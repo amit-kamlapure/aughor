@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.semantic import metric_catalogue as MC
-from aughor.semantic import metrics as M
+from pramanyx.semantic import metric_catalogue as MC
+from pramanyx.semantic import metrics as M
 
 
 class _NSM:
@@ -35,17 +35,17 @@ class _Profile:
 def warehouse(monkeypatch, tmp_path):
     """One connection, `wh`, with two datasets — staging and marts — each profiled by the explorer
     and each proposing its own Revenue."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
     profiles = {
         "staging": _Profile([_NSM("Revenue", "staging.orders.amount", "SELECT SUM(amount) FROM staging.orders")]),
         "marts": _Profile([_NSM("Revenue", "marts.fct_orders.net", "SELECT SUM(net) FROM marts.fct_orders"),
                            _NSM("Orders", "marts.fct_orders.id", "SELECT COUNT(id) FROM marts.fct_orders")]),
     }
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: profiles.get(s))
-    monkeypatch.setattr("aughor.business_profile.store.load_raw", lambda c, s=None: {})
-    monkeypatch.setattr("aughor.business_profile.store.profiled_schemas", lambda c: ["staging", "marts"])
-    monkeypatch.setattr("aughor.packs.knowledge.packages", lambda: ())
-    monkeypatch.setattr("aughor.semantic.metric_time.with_dates", lambda c, m: m)
+    monkeypatch.setattr("pramanyx.business_profile.store.load", lambda c, s=None: profiles.get(s))
+    monkeypatch.setattr("pramanyx.business_profile.store.load_raw", lambda c, s=None: {})
+    monkeypatch.setattr("pramanyx.business_profile.store.profiled_schemas", lambda c: ["staging", "marts"])
+    monkeypatch.setattr("pramanyx.packs.knowledge.packages", lambda: ())
+    monkeypatch.setattr("pramanyx.semantic.metric_time.with_dates", lambda c, m: m)
     return "wh"
 
 
@@ -111,9 +111,9 @@ def test_a_removed_proposal_stays_removed_in_its_dataset_and_can_be_restored(war
 def test_a_removal_holds_at_the_profile_read_every_reader_uses(monkeypatch, tmp_path):
     """The explorer re-proposes by name on every rebuild, and the Briefing, the KPI strip and the
     agent read the profile — the removal is applied where they all read it."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    from aughor.business_profile import store
-    from aughor.business_profile.models import BusinessProfile
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    from pramanyx.business_profile import store
+    from pramanyx.business_profile.models import BusinessProfile
 
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path)
     ns = {"definition": "", "why_it_matters": "", "unit_or_range": ""}
@@ -137,13 +137,13 @@ def client(monkeypatch, tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers.metrics import router
+    from pramanyx.routers.metrics import router
 
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana@example.com")
-    monkeypatch.setattr("aughor.routers.metrics._require_binds", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.semantic.metric_time.with_dates", lambda c, m: m)
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana@example.com")
+    monkeypatch.setattr("pramanyx.routers.metrics._require_binds", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.semantic.metric_time.with_dates", lambda c, m: m)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -204,8 +204,8 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
     names the day its data ends — in the Briefing and the Dashboard alike."""
     from datetime import date
 
-    from aughor.briefing import ranges
-    from aughor.semantic import metric_time as mt
+    from pramanyx.briefing import ranges
+    from pramanyx.semantic import metric_time as mt
 
     class _Rides:
         name, label, status, connection, unit = "rides", "Completed rides", "approved", "c", "count"
@@ -213,7 +213,7 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
         sql, tables, filters = "SELECT COUNT(*) AS rides FROM uber.rides", [], []
         version, owner, approved_by = 1, "", "t"
 
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: [_Rides()])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: [_Rides()])
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "measure_sql", lambda m, windows, **k: ("Q " + " ".join(f"{w.label}={w.start}" for w in windows), ""))
 
@@ -251,7 +251,7 @@ def test_a_dataset_that_ended_has_no_figure_for_the_range_and_an_empty_count_is_
 def test_a_sum_that_leaves_cancelled_rows_out_is_a_flow_and_a_count_of_open_rows_a_level():
     """`WHERE cancelled_at IS NULL` made revenue a LEVEL — everything up to each window's end, a
     figure that barely moved and stood still once the data ended."""
-    from aughor.semantic.metric_time import infer
+    from pramanyx.semantic.metric_time import infer
     profile = {"tables": {"orders": {"primary_timestamp": "created_at"}},
                "columns": {"orders.created_at": {"table": "orders", "column": "created_at", "dtype": "timestamp"},
                            "orders.cancelled_at": {"table": "orders", "column": "cancelled_at", "dtype": "timestamp"}}}
@@ -264,11 +264,11 @@ def test_a_sum_that_leaves_cancelled_rows_out_is_a_flow_and_a_count_of_open_rows
 def test_a_statements_dates_are_set_the_moment_it_is_saved(monkeypatch):
     """A statement's `tables` field is empty, so the date rule read no profile and set nothing; and
     it ran only for approved metrics — a new metric could not follow the period picker until then."""
-    from aughor.semantic.metric_time import with_dates
+    from pramanyx.semantic.metric_time import with_dates
     profile = {"tables": {"uber_ncr.rides": {"primary_timestamp": "day"}},
                "columns": {"uber_ncr.rides.day": {"table": "uber_ncr.rides", "column": "day", "dtype": "date"}}}
     seen = {}
-    monkeypatch.setattr("aughor.tools.profile_cache.profile_entry_for",
+    monkeypatch.setattr("pramanyx.tools.profile_cache.profile_entry_for",
                         lambda c, tables: seen.setdefault("tables", tables) and profile)
     m = with_dates("ws", M.MetricDefinition(name="rides", connection="ws", label="Rides",
                                             sql="SELECT COUNT(*) AS rides FROM uber_ncr.rides"))

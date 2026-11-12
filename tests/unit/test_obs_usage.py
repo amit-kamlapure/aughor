@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.obs.usage import (
+from pramanyx.obs.usage import (
     COST_SQL,
     DEFAULT_AXES,
     PRICES,

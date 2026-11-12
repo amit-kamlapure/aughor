@@ -12,10 +12,10 @@ from decimal import Decimal
 import duckdb
 import pytest
 
-from aughor.briefing import edition as E
-from aughor.briefing import guide as G
-from aughor.briefing import ranges
-from aughor.briefing.compose import sources as S
+from pramanyx.briefing import edition as E
+from pramanyx.briefing import guide as G
+from pramanyx.briefing import ranges
+from pramanyx.briefing.compose import sources as S
 
 OCT29 = date(2026, 10, 29)
 
@@ -257,7 +257,7 @@ def test_a_questions_context_names_what_the_platform_knows_as_its_earlier_work(m
     monkeypatch.setattr(S, "known_decisions", lambda conn_id, window, limit: [])
     monkeypatch.setattr(S, "known_discussions", lambda conn_id, window, limit: [])
     monkeypatch.setattr(S, "known_findings", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.knowledge.period_brief.findings_for", lambda c, s: ({}, []))
+    monkeypatch.setattr("pramanyx.knowledge.period_brief.findings_for", lambda c, s: ({}, []))
     block = S.known_context("c1", today=OCT29)
     assert block.startswith("WHAT THE PLATFORM ALREADY KNOWS")
     assert "None of it is a measurement of this question" in block

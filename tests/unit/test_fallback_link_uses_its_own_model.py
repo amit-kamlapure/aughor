@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
 
 
 class _Out(BaseModel):
@@ -34,9 +34,9 @@ def chain(monkeypatch):
     monkeypatch.setattr(P, "_cfg", lambda: cfg)
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
     monkeypatch.setattr(P, "usable_key", lambda b: "k")
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini,openrouter")
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "gemini,openrouter")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_FALLBACK_MODEL_GEMINI", raising=False)
     C.set_default(None)
     sent: list[tuple[str, str]] = []
 
@@ -66,6 +66,6 @@ def test_a_link_with_no_model_of_its_own_is_skipped_and_the_next_answers(chain):
 
 def test_a_link_given_its_own_model_is_sent_that_model(chain, monkeypatch):
     prov, sent = chain
-    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "gemini-3.1-flash-lite")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_MODEL_GEMINI", "gemini-3.1-flash-lite")
     fb = prov._fallback_provider("gemini")
     assert fb is not None and fb._model == "gemini-3.1-flash-lite"

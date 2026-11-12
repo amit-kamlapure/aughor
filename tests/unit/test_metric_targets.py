@@ -4,7 +4,7 @@ the warning distance warns, by the critical one is off target — it is set thro
 definition, and the scorecard scores only the metrics of the connection it is asked about."""
 import pytest
 
-from aughor.semantic.metrics import MetricDefinition, target_status
+from pramanyx.semantic.metrics import MetricDefinition, target_status
 
 CONN = "c_lux"
 
@@ -33,9 +33,9 @@ def test_a_band_is_short_on_either_side_and_no_value_is_unknown():
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
-    from aughor.semantic import metrics as M
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    from pramanyx.semantic import metrics as M
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     M.save_metric(M.MetricDefinition(
         name="aov", connection=CONN, schema_name="lux", label="AOV", unit="EUR, typically 300-2000",
         sql="SELECT AVG(total) AS aov FROM orders", tables=["orders"], time_column="orders.order_date",
@@ -43,17 +43,17 @@ def client(monkeypatch, tmp_path):
     M.save_metric(M.MetricDefinition(name="other_aov", connection="c_other", label="Other AOV", sql="SELECT 1",
                                      target_value=1.0, status="approved"))
     restated: list[str] = []
-    monkeypatch.setattr("aughor.routers.metrics._restate_briefings", restated.append)
+    monkeypatch.setattr("pramanyx.routers.metrics._restate_briefings", restated.append)
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     c = TestClient(app)
     c.restated = restated
     return c
 
 
 def test_a_target_is_set_through_its_own_door_and_nothing_else_moves(client):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     before = M.definition_at("aov", CONN, "lux")
     r = client.put("/metrics/aov/target", params={"connection_id": CONN, "schema": "lux"}, json={
         "target_value": 400, "target_direction": "higher", "warning_threshold": 15, "critical_threshold": 40,
@@ -69,7 +69,7 @@ def test_a_target_is_set_through_its_own_door_and_nothing_else_moves(client):
 
 
 def test_a_bad_target_is_refused_and_an_empty_one_clears(client):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     put = lambda body: client.put("/metrics/aov/target", params={"connection_id": CONN, "schema": "lux"}, json=body)
     assert put({"target_value": 400, "target_direction": "up"}).status_code == 422
     assert put({"target_value": 400, "warning_threshold": -1}).status_code == 422
@@ -82,15 +82,15 @@ def test_a_bad_target_is_refused_and_an_empty_one_clears(client):
 
 
 def test_the_scorecard_scores_only_the_connections_own_metrics(client, monkeypatch):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     client.put("/metrics/aov/target", params={"connection_id": CONN, "schema": "lux"}, json={
         "target_value": 400, "target_direction": "higher", "warning_threshold": 15, "critical_threshold": 40})
 
     class _Db:
         def close(self):
             pass
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Db())
-    monkeypatch.setattr("aughor.routers.metrics.compute_value", lambda m, db: M.MetricValue(value=380.0, sql=""))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn: _Db())
+    monkeypatch.setattr("pramanyx.routers.metrics.compute_value", lambda m, db: M.MetricValue(value=380.0, sql=""))
     rows = client.get(f"/connections/{CONN}/health-scorecard").json()
     assert [(r["name"], r["status"], r["target_direction"]) for r in rows] == [("aov", "yellow", "higher")]
     assert round(rows[0]["variance"], 3) == -0.05

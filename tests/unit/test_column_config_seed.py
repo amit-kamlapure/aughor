@@ -18,14 +18,14 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from aughor.db import backups, home, migrate
-from aughor.doctor import FAIL, OK, WARN, _column_settings
-from aughor.ontology import column_config as cc
-from aughor.ontology.column_config import ColumnFlags
+from pramanyx.db import backups, home, migrate
+from pramanyx.doctor import FAIL, OK, WARN, _column_settings
+from pramanyx.ontology import column_config as cc
+from pramanyx.ontology.column_config import ColumnFlags
 
 NAME = "ontology_column_config"
-ENV = "AUGHOR_COLUMN_CONFIG_ROOT"
-SEED_ENV = "AUGHOR_COLUMN_CONFIG_SEED_ROOT"
+ENV = "PRAMANYX_COLUMN_CONFIG_ROOT"
+SEED_ENV = "PRAMANYX_COLUMN_CONFIG_SEED_ROOT"
 
 
 def _put(root: Path, conn: str, schema: str, table: str, **columns: ColumnFlags) -> Path:
@@ -141,10 +141,10 @@ def test_a_defaults_refresh_never_writes_the_seed_and_keeps_its_authored_entries
 @pytest.fixture
 def removal(layers, tmp_path, monkeypatch):
     """Only the column config's tree, so a purge here touches nothing else."""
-    from aughor.ontology import removal as R
+    from pramanyx.ontology import removal as R
     monkeypatch.setattr(R, "_trees", lambda: [cc._root()])
     monkeypatch.setattr(R, "_context_graph_root", lambda: tmp_path / "no-graphs")
-    monkeypatch.setattr("aughor.knowledge.indexer.delete_document", lambda doc_id: False)
+    monkeypatch.setattr("pramanyx.knowledge.indexer.delete_document", lambda doc_id: False)
     return R
 
 
@@ -202,7 +202,7 @@ def test_a_dataset_the_seed_does_not_hold_leaves_no_tombstone(layers, removal):
 def test_every_seeded_connection_is_one_the_registry_refuses_to_remove():
     """A whole-connection purge hides no seed (`purge_connection`): it can rely on that only while every connection the
     repository ships settings for is one nobody can remove. Measured from the real seed, not listed beside it."""
-    from aughor.db import registry
+    from pramanyx.db import registry
     shipped = home.checkout_data() / "shipped" / NAME
     seeded = sorted(p.name for p in shipped.iterdir() if p.is_dir())
     assert seeded, "probe failed: no shipped column config"
@@ -212,8 +212,8 @@ def test_every_seeded_connection_is_one_the_registry_refuses_to_remove():
 
 
 def test_the_conftest_keeps_the_shipped_seed_out_of_every_other_test():
-    assert "aughor-test-stores" in str(cc._seed_root()) and not cc._seed_root().exists()
-    assert "aughor-test-stores" in str(home.moved_record(NAME))
+    assert "pramanyx-test-stores" in str(cc._seed_root()) and not cc._seed_root().exists()
+    assert "pramanyx-test-stores" in str(home.moved_record(NAME))
 
 
 # ── the move: the install's tree into the data home, verified ───────────────────────────────────
@@ -237,7 +237,7 @@ def checkout(tmp_path, monkeypatch):
     monkeypatch.setattr(home, "checkout_data", lambda: data)
     monkeypatch.setattr(cc, "_DEFAULT_ROOT", inst)
     monkeypatch.setattr(cc, "_SEED_DEFAULT", seed)
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: None)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: None)
     home.state_home().mkdir(parents=True)
     home.marker_path().write_text(f"state migrated from {data}\n")      # migrated before this change
     return data
@@ -256,7 +256,7 @@ def test_before_its_record_it_reads_the_checkout_and_the_api_will_not_start(chec
     assert cc._root() == checkout / NAME and cc._seed_root() == checkout / "shipped" / NAME
     owing = migrate.owed()
     assert len(owing) == 1 and NAME in owing[0] and "outside every backup" in owing[0]
-    with pytest.raises(migrate.MoveOwed, match="aughor migrate-state --yes"):
+    with pytest.raises(migrate.MoveOwed, match="pramanyx migrate-state --yes"):
         migrate.ensure_moved()
     said = _column_settings()
     assert said.status == FAIL and "migrate-state" in said.fix
@@ -297,7 +297,7 @@ def test_a_backup_holds_the_moved_settings_and_their_record_and_says_where_they_
     assert named() == [str((checkout / NAME).resolve())]
     migrate.top_up(NAME)
     assert named() == []
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(root))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(root))
     monkeypatch.setenv(backups.FREE_FLOOR_ENV, "0")
     out = backups.take(now=datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc))
     assert out.status == "taken", out.reason

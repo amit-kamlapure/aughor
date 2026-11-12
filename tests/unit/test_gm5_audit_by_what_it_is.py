@@ -20,12 +20,12 @@ from pathlib import Path
 import duckdb
 import pytest
 
-import aughor.connectors
-import aughor.db.connection as dbc
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db.connection import DatabaseConnection, DuckDBConnection
-from aughor.db.doors import statement_is_internal, through_door
-from aughor.security.audit import AuditLogger, InternalCounter
+import pramanyx.connectors
+import pramanyx.db.connection as dbc
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db.connection import DatabaseConnection, DuckDBConnection
+from pramanyx.db.doors import statement_is_internal, through_door
+from pramanyx.security.audit import AuditLogger, InternalCounter
 
 
 @pytest.fixture
@@ -98,14 +98,14 @@ def test_a_typed_read_is_never_an_unredacted_side_channel(shop):
 # ── every connection class carries it to the first gate ────────────────────────────────────────────────────────────
 
 def _all_connection_classes() -> list[type]:
-    for mod in pkgutil.walk_packages(aughor.connectors.__path__, "aughor.connectors."):
+    for mod in pkgutil.walk_packages(pramanyx.connectors.__path__, "pramanyx.connectors."):
         importlib.import_module(mod.name)
 
     def walk(cls):
         for sub in cls.__subclasses__():
             yield sub
             yield from walk(sub)
-    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("aughor.")
+    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("pramanyx.")
                    and not inspect.isabstract(c)}, key=lambda c: c.__qualname__)
 
 
@@ -149,8 +149,8 @@ def test_a_persons_bulk_read_is_audited(shop):
 def test_a_measurement_says_whose_it_is(monkeypatch, shop):
     """The shared measurement runner used one label for five callers and let none of them say what it was; a
     monitor's backtest evaluates the monitor's SQL, which is somebody's, and is audited under its own name."""
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: shop)
-    from aughor.db.measure import run_sql_for
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: shop)
+    from pramanyx.db.measure import run_sql_for
     listed, counted = _audited("monitor_backtest"), _counted()
     run_sql_for("gm5", internal=False, label="monitor_backtest")("SELECT COUNT(*) FROM orders")
     run_sql_for("gm5", internal=True)("SELECT COUNT(*) FROM orders")

@@ -13,7 +13,7 @@ confidence_justification.
 """
 from __future__ import annotations
 
-from aughor.agent.report_checks import (
+from pramanyx.agent.report_checks import (
     Violation,
     check_claim_type,
     check_grounding,

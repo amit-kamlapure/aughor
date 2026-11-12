@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.security import credentials as cred
+from pramanyx.security import credentials as cred
 
 
 # ── credential masking ──────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def test_the_users_own_data_is_NOT_redacted():
 def test_one_detector_serves_the_skills_linter_too():
     """VA-1's ingestion linter and this masker must agree on what a credential is. Two
     copies of that judgement drift into two answers for the same string."""
-    from aughor.skills import lint
+    from pramanyx.skills import lint
     assert lint._KEY_SHAPES is cred.KEY_SHAPES
     assert lint._SECRET_ASSIGN is cred.SECRET_ASSIGN
     assert lint._PLACEHOLDER is cred.PLACEHOLDER
@@ -106,7 +106,7 @@ def test_one_detector_serves_the_skills_linter_too():
 def test_the_event_seam_masks_and_reports_that_it_did():
     """A viewer that quietly alters what it shows is worse than one that shows
     everything, because nobody can tell which it did."""
-    from aughor.routers.obs import _mark_content
+    from pramanyx.routers.obs import _mark_content
     ev = {"payload": {"sql": "-- key sk-abcd1234efgh5678ijkl", "user_prompt": "hi"}}
     out = _mark_content(ev)
     assert out["credentials_masked"] == 1
@@ -115,7 +115,7 @@ def test_the_event_seam_masks_and_reports_that_it_did():
 
 
 def test_an_event_with_no_credential_is_untouched():
-    from aughor.routers.obs import _mark_content
+    from pramanyx.routers.obs import _mark_content
     ev = {"payload": {"sql": "SELECT category, SUM(sales) FROM orders GROUP BY 1"}}
     out = _mark_content(ev)
     assert "credentials_masked" not in out
@@ -128,8 +128,8 @@ def test_reading_a_trace_journals_who_read_whose_run(monkeypatch):
     """THE seam test for this slice. Before it, `/traces/{id}` returned every payload and
     recorded nothing — an entitlement nobody can review is indistinguishable from no
     policy."""
-    from aughor.routers import obs
-    from aughor.org import context as octx
+    from pramanyx.routers import obs
+    from pramanyx.org import context as octx
 
     emitted: list[tuple] = []
 
@@ -138,7 +138,7 @@ def test_reading_a_trace_journals_who_read_whose_run(monkeypatch):
             emitted.append((kind, payload, kw))
             return 1
 
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         classmethod(lambda cls: _FakeLedger()))
     tok = octx.set_user_id("admin-7")
     try:
@@ -164,7 +164,7 @@ def test_reading_a_trace_journals_who_read_whose_run(monkeypatch):
 def test_an_unattributed_run_says_so_rather_than_guessing():
     """Local single-user runs carry no identity. Empty is the honest answer; inventing
     one would make the audit trail assert something it does not know."""
-    from aughor.routers import obs
+    from pramanyx.routers import obs
     emitted: list[tuple] = []
 
     class _FakeLedger:
@@ -172,7 +172,7 @@ def test_an_unattributed_run_says_so_rather_than_guessing():
             emitted.append((kind, payload, kw))
             return 1
 
-    import aughor.kernel.ledger as _led
+    import pramanyx.kernel.ledger as _led
     orig = _led.Ledger.default
     _led.Ledger.default = classmethod(lambda cls: _FakeLedger())
     try:
@@ -185,8 +185,8 @@ def test_an_unattributed_run_says_so_rather_than_guessing():
 def test_a_failing_journal_never_denies_a_legitimate_read():
     """Telemetry must not break the thing it observes — including the audit path. A
     read that a broken journal blocks is an outage dressed as a control."""
-    from aughor.routers import obs
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    import pramanyx.kernel.ledger as _led
 
     class _Broken:
         def emit(self, *a, **k):
@@ -204,7 +204,7 @@ def test_a_failing_journal_never_denies_a_legitimate_read():
 
 def test_the_access_kind_is_visible_to_an_auditor():
     """A control that never reaches the audit feed is a row in a table nobody reads."""
-    from aughor.govern.audit_categories import (
+    from pramanyx.govern.audit_categories import (
         CATEGORIES, KIND_CATEGORY, _SINKS, _summarize)
     assert KIND_CATEGORY["trace.payload_access"] == "data_access"
     assert "data_access" in CATEGORIES
@@ -218,8 +218,8 @@ def test_the_access_kind_is_visible_to_an_auditor():
 def test_the_actor_column_is_populated_for_this_kind():
     """`_from_ledger` looks for actor/set_by/cleared_by; this kind names it `read_by`,
     and an audit row whose actor column is blank answers the wrong half of 'who'."""
-    from aughor.govern.audit_categories import _from_ledger
-    import aughor.govern.audit_categories as ac
+    from pramanyx.govern.audit_categories import _from_ledger
+    import pramanyx.govern.audit_categories as ac
 
     ac_events = [{"created_at": "2026-08-23T10:00:00Z", "org_id": "default",
                   "payload": {"read_by": "admin-7", "trace_id": "t1"}}]
@@ -237,9 +237,9 @@ def test_the_ROUTE_journals_it_not_just_the_helper(monkeypatch):
     """The wiring, not the part. The test above calls `_audit_payload_access` directly,
     so it passes whether or not `get_trace` ever calls it — which is the exact shape of
     a control that exists in the tree and fires nowhere. This one drives the route."""
-    from aughor.routers import obs
-    from aughor.obs import session_log
-    import aughor.kernel.ledger as _led
+    from pramanyx.routers import obs
+    from pramanyx.obs import session_log
+    import pramanyx.kernel.ledger as _led
 
     events = [
         {"seq": 1, "kind": session_log.USER_REQUEST, "at": "2026-08-23T10:00:00Z",

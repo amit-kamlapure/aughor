@@ -21,7 +21,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-AUGHOR = Path(__file__).resolve().parents[2] / "aughor"
+PRAMANYX = Path(__file__).resolve().parents[2] / "pramanyx"
 
 # ── Platform surface that gets scanned ────────────────────────────────────────
 # NOTE: `samples` is intentionally NOT scanned — it is a demo/fixture *seeder* that
@@ -66,14 +66,14 @@ TOLERATED: dict[str, set[str]] = {}
 
 def _platform_files():
     for d in sorted(PLATFORM_DIRS):
-        for p in (AUGHOR / d).rglob("*.py"):
+        for p in (PRAMANYX / d).rglob("*.py"):
             if "__pycache__" not in p.parts:
                 yield p
     for m in PLATFORM_TOP_MODULES:
-        p = AUGHOR / m
+        p = PRAMANYX / m
         if p.exists():
             yield p
-    for p in (AUGHOR / "sql").rglob("*.py"):
+    for p in (PRAMANYX / "sql").rglob("*.py"):
         if "__pycache__" not in p.parts and p.name not in SQL_AGENT_FILES:
             yield p
 
@@ -89,7 +89,7 @@ def _agent_pkgs_imported(path: Path) -> set[str]:
             mods.extend(a.name for a in node.names)
         for mod in mods:
             parts = mod.split(".")
-            if len(parts) >= 2 and parts[0] == "aughor" and parts[1] in AGENT_PKGS:
+            if len(parts) >= 2 and parts[0] == "pramanyx" and parts[1] in AGENT_PKGS:
                 found.add(parts[1])
     return found
 
@@ -99,7 +99,7 @@ def _current_violations() -> dict[str, set[str]]:
     for f in _platform_files():
         pkgs = _agent_pkgs_imported(f)
         if pkgs:
-            out[str(f.relative_to(AUGHOR.parent))] = pkgs
+            out[str(f.relative_to(PRAMANYX.parent))] = pkgs
     return out
 
 

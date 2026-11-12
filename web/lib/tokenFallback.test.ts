@@ -7,7 +7,7 @@ import { TOKEN_FALLBACK, type TokenName } from "./tokenFallback";
 // The gates' own reader of Radix Themes' stylesheet: the file the browser loads.
 import { radixValueAt } from "../scripts/radix-tokens.mjs";
 
-const SHEET = readFileSync(join(__dirname, "../aughor-v2/theme/tokens-v2.css"), "utf8");
+const SHEET = readFileSync(join(__dirname, "../pramanyx-v2/theme/tokens-v2.css"), "utf8");
 const ROOT = SHEET.slice(SHEET.indexOf(":root {"), SHEET.indexOf('[data-theme="light"] {'));
 // The light skin re-declares the surfaces that differ from dark's (2026-10-25): its block is read first
 // for light, as the cascade reads it on <html data-theme="light">, then the root for the rest.

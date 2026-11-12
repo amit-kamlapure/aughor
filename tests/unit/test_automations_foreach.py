@@ -37,10 +37,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.dataflow import (
+from pramanyx.automations.dataflow import (
     FAN_EMPTY_SKIP, GUARD_SKIP, MAX_FAN_OUT, effect_refs, validate_chain,
 )
-from aughor.automations.models import (
+from pramanyx.automations.models import (
     Automation, Condition, Effect, EffectOutcome, ForEach,
 )
 
@@ -70,7 +70,7 @@ def _automation(*effects, fallback=None) -> Automation:
 
 
 def _run(automation, dispatch=None, **kw):
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     return run_automation(automation, dispatch=dispatch, persist=False,
                           probe=lambda *a, **k: True,
                           sleeper=lambda _s: None, rng=lambda: 0.0, **kw)
@@ -382,7 +382,7 @@ def test_a_step_after_a_fan_out_shows_its_own_status():
     the engine appended exactly one outcome per effect — W2 appends one per ITEM, so
     without grouping every node after a fan-out shows another step's status. A picture
     that is WRONG is worse than one that is missing."""
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
 
     def _dispatch(effect, automation):
         ok = effect.kind != "notify"
@@ -405,7 +405,7 @@ def test_a_step_after_a_fan_out_shows_its_own_status():
 
 
 def test_the_structure_graph_says_a_step_runs_per_item():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     graph = build_graph(_automation(_post(source=["EMEA", "NA"],
                                           message={"$from": "item.value"})))
     node = [n for n in graph["nodes"] if n["type"] == "effect"][0]
@@ -413,7 +413,7 @@ def test_the_structure_graph_says_a_step_runs_per_item():
 
 
 def test_a_bound_fan_out_is_labelled_by_its_reference():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     graph = build_graph(_automation(_action(), _post(source={"$from": "rows.items"},
                                                      message={"$from": "item.value"})))
     node = [n for n in graph["nodes"] if n["id"] == "step2"][0]
@@ -421,7 +421,7 @@ def test_a_bound_fan_out_is_labelled_by_its_reference():
 
 
 def test_a_partly_held_fan_out_reads_as_how_many_ran():
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
     _seen, dispatch = _records(ts="1")
     effects = [_post(alias="posts",
                      source=[{"v": "a"}, {"v": ""}, {"v": "c"}],
@@ -437,7 +437,7 @@ def test_a_partly_held_fan_out_reads_as_how_many_ran():
 
 def test_one_failed_iteration_makes_the_step_read_as_failed():
     """"2 of 3 posted" under a green node is how a partial send reads as a whole one."""
-    from aughor.automations.graph import build_graph
+    from pramanyx.automations.graph import build_graph
 
     def _dispatch(effect, automation):
         ok = effect.config["message"] != "b"

@@ -5,7 +5,7 @@ total_amount while the schema has country / state / totalPrice) AND the safety g
 unique-target-only, grain-aware money, no-concept left alone, ambiguous left alone, aliases
 untouched, fail-safe.
 """
-from aughor.sql.semantic_repair import repair_semantic_columns, _concept
+from pramanyx.sql.semantic_repair import repair_semantic_columns, _concept
 
 WORKSPACE = {
     "bakehouse.sales_customers":    ["customerID", "first_name", "city", "state", "country", "continent", "gender"],

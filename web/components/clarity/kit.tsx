@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The one kit a screen redone to CLARITY is built from (`aughor-v2/CLARITY.md`): the page, a card on the ground, a
+ * The one kit a screen redone to CLARITY is built from (`pramanyx-v2/CLARITY.md`): the page, a card on the ground, a
  * small uppercase section label with its meta at the right, a fact as a chip, a figure (label · value · one muted
  * line), the amber "Needs you" card and its rows, a bar, bars by category, columns over time, a section folded shut,
  * and the one muted line an empty section is.

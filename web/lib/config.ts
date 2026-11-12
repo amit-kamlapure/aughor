@@ -21,7 +21,7 @@ export const API_BASE_DEFAULT =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) ||
   "http://localhost:8000";
 
-const STORAGE_KEY = "aughor.apiBase";
+const STORAGE_KEY = "pramanyx.apiBase";
 
 /**
  * Demo posture. A hosted deployment with no backend resolves to `http://localhost:8000`,
@@ -143,7 +143,7 @@ export function setApiBase(raw: string | null): string {
   return now;
 }
 
-// CK-1's AUGHOR_AGUI client seam (route the chat turn through POST /agui/run) was
+// CK-1's PRAMANYX_AGUI client seam (route the chat turn through POST /agui/run) was
 // retired in CA-1 with the reducer it re-framed into: the chat now streams through
 // `/api/chat` on the AI-SDK protocol. The backend AG-UI endpoint remains for
 // protocol callers; only the web client's transport swap is gone.

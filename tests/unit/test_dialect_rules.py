@@ -3,9 +3,9 @@
 Native-execution warehouses (BigQuery/Snowflake/MySQL/Exasol) run the LLM's SQL
 verbatim, so they must get correct NATIVE dialect rules; transpile-from-DuckDB
 connections (DuckDB, Postgres) get DuckDB rules. Before this, non-DuckDB got only
-a bare "Target dialect: X." See aughor/db/dialects.py.
+a bare "Target dialect: X." See pramanyx/db/dialects.py.
 """
-from aughor.db.dialects import DUCKDB_RULES, rules_for_dialect, writer_rules
+from pramanyx.db.dialects import DUCKDB_RULES, rules_for_dialect, writer_rules
 
 
 class _DB:
@@ -74,7 +74,7 @@ def test_missing_flag_defaults_to_transpile_path():
 
 
 def test_base_connection_default_is_not_native():
-    from aughor.db.connection import DatabaseConnection
+    from pramanyx.db.connection import DatabaseConnection
     assert DatabaseConnection.writes_native_sql is False
 
 

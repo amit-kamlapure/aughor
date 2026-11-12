@@ -23,10 +23,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.kernel import jobs as J
-from aughor.kernel import metering
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel import jobs as J
+from pramanyx.kernel import metering
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()

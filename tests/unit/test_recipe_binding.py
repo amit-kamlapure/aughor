@@ -2,7 +2,7 @@
 the connection's schema (the dominant Phase-8 token sink: the generator follows a
 generic recipe like SUM(revenue - cogs) and invents line_total / customer_id / the
 ecommerce.* schema, all of which the feasibility gate then drops)."""
-from aughor.explorer.agent import _recipe_binds, _norm_ident
+from pramanyx.explorer.agent import _recipe_binds, _norm_ident
 
 # The REAL missimi schema (a subset, normalised as the gate sees it).
 REAL_COLS = {_norm_ident(c) for c in [

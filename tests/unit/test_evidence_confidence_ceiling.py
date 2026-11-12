@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.investigate import _cap_confidence_on_trust_advisory, _evidence_confidence_ceiling
+from pramanyx.agent.investigate import _cap_confidence_on_trust_advisory, _evidence_confidence_ceiling
 
 
 def _synth(conf="HIGH"):

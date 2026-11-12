@@ -20,9 +20,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.automations.dataflow import BINDABLE_FIELDS, PUBLISHED_KEYS
-from aughor.automations.palette import ENTRIES, NEEDS_SETUP, READY, entries
+from pramanyx.api import app
+from pramanyx.automations.dataflow import BINDABLE_FIELDS, PUBLISHED_KEYS
+from pramanyx.automations.palette import ENTRIES, NEEDS_SETUP, READY, entries
 
 client = TestClient(app)
 
@@ -32,14 +32,14 @@ WEB = Path(__file__).resolve().parents[2] / "web"
 @pytest.fixture
 def no_objects(monkeypatch):
     """A deployment where none of the referenced objects exist yet — a fresh clone."""
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", lambda **_: [])
-    monkeypatch.setattr("aughor.notifications.store.list_triggers", lambda: [])
-    monkeypatch.setattr("aughor.briefing.store.list_subscriptions", lambda *_a, **_k: [])
-    monkeypatch.setattr("aughor.monitors.store.list_monitors", lambda *_a, **_k: [])
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", lambda **_: [])
+    monkeypatch.setattr("pramanyx.notifications.store.list_triggers", lambda: [])
+    monkeypatch.setattr("pramanyx.briefing.store.list_subscriptions", lambda *_a, **_k: [])
+    monkeypatch.setattr("pramanyx.monitors.store.list_monitors", lambda *_a, **_k: [])
     # DS-11 — and no connected accounts. Patched like every sibling rather than left to
     # the real store: these files share session-scoped stores, so a grant another file
     # created would make "a fresh clone" quietly untrue here.
-    monkeypatch.setattr("aughor.integrations.store.list_connections", lambda *_a, **_k: [])
+    monkeypatch.setattr("pramanyx.integrations.store.list_connections", lambda *_a, **_k: [])
 
 
 def _by_kind(rows: list[dict]) -> dict[str, dict]:
@@ -102,7 +102,7 @@ def test_the_declared_action_is_ready_without_asking_a_flag(monkeypatch, no_obje
     useless — that flag was hardwired and deleted, so `flag_enabled` answers False for an
     unregistered name and every deployment would be told its declared actions are off.
     This test fails the moment someone reaches for it."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: (_ for _ in ()).throw(AssertionError(f"the palette asked about the flag {n!r}")))
     assert _by_kind(entries())[OPEN_KIND]["availability"] == READY
 
@@ -114,10 +114,10 @@ def test_a_failed_probe_leaves_the_row_READY(monkeypatch):
     def boom(*_a, **_k):
         raise RuntimeError("store unreachable")
 
-    monkeypatch.setattr("aughor.slackbots.store.list_bots", boom)
-    monkeypatch.setattr("aughor.notifications.store.list_triggers", boom)
-    monkeypatch.setattr("aughor.briefing.store.list_subscriptions", boom)
-    monkeypatch.setattr("aughor.monitors.store.list_monitors", boom)
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots", boom)
+    monkeypatch.setattr("pramanyx.notifications.store.list_triggers", boom)
+    monkeypatch.setattr("pramanyx.briefing.store.list_subscriptions", boom)
+    monkeypatch.setattr("pramanyx.monitors.store.list_monitors", boom)
 
     rows = _by_kind(entries())
     for kind in ("slack_post", "notify", "brief", "metric"):
@@ -127,11 +127,11 @@ def test_a_failed_probe_leaves_the_row_READY(monkeypatch):
 
 def test_a_disabled_bot_does_not_satisfy_the_prerequisite(monkeypatch, no_objects):
     """A disabled bot cannot post, so it cannot be the reason the row is lit."""
-    monkeypatch.setattr("aughor.slackbots.store.list_bots",
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots",
                         lambda **_: [SimpleNamespace(id="b1", enabled=False)])
     assert _by_kind(entries())["slack_post"]["availability"] == NEEDS_SETUP
 
-    monkeypatch.setattr("aughor.slackbots.store.list_bots",
+    monkeypatch.setattr("pramanyx.slackbots.store.list_bots",
                         lambda **_: [SimpleNamespace(id="b1", enabled=True)])
     assert _by_kind(entries())["slack_post"]["availability"] == READY
 
@@ -190,18 +190,18 @@ def test_only_a_spendable_grant_lights_the_integration_row(monkeypatch, no_objec
     """A revoked grant is dead and a `needs_reconnect` one is a refusal the provider has
     already made. Neither can be spent, so neither is the prerequisite being met — the
     same rule the Slack probe applies to a disabled bot."""
-    from aughor.integrations.models import Connection
+    from pramanyx.integrations.models import Connection
 
     def _grants(*_a, **_k):
         return [Connection(id="a", provider="google", status="revoked"),
                 Connection(id="b", provider="slack", status="needs_reconnect")]
 
-    monkeypatch.setattr("aughor.integrations.store.list_connections", _grants)
+    monkeypatch.setattr("pramanyx.integrations.store.list_connections", _grants)
     row = _by_kind(entries())["integration_call"]
     assert row["availability"] == NEEDS_SETUP
     assert "Integrations" in row["reason"], "the sentence names the door that fixes it"
 
-    monkeypatch.setattr("aughor.integrations.store.list_connections",
+    monkeypatch.setattr("pramanyx.integrations.store.list_connections",
                         lambda *_a, **_k: [Connection(id="c", provider="google",
                                                       status="active")])
     assert _by_kind(entries())["integration_call"]["availability"] == READY

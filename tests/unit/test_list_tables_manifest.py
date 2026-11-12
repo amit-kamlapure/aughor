@@ -6,7 +6,7 @@ column — and the analyst's single `list_tables` call on 99201af8 outweighed th
 turn. The manifest (name, row count, columns with types) is 5,346 characters; `describe_table`
 returns a table's full block for the one or two tables the model goes on to query.
 """
-from aughor.db.schema_render import schema_block, schema_manifest
+from pramanyx.db.schema_render import schema_block, schema_manifest
 
 LUX_LIKE = """\
 TABLE: brand_collaborations  (62 rows)

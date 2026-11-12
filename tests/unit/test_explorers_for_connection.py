@@ -1,7 +1,7 @@
 """Pause-all-explorers-for-a-connection selection — see _shared.explorers_for_connection.
 A user investigation must pause the connection explorer AND any canvas explorers on the
 same connection (the bug: canvas explorers kept hammering the DB during a run)."""
-import aughor.routers._shared as sh
+import pramanyx.routers._shared as sh
 
 
 class _Status:

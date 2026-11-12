@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from aughor.learning import decisions  # noqa: E402
+from pramanyx.learning import decisions  # noqa: E402
 from evals.decision_yield_eval import SITES, arm_a, summarize  # noqa: E402
 
 
@@ -183,8 +183,8 @@ def test_an_empty_store_is_inconclusive_not_a_pass():
 def test_the_definition_chooser_ships_one_response_model():
     """The chooser's confidence arm was deleted 2026-10-04 (kill 6 of the 2027 study): the
     one response model is the one it always shipped, and no flag can change the prompt."""
-    from aughor.agent import framing
-    from aughor.kernel.flags import FLAG_ENV
+    from pramanyx.agent import framing
+    from pramanyx.kernel.flags import FLAG_ENV
     assert set(framing.DefinitionChoice.model_fields) == {"definition"}
     assert not hasattr(framing, "DefinitionChoiceWithConfidence")
     assert "framing.choice_confidence" not in FLAG_ENV

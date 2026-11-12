@@ -26,7 +26,7 @@ import json
 
 import pytest
 
-from aughor.mcp import policy as P
+from pramanyx.mcp import policy as P
 from tests.unit.test_every_outside_caller_is_someone import _mint, held  # noqa: F401 — fixtures by name
 from tests.unit.test_object_actions import CONN, ORDER, _Borrowed, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_one_row_policy_at_every_door import COUNT, as_reader, sql_door  # noqa: F401 — fixtures by name
@@ -40,27 +40,27 @@ NOT_ANAS = {"cancelled", "refunded", "pending", "processing"}
 @pytest.fixture
 def borrowed(db, monkeypatch):  # noqa: F811
     """The conversation's tools open the samples database (a resolver that closes what it opens is lent it)."""
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
-    monkeypatch.setattr("aughor.routers.investigations.write_answer_receipt", lambda **kw: {})
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.routers.investigations.write_answer_receipt", lambda **kw: {})
 
 
 @pytest.fixture
 def served(secured, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     return secured
 
 
 @pytest.fixture
 def served_open(graph, monkeypatch):  # noqa: F811
     """The samples ontology with no row policy or mask declared: what a grant alone decides."""
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     return graph
 
 
 # ── 1. the schema tools ─────────────────────────────────────────────────────────
 
 def test_the_schema_tools_hand_the_model_only_what_the_reader_may_read(sql_door, borrowed, as_reader):  # noqa: F811
-    from aughor.agent.converse_tools import describe_table, list_tables
+    from pramanyx.agent.converse_tools import describe_table, list_tables
     as_reader("ana")
     described = describe_table(CONN, {"table": "orders"})
     said = json.dumps(described)
@@ -82,7 +82,7 @@ def test_the_schema_tools_hand_the_model_only_what_the_reader_may_read(sql_door,
 # ── 2. a policy refusal is not a retry ──────────────────────────────────────────
 
 def test_a_policy_refusal_is_said_to_the_reader_never_rewritten_around(sql_door, borrowed, as_reader):  # noqa: F811
-    from aughor.agent.converse_tools import route_error, run_sql
+    from pramanyx.agent.converse_tools import route_error, run_sql
     as_reader("ana")
     out = run_sql(CONN, {"sql": "SELECT SUM(total_amount) FROM orders"})
     assert out["error"].startswith("[OBJECT POLICY] refused")
@@ -97,8 +97,8 @@ def test_a_policy_refusal_is_said_to_the_reader_never_rewritten_around(sql_door,
 # ── 3. the policy's sentence reaches the reader ─────────────────────────────────
 
 def test_the_policy_a_read_was_narrowed_or_refused_by_is_said_on_the_answer_once(sql_door, borrowed, as_reader):  # noqa: F811
-    from aughor.agent.converse_tools import run_sql
-    from aughor.answer.envelope import EnvelopeFolder
+    from pramanyx.agent.converse_tools import run_sql
+    from pramanyx.answer.envelope import EnvelopeFolder
     as_reader("ana")
     frames: list = []
 
@@ -122,15 +122,15 @@ def test_the_policy_a_read_was_narrowed_or_refused_by_is_said_on_the_answer_once
 def acts(monkeypatch):
     """The organisation lets agents act, so its policy admits the object query and listing doors (an unmapped POST is
     an act) and the principal's grant alone decides."""
-    from aughor.orgsettings import agent_policy as AP
-    monkeypatch.delenv("AUGHOR_AGENT_POLICY_LEVEL", raising=False)
+    from pramanyx.orgsettings import agent_policy as AP
+    monkeypatch.delenv("PRAMANYX_AGENT_POLICY_LEVEL", raising=False)
     AP.save_agent_policy("default", level="act", set_by="ana")
     yield
     AP.clear_agent_policy("default")
 
 
 def test_a_principal_granted_one_entity_reads_no_other_through_a_link(client, held, served_open, acts):  # noqa: F811
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     name, headers = _mint(client, areas=["objects:read"], entities=["Order"])
     params = {"connection_id": CONN}
     asked = {
@@ -175,14 +175,14 @@ def test_a_principal_granted_one_entity_reads_no_other_through_a_link(client, he
     cut = client.get("/ontology/v1/contract", params=params, headers=headers).json()
     assert list(cut["entities"]) == ["Order"]
     assert "customer" not in json.dumps({k: v for k, v in cut.items() if k != "entities"}).lower()
-    assert not any("customer" in json.dumps(e.get("x-aughor") or {}).lower() for e in cut["entities"].values())
+    assert not any("customer" in json.dumps(e.get("x-pramanyx") or {}).lower() for e in cut["entities"].values())
 
 
 # ── 5. every refusal names the principal ────────────────────────────────────────
 
 def test_a_refusal_at_the_organisations_level_check_is_audited_under_the_principal_that_asked(client, held):  # noqa: F811
-    from aughor.kernel.ledger import Ledger
-    from aughor.orgsettings import agent_policy as AP
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.orgsettings import agent_policy as AP
     AP.save_agent_policy("default", level="read", set_by="ana")
     try:
         name, headers = _mint(client, areas=["analysis:run"])
@@ -198,10 +198,10 @@ def test_a_refusal_at_the_organisations_level_check_is_audited_under_the_princip
 # ── 6. the from-object door and an acting agent ─────────────────────────────────
 
 def test_the_from_object_door_reads_as_the_narrower_of_the_agent_and_the_person(client, served, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ben")                    # support and finance
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ben")                    # support and finance
     params = {"entity": "order", "connection_id": CONN}
     alone = client.get("/dashboards/from-object", params=params)
-    acting = client.get("/dashboards/from-object", params=params, headers={"X-Aughor-Acting-Agent": "agent:nobody"})
+    acting = client.get("/dashboards/from-object", params=params, headers={"X-Pramanyx-Acting-Agent": "agent:nobody"})
     assert alone.status_code == acting.status_code == 200, (alone.text[:300], acting.text[:300])
     assert alone.json()["total"] > 0
     assert acting.json()["total"] == 0, "an agent in no group was shown its person's orders"
@@ -212,7 +212,7 @@ def test_the_from_object_door_reads_as_the_narrower_of_the_agent_and_the_person(
 # ── 7. a listing's completeness says what it masked ─────────────────────────────
 
 def test_a_listing_says_in_its_completeness_the_property_it_masked(client, served, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     r = client.post("/objects/list", params={"connection_id": CONN, "schema_name": "ecommerce"},
                     json={"entity": "Order", "columns": ["status", "total_amount"], "limit": 50})
     assert r.status_code == 200, r.text[:300]
@@ -225,9 +225,9 @@ def test_a_listing_says_in_its_completeness_the_property_it_masked(client, serve
 
 def test_the_dashboard_from_an_object_says_the_figure_it_left_out_and_why(client, served, monkeypatch):
     params = {"entity": "order", "connection_id": CONN}
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ben")                    # finance reads the amount
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ben")                    # finance reads the amount
     assert any(f["path"] == "total_amount" for f in client.get("/dashboards/from-object", params=params).json()["figures"])
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     out = client.get("/dashboards/from-object", params=params).json()
     assert not any(f["path"] == "total_amount" for f in out["figures"])
     left = [c for c in out["caveats"] if "Average total amount" in c]
@@ -237,7 +237,7 @@ def test_the_dashboard_from_an_object_says_the_figure_it_left_out_and_why(client
 # ── 9. a run keeps who asked ────────────────────────────────────────────────────
 
 def test_a_persons_run_now_keeps_who_asked_on_the_runs_start(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     body = {"conn_id": "conn-asked-by", "name": "Refund watch", "enabled": False,       # gated: nothing is dispatched
             "conditions": [{"kind": "schedule", "config": {"cron": "0 9 * * *"}}],
             "effects": [{"kind": "notify", "config": {"trigger_id": "t1"}}]}
@@ -267,7 +267,7 @@ class _Coder:
         raise _NoModel("no model is called in tests")
 
     def complete_streaming(self, *a, system="", user="", response_model=None, **k):
-        from aughor.routers.investigations import _ChatAnswer
+        from pramanyx.routers.investigations import _ChatAnswer
         if response_model is not _ChatAnswer:
             raise _NoModel("no model is called in tests")
         self.prompts.append(user)
@@ -278,9 +278,9 @@ class _Coder:
 
 def _quick(monkeypatch, db, coder: _Coder):  # noqa: F811
     """Run the quick body's whole pipeline on the samples database with ``coder`` as its model."""
-    from aughor.routers.investigations import _answer_core
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role="coder", *a, **k: coder)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", lambda *a, **k: _Borrowed(db))
+    from pramanyx.routers.investigations import _answer_core
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role="coder", *a, **k: coder)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", lambda *a, **k: _Borrowed(db))
     frames: list = []
     try:
         result = _answer_core("how many orders are there by status", CONN, [], skip_clarify=True,
@@ -292,7 +292,7 @@ def _quick(monkeypatch, db, coder: _Coder):  # noqa: F811
 
 def test_the_quick_body_hands_its_model_only_what_the_reader_may_read(
         sql_door, borrowed, as_reader, db, monkeypatch):  # noqa: F811
-    from aughor.tools.data_catalog import clear_cache
+    from pramanyx.tools.data_catalog import clear_cache
     clear_cache()
     unread = _Coder()
     _quick(monkeypatch, db, unread)                             # no request acts for anyone: the catalog as it was
@@ -314,7 +314,7 @@ def test_the_quick_body_hands_its_model_only_what_the_reader_may_read(
 
 def test_the_quick_body_says_the_policy_its_read_was_narrowed_or_refused_by_on_the_answer(
         sql_door, borrowed, as_reader, db, monkeypatch):  # noqa: F811
-    from aughor.answer.envelope import EnvelopeFolder
+    from pramanyx.answer.envelope import EnvelopeFolder
     as_reader("ana")
     told = {}
     for sql in ("SELECT COUNT(*) AS n FROM ecommerce.orders", "SELECT SUM(total_amount) AS t FROM ecommerce.orders"):

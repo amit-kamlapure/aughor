@@ -14,12 +14,12 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology.cardinality import (
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology.cardinality import (
     apply_cardinality_measurements, label_for, measure_side,
 )
-from aughor.ontology.models import OntologyGraph, OntologyRelationship
-from aughor.ontology.semantic_block import render_relationship_block
+from pramanyx.ontology.models import OntologyGraph, OntologyRelationship
+from pramanyx.ontology.semantic_block import render_relationship_block
 
 REPO = Path(__file__).resolve().parents[2]
 LUX_FIXTURE = REPO / "evals" / "ablation_luxexperience_ontology.json"
@@ -211,9 +211,9 @@ def test_the_prompt_block_renders_the_measured_label(tmp_path, lux_graph):
 def test_the_measure_door_relabels_the_cached_graph_without_a_rebuild(tmp_path, monkeypatch, lux_graph, client):
     """`POST /ontology/measure` measures the graph that is already cached and
     saves it back — the UI shows the corrected labels with no model call spent."""
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
-    import aughor.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology("914df862", "luxexperience", "fp", lux_graph.model_copy(deep=True))
     path = tmp_path / "wh.duckdb"
