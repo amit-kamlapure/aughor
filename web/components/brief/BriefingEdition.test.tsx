@@ -119,7 +119,8 @@ describe("BriefingEdition", () => {
     const odd = screen.getAllByTestId("edition-block")[6];
     expect(within(odd).getByRole("heading").textContent).toBe("Sales");        // untitled: its source's own label
     expect(screen.getByTestId("edition-withheld").textContent).toContain("Promotions lifted sales.");
-    const spec = JSON.parse(screen.getByTestId("vega").getAttribute("data-spec") ?? "{}");
+    // the bridge is a chart too since 2026-11-12: the map is the one whose spec looks countries up
+    const spec = screen.getAllByTestId("vega").map(v => JSON.parse(v.getAttribute("data-spec") ?? "{}")).find(sp => sp.transform);
     expect(spec.transform[0].lookup).toBe("properties.name");                   // countries looked up by name
     expect(spec.transform[0].from.data.values.map((v: { place: string }) => v.place)).toEqual(["Japan", "United States"]);
   });
@@ -138,9 +139,11 @@ describe("BriefingEdition", () => {
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     await screen.findByTestId("edition-lead");
     fireEvent.click(screen.getByRole("radio", { name: "Mytheresa" }));
-    const rows = within(screen.getAllByTestId("edition-pair-rows")[0]).getAllByRole("row");   // the comparison, not the map's list
-    expect(rows[0].getAttribute("data-faded")).toBeNull();                    // Mytheresa
-    expect(rows[1].getAttribute("data-faded")).toBe("true");                  // YOOX
+    // the comparison (not the map's list) is a chart since 2026-11-12: which rows are faded is in its spec
+    const drawn = JSON.parse(within(screen.getAllByTestId("edition-pair-rows")[0]).getByTestId("vega").getAttribute("data-spec") ?? "{}");
+    const rows = drawn.data.values as { row: string; faded: boolean }[];
+    expect([rows[0].row, rows[0].faded]).toEqual(["Mytheresa", false]);
+    expect([rows[1].row, rows[1].faded]).toEqual(["YOOX", true]);
   });
 
   const DRILL_COLUMNS = ["segment", "this_range", "usual", "change", "change_pct", "rows", "too_few"];
@@ -323,7 +326,7 @@ describe("BriefingEdition", () => {
     const unwritten = await screen.findByTestId("edition-unwritten");
     expect(unwritten.textContent).toContain("Measured here: Orders placed, Shipping cost.");
     expect(unwritten.textContent).toContain("Left out, because they read other tables: Session conversion rate.");
-    expect(unwritten.textContent).toContain("The 2 checks are measured");
+    expect(unwritten.textContent).toContain("Writing measures the 2 checks");
     expect(unwritten.textContent).toContain("on these tables only");
   });
 
@@ -386,7 +389,9 @@ describe("BriefingEdition", () => {
     expect(nav.requestTab).toHaveBeenCalledWith("chat", { run: "fb1b7a55" });
     fireEvent.click(within(cards[2]).getByRole("button", { name: "Open the decision" }));
     expect(nav.requestTab).toHaveBeenCalledWith("decisions", { id: "d1-full-id" });
-    expect(screen.getByText(/read 3 deep analyses, 4 findings, 2 decisions and 1 discussion/)).toBeTruthy();
+    // how it was written is behind the footer's info icon (2026-11-12: explanation is an icon, not a sentence)
+    expect(within(screen.getByTestId("edition-written")).getByTestId("info").getAttribute("title"))
+      .toContain("read 3 deep analyses, 4 findings, 2 decisions and 1 discussion");
   });
 
   it("reads the edition again while a deep analysis it started is still running", async () => {

@@ -18,7 +18,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { BriefingGuidePanel } from "@/components/brief/BriefingGuidePanel";
 import { BriefingOffNotice } from "@/components/brief/BriefingOff";
-import { BriefFront } from "@/components/brief/BriefFront";
+import { AccountTally, BusinessLine, Info, RecordLedgers, SectionHead, Storylines } from "@/components/brief/BriefAccount";
+import { BriefFrontView, useBriefFront } from "@/components/brief/BriefFront";
+import { DecideDialog } from "@/components/brief/DecideDialog";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { RangeControl, type RangeChoice } from "@/components/brief/BriefRange";
 import { EditionBlocks } from "@/components/brief/blocks/EditionBlocks";
@@ -29,9 +31,11 @@ import { Segmented } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/toast";
 import {
   draftBriefingGuide, drillBriefingEdition, getGroups, giveBriefingDecision, putMyPreference, readBriefingEdition,
-  readBriefingGuide, writeBriefingEdition,
+  readBriefingGuide, setMetricOwner, writeBriefingEdition,
   type AccessGroup, type BriefingEdition as Edition, type BriefingGuideResponse, type BriefingRange, type EditionBlock,
+  type EditionStoryline,
 } from "@/lib/api";
+import { forReader } from "@/lib/briefingAccount";
 import { countNoun, formatTimestamp, utcDayWords } from "@/lib/format";
 import { ORGANISATION, drillLabel, fromServerReader, partWords, readerOptions, toServerReader, writeLabel, type DrillStep } from "@/lib/briefingEdition";
 
@@ -61,7 +65,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [side, setSide] = useState<"sources" | "guide" | "">("sources");
+  // Closed until asked for (the user, 2026-11-12: "Keep the Source/Guide panel in Briefing collapsed by default"): the
+  // page takes the whole width, and a cited number, a block's "source" or the Sources & guide button opens it.
+  const [side, setSide] = useState<"sources" | "guide" | "">("");
   const [picked, setPicked] = useState<string>("");
   const [drilling, setDrilling] = useState("");
   /** The drills taken, per writing of an edition and per card, oldest first. They are this reader's view: the edition
@@ -74,6 +80,17 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const [asking, setAsking] = useState<{ writing: string; card: string; n: number } | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [schedule, setSchedule] = useState(false);
+  // The running account (2026-11-12): the storyline open, the stage picked on the business line, which of the line's
+  // two views is drawn, the storyline a decision is being taken on, and the one whose owner is being written.
+  const [openStory, setOpenStory] = useState<string | null>(null);
+  const [stage, setStage] = useState("");
+  const [lineView, setLineView] = useState<"stages" | "table">("stages");
+  const [deciding, setDeciding] = useState<EditionStoryline | null>(null);
+  const [owning, setOwning] = useState("");
+  /** The control blocks' choices, held here because one edition is drawn in several places (`EditionBlocks.shared`). */
+  const [controls, setControls] = useState<Record<string, string>>({});
+  // The front's reads — the measured table and the desk — made once and drawn where the page puts each part.
+  const front = useBriefFront(connectionId, range, schema, workspaceId, !!canvasId || !!edition?.off);
   // On the Briefing page (not a canvas) the shell draws the masthead's rows; the title says whether an edition is written.
   const shellRows = useInShell() && !canvasId;
   usePageChrome(shellRows ? {
@@ -182,6 +199,22 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
     finally { setGiving(""); }
   }, [connectionId, range, reader, schema, workspaceId, canvasId]);
 
+  // After an owner is set or a decision is booked: the same READ again, so the storylines say what the stores now hold.
+  const reread = useCallback(async () => {
+    const e = await readBriefingEdition(connectionId, range, toServerReader(reader ?? ORGANISATION), schema, workspaceId, canvasId);
+    if (e.built) setEdition(e);
+  }, [connectionId, range, reader, schema, workspaceId, canvasId]);
+
+  const onOwner = useCallback(async (story: EditionStoryline, owner: string) => {
+    if (!story.metric) return;
+    setOwning(story.id);
+    try {
+      await setMetricOwner(story.metric, connectionId, owner, schema);
+      await reread();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setOwning(""); }
+  }, [connectionId, schema, reread]);
+
   const onDecide = useCallback((action: string, block: EditionBlock) => {
     if (action === "not_now") { setHidden(h => new Set(h).add(block.id)); return; }
     const q = (block.text ?? "").replace(/\{([^{}|]+)\|[A-Za-z0-9_-]+\}/g, "$1");
@@ -202,6 +235,19 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const ownCanvas = edition?.canvas?.own ? edition.canvas : null;
   const blocks = useMemo(() => (edition?.blocks ?? []).filter(b => !hidden.has(b.id)), [edition, hidden]);
   const drilled = trails[writing] ?? NO_TRAILS;
+  // The team the page is read as ("" for the organisation): its own storylines come first and are marked.
+  const readerTeam = (reader ?? ORGANISATION) === ORGANISATION ? "" : readerName;
+  // An edition read from a server that says nothing of storylines is drawn as it always was: its blocks, in order.
+  const account = !!edition?.built && !!edition.storylines;
+  const stories = useMemo(() => forReader(edition?.storylines ?? [], readerTeam), [edition, readerTeam]);
+  const figures = useMemo(() => period?.measured ?? [], [period]);
+  const held = useMemo(() => new Set(stories.flatMap(s => s.blocks)), [stories]);
+  const shownStory = openStory ?? stories[0]?.id ?? "";
+  const pickStage = (id: string) => {
+    setStage(id);
+    const there = id ? stories.find(s => s.stage === id) : undefined;
+    if (there) setOpenStory(there.id);
+  };
   const sources = useMemo(() => ({ ...(edition?.sources ?? {}),
     ...Object.fromEntries(Object.values(drilled).flat().map(s => [s.source.id, s.source])) }), [edition, drilled]);
   const used = useMemo(() => {
@@ -223,6 +269,20 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
              words: partWords(written, drawn, drawn.source ? sources[drawn.source] : undefined) };
   }, [asking, writing, blocks, drilled, sources]);
 
+  const draw = (list: EditionBlock[], sideBySide = false) => !edition ? null : !sideBySide ? drawn(list) : (
+    <div data-testid="edition-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", columnGap: 16, alignItems: "stretch" }}>
+      {drawn(list)}
+    </div>
+  );
+  const drawn = (list: EditionBlock[]) => !edition ? null : (
+    <EditionBlocks blocks={list} sources={sources} figures={period?.measured ?? []} drillColumns={edition.drill_columns}
+      currency={edition.currency_code ?? ""} connectionId={connectionId} schema={schema}
+      onCite={onCite} onDrill={(card, b, c, sg) => void onDrill(card, b, c, sg)} onDrillBack={onDrillBack}
+      onDecide={onDecide} drilling={drilling} trails={drilled}
+      teams={teams} given={edition.given} onGive={(b, g) => void onGive(b, g)} giving={giving}
+      onAsk={period ? onAsk : undefined} asking={about?.id ?? ""}
+      shared={{ controls, setControl: (id, v) => setControls(c => ({ ...c, [id]: v })), all: blocks }} />
+  );
   const rangeControl = (
     <RangeControl value={range as RangeChoice} presets={[...PRESETS]}
       onChange={c => { if (c.preset !== "standing") setRange(c as BriefingRange); }} />
@@ -292,9 +352,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           {schedule && <BriefSchedule connId={connectionId} />}
           {edition?.built && period && (
             <p className="aug-fs-xs" data-testid="edition-dateline" style={{ color: "var(--t3)", margin: "0 0 4px" }}>
-              What changed in {period.covers}, written for <b style={{ color: "var(--t2)", fontWeight: 500 }}>{readerName}</b>, against{" "}
-              {period.compared_with}. Every underlined number opens where it came from.
-              {edition.guide?.state === "draft" ? " Written from a draft guide no person has published." : ""}
+              Written for <b style={{ color: "var(--t2)", fontWeight: 500 }}>{readerName}</b>, against {period.compared_with}.
+              {edition.guide?.state === "draft" ? " From a draft guide no person has published." : ""}{" "}
+              <Info>{`What changed in ${period.covers}. Every underlined number opens where it came from.`}</Info>
             </p>
           )}
           {edition?.built && period && edition.lag_now !== undefined && edition.lag_now !== period.lag_days && (
@@ -321,10 +381,10 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           {/* The front: the lead figure, then the evidence ranked — then the written edition, as it was. Not in a canvas: the
               desk and the measured table are the connection's, and a canvas's edition reads only its own tables. */}
           {!canvasId && !edition?.off && (
-            <BriefFront connectionId={connectionId} schema={schema} workspaceId={workspaceId} range={range}
-              leadMetric={guide?.guide?.checks?.[0]?.metric} />
+            <BriefFrontView reads={front} connectionId={connectionId} leadMetric={guide?.guide?.checks?.[0]?.metric}
+              parts={account ? ["alert"] : undefined} />
           )}
-          {!canvasId && !edition?.off && (
+          {!canvasId && !edition?.off && !account && (
             <h2 className="aug-fs-ui" data-testid="edition-heading" style={{ margin: "22px 0 4px", color: "var(--t1)", fontWeight: 600 }}>
               The edition
             </h2>
@@ -357,12 +417,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                 </>
               )}
               <p className="aug-fs-sm" style={{ margin: "0 0 12px" }}>
-                {ownCanvas ? `The ${ownCanvas.checks_inside.length}` : `The guide's ${guide?.guide?.checks.length ?? 0}`} checks are measured for{" "}
-                {period?.covers ?? "this range"}; then the model reads what the platform already knows — its deep analyses, the
-                explorer&apos;s findings, the decisions in the record and what people said in Slack, by email and in documents —
-                looks into what moved (at most 8 queries of its own
-                {ownCanvas ? ", on these tables only" : ""}), may start one deep analysis on the move nothing explains yet, and
-                composes the page for {readerName}. Every number it writes is checked against its source. It takes about a minute.
+                Writing measures {ownCanvas ? `the ${ownCanvas.checks_inside.length}` : `the guide's ${guide?.guide?.checks.length ?? 0}`} checks
+                for {period?.covers ?? "this range"} and composes the page for {readerName}{ownCanvas ? ", on these tables only" : ""}. About a minute.{" "}
+                <Info>{`The model reads what the platform already knows — its deep analyses, the explorer's findings, the decisions in the record and what people said in Slack, by email and in documents — looks into what moved (at most 8 queries of its own${ownCanvas ? ", on these tables only" : ""}), may start one deep analysis on the move nothing explains yet, and composes the page. Every number it writes is checked against its source.`}</Info>
               </p>
               <Button disabled={!!busy} onClick={() => void write()}>{busy === "write" ? "Looking into it and writing…" : writeLabel(periodWord, custom)}</Button>
             </section>
@@ -373,13 +430,45 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                   This edition was drawn by code from what was measured: {edition.drawn_by_code}.
                 </p>
               )}
-              <EditionBlocks blocks={blocks} sources={sources} figures={period?.measured ?? []} drillColumns={edition.drill_columns}
-                currency={edition.currency_code ?? ""} connectionId={connectionId} schema={schema}
-                onCite={onCite} onDrill={(card, b, c, s) => void onDrill(card, b, c, s)} onDrillBack={onDrillBack}
-                onDecide={onDecide} drilling={drilling} trails={drilled}
-                teams={teams} given={edition.given} onGive={(b, g) => void onGive(b, g)} giving={giving}
-                onAsk={period ? onAsk : undefined} asking={about?.id ?? ""} />
-              {(!!edition.withheld?.length || !!edition.left_out?.length || notRead.length > 0) && (
+{!account ? draw(blocks) : (
+                <>
+                  {/* the opening: the edition's own lead, then what the storylines below amount to */}
+                  {draw(blocks.filter(b => b.type === "lead"))}
+                  <AccountTally stories={stories} unread={edition.account_unread} />
+
+                  <SectionHead title="The business"
+                    info={lineView === "stages"
+                      ? "Every measured figure, on the part of the business it reads on. The band is its usual range and the mark is this range: filled when the platform calls the move, a ring when it reads outside but is not called or is still provisional. Green is the better way, amber the worse. Pick a part to open its storyline."
+                      : "Every approved metric for the range, the largest change first."}
+                    right={!canvasId && (
+                      <Segmented label="The business as" value={lineView} onChange={v => setLineView(v as "stages" | "table")}
+                        options={[{ value: "stages", label: "By part" }, { value: "table", label: "Measured table" }]} />
+                    )} />
+                  {lineView === "stages" || canvasId
+                    ? <BusinessLine stages={edition.stages ?? []} figures={figures} chosen={stage} onChoose={pickStage} />
+                    : <BriefFrontView reads={front} connectionId={connectionId} leadMetric={guide?.guide?.checks?.[0]?.metric}
+                        parts={["short", "lead", "ranked"]} />}
+
+                  <SectionHead title="Storylines"
+                    info="One per part of the business where a figure left its usual range, and one per decision of the Record this edition cites. Each says who owns it, what it is worth, the decision on it and when it is checked — or which is missing."
+                    right={stage ? <Button size="xs" variant="outline" onClick={() => setStage("")}>Every part</Button> : undefined} />
+                  <Storylines stories={stories} figures={figures} period={periodWord} readerName={readerTeam} teams={teams}
+                    open={shownStory} onOpen={setOpenStory} stage={stage} onCite={onCite} busy={owning}
+                    renderBlocks={ids => draw(blocks.filter(b => ids.includes(b.id)), true)}
+                    onOwner={(st, o) => void onOwner(st, o)} onDecide={setDeciding} />
+
+                  {blocks.some(b => b.type !== "lead" && !held.has(b.id)) && (
+                    <>
+                      <SectionHead title="Also in this edition" info="What the edition wrote that belongs to no storyline." />
+                      {draw(blocks.filter(b => b.type !== "lead" && !held.has(b.id)), true)}
+                    </>
+                  )}
+
+                  <SectionHead title="The record" />
+                  <RecordLedgers figures={figures} edition={edition} desk={canvasId ? undefined : front.desk} connectionId={connectionId} notRead={notRead} />
+                </>
+              )}
+              {!account && (!!edition.withheld?.length || !!edition.left_out?.length || notRead.length > 0) && (
                 <section data-testid="edition-withheld" className="aug-fs-xs" style={{ color: "var(--t3)", borderTop: RULE, paddingTop: 10, marginTop: 18 }}>
                   {edition.withheld?.map((w, i) => (
                     <div key={`w-${i}`}>Held back{w.sentence ? `: “${w.sentence}”` : " a block"} — {w.why}</div>
@@ -398,16 +487,18 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                   title="Measure again, look again and write again">
                   {busy === "write" ? "Looking into it and writing…" : "Write it again"}
                 </Button>
-                <span>
-                  written {when(edition.generated_at)} · {edition.model_steps ?? 0} model steps · {edition.queries ?? 0} queries
-                  of its own{edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")}, ${countNoun(edition.known.decisions, "decision")} and ${countNoun(edition.known.discussions ?? 0, "discussion")}` : ""}
-                  {edition.known?.started ? " · started a deep analysis" : ""} · guide v{edition.guide?.version ?? "?"}
+                <span data-testid="edition-written">
+                  written {when(edition.generated_at)}{" "}
+                  <Info>{`${edition.model_steps ?? 0} model steps · ${edition.queries ?? 0} queries of its own${edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")}, ${countNoun(edition.known.decisions, "decision")} and ${countNoun(edition.known.discussions ?? 0, "discussion")}` : ""}${edition.known?.started ? " · started a deep analysis" : ""} · guide v${edition.guide?.version ?? "?"}`}</Info>
                 </span>
               </div>
             </>
           )}
         </div>
       </article>
+      <DecideDialog story={deciding} figure={figures.find(f => f.id === deciding?.anchor)} connectionId={connectionId} schema={schema}
+        start={period?.start} end={period?.end} readerName={readerTeam} onClose={() => setDeciding(null)}
+        onDone={() => { setDeciding(null); toast.success("Booked in the Record"); void reread(); }} />
       {side && (
         <aside aria-label="Sources and guide" style={{ borderLeft: RULE, background: "var(--bg-1)", height: "100%", minHeight: 0,
                                                        display: "flex", flexDirection: "column" }}>

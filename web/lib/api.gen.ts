@@ -10944,6 +10944,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/{name}/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Metric Owner
+         * @description Say who owns a metric — a team or a person — or, with no name, that nobody does. The Briefing's storylines
+         *     stand on a metric and take its owner (`briefing/storylines.py`), so "Take it" and "Give it to a team" there
+         *     are this door. Its statement, status, version, unit and dates are untouched: a full edit re-sends the whole
+         *     definition, and re-sent date fields read as a person's confirmation. An owner is not something a stored Briefing
+         *     reads (`_BRIEFING_BLIND`), so no edition is restated.
+         */
+        put: operations["set_metric_owner_metrics__name__owner_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/{name}/promote": {
         parameters: {
             query?: never;
@@ -25371,6 +25395,17 @@ export interface components {
             grain?: string | null;
             /** Unit */
             unit?: string | null;
+        };
+        /**
+         * _MetricOwner
+         * @description Who answers for a metric, and nothing else.
+         */
+        _MetricOwner: {
+            /**
+             * Owner
+             * @default
+             */
+            owner: string;
         };
         /**
          * _MetricTarget
@@ -44757,6 +44792,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_metric_owner_metrics__name__owner_put: {
+        parameters: {
+            query: {
+                connection_id: string;
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_MetricOwner"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
