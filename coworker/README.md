@@ -35,6 +35,11 @@ turned back on from the interface.
 
 ## What is on
 
+- **Pramanyx's model door** (`pramanyx/routers/model_door.py`). The coworker has no model key of its own: it asks
+  Pramanyx, which asks the organisation's provider, checks the usage caps first and records the call. Its model
+  picker lists the organisation's three roles — narrator, coder, fast — and which model each is, is chosen in
+  Pramanyx. The door is an organisation's setting, off by default; closed, the coworker shows the door's own
+  sentence saying so and where an admin opens it.
 - **Pramanyx's MCP server** (`python -m pramanyx.mcp`), a thin client of the running API. The agent reaches
   Pramanyx through it and through nothing else.
 - **The answer card.** It takes over the display of the `ask` tool, and of each custom agent's `ask_<agent>` tool
@@ -63,9 +68,8 @@ turned back on from the interface.
 ./start.sh
 ```
 
-Needs Node 24.9+, pnpm, and the Pramanyx API running. Open the address it prints, then choose a model under
-Settings → Models. The model is deliberately not set by this folder: Settings refuses to save a provider when a
-later layer owns that row.
+Needs Node 24.9+, pnpm, and the Pramanyx API running. Open the address it prints. No model key is asked for: an
+admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ Organization, once.
 
 ## What is not done
 
@@ -93,9 +97,11 @@ later layer owns that row.
   rename, archive and delete); pinned items.
 - **A schedule made here spends Pramanyx model calls unattended**, and Pramanyx's own setting for scheduled model
   work does not see it: the run arrives as an ordinary question over MCP.
-- **The coworker does not yet take its model from the app.** It has its own model key, which Pramanyx neither
-  meters nor caps. Pramanyx's model layer has the seams for a door (`resolve_binding`, `endpoint_for`, the
-  outbound door's caps); it is not built.
+- The door relays to a provider on the chat-completions wire. An organisation whose roles are bound to one that
+  is not (Anthropic's own API today) is told so by name, and the coworker cannot answer until a role is bound to
+  one that is.
+- The words of a coworker conversation are not kept in Pramanyx's model-call record; the call, its model, its
+  tokens and who asked are.
 - On an install where Pramanyx does not require identity, a question from here is the local operator's, the same
   as in the app. Where identity is required, every person here is the one principal the MCP server was started
   as.

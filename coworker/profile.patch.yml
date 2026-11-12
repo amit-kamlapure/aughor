@@ -1,8 +1,9 @@
 # The Pramanyx coworker profile: an overlay on the shell's stock `web` profile.
 #
 # Passed on the command line (see start.sh), so it is applied LAST and outranks the Settings page: a row turned off
-# here cannot be turned back on from the interface. That is the point for the tool rows. It is also why the model is
-# NOT set here — Settings refuses to save a provider when a later layer owns that row.
+# here cannot be turned back on from the interface. That is the point for the tool rows, and for the model: the
+# coworker's model is Pramanyx's to choose, so this layer owns that row and the shell's Settings ▸ Models says it is
+# set elsewhere.
 
 # ── off: the agent's own reach into the host and the open web. A business answer comes from Pramanyx's guarded path,
 #    never from a shell, a file read or a search the agent ran itself.
@@ -219,6 +220,29 @@
 # ── off: the shell's own name and mark. Ours take their places (plugins/brand).
 - id: ui-brand-official
   disabled: true
+
+# ── the model: asked through Pramanyx's model door (pramanyx/routers/model_door.py), never with a key of the
+#    shell's own. The three "models" are the organisation's three roles; which model each one is, is chosen in
+#    Pramanyx, and the door refuses a model's own name. The door is an organisation's setting, off by default: closed,
+#    the coworker shows the door's own sentence saying so and where an admin opens it. The key below is a
+#    placeholder the shell's provider plugin insists on; the door takes none.
+- id: llm-pi-ai
+  config:
+    providers:
+      pramanyx:
+        apiKeyEnv: PRAMANYX_DOOR_KEY
+        api: openai-completions
+        baseURL: !!js (process.env.PRAMANYX_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '') + '/llm/door/v1'
+        headers:
+          x-pramanyx-door-caller: coworker
+        models:
+          - id: narrator
+          - id: coder
+          - id: fast
+- id: agent-default-model
+  config:
+    provider: pramanyx
+    model: narrator
 
 # ── on: Pramanyx, over the MCP server it ships (a thin client of the running API), and the card that draws its
 #    answers.

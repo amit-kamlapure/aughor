@@ -4,7 +4,8 @@
 #   ./start.sh                 serve on http://127.0.0.1:3090 and print the address to open
 #
 # Needs: Node 24.9+, pnpm (the shell installs plugins with it), and the Pramanyx API already running.
-# The first run asks nothing here; the model and its key are chosen in the page, under Settings → Models.
+# No model key is asked for: the coworker asks its model through Pramanyx, once an admin has allowed that in
+# Settings ▸ Organization ▸ What Pramanyx may do.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
@@ -16,6 +17,9 @@ export DSH_HOME="${DSH_HOME:-$HOME/.pramanyx/coworker}"
 # Nothing is reported to the shell's maker (profile.patch.yml turns the reporters off; this is the second lock).
 export DSH_TELEMETRY_MODE=DISABLED
 export PRAMANYX_API_URL="${PRAMANYX_API_URL:-http://127.0.0.1:8000}"
+# The shell's provider plugin will not send a request without a key. The model door takes none, so this is a
+# placeholder and not a secret.
+export PRAMANYX_DOOR_KEY="${PRAMANYX_DOOR_KEY:-no-key-the-door-takes-none}"
 if [ -z "${PRAMANYX_PYTHON:-}" ] && [ -x "$repo/.venv/bin/python" ]; then PRAMANYX_PYTHON="$repo/.venv/bin/python"; fi
 export PRAMANYX_PYTHON="${PRAMANYX_PYTHON:-python}"
 
