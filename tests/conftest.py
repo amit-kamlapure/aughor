@@ -507,6 +507,21 @@ def pytest_addoption(parser):
     )
 
 
+def _keep_this_shard(config, items) -> None:
+    """CI's parallel jobs (`PRAMANYX_TEST_SHARD=k/n`, tests/_shard.py): keep this job's files."""
+    from tests._shard import ENV, files_for, parse
+    shard = parse(os.environ.get(ENV))
+    if shard is None:
+        return
+    files_of = {item: item.nodeid.split("::", 1)[0] for item in items}
+    keep = files_for(list(files_of.values()), *shard)
+    kept = [i for i in items if files_of[i] in keep]
+    dropped = [i for i in items if files_of[i] not in keep]
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+    items[:] = kept
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-skip @pytest.mark.e2e tests unless --run-e2e is passed.
 
@@ -516,6 +531,7 @@ def pytest_collection_modifyitems(config, items):
     (0% CPU). Making e2e opt-in keeps the default suite fast and renders these as
     SKIPPED (visible), never a silent hang.
     """
+    _keep_this_shard(config, items)
     if config.getoption("--run-e2e"):
         return
     skip_e2e = pytest.mark.skip(reason="needs --run-e2e (live LLM, ~100s/test)")

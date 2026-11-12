@@ -45,7 +45,7 @@ permissions:
 
 jobs:
   backend:
-    name: Backend · pytest (py${{ matrix.python }})
+    name: Backend · pytest (py${{ matrix.python }} · ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -60,6 +60,10 @@ jobs:
           ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
               && fromJSON('["3.11","3.12","3.13"]')
               || fromJSON('["3.11"]') }}
+        # The suite runs as four parallel jobs, a quarter of the test FILES each (tests/_shard.py):
+        # one process per job and the files in the same order, as before — it was ~24 min in one job.
+        # Every file runs in exactly one shard (tests/unit/test_test_shards.py).
+        shard: [1, 2, 3, 4]
     # Track B1 (docs/TENX_PROGRAM_2026-11-05.md): a real Postgres, so the shared-state tests RUN.
     # Until 2026-11-06 every one of them skipped here ("no live Postgres to prove against") — 23 of
     # 36, including claim contention, peer-boot recovery, schema isolation and migrations-run-once —
@@ -98,6 +102,8 @@ jobs:
         # Exclude the live-LLM suites (e2e ~100s/test, eval = accuracy ratchet).
         # Both need a real model + network and would hang/flake in CI.
         # -rs lists every skip with its reason, so a Postgres test that stopped running is said in the log.
+        env:
+          PRAMANYX_TEST_SHARD: ${{ matrix.shard }}/4
         run: uv run --python ${{ matrix.python }} pytest -q -rs -m "not e2e and not eval"
 
   frontend:
