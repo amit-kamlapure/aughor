@@ -1,15 +1,17 @@
 name: Pages
 
 # Publishes the project's site (`site/`) to GitHub Pages: today one page, "How Pramanyx works".
-# The brand files and the README's still of the drawing are copied in from where they already
-# live, so the site keeps no second copy of either.
+# The brand files, the README's images and the tour are copied in from where they already live,
+# so the site keeps no second copy of any of them.
 on:
   push:
     branches: [main]
     paths:
       - 'site/**'
       - 'docs/assets/brand/**'
-      - 'docs/readme/how-it-works-*.png'
+      - 'docs/readme/how-it-works.png'
+      - 'docs/readme/briefing.png'
+      - 'docs/readme/pramanyx-tour.mp4'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -33,9 +35,9 @@ jobs:
         run: |
           mkdir -p _site/assets/brand
           cp -R site/. _site/
-          cp docs/assets/brand/pramanyx-lockup-black.png docs/assets/brand/pramanyx-lockup-white.png \
-             docs/assets/brand/pramanyx-icon-black.png _site/assets/brand/
-          cp docs/readme/how-it-works-light.png _site/assets/how-it-works.png
+          cp docs/assets/brand/pramanyx-lockup-white.png docs/assets/brand/pramanyx-icon-white.png _site/assets/brand/
+          cp docs/readme/how-it-works.png _site/assets/how-it-works.png
+          cp docs/readme/briefing.png docs/readme/pramanyx-tour.mp4 _site/assets/
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
         with:

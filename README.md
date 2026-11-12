@@ -58,15 +58,10 @@ Pramanyx connects to your warehouse and **keeps learning from it**. It explores 
 
 ### How it works
 
-<sub>The route from a connected source to a decision whose loop closes · <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html"><strong>▶ step through it</strong></a>, and click any box for what it does</sub>
+<sub>From a connected source to a decision whose loop closes · <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html"><strong>▶ see how it works</strong></a>, then look under the hood, step by step</sub>
 
 <p align="center">
-  <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.png" />
-      <img src="docs/readme/how-it-works-light.png" width="900" alt="How Pramanyx works: Connect, Learn, Define, Answer and Decide, from connectors and the catalog through the Explorer, the business profile and the Business Atlas, metrics gated and approved into the semantic layer, the Briefing, quick answers and deep analyses behind trust guards, to the Inbox, decisions, outcomes and the North Star, with outcomes written back" />
-    </picture>
-  </a>
+  <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html"><img src="docs/readme/how-it-works.png" width="900" alt="The Business Atlas on LuxExperience (synthetic data): zones for operations, customers, catalog, marketing, finance and commerce, with the order-to-shipment and return-to-refund journeys and each stage counted" /></a>
 </p>
 
 ## Quick start
