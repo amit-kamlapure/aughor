@@ -18,8 +18,17 @@ from __future__ import annotations
 import pytest
 
 import pramanyx.telemetry as tel
-from pramanyx.db import registry
+from pramanyx.db import pool, registry
 from pramanyx.db.connection import open_connection_for
+
+
+def _fresh_ops_connection():
+    """The ops connection reads a SNAPSHOT taken when it opens, and `open_connection_for`
+    reuses a pooled one. Any request that walks the registry (`GET /catalog/tree` does) opens
+    and pools it — so a test that ran earlier leaves a connection whose snapshot predates this
+    test's spans. Drop it, so this test reads what it just recorded."""
+    pool.evict_conn(registry.PRAMANYX_OPS_ID)
+    return open_connection_for(registry.PRAMANYX_OPS_ID)
 
 
 def _emit_a_run():
@@ -41,7 +50,7 @@ def test_listed_and_queryable_when_flag_on(monkeypatch, duckdb_extension):
     assert registry.PRAMANYX_OPS_ID in listed
     assert listed[registry.PRAMANYX_OPS_ID]["conn_type"] == "pramanyx_ops"
 
-    conn = open_connection_for(registry.PRAMANYX_OPS_ID)
+    conn = _fresh_ops_connection()
     schema = conn.get_schema()
     assert "pramanyx_ops.task_history" in schema
     assert "pramanyx_ops.jobs" in schema
@@ -58,7 +67,7 @@ def test_recovered_sql_is_visible_in_ops_connection(monkeypatch):
     with tel.span("ops-sql", "plan_queries", None):
         with tel.mlflow_tool_span("sql.execute", {"sql": "SELECT 42 AS answer"}):
             pass
-    conn = open_connection_for(registry.PRAMANYX_OPS_ID)
+    conn = _fresh_ops_connection()
     res = conn.execute("q", "SELECT input FROM pramanyx_ops.task_history "
                             "WHERE trace_id = 'ops-sql' AND task = 'sql.execute'")
     assert res.error is None
@@ -74,6 +83,6 @@ def test_recovered_sql_is_visible_in_ops_connection(monkeypatch):
 ])
 def test_mutations_are_blocked(monkeypatch, stmt):
     _emit_a_run()
-    conn = open_connection_for(registry.PRAMANYX_OPS_ID)
+    conn = _fresh_ops_connection()
     res = conn.execute("q", stmt)
     assert res.error, f"expected {stmt!r} to be blocked"
