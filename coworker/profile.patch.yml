@@ -1,0 +1,218 @@
+# The Pramanyx coworker profile: an overlay on the shell's stock `web` profile.
+#
+# Passed on the command line (see start.sh), so it is applied LAST and outranks the Settings page: a row turned off
+# here cannot be turned back on from the interface. That is the point for the tool rows. It is also why the model is
+# NOT set here — Settings refuses to save a provider when a later layer owns that row.
+
+# ── off: the agent's own reach into the host and the open web. A business answer comes from Pramanyx's guarded path,
+#    never from a shell, a file read or a search the agent ran itself.
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: tool-plugin-manager
+  disabled: true
+
+# ── the agent preset. THIS is where an agent's tools are mounted; the rows above are the tools' own services, and
+#    turning those off alone left every tool in the agent's hands (checked from inside a session, 2026-11-13: it
+#    still listed bash, read, write, edit, web_search, web_fetch and plugin_manager). A patch can only replace a
+#    preset's config whole, so what follows is the shell's `standard` preset as 0.2.2-rc.1 ships it, minus
+#    tool-bash, tool-pwsh, tool-fs, tool-fs-search, tool-jobs, tool-web, tool-plugin-manager, tool-plugin-market,
+#    workflow-ptc and tool-workflow, with the persona rewritten. RE-DERIVE IT when the shell is upgraded: a tool
+#    the shell adds to its own preset later is not in this copy, and one it renames is not removed by it.
+#    Subagents run under `standard` too, so this is also what a spawned agent gets.
+- id: preset-standard
+  name: '@deepseek-ai/dsh-agent-preset'
+  config:
+    id: standard
+    order: 1
+    plugins:
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+        config:
+          prefix: >-
+            You are the Pramanyx coworker, powered by the {{model}} model. You answer questions about the
+            business by asking Pramanyx through its tools, and you never work out a business figure yourself.
+            When Pramanyx answers, its chart, its table and its SQL are shown to the reader below your reply:
+            do not repeat the table and do not restate the SQL. Say what the answer means in two or three
+            sentences, name anything Pramanyx flagged or did not check, and offer the next question worth
+            asking.
+      - id: agent-instructions
+        name: '@deepseek-ai/dsh-agent-instructions'
+        config:
+          maxBytes: 65536
+      - id: time-context
+        name: '@deepseek-ai/dsh-time-context'
+      - id: tool-schedule
+        name: '@deepseek-ai/dsh-tool-schedule'
+      - id: skill-filesystem
+        name: '@deepseek-ai/dsh-skill-filesystem'
+      - id: tool-skill
+        name: '@deepseek-ai/dsh-tool-skill'
+      - id: command-goal
+        name: '@deepseek-ai/dsh-command-goal'
+      - id: tool-goal
+        name: '@deepseek-ai/dsh-tool-goal'
+      - id: planning
+        name: cordis:group
+        group: true
+        isolate:
+          planMode: true
+        config:
+          - id: plan-mode
+            name: '@deepseek-ai/dsh-plan-mode'
+            config:
+              section: >
+                You are in plan mode. Stay in plan mode until the user approves
+                your plan through exit_plan_mode or switches the session mode.
+                Imperative language to implement changes means plan the
+                implementation, not execute it. A user's conversational
+                agreement — including an answer confirming something you asked —
+                approves nothing and does not end plan mode; fold the confirmed
+                decision into the plan and submit it through exit_plan_mode.
+
+
+                Explore first. Use non-mutating reads, searches, static
+                analysis, and checks to ground the plan in the actual
+                repository. Do not edit or write files, change configuration,
+                run formatters or code generation that rewrites tracked files,
+                commit, or otherwise carry out the plan. Prefer existing
+                functions and patterns over new machinery.
+
+
+                The tool catalog stays the same across modes for request-cache
+                stability. These plan-mode rules override any later tool
+                description or guidance that suggests using mutation tools;
+                those tools remain listed to keep the tool catalog unchanged. Do
+                not use todo_write to track this planning phase: it tracks
+                implementation after an approved plan, while the plan itself
+                belongs in exit_plan_mode.
+
+
+                Resolve discoverable facts by inspection. Use ask_user_question
+                only for user-owned choices or material ambiguity that
+                inspection cannot answer. Do not ask the user where code lives
+                or how current behavior works when you can find out.
+
+
+                Make the plan decision-complete: state the goal and success
+                criteria; group implementation changes by subsystem; identify
+                public API, schema, and data-flow changes; cover edge cases,
+                failure modes, tests, acceptance criteria, and explicit
+                assumptions. Keep it concise enough to review but detailed
+                enough that another engineer can implement it without making
+                design decisions.
+
+
+                When ready, call exit_plan_mode with the complete plan markdown,
+                starting with a # title. Make exit_plan_mode the only and final
+                tool call in that assistant response: it presents the plan for
+                approval, and implementation begins only in a later step after
+                approval. Do not paste the final plan as a plain reply or ask
+                "should I proceed?" through prose or ask_user_question. If
+                review rejects it, incorporate the feedback and present again.
+                If the review channel is unavailable or aborted, stay in plan
+                mode and ask the user to switch modes manually; do not proceed
+                with implementation.
+      - id: compaction
+        name: cordis:group
+        group: true
+        isolate:
+          compaction: true
+          toolResultPruner: true
+        config:
+          - id: compaction-basic
+            name: '@deepseek-ai/dsh-compaction-basic'
+          - id: command-compact
+            name: '@deepseek-ai/dsh-command-compact'
+          - id: tool-result-pruner
+            name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+            config:
+              thresholdChars: 8192
+              headChars: 4096
+              tailChars: 1024
+      - id: delegation
+        name: cordis:group
+        group: true
+        isolate:
+          workflowEngine: true
+        config:
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
+              modelSelection: true
+              modelDiscovery: true
+          - id: tool-subagent-fork
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: fork
+              toolName: subagent_fork
+      - id: tool-ask-user
+        name: '@deepseek-ai/dsh-tool-ask-user'
+      - id: tool-todo
+        name: '@deepseek-ai/dsh-tool-todo'
+        config:
+          allowParallelInProgress: true
+      - id: present
+        name: '@deepseek-ai/dsh-tool-present'
+
+# ── off: the shell's other presets. Each mounts the same host-reaching tools, and the page would offer them.
+- id: preset-ptc
+  disabled: true
+- id: preset-minimal
+  disabled: true
+- id: preset-cordis
+  disabled: true
+
+# ── off: the person's terminal and embedded browser, and installing plugins from the page. Each is a way back to
+#    the reach turned off above.
+- id: ui-sidebar-terminal
+  disabled: true
+- id: ui-settings-shell
+  disabled: true
+- id: ui-sidebar-browser
+  disabled: true
+- id: ui-plugin-manager
+  disabled: true
+
+# ── off: everything that reports to the shell's maker, and the feedback buttons that would feed it.
+- id: session-telemetry-otel
+  disabled: true
+- id: product-analytics
+  disabled: true
+- id: desktop-product-telemetry
+  disabled: true
+- id: ui-message-feedback
+  disabled: true
+- id: command-feedback
+  disabled: true
+
+# ── on: Pramanyx, over the MCP server it ships (a thin client of the running API), and the card that draws its
+#    answers.
+- insert:
+    - id: pramanyx-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pramanyx
+        transport: stdio
+        command: !!js process.env.PRAMANYX_PYTHON || 'python'
+        args: ['-m', 'pramanyx.mcp']
+        cwd: !!js process.cwd()
+        env:
+          PRAMANYX_API_URL: !!js process.env.PRAMANYX_API_URL || 'http://127.0.0.1:8000'
+    - id: pramanyx-answer-card
+      # A package the profile has installed (start.sh links it): the shell ships a plugin's browser half only for
+      # an installed package, and a bare directory path does not import.
+      name: pramanyx-coworker-answer-card
