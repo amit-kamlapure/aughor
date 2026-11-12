@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How Pramanyx Works</title>
+<meta name="description" content="Pramanyx's route from a connected source to an answer, a Briefing and a decision whose loop closes.">
+<meta property="og:title" content="How Pramanyx Works">
+<meta property="og:description" content="The route from a connected source to an answer, a Briefing and a decision whose loop closes.">
+<meta property="og:image" content="https://amit-kamlapure.github.io/pramanyx/assets/how-it-works.png">
+<link rel="icon" href="assets/brand/pramanyx-icon-black.png">
+<style>
+/* Layout: a step bar and a step card above one drawn route (five lanes, a return loop, two standing panels). */
+:root{
+  --bg:#f4f5f7; --surface:#ffffff; --lane:#eef0f3; --ink:#0f172a; --muted:#5a6475; --faint:#8a93a3; --line:#dde1e7; --wire:#9aa3b2;
+  --agent:#1f5fe0; --agent-bg:#e9f0fe; --person:#b25a07; --person-bg:#fdf1e1; --code:#0b7465; --code-bg:#e3f4ef;
+  --hot:#1f5fe0;
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c0f14; --surface:#161a21; --lane:#11151b; --ink:#e9ecf1; --muted:#a2aab8; --faint:#6d7685; --line:#272d37; --wire:#566070;
+  --agent:#7aa7ff; --agent-bg:#17223b; --person:#f2b25f; --person-bg:#2b2113; --code:#56ceb9; --code-bg:#0f2722; --hot:#7aa7ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c0f14; --surface:#161a21; --lane:#11151b; --ink:#e9ecf1; --muted:#a2aab8; --faint:#6d7685; --line:#272d37; --wire:#566070;
+  --agent:#7aa7ff; --agent-bg:#17223b; --person:#f2b25f; --person-bg:#2b2113; --code:#56ceb9; --code-bg:#0f2722; --hot:#7aa7ff; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:22px 36px}
+.wrap{max-width:1480px;margin:0 auto}
+.logo-dark{display:none}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .logo-light{display:none}:root:not([data-theme="light"]) .logo-dark{display:block}}
+:root[data-theme="dark"] .logo-light{display:none}:root[data-theme="dark"] .logo-dark{display:block}
+
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 32px;margin-bottom:16px}
+header img{height:30px;width:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:18px;height:18px;border-radius:5px;display:inline-block}
+
+/* step bar */
+.bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 6px;padding:10px;border:1px solid var(--line);background:var(--surface);border-radius:10px}
+.bar button{font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);background:transparent;border:1px solid transparent;border-radius:7px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.bar button .k{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.bar button:hover{color:var(--ink);border-color:var(--line)}
+.bar button[aria-current="true"]{color:var(--ink);background:var(--agent-bg);border-color:color-mix(in srgb,var(--hot) 35%,transparent)}
+.bar button[aria-current="true"] .k{color:var(--hot)}
+.bar .sep{color:var(--faint)}
+.bar button:focus-visible,.ctl button:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+
+/* step card */
+.stage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:end;margin:18px 2px 10px}
+.eyebrow{font-size:12.5px;color:var(--faint);font-weight:500}
+.stage h1{margin:2px 0 6px;font-size:clamp(22px,2.4vw,30px);line-height:1.15;letter-spacing:-.02em;font-weight:800;text-wrap:balance}
+.stage p{margin:0;color:var(--muted);font-size:15px;max-width:82ch}
+.stage p b{color:var(--ink);font-weight:600}
+.ctl{display:flex;gap:8px}
+.ctl button{font:inherit;font-weight:600;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;box-shadow:0 1px 0 var(--line)}
+.ctl button.primary{background:var(--hot);color:var(--surface);border-color:var(--hot)}
+.ctl button:disabled{opacity:.4;cursor:default}
+
+/* diagram */
+.scroller{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:
+  radial-gradient(circle,var(--line) 1px,transparent 1.2px) 0 0/18px 18px,var(--bg)}
+svg.map{display:block;width:100%;min-width:1040px;height:auto}
+.map text{font-family:var(--sans)}
+.lane rect{fill:var(--lane);stroke:var(--line)}
+.lane .lt{font-size:13px;font-weight:700;fill:var(--ink)}
+.lane .ln{font-family:var(--mono);font-size:11px;font-weight:600;fill:var(--faint)}
+.grp{font-size:11.5px;font-weight:700;letter-spacing:.09em;fill:var(--muted)}
+.grpl{stroke:var(--wire);stroke-width:1.2}
+.node{cursor:pointer;transition:opacity .25s}
+.node .box{fill:var(--surface);stroke:var(--line);stroke-width:1.2;transition:stroke .2s}
+.node:hover .box,.node:focus-visible .box{stroke:var(--hot)}
+.node:focus{outline:none}
+.node .t{font-size:14.5px;font-weight:700;fill:var(--ink)}
+.node .s{font-size:12px;fill:var(--muted)}
+.node .tile{stroke:none}
+.k-agent .tile{fill:var(--agent-bg)} .k-agent .ic{stroke:var(--agent)}
+.k-code .tile{fill:var(--code-bg)} .k-code .ic{stroke:var(--code)}
+.k-person .tile{fill:var(--person-bg)} .k-person .ic{stroke:var(--person)}
+.ic{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.node.on .box{stroke:var(--hot);stroke-width:1.8}
+.node.on .ring{opacity:1}
+.ring{fill:none;stroke:var(--hot);stroke-width:5;opacity:0;stroke-opacity:.16;transition:opacity .25s}
+.edge{fill:none;stroke:var(--wire);stroke-width:1.5;transition:opacity .25s,stroke .25s}
+.edge.dot{stroke-dasharray:3 4}
+.edge.on{stroke:var(--hot);stroke-width:2}
+.dim{opacity:.22}
+.panel rect.pb{fill:var(--surface);stroke:var(--line);stroke-dasharray:4 4;fill-opacity:.55}
+.pt{font-size:11.5px;font-weight:700;letter-spacing:.09em;fill:var(--muted);paint-order:stroke;stroke:color-mix(in srgb,var(--surface) 55%,var(--bg));stroke-width:7px;stroke-linejoin:round}
+.loopl{font-size:13px;font-weight:700;fill:var(--ink)}
+.loops{font-size:11.5px;fill:var(--muted)}
+.loopbg{fill:var(--bg)}
+.hint{font-size:12.5px;color:var(--faint);margin:8px 4px 0}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 28px;margin-top:20px;font-size:13px;color:var(--muted)}
+.notes h2{margin:0 0 3px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink)}
+.notes p{margin:0}
+@media (max-width:700px){.stage{grid-template-columns:1fr}.ctl{justify-content:flex-start}}
+@media (prefers-reduced-motion:reduce){.node,.edge,.ring{transition:none}}
+/* still mode: only the drawing, for the README's images */
+.still header,.still .bar,.still .stage,.still .hint,.still .notes,.still footer{display:none}
+.still body,.still{padding:0}
+.still .scroller{border:0;border-radius:0}
+footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);display:flex;flex-wrap:wrap;gap:6px 18px}
+footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div><img class="logo-light" src="assets/brand/pramanyx-lockup-black.png" height="30" alt="Pramanyx"><img class="logo-dark" src="assets/brand/pramanyx-lockup-white.png" height="30" alt="Pramanyx"></div>
+    <div class="legend" aria-label="What each colour means">
+      <span><i class="sw" style="background:var(--agent-bg);box-shadow:inset 0 0 0 1.5px var(--agent)"></i>An agent works (a model)</span>
+      <span><i class="sw" style="background:var(--code-bg);box-shadow:inset 0 0 0 1.5px var(--code)"></i>Code measures or checks</span>
+      <span><i class="sw" style="background:var(--person-bg);box-shadow:inset 0 0 0 1.5px var(--person)"></i>A person decides</span>
+    </div>
+  </header>
+
+  <nav class="bar" id="bar" aria-label="Steps"></nav>
+
+  <section class="stage" aria-live="polite">
+    <div>
+      <div class="eyebrow" id="eyebrow"></div>
+      <h1 id="title"></h1>
+      <p id="body"></p>
+    </div>
+    <div class="ctl">
+      <button id="prev" type="button">← Back</button>
+      <button id="next" type="button" class="primary">Next →</button>
+    </div>
+  </section>
+
+  <div class="scroller"><svg class="map" id="map" viewBox="0 0 1400 768" role="img" aria-label="The route from a connected source to a decision"></svg></div>
+  <p class="hint">Click any box for what it does. The route reads left to right; the loop runs back underneath.</p>
+
+  <div class="notes">
+    <div><h2>Six built-in agents</h2><p>Explorer, Curator, Briefer and Watcher work in the background. Responder and Analyst answer when someone asks.</p></div>
+    <div><h2>Where a model stops</h2><p>Models explore, propose and write. Code measures every figure and checks every block and statement. A person approves what becomes governed.</p></div>
+    <div><h2>What this shows</h2><p>Mechanisms only, read from the code. No figures and no data.</p></div>
+  </div>
+  <footer><a href="https://github.com/amit-kamlapure/pramanyx">Pramanyx on GitHub</a><a href="https://github.com/amit-kamlapure/pramanyx/blob/main/FEATURES.md">Features</a><a href="https://github.com/amit-kamlapure/pramanyx/blob/main/docs/GLOSSARY.md">Glossary</a></footer>
+</div>
+
+<script>
+(function(){
+if(location.hash==="#still")document.documentElement.classList.add("still");
+const NS="http://www.w3.org/2000/svg";
+const IC={
+ plug:"M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4",
+ table:"M3 5h18v14H3zM3 10h18M9 10v9",
+ policy:"M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6zM9 12h6",
+ compass:"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM15.5 8.5l-2 5-5 2 2-5z",
+ check:"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12l3 3 5-6",
+ brief:"M3 8h18v11H3zM9 8V5h6v3M3 13h18",
+ atlas:"M6 6m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M18 6m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M12 18m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M8.5 6h7M7.3 8.2l3.4 7.6M16.7 8.2l-3.4 7.6",
+ spark:"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z",
+ shield:"M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6zM8.5 12l2.5 2.5 4.5-5",
+ person:"M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5",
+ layers:"M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+ doc:"M5 3h10l4 4v14H5zM9 9h6M9 13h6M9 17h4",
+ news:"M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 13h7M7 16h4",
+ chat:"M4 5h16v11H9l-5 4z",
+ bolt:"M13 2L4 14h7l-1 8 9-12h-7z",
+ steps:"M3 19h4v-4h4v-4h4V7h4V3",
+ receipt:"M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3",
+ inbox:"M3 13l3-8h12l3 8v6H3zM3 13h5l1 3h6l1-3h5",
+ flag:"M5 21V4M5 4h11l-2 4 2 4H5",
+ target:"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 11v2",
+ star:"M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z",
+ ledger:"M5 3h14v18H5zM9 3v18M12 8h4M12 12h4M12 16h2",
+ archive:"M3 4h18v4H3zM5 8v12h14V8M10 12h4",
+ memory:"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4M12 8v4l3 2",
+ lock:"M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
+ bell:"M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4",
+ trend:"M3 17l6-6 4 4 8-8M15 7h6v6",
+ send:"M3 11l18-8-8 18-2-8z",
+ grid:"M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"
+};
+// lanes
+const LX=[31,303,575,847,1119], LW=250, LTOP=62, LBOT=482, NW=220, NH=58;
+const rowY=r=>104+r*76;
+const LANES=["Connect","Learn","Define","Answer","Decide"];
+// nodes: id, lane, row, kind, icon, title, sub, detail
+const N=[
+ ["connectors",0,0,"code","plug","Connectors","Read data where it lives","Warehouses, files, sheets and apps, each read in place with its credentials encrypted at rest. A source that cannot be read in place is copied into the federation engine only when the organisation allows it, and the answer says so."],
+ ["catalog",0,1,"code","table","Catalog","Profile every column","Every schema, table and column is profiled. Each dataset's layer (Business, Integration, Raw, Reference, Uploads, System) is proposed from its signs and set by a person; a dataset turned off is never explored."],
+ ["rowpolicy",0,2,"code","policy","Row policy","One rule, every door","Row-level policy is compiled into every connector's query, so a question's own SQL, an object read and an outside agent all see only what their reader may see."],
+ ["explorer",1,0,"agent","compass","Explorer","Structure, then questions","The Explorer's run: a structure pass with no model call (empty-value meanings, joins, lifecycles, distributions, cross-table patterns), then a questions pass of up to 300 questions aimed at the frontier, the measure × dimension cuts not yet covered. It runs again when the schema changes."],
+ ["findings",1,1,"code","check","Findings","Proven by a query","Each finding is kept only after a confirming query proves it. Synthesis then composes pairs of findings into ones neither holds alone."],
+ ["profile",1,2,"agent","brief","Business profile","What the business is","The Curator infers the industry and business model from the schema, grounded in the columns that exist. An industry pack guides; the data decides."],
+ ["atlas",1,3,"person","atlas","Business Atlas","The ontology, drawn","Entities, links, processes and rules, built from the data and drawn as one journey through the business. Every proposal from the explorer has a Confirm and a Refuse; a person's override wins."],
+ ["proposals",2,0,"agent","spark","Metric proposals","From ~100 patterns","Metrics are proposed from the business profile and a map of about a hundred metric patterns, so each area of the business is covered."],
+ ["gates",2,1,"code","shield","Code gates","Checked before offered","A metric is refused if its figure never moves, sits outside its sane range, has its roles bound to the wrong columns, or has a date that cannot bound its rows. Each refusal says why."],
+ ["approval",2,2,"person","person","Approval gate","A person approves","Draft, proposed, approved: one metric or a whole set at once, each transition dated and on the record."],
+ ["semantic",2,3,"code","layers","Semantic layer","One governed contract","The approved metrics, read the same way by chat, deep analysis, the explorer and the Briefing."],
+ ["guide",2,4,"person","doc","Briefing guide","Drafted, then published","The Briefer drafts it after an exploration: the business, what each range is for, what counts as news, the fair comparisons and who reads it. A person publishes it, and a later draft never replaces a published one."],
+ ["briefing",3,0,"agent","news","Briefing","Front, then edition","The front is counted from measured figures with no model call: the lead figure and every approved metric's change, ranked. Below it, an edition is written for one reader and one range by the Briefer; every number cites its query and code checks each block before it shows."],
+ ["ask",3,1,"person","chat","Ask","Canvas or /ask","Ask in the Data Canvas, in Agent mode (the default) or Quick mode, or type /ask in the SQL Editor and it writes the SQL. The question's shape is read first: describe, check, diagnose or survey."],
+ ["quick",3,2,"agent","bolt","Quick answer","Straight to the figure","The Responder answers fast: Results, Explanation, SQL and Evidence, each part marked as computed or written by the model."],
+ ["deep",3,3,"agent","steps","Deep analysis","intake → synthesize","The Analyst runs intake, baseline, decompose, dimensional and synthesize, with a plan you can edit and steer mid-run. It tests the question's premise before agreeing with it."],
+ ["guards",3,4,"code","receipt","Trust guards","Checked, then a receipt","Grain, fan-out, numeral grounding, premise and refutation guards on every answer. The SQL safety gate refuses any statement that would change data before it runs. Each answer carries a signed Trust Receipt: its SQL, lineage and run."],
+ ["inbox",4,0,"person","inbox","Inbox","What to do next","What deep analyses recommend: expected impact, owner, due date and the evidence. A person accepts or declines each one."],
+ ["decision",4,1,"code","flag","Decision","Booked with its expectation","Booked in passing when a recommendation is accepted, or taken from a Briefing figure, a dashboard, Slack, email or a meeting's notes. It carries what it expects and a review date."],
+ ["outcome",4,2,"code","target","Outcome","Measured on its date","On its review date, measured on settled days against the expectation and against the metric's own baseline: as expected, better, worse, missed or cannot tell."],
+ ["northstar",4,3,"code","star","North Star","Loops closed","A query, not a claim: decisions whose loop closed this quarter, beside the calibration error of the predictions that settled. Each loop that failed names the rule it failed."],
+ // panels
+ ["monitors","P0",0,"agent","bell","Monitors","Proposed, then armed","After an exploration the Watcher proposes alerts from each metric's own history; a person arms them. An alert closes when its metric is back within its limit."],
+ ["move","P0",1,"agent","trend","A move explained","Where it moved","A settled figure that really moved is broken down by its dimensions in SQL, then put in words that use only those numbers."],
+ ["notify","P0",2,"code","send","Notifications","Slack, Teams, Jira","Alerts and scheduled posts go to Slack, Microsoft Teams, webhooks and Jira. A send its receiver refused is said as not delivered."],
+ ["agentops","P0",3,"person","grid","Agent Ops","Run the agents","The roster, automations, the hub map with each node's failure rate, risk-graded approvals and spend caps."],
+ ["evidence","P1",0,"code","ledger","Evidence Ledger","Claims and their queries","What each deep analysis claimed and the query behind it, booked as claims when its receipt is written, and reviewed as validated, disputed or needing context."],
+ ["record","P1",1,"code","archive","Record","Five ledgers","Inquiries, Decisions, Missions, Claims and Corrections. “That's wrong” in Slack becomes a Correction."],
+ ["memory","P1",2,"code","memory","Memory","What the loop learned","The readings it remembers, the queries it trusts and what reviewers said."],
+ ["audit","P1",3,"code","lock","Security & Audit","Every query","Every query run by a person or an agent, with what was blocked, flagged or masked."]
+];
+const PANELS={P0:{x:31,title:"WATCHING · BETWEEN QUESTIONS"},P1:{x:713,title:"ON THE RECORD · NEVER QUIETLY DELETED"}};
+const PY=556, PW=656, PNW=300;
+const pos={};
+N.forEach(n=>{
+  const [id,l,r]=n;
+  if(typeof l==="number"){pos[id]={x:LX[l]+15,y:rowY(r),w:NW,h:NH};}
+  else{const p=PANELS[l];pos[id]={x:p.x+18+(r%2)*(PNW+20),y:PY+40+Math.floor(r/2)*70,w:PNW,h:NH};}
+});
+const R=(id)=>pos[id], mid=(id)=>R(id).y+R(id).h/2, right=id=>R(id).x+R(id).w, cx=id=>R(id).x+R(id).w/2;
+function hv(a,b,gx){ // right of a -> gutter -> left of b
+  const sy=mid(a), ty=mid(b), sx=right(a), tx=R(b).x, r=7, d=ty>sy?1:-1;
+  if(Math.abs(ty-sy)<1) return `M${sx} ${sy}H${tx}`;
+  return `M${sx} ${sy}H${gx-r}Q${gx} ${sy} ${gx} ${sy+d*r}V${ty-d*r}Q${gx} ${ty} ${gx+r} ${ty}H${tx}`;
+}
+const v=(a,b)=>`M${cx(a)} ${R(a).y+R(a).h}V${R(b).y}`;
+const E=[
+ ["connectors","catalog",v("connectors","catalog")],
+ ["catalog","rowpolicy",v("catalog","rowpolicy")],
+ ["catalog","explorer",hv("catalog","explorer",292)],
+ ["catalog","profile",hv("catalog","profile",292)],
+ ["catalog","atlas",hv("catalog","atlas",292)],
+ ["explorer","findings",v("explorer","findings")],
+ ["profile","proposals",hv("profile","proposals",562)],
+ ["proposals","gates",v("proposals","gates")],
+ ["gates","approval",v("gates","approval")],
+ ["approval","semantic",v("approval","semantic")],
+ ["semantic","briefing",hv("semantic","briefing",836)],
+ ["guide","briefing",hv("guide","briefing",836)],
+ // ask spine (left side of lane 3)
+ ["ask","quick",`M${R("ask").x} ${mid("ask")}H${R("ask").x-8}V${mid("quick")}H${R("quick").x}`],
+ ["ask","deep",`M${R("ask").x} ${mid("ask")}H${R("ask").x-8}V${mid("deep")}H${R("deep").x}`],
+ ["deep","guards",v("deep","guards")],
+ ["quick","guards",`M${right("quick")} ${mid("quick")}H${right("quick")+8}V${R("guards").y-8}H${right("guards")-40}V${R("guards").y}`],
+ ["guards","inbox",hv("guards","inbox",1108)],
+ ["inbox","decision",v("inbox","decision")],
+ ["decision","outcome",v("decision","outcome")],
+ ["outcome","northstar",v("outcome","northstar")],
+ // into panels (dotted)
+ ["semantic","monitors",`M${R("semantic").x} ${mid("semantic")}H568V${PY-16}H${cx("monitors")}V${R("monitors").y}`,"dot"],
+ ["guards","evidence",`M${cx("guards")} ${R("guards").y+NH}V${PY-16}H${cx("evidence")}V${R("evidence").y}`,"dot"],
+ ["decision","record",`M${right("decision")} ${mid("decision")}H1384V${PY-16}H${cx("record")}V${R("record").y}`,"dot"],
+ ["monitors","notify",v("monitors","notify"),"dot"],
+ ["northstar","memory",null,"loop"]
+];
+const LOOPY=520;
+const loopPath=`M${cx("northstar")} ${R("northstar").y+NH}V${LOOPY-10}Q${cx("northstar")} ${LOOPY} ${cx("northstar")-10} ${LOOPY}H${LX[1]+LW/2+10}Q${LX[1]+LW/2} ${LOOPY} ${LX[1]+LW/2} ${LOOPY-10}V${LBOT+4}`;
+
+const svg=document.getElementById("map");
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;};
+const defs=el("defs",{});
+[["ah","var(--wire)"],["ahon","var(--hot)"]].forEach(([id,c])=>{const m=el("marker",{id,viewBox:"0 0 10 10",refX:"8",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},defs);el("path",{d:"M0 1 9 5 0 9z",fill:c},m);});
+
+// group headers
+[[LX[0],LX[2]+LW,"ON ITS OWN · NO PROMPTS"],[LX[3],LX[4]+LW,"WITH PEOPLE · READ, ASK, DECIDE"]].forEach(([a,b,t])=>{
+  el("path",{d:`M${a} 40V34H${b}V40`,class:"grpl",fill:"none"});
+  const tx=el("text",{x:(a+b)/2,y:28,"text-anchor":"middle",class:"grp"});tx.textContent=t;
+  // text background
+});
+// lanes
+const laneG=[];
+LANES.forEach((name,i)=>{
+  const g=el("g",{class:"lane"});
+  el("rect",{x:LX[i],y:LTOP-12,width:LW,height:LBOT-LTOP+12,rx:12},g);
+  const n=el("text",{x:LX[i]+16,y:LTOP+14,class:"ln"},g);n.textContent=String(i+1).padStart(2,"0");
+  const t=el("text",{x:LX[i]+40,y:LTOP+14,class:"lt"},g);t.textContent=name;
+  laneG.push(g);
+});
+// phase arrows between lanes headers
+for(let i=0;i<4;i++){const x=LX[i]+LW+3;el("path",{d:`M${x} ${LTOP+10}h14m-5-5 5 5-5 5`,fill:"none",stroke:"var(--wire)","stroke-width":"1.6","stroke-linecap":"round","stroke-linejoin":"round"});}
+// panels
+const panelG={};
+Object.entries(PANELS).forEach(([k,p])=>{
+  const g=el("g",{class:"panel"});
+  el("rect",{x:p.x,y:PY,width:PW,height:200,rx:12,class:"pb"},g);
+  panelG[k]=g;
+});
+// edges
+const edgeEls=[];
+E.forEach(([a,b,d,kind])=>{
+  if(kind==="loop"){d=loopPath;}
+  const p=el("path",{d,class:"edge"+(kind==="dot"?" dot":""),"marker-end":"url(#ah)"});
+  edgeEls.push({a,b,p,kind});
+});
+// panel titles over the lines that enter the panels, so no line runs through a word
+Object.values(PANELS).forEach(p=>{const t=el("text",{x:p.x+18,y:PY+26,class:"pt"});t.textContent=p.title;});
+// loop label
+const lw=660, lx=(cx("northstar")+LX[1]+LW/2)/2;
+el("rect",{x:lx-lw/2,y:LOOPY-11,width:lw,height:22,rx:5,class:"loopbg"});
+const ll=el("text",{x:lx,y:LOOPY+5,"text-anchor":"middle",class:"loopl"});
+ll.textContent="↺  Each outcome is written back: the prediction is scored, Memory keeps what was learned";
+// nodes
+const nodeEls={};
+N.forEach(([id,l,r,kind,icon,title,sub,detail])=>{
+  const P=pos[id];
+  const g=el("g",{class:`node k-${kind}`,tabindex:"0",role:"button","aria-label":`${title}: ${sub}`});
+  el("rect",{x:P.x-3,y:P.y-3,width:P.w+6,height:P.h+6,rx:11,class:"ring"},g);
+  el("rect",{x:P.x,y:P.y,width:P.w,height:P.h,rx:9,class:"box"},g);
+  el("rect",{x:P.x+11,y:P.y+12,width:34,height:34,rx:8,class:"tile"},g);
+  el("path",{d:IC[icon],class:"ic",transform:`translate(${P.x+16},${P.y+17})`},g);
+  const t=el("text",{x:P.x+56,y:P.y+26,class:"t"},g);t.textContent=title;
+  const s=el("text",{x:P.x+56,y:P.y+44,class:"s"},g);s.textContent=sub;
+  g.addEventListener("click",()=>showNode(id));
+  g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();showNode(id);}});
+  nodeEls[id]={g,title,detail,kind};
+});
+
+// steps
+const S=[
+ {k:"Overview",t:"How Pramanyx works",b:"Connect a source and Pramanyx learns the business on its own, writes the metrics for a person to approve, and briefs you with every number cited. When you ask, the answer comes with guards and a receipt. When you decide, the decision is scored on its date, and what it learned flows back in.",n:null},
+ {k:"Connect",t:"A source is connected and read in place",b:"<b>Connectors</b> read warehouses, files, sheets and apps where they live. The <b>Catalog</b> profiles every column, and one <b>row policy</b> is compiled into every query from here on. Hands on: a profiled schema.",n:["connectors","catalog","rowpolicy"]},
+ {k:"Learn",t:"The Explorer explores, with no prompt",b:"A structure pass with no model call, then up to 300 questions aimed at the <b>frontier</b>: the measure × dimension cuts not yet covered. Each <b>finding</b> is kept only once a confirming query proves it. A schema change starts it again.",n:["catalog","explorer","findings"]},
+ {k:"Learn",t:"It names what the business is",b:"The Curator infers the <b>business profile</b> from the columns that exist. The ontology is built from the data and drawn as the <b>Business Atlas</b>: one journey through the business, each proposal confirmed or refused by a person.",n:["catalog","profile","atlas"]},
+ {k:"Define",t:"Metrics are proposed, gated, then approved",b:"Proposals come from the profile and about a hundred metric patterns. <b>Code gates</b> refuse a metric that never moves, sits outside its sane range or cannot bound its rows by date. A <b>person approves</b>, and the metric joins the <b>semantic layer</b>.",n:["profile","proposals","gates","approval","semantic"]},
+ {k:"Answer",t:"The Briefing, written for its reader",b:"The Briefer drafts a <b>guide</b> that a person publishes. The Briefing's front is counted from measured figures with no model call; each edition is written for one reader, every number cites its query, and code checks each block before it shows.",n:["semantic","guide","briefing"]},
+ {k:"Answer",t:"Ask: a quick answer or a deep analysis",b:"Ask in the Data Canvas (Agent or Quick) or with <b>/ask</b> in the SQL Editor. A <b>deep analysis</b> runs intake → baseline → decompose → dimensional → synthesize. Every answer passes the <b>trust guards</b> and the SQL safety gate, and carries a signed receipt.",n:["ask","quick","deep","guards","evidence"]},
+ {k:"Decide",t:"A recommendation becomes a decision",b:"The <b>Inbox</b> holds what deep analyses recommend. Accepting one books a <b>decision</b> with what it expects. On its review date the <b>outcome</b> is measured against that expectation and against the metric's own baseline, and the <b>North Star</b> counts the loops that closed.",n:["guards","inbox","decision","outcome","northstar","record"]},
+ {k:"Loop",t:"The loop closes and feeds what comes next",b:"Each outcome is written back: its prediction is scored and <b>Memory</b> keeps what was learned. The next exploration, Briefing and answer start from there.",n:["northstar","memory","explorer","findings","profile","atlas"],loop:true},
+ {k:"Watch",t:"Between questions, it keeps watching",b:"The Watcher proposes <b>monitors</b> from each metric's own history, and a person arms them. A figure that really moved is explained by its dimensions. Alerts go out as <b>notifications</b>; <b>Agent Ops</b> runs the agents, and <b>Security & Audit</b> records every query.",n:["semantic","monitors","move","notify","agentops","audit"]}
+];
+const bar=document.getElementById("bar");
+const groups=[];S.forEach((s,i)=>{if(i===0)return;const last=groups[groups.length-1];if(last&&last.k===s.k)last.idx.push(i);else groups.push({k:s.k,idx:[i]});});
+const ov=document.createElement("button");ov.type="button";ov.innerHTML='<span class="k">00</span>Overview';ov.onclick=()=>go(0);bar.appendChild(ov);
+const gBtns=[];
+groups.forEach((g,gi)=>{
+  const sp=document.createElement("span");sp.className="sep";sp.textContent="→";sp.setAttribute("aria-hidden","true");bar.appendChild(sp);
+  const b=document.createElement("button");b.type="button";b.innerHTML=`<span class="k">${String(gi+1).padStart(2,"0")}</span>${g.k}`;b.onclick=()=>go(g.idx[0]);bar.appendChild(b);gBtns.push([b,g]);
+});
+let cur=0;
+const $=id=>document.getElementById(id);
+function paint(active,loop){
+  const on=active?new Set(active):null;
+  Object.entries(nodeEls).forEach(([id,o])=>{o.g.classList.toggle("dim",!!on&&!on.has(id));o.g.classList.toggle("on",!!on&&on.has(id));});
+  edgeEls.forEach(e=>{
+    const isOn=on&&(e.kind==="loop"?!!loop:(on.has(e.a)&&on.has(e.b)));
+    e.p.classList.toggle("dim",!!on&&!isOn);e.p.classList.toggle("on",!!isOn);
+    e.p.setAttribute("marker-end",isOn?"url(#ahon)":"url(#ah)");
+  });
+  laneG.forEach(g=>g.classList.toggle("dim",false));
+}
+function go(i){
+  cur=Math.max(0,Math.min(S.length-1,i));const s=S[cur];
+  $("eyebrow").textContent=cur===0?"The route, end to end":`Step ${cur} of ${S.length-1} · ${s.k}`;
+  $("title").textContent=s.t;$("body").innerHTML=s.b;
+  $("prev").disabled=cur===0;$("next").textContent=cur===0?"Follow the route →":(cur===S.length-1?"Back to overview":"Next →");
+  ov.setAttribute("aria-current",cur===0?"true":"false");
+  gBtns.forEach(([b,g])=>b.setAttribute("aria-current",g.idx.includes(cur)?"true":"false"));
+  paint(s.n,s.loop);
+}
+function showNode(id){
+  const o=nodeEls[id];
+  $("eyebrow").textContent=({agent:"An agent works",code:"Code measures or checks",person:"A person decides"})[o.kind];
+  $("title").textContent=o.title;$("body").textContent=o.detail;
+  paint([id]);
+  edgeEls.forEach(e=>{if(e.a===id||e.b===id){e.p.classList.remove("dim");e.p.classList.add("on");e.p.setAttribute("marker-end","url(#ahon)");const other=e.a===id?e.b:e.a;nodeEls[other]&&nodeEls[other].g.classList.remove("dim");}});
+  $("prev").disabled=false;$("next").textContent="Back to the step";
+  $("next").dataset.back="1";
+}
+$("prev").onclick=()=>{$("next").dataset.back="";go(cur-1);};
+$("next").onclick=()=>{if($("next").dataset.back==="1"){$("next").dataset.back="";go(cur);return;}go(cur===S.length-1?0:cur+1);};
+document.addEventListener("keydown",e=>{if(e.target.closest&&e.target.closest(".node"))return;if(e.key==="ArrowRight")$("next").click();if(e.key==="ArrowLeft"&&!$("prev").disabled)$("prev").click();});
+go(0);
+})();
+</script>
+</body>
+</html>

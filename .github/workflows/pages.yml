@@ -1,0 +1,52 @@
+name: Pages
+
+# Publishes the project's site (`site/`) to GitHub Pages: today one page, "How Pramanyx works".
+# The brand files and the README's still of the drawing are copied in from where they already
+# live, so the site keeps no second copy of either.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/assets/brand/**'
+      - 'docs/readme/how-it-works-*.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits rather than cancelling one mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/assets/brand
+          cp -R site/. _site/
+          cp docs/assets/brand/pramanyx-lockup-black.png docs/assets/brand/pramanyx-lockup-white.png \
+             docs/assets/brand/pramanyx-icon-black.png _site/assets/brand/
+          cp docs/readme/how-it-works-light.png _site/assets/how-it-works.png
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}how-it-works.html
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4

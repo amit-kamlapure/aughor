@@ -19,6 +19,7 @@
     <a href="#quick-start"><strong>Quick start</strong></a> ·
     <a href="#pick-your-models"><strong>Models</strong></a> ·
     <a href="#whats-inside"><strong>What's inside</strong></a> ·
+    <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html"><strong>How it works</strong></a> ·
     <a href="ROADMAP.md"><strong>Roadmap</strong></a> ·
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
@@ -53,6 +54,19 @@ Pramanyx connects to your warehouse and **keeps learning from it**. It explores 
 
 <p align="center">
   <img src="docs/readme/briefing.png" width="900" alt="The Briefing on LuxExperience (synthetic data): GMV and every approved metric's change, measured live" />
+</p>
+
+### How it works
+
+<sub>The route from a connected source to a decision whose loop closes · <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html"><strong>▶ step through it</strong></a>, and click any box for what it does</sub>
+
+<p align="center">
+  <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.png" />
+      <img src="docs/readme/how-it-works-light.png" width="900" alt="How Pramanyx works: Connect, Learn, Define, Answer and Decide, from connectors and the catalog through the Explorer, the business profile and the Business Atlas, metrics gated and approved into the semantic layer, the Briefing, quick answers and deep analyses behind trust guards, to the Inbox, decisions, outcomes and the North Star, with outcomes written back" />
+    </picture>
+  </a>
 </p>
 
 ## Quick start
