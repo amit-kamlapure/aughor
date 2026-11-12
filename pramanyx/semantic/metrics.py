@@ -1394,32 +1394,59 @@ def build_metrics_block(
         from pramanyx.semantic.metric_retrieval import rank_metrics_for_question
         metrics, _top_relevant = rank_metrics_for_question(question, metrics)
 
-    lines = [
-        "METRICS CATALOG (use these exact SQL expressions — do not re-derive"
-        + ("; the FIRST is the most relevant to this question):" if _top_relevant else "):"),
-    ]
-    for m in metrics:
-        header = f"  {m.name.upper()} ({m.label}): {m.sql}"
-        if m.unit:
-            header += f"  [{m.unit}]"
-        if m.approved_by:
-            header += f"  ✓ {m.approved_by}-approved"
-        lines.append(header)
-        if m.tables:
-            lines.append(f"    Tables: {', '.join(m.tables)}")
-        if m.dimensions:
-            lines.append(f"    Slice by: {', '.join(m.dimensions)}")
-        if m.filters:
-            lines.append(f"    Always filter: {'; '.join(m.filters)}")
-        if m.caveats:
-            lines.append(f"    ⚠ {m.caveats}")
-        if not metric_additivity(m):
-            lines.append("    ∑ non-additive (a ratio/avg/rate): never sum across groups or "
-                         "compute a share-of-total / Pareto on it.")
-        if m.freshness_sla:
-            lines.append(f"    ⏱ Freshness: {m.freshness_sla}")
-        if m.lineage:
-            lines.append(f"    Lineage: {'; '.join(m.lineage)}")
-        for bad in m.wrong_usage_examples:
-            lines.append(f"    ✗ NEVER: {bad}")
+    # A definition is offered as exact only when a person approved it. Measured on the live catalogue, 2026-11-12:
+    # 15 of 62 metrics were not approved, and 6 of those were retired ones still printed with their approver's tick —
+    # all of them under "use these exact SQL expressions". Each heading starts with METRICS CATALOG because the schema
+    # renderers find the block by that name (`db/schema_render.py`, `ontology/column_config.py`).
+    approved = [m for m in metrics if m.status == "approved"]
+    retired = [m for m in metrics if m.status == "deprecated"]
+    unapproved = [m for m in metrics if m.status not in ("approved", "deprecated")]
+
+    lines: list[str] = []
+    if approved:
+        lines.append(
+            "METRICS CATALOG (use these exact SQL expressions — do not re-derive"
+            + ("; the FIRST is the most relevant to this question):"
+               if _top_relevant and metrics[0] is approved[0] else "):"))
+        for m in approved:
+            lines += _metric_lines(m)
+    if unapproved:
+        lines.append(
+            "METRICS CATALOG — NOT APPROVED (nobody has approved these definitions. Prefer an approved metric "
+            "above when one fits the question; if you use one of these, say in the answer that its definition "
+            "is not approved):")
+        for m in unapproved:
+            lines += _metric_lines(m)
+    if retired:
+        lines.append("METRICS CATALOG — RETIRED (a person retired these; do not use them or their old formulas): "
+                     + ", ".join(f"{m.name.upper()} ({m.label})" for m in retired))
     return "\n".join(lines)
+
+
+def _metric_lines(m: "MetricDefinition") -> list[str]:
+    """One metric as the catalogue block prints it. The approver's tick is printed for an approved metric only: a
+    retired metric keeps the name of who once approved it, and that is not a tick."""
+    header = f"  {m.name.upper()} ({m.label}): {m.sql}"
+    if m.unit:
+        header += f"  [{m.unit}]"
+    if m.approved_by and m.status == "approved":
+        header += f"  ✓ {m.approved_by}-approved"
+    lines = [header]
+    if m.tables:
+        lines.append(f"    Tables: {', '.join(m.tables)}")
+    if m.dimensions:
+        lines.append(f"    Slice by: {', '.join(m.dimensions)}")
+    if m.filters:
+        lines.append(f"    Always filter: {'; '.join(m.filters)}")
+    if m.caveats:
+        lines.append(f"    ⚠ {m.caveats}")
+    if not metric_additivity(m):
+        lines.append("    ∑ non-additive (a ratio/avg/rate): never sum across groups or "
+                     "compute a share-of-total / Pareto on it.")
+    if m.freshness_sla:
+        lines.append(f"    ⏱ Freshness: {m.freshness_sla}")
+    if m.lineage:
+        lines.append(f"    Lineage: {'; '.join(m.lineage)}")
+    for bad in m.wrong_usage_examples:
+        lines.append(f"    ✗ NEVER: {bad}")
+    return lines

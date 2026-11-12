@@ -72,6 +72,76 @@ def _clip(text: str, cap: int = _TEXT_CAP) -> str:
     return t if len(t) <= cap else t[: cap - 1] + "…"
 
 
+#: What makes a finding unfit to lead: the flag the projection sets, and what the prompt says beside it if it is shown.
+_UNSOUND = {
+    "stale": "STALE — the data it was measured on is no longer in the ontology; do not rely on it",
+    "contested": "CONTESTED — another analysis disagrees on these numbers and nobody has settled it",
+}
+
+
+def _unsound(node) -> str:
+    """Why a finding should not be read as settled ("stale" | "contested"), or "" when nothing says so."""
+    data = node.data or {}
+    return next((flag for flag in _UNSOUND if data.get(flag)), "")
+
+
+def _observed(node) -> float:
+    """When the source observed a fact, as a number that sorts; 0 when it carries no readable date."""
+    from datetime import datetime, timezone
+
+    try:
+        dt = datetime.fromisoformat(str(node.provenance.observed_at or "").replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).timestamp()
+
+
+class _Order:
+    """The order each part of the slice is shown in — decided by the question and the evidence, the same every time.
+
+    The slice keeps the first few of each kind, so the order IS the selection. Measured on the live graphs,
+    2026-11-12: one table carries 107 findings and the prompt shows 5; 14 of 33 tables on that connection are over
+    the cap. They were taken in the order a set happened to yield, which differs per process.
+
+    A sort key per kind, lexicographic like `ontology/ranking.py` and for its reason: the priority reads in one line
+    and no constant needs defending. For a finding: sound before stale or contested; then one the search matched to
+    the question before one that is only a matched table's neighbour; then how much of the question it covers; then
+    the strength of its warrant; then the newest; then its id, so a tie is still one order. The search's own rank
+    among its matches is not used: two findings that cover the question equally are ranked there by which was stored
+    first, and the newer should lead. Nothing here reads a join's overlap to decide what was MEANT
+    (J4) — a join is ordered by whether both its ends were asked about, then by how it is known."""
+
+    def __init__(self, question: str, seeds: list):
+        self.question = question
+        self.seeds = {n.id for n, _ in seeds}
+
+    def matched(self, node_id: str) -> int:
+        """0 for a node the search matched to the question, 1 for a neighbour of one."""
+        return 0 if node_id in self.seeds else 1
+
+    def covers(self, node) -> float:
+        from pramanyx.ontology.context_graph_search import lexical_score
+
+        return lexical_score(node, self.question)
+
+    def finding(self, node) -> tuple:
+        from pramanyx.ontology.graph_warrant import WARRANT_ORDER, warrant_of_node
+
+        return (1 if _unsound(node) else 0, self.matched(node.id), -self.covers(node),
+                WARRANT_ORDER.index(warrant_of_node(node).warrant), -_observed(node), node.id)
+
+    def named(self, node) -> tuple:
+        """A table, a term or a declaration: matched before neighbour, then by how much of the question it covers,
+        then by name."""
+        return (self.matched(node.id), -self.covers(node), node.label, node.id)
+
+    def join(self, edge) -> tuple:
+        from pramanyx.ontology.graph_warrant import WARRANT_ORDER, warrant_of_edge
+
+        ends = sum(1 for end in (edge.from_id, edge.to_id) if end in self.seeds)
+        return (-ends, WARRANT_ORDER.index(warrant_of_edge(edge).warrant), edge.id)
+
+
 def build_graph_prior(
     question: str, connection_id: str, *, org_id: str = "", top_k: int = 6,
     max_chars: int = _SECTION_CAP,
@@ -116,11 +186,12 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
     by_id = {n.id: n for n in nodes}
     cited: list[str] = []
 
-    tables = [n for n in nodes if n.kind == "table"]
-    findings = [n for n in nodes if n.kind == "finding"]
-    terms = [n for n in nodes if n.kind == "glossary_term"]
-    declarations = [n for n in nodes if n.kind == "declaration"]     # FA-1
-    joins = [e for e in edges if e.kind == "joins_on"]
+    order = _Order(question, seeds)
+    tables = sorted((n for n in nodes if n.kind == "table"), key=order.named)
+    findings = sorted((n for n in nodes if n.kind == "finding"), key=order.finding)
+    terms = sorted((n for n in nodes if n.kind == "glossary_term"), key=order.named)
+    declarations = sorted((n for n in nodes if n.kind == "declaration"), key=order.named)     # FA-1
+    joins = sorted((e for e in edges if e.kind == "joins_on"), key=order.join)
     resolves = [e for e in edges if e.kind == "resolves"]
 
     lines: list[str] = [
@@ -146,15 +217,21 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
             lines.append(f"  • {frm.label} → {to.label}  "
                          f"[{v.warrant}: {v.detail}]  [{e.id}]")
             cited.append(e.id)
+        if len(joins) > _MAX_JOINS:
+            lines.append(f"  … and {len(joins) - _MAX_JOINS} more joins on these entities, not shown")
 
     if findings:
         lines.append("\nFindings already established on these entities (from prior "
                      "investigations — do NOT re-derive; build on them):")
         for f in findings[:_MAX_FINDINGS]:
             v = warrant_of_node(f)
+            flag = _unsound(f)
             lines.append(f'  • "{_clip(f.summary or f.label)}"  [{f.id}] '
-                         f"({v.warrant}: {v.detail})")
+                         f"({v.warrant}: {v.detail})" + (f"  ⚠ {_UNSOUND[flag]}" if flag else ""))
             cited.append(f.id)
+        if len(findings) > _MAX_FINDINGS:
+            lines.append(f"  … and {len(findings) - _MAX_FINDINGS} more findings on these entities, not shown "
+                         f"(the closest to the question are above)")
 
     if terms or resolves:
         lines.append("\nResolved meanings on this connection (settled earlier — use "

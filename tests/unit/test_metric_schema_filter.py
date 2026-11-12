@@ -118,3 +118,44 @@ def test_build_metrics_block_keeps_overlay_metric_with_valid_columns(monkeypatch
     monkeypatch.setattr(M, "list_metrics", lambda *a, **k: [])
     out = M.build_metrics_block(schema_text=schema, connection_id="c")
     assert "order_value" in out   # a valid overlay-injected metric survives
+
+
+# ── only an approved definition is offered as exact (2026-11-12) ──────────────
+# The block printed every metric under "use these exact SQL expressions", and a retired metric kept its approver's
+# tick. Live, 15 of 62 metrics were not approved and 6 of those were retired ones printed as approved.
+def _statuses(monkeypatch):
+    from pramanyx.semantic import metrics as M
+    rows = [
+        _m("revenue", "SUM(order_value)", tables=("orders",)).model_copy(
+            update={"status": "approved", "approved_by": "Finance"}),
+        # approved once, then its formula was edited: it is back to proposed and still carries the approver's name
+        _m("margin", "SUM(order_value) - SUM(cost)", tables=("orders",)).model_copy(
+            update={"status": "proposed", "approved_by": "Finance"}),
+        _m("old_revenue", "SUM(gross)", tables=("orders",)).model_copy(
+            update={"status": "deprecated", "approved_by": "Finance"}),
+    ]
+    monkeypatch.setattr(M, "list_metrics", lambda *a, **k: list(rows))
+    return M.build_metrics_block()
+
+
+def test_only_an_approved_metric_sits_under_the_exact_heading(monkeypatch):
+    out = _statuses(monkeypatch)
+    exact, rest = out.split("METRICS CATALOG — NOT APPROVED", 1)
+    assert "use these exact SQL expressions" in exact
+    assert "REVENUE (revenue): SUM(order_value)" in exact and "✓ Finance-approved" in exact
+    assert "MARGIN" not in exact and "OLD_REVENUE" not in exact
+    assert "MARGIN (margin)" in rest and "say in the answer that its definition is not approved" in rest
+
+
+def test_a_retired_metric_is_named_without_its_formula_or_a_tick(monkeypatch):
+    out = _statuses(monkeypatch)
+    retired = out.split("METRICS CATALOG — RETIRED", 1)[1]
+    assert "OLD_REVENUE (old_revenue)" in retired
+    assert "SUM(gross)" not in out
+    assert out.count("✓") == 1
+
+
+def test_every_heading_is_one_the_schema_renderers_stop_on(monkeypatch):
+    from pramanyx.db.schema_render import ends_column_block
+    heads = [ln for ln in _statuses(monkeypatch).splitlines() if not ln.startswith(" ")]
+    assert len(heads) == 3 and all(ends_column_block(h) for h in heads)
