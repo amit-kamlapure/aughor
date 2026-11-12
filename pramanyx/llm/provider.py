@@ -3551,6 +3551,53 @@ def describe_added_provider(pid: str) -> dict:
             "models": custom_models(pid), "key_state": _key_state(pid)}
 
 
+class NotOnTheDoorsWire(RuntimeError):
+    """The organisation's model is on a provider the model door cannot relay to.
+
+    The door forwards a chat-completions request as it arrives. A provider that speaks another wire would need the
+    request translated — tools, tool results, streamed deltas — and a translation that is almost right is a model
+    call that is subtly wrong. Refused by name instead."""
+
+    def __init__(self, backend: str):
+        self.backend = backend
+        super().__init__(
+            f"the organisation's model is on {backend}, which does not speak the chat-completions wire the model "
+            f"door relays. Bind a role to a provider that does, in Settings ▸ Models.")
+
+
+def door_binding(role: Role) -> tuple[str, str, str, str]:
+    """`(backend, model, chat_completions_url, api_key)` for a role — what the model door relays to.
+
+    The model door (`routers/model_door.py`) makes a model call for another runtime with the organisation's own
+    binding. This is that binding, resolved exactly as a call of Pramanyx's own resolves it (`resolve_binding`,
+    `endpoint_for`), so a role means one model whoever asks. Raises `NoModelConfigured` when the role has none,
+    `NotOnTheDoorsWire` for a provider with no chat-completions address, and `endpoint_for`'s error for a stored
+    key that cannot be decrypted — each before anything is sent.
+    """
+    backend, model, _ = resolve_binding(role)
+    if not (model or "").strip():
+        raise NoModelConfigured(backend, role)
+    base_url, key = endpoint_for(backend)
+    if backend == "ollama":
+        base_url = _ollama_openai_base(base_url)
+    if not (base_url or "").strip():
+        raise NotOnTheDoorsWire(backend)
+    return backend, model.strip(), base_url.rstrip("/") + "/chat/completions", key
+
+
+def record_door_call(*, backend: str, model: str, role: str, prompt_tokens: Optional[int],
+                     completion_tokens: Optional[int], ms: float, ok: bool = True,
+                     error_class: Optional[str] = None, streamed: bool = False, caller: str = "") -> None:
+    """One model call made through the model door, in the same record as every call of Pramanyx's own.
+
+    One store per concept: the door's calls are model calls, so they are counted and priced where model calls are,
+    marked `door` with who asked. The words of the conversation are not kept — they are another runtime's, and it
+    keeps its own; what is kept is that the call was made, for whom, on what model, and what it cost."""
+    _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=prompt_tokens,
+                     completion_tokens=completion_tokens, ms=ms, ok=ok, error_class=error_class,
+                     streamed=streamed, extra={"door": (caller or "unnamed")[:60]})
+
+
 def ensure_free_or_allowed(backend: str, model: str, *, allow_paid: bool = False) -> None:
     """Free-by-default binding guard (raises ValueError on a silent paid bind).
 

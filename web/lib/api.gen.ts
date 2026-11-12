@@ -10056,6 +10056,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/llm/door/v1/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Chat
+         * @description One chat-completions call, made by Pramanyx with the organisation's model for the role named in `model`.
+         */
+        post: operations["door_chat_llm_door_v1_chat_completions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm/door/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Door Models
+         * @description The roles the door serves — what a caller may put in `model`. A role with no usable binding is not listed.
+         */
+        get: operations["door_models_llm_door_v1_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/llm/models": {
         parameters: {
             query?: never;
@@ -22197,6 +22237,11 @@ export interface components {
              * @description Copy a source's rows into the federation engine for cross-source joins, where it cannot be read in place. Rows leave their source for the session. Off by default.
              */
             copy_rows_across_sources?: boolean | null;
+            /**
+             * Coworker Models
+             * @description Let the coworker make its model calls through Pramanyx, with the organisation's models and keys. A conversation there, and the answers in it, go to that provider. Each call is recorded and counts against the usage caps. Off by default.
+             */
+            coworker_models?: boolean | null;
             /**
              * Currency Code
              * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts; a figure carries the currency a person confirmed for its dataset (store.data_currency). Empty = unset.
@@ -43182,6 +43227,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_chat_llm_door_v1_chat_completions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    door_models_llm_door_v1_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

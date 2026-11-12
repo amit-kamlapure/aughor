@@ -212,11 +212,13 @@ export interface OrgSettings {
   read_query_history?: boolean | null;
   /** Track D1 (ROADMAP §3.69) — copy a source's rows into the federation engine for a cross-source join. */
   copy_rows_across_sources?: boolean | null;
+  /** 2026-11-13 — the model door: the coworker's model calls, made by Pramanyx with the organisation's models. */
+  coworker_models?: boolean | null;
 }
 
 /** The choices an organisation makes about what Pramanyx may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
 export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work"
-  | "read_query_history" | "copy_rows_across_sources";
+  | "read_query_history" | "copy_rows_across_sources" | "coworker_models";
 
 /** Each choice's answer, and whether an admin set it — one never set answers from the server's environment. */
 export type OrgAllows = Record<OrgAllowSetting, { allowed: boolean; set: boolean }>;
