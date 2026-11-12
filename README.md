@@ -20,7 +20,6 @@
     <a href="#pick-your-models"><strong>Models</strong></a> ·
     <a href="#whats-inside"><strong>What's inside</strong></a> ·
     <a href="https://amit-kamlapure.github.io/pramanyx/how-it-works.html"><strong>How it works</strong></a> ·
-    <a href="ROADMAP.md"><strong>Roadmap</strong></a> ·
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
 
@@ -321,9 +320,9 @@ Every extra degrades with a message naming the install command, and a footprint 
 
 What is real today: **17,000+ backend tests**, run by CI on Python 3.11 for every change and on 3.11–3.13 weekly, against a real Postgres for the shared-state tests (a missing service fails the run rather than skipping them); `ruff` at a zero baseline; CI additionally gates codegen drift for the typed API client. A security workflow runs CodeQL and the Python and npm dependency audits weekly and on every push to `main`. The frontend typechecks under `strict`, and CI runs six focused lint gates, two bundle-drift checks and a production build; its **3,200+ vitest tests** (pure-logic and jsdom component projects) run locally, not in CI. What is not: `eslint` reports pre-existing findings and is not a CI gate; there is no container image (`docker-compose.yml` brings up Qdrant, MLflow and Jaeger for development, each image pinned by its sha256 and bound to loopback); deployment beyond a local machine and a Vercel data plane is young.
 
-## Roadmap, contributing, security
+## Contributing and security
 
-- **[ROADMAP.md](ROADMAP.md)** — prioritized backlog and shipped milestones · **[FEATURES.md](FEATURES.md)** — the living reference, by capability (mechanisms and files) · **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — tenancy, catalog, and the control/data-plane split.
+- **[FEATURES.md](FEATURES.md)** — the living reference, by capability (mechanisms and files) · **[docs/PLATFORM_ARCHITECTURE.md](docs/PLATFORM_ARCHITECTURE.md)** — tenancy, catalog, and the control/data-plane split.
 - Contributions welcome — start with **[CONTRIBUTING.md](CONTRIBUTING.md)** and **[AGENTS.md](AGENTS.md)**; the load-bearing conventions (no feature flags — a feature merges on, guards that ship with a test proving they fire, never raising a ratchet baseline) are documented there. [Code of Conduct](CODE_OF_CONDUCT.md) applies.
 - Report vulnerabilities **privately** — see [SECURITY.md](SECURITY.md).
 

@@ -501,4 +501,4 @@ Each phase ships value and is independently stoppable.
    Agent**. Enforced by `tests/unit/test_platform_agent_boundary.py` (empty allowlist). The agent
    plugs into the platform's registries (`pramanyx/kernel/registries`, via `agent/bootstrap`); with
    nothing registered the platform runs raw. See
-   [`PLATFORM_AGENT_SEPARATION.md`](PLATFORM_AGENT_SEPARATION.md).
+   `PLATFORM_AGENT_SEPARATION.md`.

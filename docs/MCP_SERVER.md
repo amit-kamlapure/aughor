@@ -1,7 +1,7 @@
 # MCP Server — Pramanyx's governed intelligence as MCP tools (R5)
 
 > Status: **shipped** (branch `2026-06-21-agentic-fleet-metering`). The fleet's external-reach
-> surface ([`AGENTIC_ARCHITECTURE.md`](AGENTIC_ARCHITECTURE.md) §7, R5).
+> surface.
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes Pramanyx's
 **governed intelligence** as tools any MCP client (Claude Desktop, Claude Code, Cursor) can

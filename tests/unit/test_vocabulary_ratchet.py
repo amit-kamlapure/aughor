@@ -97,15 +97,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
         # Exempt because they name FROZEN WIRE/API identifiers verbatim, and a test that
         # renamed them would assert a contract the backend does not speak:
         #   test_stream_chat_transcript — `insight` / `insight_delta` are SSE event types.
-        #   test_converse_route_ineligible, probe_converse_turn — `insight_id` is a field on
-        #     AskRequest; both construct request shapes to prove the /ask door's behaviour.
-        #   ci0_scorecard — `insight` is the FROZEN report_json key quick-turn prose is
-        #     stored under; the CI-0 scorecard reads the historical store as written.
+        #   test_converse_route_ineligible — `insight_id` is a field on AskRequest; it
+        #     constructs request shapes to prove the /ask door's behaviour.
         # Same reason api.ts and uiMessageAdapter.ts are exempt from `investigation_in_web`.
         ("tests/integration/test_stream_chat_transcript.py",
          "tests/unit/test_converse_route_ineligible.py",
-         "scripts/probe_converse_turn.py",
-         "scripts/ci0_scorecard.py",
          # CI-2's findings tool reads the explorer store, whose frozen state key is the
          # retired term; the test constructs fake states carrying the same key. Both
          # already speak 'findings' everywhere the word is theirs to choose.

@@ -76,6 +76,6 @@ reasoning lives in the wave arc docs under `docs/`.
 
 ## Where to start reading
 
-`ROADMAP.md` §0 for status, `docs/PLATFORM_PROGRAM_2026-07-26.md` for the forward plan, and
-the wave arc doc for whatever you are touching — each one opens with the survey that set
-its scope, which is usually the fastest way to learn why the code looks like it does.
+[`FEATURES.md`](FEATURES.md) for what each capability does and the files behind it,
+[`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md) for how the governed path is built, and
+[`docs/GLOSSARY.md`](docs/GLOSSARY.md) for the names to use.

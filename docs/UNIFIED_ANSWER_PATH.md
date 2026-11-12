@@ -7,8 +7,8 @@ clarification (deterministic two-source **+ SOMA candidate-disagreement**); conv
 (follow-up detection + result-digest + deep-turn context); progressive escalation; and the Scout
 filter-literal correctness fix — all live-verified, all measure-before-trust. Remaining (deferred, low
 value): the 4b tail (deep-turn reload, explicit bindings, CTE). Companion to
-[`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md)
-(what the modes share today), [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md)
+`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`
+(what the modes share today), `NL2SQL_WINNING_FORMULA_2026.md`
 (the ASSESS→ROUTE formula this productizes), and
 `INTERACTIVE_DATA_AGENT_VISION_2030.md` (absorbed into `ROADMAP.md`; recoverable from git history) (the
 BIRD-INTERACT direction this is the first concrete step toward).*
@@ -82,7 +82,7 @@ definition, grain, or SQL safety.
 
 ## 2. The target — your own formula, at the front door
 
-From [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md) §4:
+From `NL2SQL_WINNING_FORMULA_2026.md` §4:
 
 > **ASSESS → ROUTE → (CLARIFY | GENERATE) → VERIFY**, where ASSESS is deterministic.
 
@@ -108,7 +108,7 @@ single `POST /ask`:
 ### Why an LLM mega-orchestrator is explicitly *out*
 
 Pramanyx's durable conclusion — *deterministic guards beat added LLM machinery on a strong model* —
-and the R4 ablation ([`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md)) say
+and the R4 ablation (`R4_ABLATION_EVAL_2026-06-21.md`) say
 **injecting an LLM into the decision path regresses**. So:
 
 - The **deterministic** `assess_complexity` is the routing spine. The LLM `RouteDecision` stays a
@@ -152,8 +152,7 @@ router already writes.
 BIRD-INTERACT's central result: **ambiguity is the #1 unsolved skill**, and frontier models default
 to **trial-and-error** (`submit`-and-see) rather than asking. Pramanyx *detects* candidate-disagreement
 ambiguity (SOMA-SQL) but **does not ask the user today** — confirmed gap (`tools/ambiguity.py` is
-SQL-column-level only). The `ambiguous` flag on `ComplexityVerdict` is the documented seam
-([ROADMAP.md:246](../ROADMAP.md)).
+SQL-column-level only). The `ambiguous` flag on `ComplexityVerdict` is the documented seam.
 
 **Design:**
 
@@ -378,10 +377,10 @@ router. The merged front door works *before* any of the hard parts (memory, clar
 ## References
 
 - BIRD-INTERACT — arXiv [2510.05318](https://arxiv.org/abs/2510.05318) (Huo et al., ICLR 2026 Oral).
-- [`MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md`](MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md) — the shared spine.
-- [`NL2SQL_WINNING_FORMULA_2026.md`](NL2SQL_WINNING_FORMULA_2026.md) — the ASSESS→ROUTE formula.
+- `MODE_ARCHITECTURE_AND_CROSS_POLLINATION.md` — the shared spine.
+- `NL2SQL_WINNING_FORMULA_2026.md` — the ASSESS→ROUTE formula.
 - `INTERACTIVE_DATA_AGENT_VISION_2030.md` (absorbed into `ROADMAP.md`; recoverable from git history) — the long-horizon direction + harness design.
-- [`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md) — why the router stays deterministic.
+- `R4_ABLATION_EVAL_2026-06-21.md` — why the router stays deterministic.
 - Code spine: `agent/complexity.py`, `agent/nodes.py` (`classify_question`), `agent/orchestrator.py`,
   `sql/safety.py` (`preflight_repair`), `semantic/data_understanding.py`,
   `routers/investigations.py` (`_stream_chat` / `_stream_investigation`).

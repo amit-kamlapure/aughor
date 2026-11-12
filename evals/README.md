@@ -266,8 +266,7 @@ One connection per file; every reference (and `accept_sql`) is executed before a
 | `ablation_luxexperience_hard.jsonl` | `914df862/luxexperience` via `duckdb_path` | 14 questions, every trap's bite measured; run 2: raw 13/14 · ontology 13/14 · guards 100% safe — no lift, no loss (`ablation_on0_luxexperience_results.json`; run 1 kept as `…_run1.json`) |
 | `ablation_missimi.jsonl`, `ablation_missimi_hard.jsonl` | `workspace/missimi` | the schema no longer exists on the instance — every reference fails, the harness skips them |
 
-A record may carry `duckdb_path` (the LuxExperience demo pack, `data/luxexperience_demo.duckdb`,
-see `docs/DEMO_PACK_DESIGN.md`) so the set opens the file read-only instead of the registry —
+A record may carry `duckdb_path` (the LuxExperience demo pack, `data/luxexperience_demo.duckdb`) so the set opens the file read-only instead of the registry —
 the registry is a served store, and a hermetic run beside the API redirects it. `connection_id`
 stays the label and the `--graph-json` key; the served graphs are committed beside their sets
 (`ablation_*_ontology.json`), and beside each the same graph after its relationship cardinalities

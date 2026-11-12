@@ -281,6 +281,5 @@ Pramanyx's development history predates this file. The engineering record lives 
 
 - the [git history](https://github.com/amit-kamlapure/pramanyx/commits/main) — ~930
   commits on `main`, each tied to a pull request;
-- [`ROADMAP.md`](ROADMAP.md) — what shipped, and what is next;
 - [`FEATURES.md`](FEATURES.md) — a reference for each major capability and the
   files behind it.

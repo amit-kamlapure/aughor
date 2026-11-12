@@ -1,10 +1,7 @@
 # Pramanyx — Feature Reference
 
 **Product:** Pramanyx — an autonomous, grounded data-warehouse intelligence platform.
-**This document:** a tight, current map of what Pramanyx does, organized by capability area. The full
-chronological build log (171 numbered features, sprint by sprint) is preserved verbatim in
-[`docs/archive/FEATURES_full_2026-06-29.md`](docs/archive/FEATURES_full_2026-06-29.md) — consult it for
-per-feature detail, history, and the technology behind each increment.
+**This document:** a tight, current map of what Pramanyx does, organized by capability area.
 
 > **One-line thesis:** not a SQL copilot — an always-thinking analyst that builds a business ontology,
 > explores your warehouse in the background (and re-explores as it changes, in continuous mode), and is
@@ -483,7 +480,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   misroutes to cross-sectional). All rate-bearing lenses share **one canonical grain** (the metric table's unit)
   so a report can't show 40% (per order) and 76% (per line-item) for one rate. Both fan-outs run over `ContextThreadPoolExecutor` (so the metering
   accumulator + P6 budget propagate), with budget-abort, failure isolation, serial fallback and deterministic
-  merge; in-phase dimension queries already run in parallel. See `docs/PARALLEL_MULTIAGENT_GROUNDWORK.md`.
+  merge; in-phase dimension queries already run in parallel.
 - **Org / workspace tenancy** — `org_id` on every store, and (flag-gated on `PRAMANYX_REQUIRE_IDENTITY`, default
   off) **enforced on the read path**: a request-identity + object-level-authz seam (`security/authz.py` — a
   `Principal`, owner-checks on by-id routes), org-scoped `list_connections` / investigation history, a pure-ASGI
@@ -534,9 +531,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   **ratchet** (`ratchet.py`: accuracy + tokens vs a pinned baseline), and the interaction-arc evals
   (`ambiguity_eval.py` · `its_structural.py` · `ablation_eval.py`), with a **reliability-banding
   protocol** so sub-2-pt effects aren't mistaken for temp-0 noise. *(The one-off Spider 2.0 harness
-  from the June benchmark arc was deliberately removed with the arc's conclusion — see
-  `docs/SPIDER2_PROGRESS_AND_CHALLENGES_2026-06-28.md` §14; a fresh campaign harness is scoped in
-  `docs/10X_AND_SPIDER2_PROGRAM_2026-07-06.md` WS5.)*
+  from the June benchmark arc was deliberately removed with the arc's conclusion.)*
 - **End-to-end answer-quality gate** (`tests/integration/test_ada_ground_truth.py`) — the deep-analysis guards are
   unit-tested, but *answer quality* on the audit archetypes was not gated. A hermetic harness (temp DuckDB with
   **closed-form ground truth**, no live LLM) now asserts the deterministic gains directly: the global-ratio guard
@@ -626,6 +621,5 @@ schema changes or a run goes stale.
 
 ## Pointers
 
-- Full per-feature history: [`docs/archive/FEATURES_full_2026-06-29.md`](docs/archive/FEATURES_full_2026-06-29.md)
-- Architecture: `docs/PLATFORM_ARCHITECTURE.md` · Roadmap: `ROADMAP.md`
-- Latest repository audit: `AUDIT_2026-06-27.md`
+- Architecture: [`docs/PLATFORM_ARCHITECTURE.md`](docs/PLATFORM_ARCHITECTURE.md)
+- Words and what they mean: [`docs/GLOSSARY.md`](docs/GLOSSARY.md)

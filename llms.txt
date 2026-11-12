@@ -55,5 +55,4 @@ own queries:
 
 - Architecture: `docs/PLATFORM_ARCHITECTURE.md`
 - MCP server setup: `docs/MCP_SERVER.md`
-- Roadmap and build status: `ROADMAP.md`
 - Working with this repo as an agent: `AGENTS.md`

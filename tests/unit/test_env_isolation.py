@@ -146,54 +146,6 @@ def _parents(tree: ast.AST, target: ast.AST) -> list[ast.AST]:
     return found
 
 
-def _scripts_that_load_dotenv_at_import() -> set:
-    """Module names under `scripts/` whose `load_dotenv` runs on import."""
-    out = set()
-    for path in sorted((REPO / "scripts").rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        for call in _load_dotenv_calls(tree):
-            in_function = any(isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef))
-                              for p in _parents(tree, call))
-            guarded = any(isinstance(p, ast.If) and _guarded_by_flag(p.test)
-                          for p in _parents(tree, call))
-            if not in_function and not guarded:
-                out.add(f"scripts.{path.stem}")
-    return out
-
-
-def test_no_test_imports_a_script_that_loads_dotenv():
-    """`scripts/` is exempt from the loader ratchet because the probes there are RUN,
-    never imported — loading `.env` is the entire reason a bare script authenticates at
-    all. This is that assumption, asserted, and scoped to the scripts it is about:
-    importing a script with no `load_dotenv` is harmless and stays allowed.
-    """
-    hazardous = _scripts_that_load_dotenv_at_import()
-    assert hazardous, "no script loads `.env` at import any more — retire this guard"
-
-    offenders = []
-    for path in sorted((REPO / "tests").rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            names = []
-            if isinstance(node, ast.ImportFrom) and node.module:
-                names = [node.module]
-            elif isinstance(node, ast.Import):
-                names = [a.name for a in node.names]
-            for name in names:
-                if any(name == h or name.startswith(h + ".") for h in hazardous):
-                    offenders.append(f"{path.relative_to(REPO).as_posix()} → {name}")
-    assert sorted(set(offenders)) == [], (
-        f"{sorted(set(offenders))}: importing these runs their `load_dotenv` inside the "
-        f"suite's process, which is the leak this file exists to prevent. Guard that "
-        f"script's load and add it to LOADERS, or stop importing it.")
-
-
 def test_no_test_calls_load_dotenv():
     """A test that loads `.env` mutates `os.environ` for the REST OF THE PROCESS.
 
