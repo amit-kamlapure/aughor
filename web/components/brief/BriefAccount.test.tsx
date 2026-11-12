@@ -183,6 +183,17 @@ describe("the Briefing as a running account", () => {
     expect(api.measureRange).toHaveBeenCalledTimes(1);                         // drawn in three places, read once
   });
 
+  it("keeps Sources and guide closed until it is asked for — by its button, or by a cited number", async () => {
+    await open();
+    expect(screen.queryByLabelText("Sources and guide")).toBeNull();           // the page has the whole width
+    fireEvent.click(screen.getByRole("button", { name: "Sources & guide" }));
+    expect(screen.getByLabelText("Sources and guide")).toBeTruthy();
+    fireEvent.click(within(screen.getByLabelText("Sources and guide")).getByRole("button", { name: "Hide" }));
+    expect(screen.queryByLabelText("Sources and guide")).toBeNull();
+    fireEvent.click(screen.getAllByText("6.82 days")[0]);                      // a cited number opens where it came from
+    expect(within(screen.getByLabelText("Sources and guide")).getByText("SELECT 1")).toBeTruthy();
+  });
+
   it("says there is no storyline when every figure held and no decision is cited", async () => {
     api.readBriefingEdition.mockResolvedValue(WRITTEN([]));
     render(<BriefingEdition connectionId="c" schema="lux" />);

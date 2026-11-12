@@ -65,7 +65,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [side, setSide] = useState<"sources" | "guide" | "">("sources");
+  // Closed until asked for (the user, 2026-11-12: "Keep the Source/Guide panel in Briefing collapsed by default"): the
+  // page takes the whole width, and a cited number, a block's "source" or the Sources & guide button opens it.
+  const [side, setSide] = useState<"sources" | "guide" | "">("");
   const [picked, setPicked] = useState<string>("");
   const [drilling, setDrilling] = useState("");
   /** The drills taken, per writing of an edition and per card, oldest first. They are this reader's view: the edition
