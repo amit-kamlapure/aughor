@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EditionFigure } from "@/lib/api";
-import { lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
+import { bridgeSpec, lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
 import { Bridge, LineMark, Multiples, PairRows, RangeBars } from "./EditionFigure";
 
 const FIG = { id: "aov", label: "Average order", better: "up", current: 645,
@@ -29,13 +29,17 @@ describe("EditionFigure", () => {
   });
 
   it("bridges a usual range to this one, each step coloured by its sign", () => {
-    const { container } = render(<Bridge fmt={v => `€${Math.round(v / 100) / 10}k`} steps={[
-      { label: "A usual range", value: 160960, kind: "base" }, { label: "Top clients", value: 9417, kind: "delta" },
-      { label: "Everyone else", value: -3388, kind: "delta" }, { label: "This range", value: 166989, kind: "total" }]} />);
-    const fills = [...container.querySelectorAll("rect")].map(r => r.getAttribute("fill"));
-    expect(fills).toEqual(["var(--chart-deemph)", "var(--grn4)", "var(--amb4)", "var(--blue4)"]);
-    expect(container.textContent).toContain("+€9.4k");
-    expect(container.textContent).toContain("−€3.4k");
+    const steps = [{ label: "A usual range", value: 160960, kind: "base" as const }, { label: "Top clients", value: 9417, kind: "delta" as const },
+                   { label: "Everyone else", value: -3388, kind: "delta" as const }, { label: "This range", value: 166989, kind: "total" as const }];
+    const spec = bridgeSpec(steps, v => `€${Math.round(v / 100) / 10}k`, { base: "b", total: "t", up: "u", down: "d" })!;
+    const rows = (spec.data as { values: { tone: string; shown: string; from: number; to: number }[] }).values;
+    expect(rows.map(r => r.tone)).toEqual(["base", "up", "down", "total"]);
+    expect(rows.map(r => r.shown)).toEqual(["€161k", "+€9.4k", "−€3.4k", "€167k"]);
+    expect([rows[1].from, rows[1].to]).toEqual([160960, 170377]);       // a step starts where the one before it ended
+    expect([rows[2].from, rows[2].to]).toEqual([170377, 166989]);
+    expect(bridgeSpec(steps.slice(0, 1), String, { base: "", total: "", up: "", down: "" })).toBeNull();
+    render(<Bridge steps={steps} fmt={String} />);
+    expect(screen.getByTestId("edition-bridge")).toBeTruthy();
   });
 
   it("fades the rows a control has not chosen, and calls a segment of a few rows too few", () => {
@@ -63,13 +67,6 @@ describe("EditionFigure", () => {
       vi.stubGlobal("ResizeObserver", class { constructor(private cb: () => void) {} observe() { this.cb(); } disconnect() {} });
     };
     const POINTS = [{ x: "2026-10-05", v: 0.33 }, { x: "2026-10-12", v: 0.15 }, { x: "2026-10-19", v: 0.04 }];
-
-    it("draws a bridge at its shown width, so its labels keep their size", () => {
-      shownAt(640);
-      render(<Bridge steps={[{ label: "Usual", value: 100, kind: "base" }, { label: "A", value: 20, kind: "delta" },
-                             { label: "This week", value: 120, kind: "total" }]} fmt={v => String(v)} />);
-      expect(screen.getByTestId("edition-bridge").getAttribute("viewBox")).toBe("0 0 640 210");
-    });
 
     it("words a line's axis and its one mark in the figure's own unit", () => {
       const spec = lineMarkSpec(POINTS, v => `${(v * 100).toFixed(1)}%`, { at: "2026-10-12", text: "returns still arriving" })!;

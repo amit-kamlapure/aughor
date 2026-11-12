@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { BriefingGuidePanel } from "@/components/brief/BriefingGuidePanel";
 import { BriefingOffNotice } from "@/components/brief/BriefingOff";
-import { AccountTally, BusinessLine, ScoreLedger, SectionHead, Storylines } from "@/components/brief/BriefAccount";
+import { AccountTally, BusinessLine, Info, RecordLedgers, SectionHead, Storylines } from "@/components/brief/BriefAccount";
 import { BriefFrontView, useBriefFront } from "@/components/brief/BriefFront";
 import { DecideDialog } from "@/components/brief/DecideDialog";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
@@ -267,7 +267,12 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
              words: partWords(written, drawn, drawn.source ? sources[drawn.source] : undefined) };
   }, [asking, writing, blocks, drilled, sources]);
 
-  const draw = (list: EditionBlock[]) => !edition ? null : (
+  const draw = (list: EditionBlock[], sideBySide = false) => !edition ? null : !sideBySide ? drawn(list) : (
+    <div data-testid="edition-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", columnGap: 16, alignItems: "stretch" }}>
+      {drawn(list)}
+    </div>
+  );
+  const drawn = (list: EditionBlock[]) => !edition ? null : (
     <EditionBlocks blocks={list} sources={sources} figures={period?.measured ?? []} drillColumns={edition.drill_columns}
       currency={edition.currency_code ?? ""} connectionId={connectionId} schema={schema}
       onCite={onCite} onDrill={(card, b, c, sg) => void onDrill(card, b, c, sg)} onDrillBack={onDrillBack}
@@ -345,9 +350,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
           {schedule && <BriefSchedule connId={connectionId} />}
           {edition?.built && period && (
             <p className="aug-fs-xs" data-testid="edition-dateline" style={{ color: "var(--t3)", margin: "0 0 4px" }}>
-              What changed in {period.covers}, written for <b style={{ color: "var(--t2)", fontWeight: 500 }}>{readerName}</b>, against{" "}
-              {period.compared_with}. Every underlined number opens where it came from.
-              {edition.guide?.state === "draft" ? " Written from a draft guide no person has published." : ""}
+              Written for <b style={{ color: "var(--t2)", fontWeight: 500 }}>{readerName}</b>, against {period.compared_with}.
+              {edition.guide?.state === "draft" ? " From a draft guide no person has published." : ""}{" "}
+              <Info>{`What changed in ${period.covers}. Every underlined number opens where it came from.`}</Info>
             </p>
           )}
           {edition?.built && period && edition.lag_now !== undefined && edition.lag_now !== period.lag_days && (
@@ -410,12 +415,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                 </>
               )}
               <p className="aug-fs-sm" style={{ margin: "0 0 12px" }}>
-                {ownCanvas ? `The ${ownCanvas.checks_inside.length}` : `The guide's ${guide?.guide?.checks.length ?? 0}`} checks are measured for{" "}
-                {period?.covers ?? "this range"}; then the model reads what the platform already knows — its deep analyses, the
-                explorer&apos;s findings, the decisions in the record and what people said in Slack, by email and in documents —
-                looks into what moved (at most 8 queries of its own
-                {ownCanvas ? ", on these tables only" : ""}), may start one deep analysis on the move nothing explains yet, and
-                composes the page for {readerName}. Every number it writes is checked against its source. It takes about a minute.
+                Writing measures {ownCanvas ? `the ${ownCanvas.checks_inside.length}` : `the guide's ${guide?.guide?.checks.length ?? 0}`} checks
+                for {period?.covers ?? "this range"} and composes the page for {readerName}{ownCanvas ? ", on these tables only" : ""}. About a minute.{" "}
+                <Info>{`The model reads what the platform already knows — its deep analyses, the explorer's findings, the decisions in the record and what people said in Slack, by email and in documents — looks into what moved (at most 8 queries of its own${ownCanvas ? ", on these tables only" : ""}), may start one deep analysis on the move nothing explains yet, and composes the page. Every number it writes is checked against its source.`}</Info>
               </p>
               <Button disabled={!!busy} onClick={() => void write()}>{busy === "write" ? "Looking into it and writing…" : writeLabel(periodWord, custom)}</Button>
             </section>
@@ -432,9 +434,10 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                   {draw(blocks.filter(b => b.type === "lead"))}
                   <AccountTally stories={stories} unread={edition.account_unread} />
 
-                  <SectionHead title={`The business, ${period?.covers ?? "this range"}`}
-                    note={lineView === "stages" ? "every measured figure, where it sits in the business — pick a part to follow it down"
-                                                : "every approved metric for the range, the largest change first"}
+                  <SectionHead title="The business"
+                    info={lineView === "stages"
+                      ? "Every measured figure, on the part of the business it reads on. The band is its usual range and the mark is this range: filled when the platform calls the move, a ring when it reads outside but is not called or is still provisional. Green is the better way, amber the worse. Pick a part to open its storyline."
+                      : "Every approved metric for the range, the largest change first."}
                     right={!canvasId && (
                       <Segmented label="The business as" value={lineView} onChange={v => setLineView(v as "stages" | "table")}
                         options={[{ value: "stages", label: "By part" }, { value: "table", label: "Measured table" }]} />
@@ -445,26 +448,25 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                         parts={["short", "lead", "ranked"]} />}
 
                   <SectionHead title="Storylines"
-                    note="each says who owns it, what it is worth, the decision on it and when it is checked — or which is missing"
+                    info="One per part of the business where a figure left its usual range, and one per decision of the Record this edition cites. Each says who owns it, what it is worth, the decision on it and when it is checked — or which is missing."
                     right={stage ? <Button size="xs" variant="outline" onClick={() => setStage("")}>Every part</Button> : undefined} />
                   <Storylines stories={stories} figures={figures} period={periodWord} readerName={readerTeam} teams={teams}
                     open={shownStory} onOpen={setOpenStory} stage={stage} onCite={onCite} busy={owning}
-                    renderBlocks={ids => draw(blocks.filter(b => ids.includes(b.id)))}
+                    renderBlocks={ids => draw(blocks.filter(b => ids.includes(b.id)), true)}
                     onOwner={(st, o) => void onOwner(st, o)} onDecide={setDeciding} />
 
                   {blocks.some(b => b.type !== "lead" && !held.has(b.id)) && (
                     <>
-                      <SectionHead title="Also in this edition" note="what it wrote that belongs to no storyline" />
-                      {draw(blocks.filter(b => b.type !== "lead" && !held.has(b.id)))}
+                      <SectionHead title="Also in this edition" info="What the edition wrote that belongs to no storyline." />
+                      {draw(blocks.filter(b => b.type !== "lead" && !held.has(b.id)), true)}
                     </>
                   )}
 
-                  <SectionHead title="The record" note="how the range read, what was recorded lately and what waits on a person" />
-                  <ScoreLedger figures={figures} />
-                  {!canvasId && <BriefFrontView reads={front} connectionId={connectionId} parts={["desk"]} />}
+                  <SectionHead title="The record" />
+                  <RecordLedgers figures={figures} edition={edition} desk={canvasId ? undefined : front.desk} connectionId={connectionId} notRead={notRead} />
                 </>
               )}
-              {(!!edition.withheld?.length || !!edition.left_out?.length || notRead.length > 0) && (
+              {!account && (!!edition.withheld?.length || !!edition.left_out?.length || notRead.length > 0) && (
                 <section data-testid="edition-withheld" className="aug-fs-xs" style={{ color: "var(--t3)", borderTop: RULE, paddingTop: 10, marginTop: 18 }}>
                   {edition.withheld?.map((w, i) => (
                     <div key={`w-${i}`}>Held back{w.sentence ? `: “${w.sentence}”` : " a block"} — {w.why}</div>
@@ -483,10 +485,9 @@ export function BriefingEdition({ connectionId, schema, workspaceId, canvasId, o
                   title="Measure again, look again and write again">
                   {busy === "write" ? "Looking into it and writing…" : "Write it again"}
                 </Button>
-                <span>
-                  written {when(edition.generated_at)} · {edition.model_steps ?? 0} model steps · {edition.queries ?? 0} queries
-                  of its own{edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")}, ${countNoun(edition.known.decisions, "decision")} and ${countNoun(edition.known.discussions ?? 0, "discussion")}` : ""}
-                  {edition.known?.started ? " · started a deep analysis" : ""} · guide v{edition.guide?.version ?? "?"}
+                <span data-testid="edition-written">
+                  written {when(edition.generated_at)}{" "}
+                  <Info>{`${edition.model_steps ?? 0} model steps · ${edition.queries ?? 0} queries of its own${edition.known ? ` · read ${countNoun(edition.known.analyses, "deep analysis", "deep analyses")}, ${countNoun(edition.known.findings, "finding")}, ${countNoun(edition.known.decisions, "decision")} and ${countNoun(edition.known.discussions ?? 0, "discussion")}` : ""}${edition.known?.started ? " · started a deep analysis" : ""} · guide v${edition.guide?.version ?? "?"}`}</Info>
                 </span>
               </div>
             </>

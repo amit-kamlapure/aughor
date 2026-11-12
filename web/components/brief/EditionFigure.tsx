@@ -8,31 +8,15 @@
  */
 import { resolveDeemph, resolveSeries } from "@/components/charts/palette";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
-import { useMeasured } from "@/components/dashboards/cellBox";
 import type { EditionFigure } from "@/lib/api";
-import { lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
+import { bridgeSpec, lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
 import { rangeWord, toneOf } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
 
-const W = 360;
-
-/** The width a chart is shown at — so it draws at that width, its text at the size it was written. A picture drawn at
- *  W and stretched to a block's full width doubled its labels (the live LuxExperience line chart, 2026-10-30). W until
- *  measured, and in a test's DOM. */
-function useDrawnWidth(): [(el: HTMLDivElement | null) => void, number] {
-  const [ref, size] = useMeasured<HTMLDivElement>();
-  return [ref, size.width > 0 ? size.width : W];
-}
-
-function dayMonth(iso: string): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-}
 
 /** The usual range, and a comparison bar: a light tint over the card, in either theme — a dark token read as a hole. */
 const USUAL = "color-mix(in srgb, var(--t3) 16%, transparent)";
 
-const TONE: Record<string, string> = { good: "var(--grn4)", bad: "var(--amb4)", neutral: "var(--blue4)" };
 
 /** The figure's ranges as bars, the usual range shaded behind them — a Vega-Lite spec (`rangeBarsSpec`), drawn by the
  *  platform's chart engine under its own config, at the width it is shown at. */
@@ -50,41 +34,13 @@ export function RangeBars({ figure, period }: { figure: EditionFigure; period: s
 
 // ── Arc BC · the shapes a composed edition draws ─────────────────────────────────────────────
 
-const STEP_FILL = { base: "var(--chart-deemph)", total: "var(--blue4)", up: "var(--grn4)", down: "var(--amb4)" };
-
-/** Where a total came from: a start, each step's change, the end. */
+/** Where a total came from: a start, each step's change, the end — a Vega-Lite waterfall (`bridgeSpec`). */
 export function Bridge({ steps, fmt }: { steps: { label: string; value: number; kind: "base" | "delta" | "total" }[];
                                          fmt: (v: number) => string }) {
-  const [box, W] = useDrawnWidth();
-  if (steps.length < 2) return null;
-  const H = 210, pad = { l: 8, r: 8, t: 18, b: 34 };
-  let run = 0;
-  const bars = steps.map(s => {
-    if (s.kind !== "delta") { run = s.value; return { ...s, a: 0, b: s.value, fill: STEP_FILL[s.kind] }; }
-    const a = run; run += s.value;
-    return { ...s, a, b: run, fill: s.value >= 0 ? STEP_FILL.up : STEP_FILL.down };
-  });
-  const hi = Math.max(...bars.map(b => Math.max(b.a, b.b)));
-  const lowTop = Math.min(...bars.map(b => Math.min(b.a, b.b)).filter(v => v > 0), hi);
-  const lo = Math.max(0, lowTop - (hi - lowTop) * 0.8);
-  const Y = (v: number) => pad.t + (H - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
-  const bw = (W - pad.l - pad.r) / bars.length;
-  return (
-    <div ref={box}><svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="bridge" data-testid="edition-bridge">
-      {bars.map((b, i) => {
-        const x = pad.l + i * bw + bw * 0.18, w = bw * 0.64;
-        const y1 = Y(Math.max(b.a, b.b)), y2 = Y(Math.max(lo, Math.min(b.a, b.b)));
-        const txt = b.kind === "delta" ? `${b.value >= 0 ? "+" : "−"}${fmt(Math.abs(b.value))}` : fmt(b.value);
-        return (
-          <g key={`${b.label}-${i}`}>
-            <rect x={x} y={y1} width={w} height={Math.max(2, y2 - y1)} rx={2} fill={b.fill} />
-            <text x={x + w / 2} y={y1 - 5} textAnchor="middle" fontSize={11} fill="var(--t1)">{txt}</text>
-            <text x={x + w / 2} y={H - 12} textAnchor="middle" fontSize={10.5} fill="var(--t2)">{b.label}</text>
-          </g>
-        );
-      })}
-    </svg></div>
-  );
+  const series = resolveSeries();
+  const spec = bridgeSpec(steps, fmt, { base: resolveDeemph(), total: series[0], up: series[1], down: series[3] });
+  if (!spec) return null;
+  return <div role="img" aria-label="bridge" data-testid="edition-bridge"><VegaChart spec={spec} tier={2} height={190} /></div>;
 }
 
 /** Segments of this range against their usual (or any comparison): a bar each, the comparison behind it. */

@@ -121,7 +121,7 @@ describe("the Briefing as a running account", () => {
     expect(within(pause).getByTestId("storyline-owner").textContent).toBe("Sidha Sadhak");
     // the first storyline is open: the four things, its chart, its blocks, its trail
     const four = within(delivery).getByTestId("storyline-four");
-    expect(four.textContent).toContain("Proposed by this edition · not taken");
+    expect(four.textContent).toContain("Proposed · not taken");
     expect(four.textContent).toContain("Nothing to check");
     expect(within(delivery).getByText(/Express transit holds the rise/)).toBeTruthy();
     expect(within(delivery).getByTestId("storyline-trail").textContent).toContain("Nobody owns Order-to-delivery days.");
@@ -176,8 +176,10 @@ describe("the Briefing as a running account", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Measured table" }));
     expect(await screen.findByTestId("brief-lead")).toBeTruthy();
     expect(screen.queryByTestId("business-line")).toBeNull();
-    expect(screen.getByTestId("brief-trends")).toBeTruthy();
-    expect(screen.getByTestId("brief-waiting")).toBeTruthy();
+    // the record: four ledgers side by side, the desk's among them
+    expect([...screen.getByTestId("record-ledgers").children].map(c => c.getAttribute("data-testid")))
+      .toEqual(["account-score", "brief-trends", "edition-withheld", "brief-waiting"]);
+    expect(screen.getByTestId("account-score").textContent).toContain("1 of 2 read inside their usual range");
     expect(api.measureRange).toHaveBeenCalledTimes(1);                         // drawn in three places, read once
   });
 

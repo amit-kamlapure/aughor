@@ -135,7 +135,8 @@ function ContextBody({ block, src, ctx }: BodyProps) {
       <div className="aug-fs-xs" style={{ textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6,
                                           color: running ? "var(--amb4)" : "var(--t3)" }}>{kicker}</div>
       <p className="aug-fs-h2" style={{ color: "var(--t1)", margin: 0 }}>{head}</p>
-      {more && <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "6px 0 0" }}>{more}</p>}
+      {/* the work's own summary only when the edition wrote nothing of its own about it: both said the same thing twice */}
+      {more && (src.kind !== "analysis" || !block.text) && <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "6px 0 0" }}>{more}</p>}
       {block.text && <p className="aug-fs-sm" style={{ margin: "8px 0 0" }}><CitedText text={block.text} onCite={ctx.onCite} /></p>}
       {measuredBeforeWords(src) && (
         <p data-testid="edition-measured-before" className="aug-fs-sm" style={{ color: "var(--amb4)", margin: "8px 0 0" }}>{measuredBeforeWords(src)}</p>

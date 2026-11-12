@@ -172,3 +172,42 @@ export function lineMarkSpec(points: { x: string; v: number }[], fmt: (v: number
     ],
   };
 }
+
+/** Where a total came from — a start, each step's change, the end — as a waterfall spec. A rise is ``up``, a fall
+ *  ``down``; the start is quiet and the end is the accent. Every bar says its own figure in ``fmt``'s words. Null when
+ *  there are fewer than two steps. */
+export function bridgeSpec(steps: { label: string; value: number; kind: "base" | "delta" | "total" }[], fmt: (v: number) => string,
+                           colors: { base: string; total: string; up: string; down: string }): Record<string, unknown> | null {
+  if (steps.length < 2) return null;
+  let run = 0;
+  // a step's name on as many short lines as it needs, so three long names do not run into each other under their bars
+  const lines = (label: string): string => label.split(/\s+/).reduce<string[]>((out, w) => {
+    if (out.length && (out[out.length - 1] + " " + w).length <= 18) out[out.length - 1] += " " + w; else out.push(w);
+    return out;
+  }, []).join("\n");
+  const bars = steps.map(st => ({ ...st, label: lines(st.label) })).map((s, i) => {
+    if (s.kind !== "delta") { run = s.value; return { step: s.label, order: i, from: 0, to: s.value, top: s.value, tone: s.kind, shown: fmt(s.value) }; }
+    const from = run; run += s.value;
+    return { step: s.label, order: i, from, to: run, top: Math.max(from, run), tone: s.value >= 0 ? "up" : "down",
+             shown: `${s.value >= 0 ? "+" : "−"}${fmt(Math.abs(s.value))}` };
+  });
+  // the bars stand on a floor under the lowest top, as they always have: a step of 9k on a total of 167k must show
+  const hi = Math.max(...bars.map(b => b.top));
+  const lowTop = Math.min(...bars.map(b => Math.min(b.from, b.to)).filter(v => v > 0), hi);
+  const floor = Math.max(0, lowTop - (hi - lowTop) * 0.8);
+  const rows = bars.map(b => ({ ...b, from: Math.max(floor, b.from), to: Math.max(floor, b.to) }));
+  const x = { field: "step", type: "ordinal", sort: { field: "order" }, title: null, axis: { labelAngle: 0, labelLimit: 160, domain: false, labelExpr: "split(datum.label, '\\n')" } };
+  const scale = { domain: [floor, hi + (hi - floor) * 0.12], zero: false, nice: false };
+  return {
+    data: { values: rows },
+    layer: [
+      { mark: { type: "bar", cornerRadius: 2, width: { band: 0.6 } },
+        encoding: { x, y: { field: "from", type: "quantitative", scale, title: null, axis: null }, y2: { field: "to" },
+                    color: { field: "tone", type: "nominal", legend: null,
+                             scale: { domain: ["base", "total", "up", "down"], range: [colors.base, colors.total, colors.up, colors.down] } },
+                    tooltip: [{ field: "step", type: "nominal", title: "Step" }, { field: "shown", type: "nominal", title: "Figure" }] } },
+      { mark: { type: "text", baseline: "bottom", dy: -4 },
+        encoding: { x, y: { field: "top", type: "quantitative", scale }, text: { field: "shown" } } },
+    ],
+  };
+}

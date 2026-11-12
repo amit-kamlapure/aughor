@@ -21,12 +21,17 @@ import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { Chip, type Tone } from "@/components/clarity/kit";
+import { openDeskAction } from "@/components/brief/BriefPaper";
+import type { FrontReads } from "@/components/brief/BriefFront";
 import { Button } from "@/components/ui/button";
-import type { EditionFigure, EditionStage, EditionStoryline, StorylineTrail } from "@/lib/api";
+import { Freshness } from "@/components/ui/freshness";
+import { Icon } from "@/components/ui/icon";
+import type { BriefingEdition, DeskItem, EditionFigure, EditionStage, EditionStoryline, StorylineTrail } from "@/lib/api";
 import {
   STANDING_COLOR, figureSpec, scoreOf, sideOf, standingOf, tallyOf, trackOf, usualWords,
 } from "@/lib/briefingAccount";
-import { countNoun, utcDayWords } from "@/lib/format";
+import { countNoun, formatCount, utcDayWords } from "@/lib/format";
+import { withUniqueKeys } from "@/lib/listKeys";
 import { requestTab } from "@/lib/navigate";
 
 const RULE = "1px solid var(--b1)";
@@ -39,11 +44,22 @@ const STATE: Record<EditionStoryline["state"], { label: string; tone: Tone }> = 
 const day = (iso?: string): string => (iso ? utcDayWords(iso) : "");
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-export function SectionHead({ title, note, right }: { title: string; note?: ReactNode; right?: ReactNode }) {
+/** An explanation, as an icon to hover or focus (the user, 2026-11-12: "Remove what is just FYI or explanation.. it
+ *  can be a simple info icon or just be removed"). What a reader must know to act stays in words on the page. */
+export function Info({ children }: { children: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", margin: "22px 0 8px" }}>
+    <span role="img" aria-label={children} title={children} tabIndex={0} data-testid="info"
+      style={{ display: "inline-flex", verticalAlign: "-2px", color: "var(--t3)", cursor: "help" }}>
+      <Icon name="info" size={13} />
+    </span>
+  );
+}
+
+export function SectionHead({ title, info, right }: { title: string; info?: string; right?: ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "22px 0 8px" }}>
       <h2 className="aug-fs-xs" style={{ ...LABEL, margin: 0 }}>{title}</h2>
-      {note && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{note}</span>}
+      {info && <Info>{info}</Info>}
       {right && <span style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center" }}>{right}</span>}
     </div>
   );
@@ -124,7 +140,7 @@ export function BusinessLine({ stages, figures, chosen, onChoose }: {
                   <Track figure={f} />
                   <span className="aug-fs-xs" style={{ ...NUM, gridColumn: "1 / 3", color: "var(--t3)" }}
                     title={f.equal_age && !f.equal_age.equal ? f.equal_age.why : undefined}>
-                    {f.usual ? `usual ${usualWords(f)}${sideOf(f) && !f.outside ? " · read, not called a move" : ""}` : "not read against a usual range"}
+                    {f.usual ? `usual ${usualWords(f)}${sideOf(f) && !f.outside ? " · not called" : ""}` : "no usual range"}
                     {f.status !== "final" ? ` · ${f.status.replace("_", " ")}` : ""}
                   </span>
                 </div>
@@ -133,21 +149,17 @@ export function BusinessLine({ stages, figures, chosen, onChoose }: {
           );
         })}
       </div>
-      <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "8px 0 0" }}>
-        The band is a figure&apos;s usual range and the mark is this range. A filled mark is a move the platform calls; a ring is
-        read outside the range but not called. Green is the better way, amber the worse, by what the guide says of the figure.
-      </p>
     </>
   );
 }
 
-function Cell({ label, big, tone, children }: { label: string; big: ReactNode; tone?: "none" | "done"; children?: ReactNode }) {
+function Cell({ label, info, big, tone, children }: { label: string; info?: string; big: ReactNode; tone?: "none" | "done"; children?: ReactNode }) {
   return (
-    <div style={{ padding: "12px 14px", borderRight: RULE, minWidth: 0 }}>
-      <div className="aug-fs-xs" style={LABEL}>{label}</div>
-      <div className="aug-fs-ui" style={{ ...NUM, fontWeight: 600, margin: "3px 0 4px",
+    <div style={{ padding: "10px 14px", borderRight: RULE, minWidth: 0 }}>
+      <div className="aug-fs-xs" style={{ ...LABEL, display: "flex", gap: 6, alignItems: "center" }}>{label}{info && <Info>{info}</Info>}</div>
+      <div className="aug-fs-ui" style={{ ...NUM, fontWeight: 600, margin: "3px 0 0",
         color: tone === "none" ? "var(--amb4)" : tone === "done" ? "var(--grn4)" : "var(--t1)" }}>{big}</div>
-      <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{children}</div>
+      {children}
     </div>
   );
 }
@@ -246,11 +258,11 @@ export function Storylines({ stories, figures, period, readerName, teams, open, 
               <div data-testid="storyline-open" style={{ borderTop: RULE, padding: "14px 14px 16px" }}>
                 <div data-testid="storyline-four" style={{ display: "grid", gridTemplateColumns: "2fr 2fr 4fr 3fr", background: "var(--bg-0, transparent)",
                                                            border: RULE, borderRadius: "var(--r3)", marginBottom: 16, overflow: "hidden" }}>
-                  <Cell label="Owner" big={s.owner || "No owner"} tone={s.owner ? undefined : "none"}>
-                    {s.owner_from === "decision" ? "The Record names them owner of its decision."
+                  <Cell label="Owner" big={s.owner || "No owner"} tone={s.owner ? undefined : "none"}
+                    info={s.owner_from === "decision" ? "The Record names them owner of its decision."
                       : s.owner_from === "metric" ? `Owns ${anchor?.label ?? s.metric}, the metric this storyline stands on.`
                       : s.kind === "figures" ? `Nobody owns ${anchor?.label ?? s.metric}. An owner is set on the metric, so it carries to every edition.`
-                      : "The Record names no owner for this decision."}
+                      : "The Record names no owner for this decision."}>
                     {s.kind === "figures" && (
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                         {readerName && !mine && <Button size="xs" disabled={busy === s.id} onClick={() => onOwner(s, readerName)}>Take it for {readerName}</Button>}
@@ -259,57 +271,49 @@ export function Storylines({ stories, figures, period, readerName, teams, open, 
                         {giving === s.id && (teams.length ? teams.filter(t => !same(t.name, s.owner)).map(t => (
                           <Button key={t.id} size="xs" variant="outline" disabled={busy === s.id} data-testid="storyline-give"
                             onClick={() => { onOwner(s, t.name); setGiving(""); }}>{t.name}</Button>
-                        )) : <span>— there are no function groups yet</span>)}
+                        )) : <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>no function groups yet</span>)}
                         {giving === s.id && s.owner && <Button size="xs" variant="outline" disabled={busy === s.id} onClick={() => { onOwner(s, ""); setGiving(""); }}>Nobody</Button>}
                       </div>
                     )}
                   </Cell>
-                  <Cell label="Worth" big={worthWords(s)} tone={s.worth.value == null ? "none" : undefined}>
-                    {s.worth.value != null ? s.worth.says : s.worth.why}
-                  </Cell>
+                  <Cell label="Worth" big={worthWords(s)} tone={s.worth.value == null ? "none" : undefined}
+                    info={(s.worth.value != null ? s.worth.says : s.worth.why) || undefined} />
                   <Cell label={s.decision?.taken ? `Decided${s.decision.decided ? ` ${day(s.decision.decided)}` : ""}${s.decision.by ? ` · ${s.decision.by}` : ""}`
-                                : s.decision ? "Proposed by this edition · not taken" : "No decision proposed"}
-                    big={s.decision?.text || "Nothing has been decided or proposed on this."}>
-                    {s.decision?.taken ? s.decision.where : s.decision
-                      ? "Taking it books the decision in the Record with what it is expected to change, before the fact."
-                      : "A decision can still be taken on it: say what will be done and what it is expected to change."}
+                                : s.decision ? "Proposed · not taken" : "No decision"}
+                    info={s.decision?.taken ? s.decision.where || undefined
+                      : "Taking a decision books it in the Record with what it is expected to change, before the fact."}
+                    big={s.decision?.text || "—"}>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                       {s.decision?.taken
                         ? s.decision.id && <Button size="xs" variant="outline" onClick={() => requestTab("decisions", { id: String(s.decision!.id) })}>Open the decision</Button>
                         : s.kind === "figures" && <Button size="xs" data-testid="storyline-decide" onClick={() => onDecide(s)}>{s.decision ? "Decide it" : "Propose a decision"}</Button>}
                     </div>
                   </Cell>
-                  <Cell label="Checked" tone={s.check.state === "booked" || s.check.state === "reviewed" ? "done" : "none"}
-                    big={s.check.state === "none" ? "Nothing to check" : s.check.state === "reviewed" ? "Reviewed"
-                      : `Review ${s.check.on ? day(s.check.on) : "date not set"}`}>
-                    <span data-testid="storyline-check">{s.check.says}</span>
-                  </Cell>
+                  <Cell label="Checked" tone={s.check.state === "booked" || s.check.state === "reviewed" ? "done" : "none"} info={s.check.says}
+                    big={<span data-testid="storyline-check" data-state={s.check.state}>{s.check.state === "none" ? "Nothing to check" : s.check.state === "reviewed" ? "Reviewed"
+                      : `Review ${s.check.on ? day(s.check.on) : "date not set"}${s.check.state === "unscored" ? " · nothing to score" : ""}`}</span>} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 28 }}>
-                  <div style={{ minWidth: 0 }}>
-                    {anchor && (
-                      <figure style={{ margin: "0 0 12px" }}>
-                        <figcaption className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", gap: 10, marginBottom: 4 }}>
-                          <span>{anchor.label}, the last {countNoun(anchor.series.length, period)} — the band is its usual range</span>
-                          <span style={{ marginLeft: "auto" }}><Button size="xs" variant="link" onClick={() => onCite(anchor.id)}>source</Button></span>
-                        </figcaption>
-                        <VegaChart spec={figureSpec(anchor)} tier={2} height={190} />
-                      </figure>
-                    )}
-                    {s.figures.length > 1 && (
-                      <p className="aug-fs-sm" data-testid="storyline-with" style={{ ...NUM, color: "var(--t2)", margin: "0 0 12px" }}>
-                        Also outside usual on {s.stage_name}:{" "}
-                        {s.figures.slice(1).map(id => byId[id]).filter(Boolean).map(f => `${f.label} ${f.current_text} (usual ${usualWords(f)})`).join(" · ")}.
-                      </p>
-                    )}
-                    {s.blocks.length > 0 ? renderBlocks(s.blocks)
-                      : <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}>This edition wrote nothing more about it.</p>}
-                  </div>
+                <div style={{ display: "grid", gridTemplateColumns: anchor ? "minmax(0,3fr) minmax(260px,2fr)" : "minmax(0,1fr)", gap: 28, alignItems: "start" }}>
+                  {anchor && (
+                    <figure style={{ margin: 0, minWidth: 0 }}>
+                      <figcaption className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", gap: 10, marginBottom: 4 }}>
+                        <span>{anchor.label}, last {countNoun(anchor.series.length, period)}</span>
+                        <span style={{ marginLeft: "auto" }}><Button size="xs" variant="link" onClick={() => onCite(anchor.id)}>source</Button></span>
+                      </figcaption>
+                      <VegaChart spec={figureSpec(anchor)} tier={2} height={190} />
+                      {s.figures.length > 1 && (
+                        <p className="aug-fs-xs" data-testid="storyline-with" style={{ ...NUM, color: "var(--t3)", margin: "8px 0 0" }}>
+                          Also outside usual: {s.figures.slice(1).map(id => byId[id]).filter(Boolean).map(f => `${f.label} ${f.current_text}`).join(" · ")}
+                        </p>
+                      )}
+                    </figure>
+                  )}
                   <div>
                     <div className="aug-fs-xs" style={{ ...LABEL, marginBottom: 8 }}>The trail</div>
                     <Trail trail={s.trail} onCite={onCite} />
                   </div>
                 </div>
+                {s.blocks.length > 0 && renderBlocks(s.blocks)}
               </div>
             )}
           </div>
@@ -319,36 +323,113 @@ export function Storylines({ stories, figures, period, readerName, teams, open, 
   );
 }
 
-/** How the range read against its usual ranges — counted from the measurement, never written. */
-export function ScoreLedger({ figures }: { figures: EditionFigure[] }) {
-  const s = scoreOf(figures);
-  if (!s.read) return null;
-  const rows = [...s.above, ...s.below].slice(0, 6);
+const KIND: Record<string, string> = {
+  answer: "Answer", inquiry: "Question", disagree: "Dispute", lag: "Data lag", metric: "Metric", unmeasured: "Not measured",
+  undated: "No date", waiting: "Waiting for data", proposed_run: "Proposed deep analysis", proposed_metric: "Proposed metric", trend: "Finding",
+};
+const CLAMP: React.CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" };
+
+function Ledger({ title, info, testid, children }: { title: string; info: string; testid: string; children: ReactNode }) {
   return (
-    <section data-testid="account-score" style={{ ...PANEL, padding: "12px 14px", margin: "12px 0 0" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: "0 0 8px" }}>
-        <h2 className="aug-fs-ui" style={{ margin: 0, color: "var(--t1)", fontWeight: 600 }}>Against its usual range</h2>
-        <span className="aug-fs-xs" style={{ ...NUM, color: "var(--t3)" }}>
-          {s.inside} of {countNoun(s.read, "figure")} read inside · {s.above.length} above · {s.below.length} below
-        </span>
-      </div>
-      {rows.length === 0 ? <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}>Every figure read inside its usual range.</p> : (
-        <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse" }}>
-          <tbody>
-            {rows.map(f => (
-              <tr key={f.id} data-testid="score-row">
-                <td style={{ padding: "6px 12px 6px 0", borderTop: RULE, color: "var(--t1)" }}>{f.label}</td>
-                <td style={{ ...NUM, padding: "6px 12px 6px 0", borderTop: RULE, color: "var(--t3)" }}>usual {usualWords(f)}</td>
-                <td style={{ ...NUM, padding: "6px 12px 6px 0", borderTop: RULE, color: "var(--t1)", textAlign: "right" }}>read {f.current_text}</td>
-                <td style={{ padding: "6px 0", borderTop: RULE, textAlign: "right" }}>
-                  {f.outside ? <Chip tone={standingOf(f) === "better" ? "up" : standingOf(f) === "worse" ? "amber" : "plain"}>{sideOf(f) > 0 ? "above" : "below"}</Chip>
-                             : <Chip title={f.equal_age && !f.equal_age.equal ? f.equal_age.why : "Read outside its usual range, not called a move"}>not called</Chip>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+    <section data-testid={testid} style={{ ...PANEL, padding: "12px 14px", minWidth: 0 }}>
+      <h3 className="aug-fs-xs" style={{ ...LABEL, margin: "0 0 2px", display: "flex", gap: 6, alignItems: "center" }}>{title}<Info>{info}</Info></h3>
+      {children}
     </section>
+  );
+}
+
+/** One line of a ledger: what it is, one quiet line under it, and its next step when it has one. Long words are held
+ *  to two lines, whole on hover — a ledger is scanned, not read. */
+function Entry({ title, sub, action }: { title: string; sub?: string; action?: ReactNode }) {
+  return (
+    <div data-testid="ledger-entry" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: "2px 10px", padding: "7px 0", borderTop: RULE }}>
+      <span className="aug-fs-sm" title={title} style={{ ...CLAMP, color: "var(--t1)" }}>{title}</span>
+      {action && <span style={{ gridRow: "1 / 3", gridColumn: 2 }}>{action}</span>}
+      {sub && <span className="aug-fs-xs" title={sub} style={{ ...CLAMP, ...NUM, gridColumn: 1, color: "var(--t3)" }}>{sub}</span>}
+    </div>
+  );
+}
+
+const quiet = (words: string) => <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: "6px 0 0" }}>{words}</p>;
+const more = (n: number, words: string) => n > 0 && (
+  <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "7px 0 0", borderTop: RULE }}>{formatCount(n)} more {words}</div>
+);
+
+function deskEntries(items: DeskItem[] | null | undefined, connectionId: string, withKind: boolean): ReactNode {
+  if (items == null) return quiet("Its store could not be read.");
+  return withUniqueKeys(items, it => `${it.kind}:${it.source.ref}:${it.title}`).map(([k, it]) => (
+    <Entry key={k} title={it.title}
+      sub={[withKind ? KIND[it.kind] ?? it.kind.replace(/_/g, " ") : "", it.text, it.as_of ? day(it.as_of) : "", it.status === "Provisional" ? "provisional" : ""]
+        .filter(Boolean).join(" · ")}
+      action={it.action && <Button size="xs" variant="outline" onClick={() => openDeskAction(it.action!, connectionId)}>{it.action.verb}</Button>} />
+  ));
+}
+
+/**
+ * The record under the storylines — four ledgers side by side: how the range read against its usual ranges, what was
+ * recorded lately, what the edition cannot say yet (the desk's gaps and everything the edition held back, left out or
+ * did not read), and what waits on a person. The desk's are read by the page's one desk read (`useBriefFront`) and
+ * each keeps its next step; a store that could not be read says so in its ledger.
+ */
+export function RecordLedgers({ figures, edition, desk, connectionId, notRead }: {
+  figures: EditionFigure[];
+  edition: BriefingEdition;
+  /** The page's desk read; absent in a Data Canvas, whose edition reads only its own tables. */
+  desk?: FrontReads["desk"];
+  connectionId: string;
+  /** What the edition did not read, each with why. */
+  notRead: { label: string; reason: string }[];
+}) {
+  const s = scoreOf(figures);
+  const out = [...s.above, ...s.below];
+  const held = [
+    ...(edition.withheld ?? []).map(w => ({ title: `Held back${w.sentence ? `: “${w.sentence}”` : " a block"}`, sub: w.why })),
+    ...(edition.left_out ?? []).map(l => ({ title: "Left out", sub: l })),
+    ...notRead.map(n => ({ title: `Not read: ${n.label}`, sub: n.reason })),
+  ];
+  const d = desk?.data;
+  const reading = desk === null ? quiet("Reading the desk…") : desk?.error ? quiet(`The desk could not be read — ${desk.error}.`) : null;
+  return (
+    <>
+      <div data-testid="record-ledgers" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "stretch" }}>
+        <Ledger title="Kept score" testid="account-score" info="Each figure read against its own usual range — counted from the measurement, never written.">
+          {s.read === 0 ? quiet("No figure was read against a usual range.") : (
+            <>
+              {out.slice(0, 4).map(f => (
+                <Entry key={f.id} title={f.label} sub={`usual ${usualWords(f)} · read ${f.current_text}${f.outside ? "" : " · not called"}`} />
+              ))}
+              <Entry title={`${s.inside} of ${s.read} read inside their usual range`} sub={`${s.above.length} above · ${s.below.length} below`} />
+            </>
+          )}
+        </Ledger>
+        {desk !== undefined && (
+          <Ledger title="Closed lately" testid="brief-trends" info="Answers and findings recorded in the last 30 days, newest first.">
+            {reading ?? (d?.trends?.items?.length === 0 ? quiet("Nothing was recorded in the last 30 days.") : deskEntries(d?.trends?.items, connectionId, false))}
+            {more(d?.trends?.more ?? 0, "recorded")}
+          </Ledger>
+        )}
+        <Ledger title="Cannot say yet" testid="edition-withheld" info="What this edition holds back, and why: disputed answers, unmeasured metrics, and every sentence or block it kept off the page.">
+          {desk !== undefined && (reading ?? deskEntries(d?.gaps?.items, connectionId, true))}
+          {held.map((h, i) => <Entry key={`h-${i}`} title={h.title} sub={h.sub} />)}
+          {desk === undefined && held.length === 0 && quiet("Nothing was held back.")}
+          {desk !== undefined && !reading && (d?.gaps?.items?.length ?? 0) === 0 && held.length === 0 && quiet("Nothing is held back.")}
+          {more(d?.gaps?.more ?? 0, "on the desk")}
+        </Ledger>
+        {desk !== undefined && (
+          <Ledger title="Waits on a person" testid="brief-waiting" info="Proposals nothing moves on until someone acts.">
+            {reading ?? (d?.decide?.items?.length === 0 ? quiet("Nothing waits on a person.") : deskEntries(d?.decide?.items, connectionId, true))}
+            {more(d?.decide?.more ?? 0, "on the desk")}
+          </Ledger>
+        )}
+      </div>
+      {d && (
+        <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", margin: "6px 0 0" }}>
+          <Freshness state="live" at={d.as_of} verb="desk read" />
+          {Object.entries(d.unread ?? {}).map(([store, why]) => (
+            <span key={store} className="aug-fs-xs" data-testid="brief-unread" style={{ color: "var(--t3)" }}>Not read: {store} — {why}</span>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
