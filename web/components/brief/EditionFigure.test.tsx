@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** Arc BG/BC — an edition's shapes, drawn from what was measured: the range last, a step coloured by its sign. */
 import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { EditionFigure } from "@/lib/api";
-import { bridgeSpec, lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
-import { Bridge, LineMark, Multiples, PairRows, RangeBars } from "./EditionFigure";
+import { bridgeSpec, lineMarkSpec, multipleOf, multipleSpec, pairRowsSpec, pairTone, progressSpec, rangeBarsSpec } from "@/lib/briefingAccount";
+import { Bridge, LineMark, Multiples, PairRows, ProgressBars, RangeBars } from "./EditionFigure";
 
 const FIG = { id: "aov", label: "Average order", better: "up", current: 645,
   usual: { mean: 590, low: 566, high: 614, n: 8, mean_text: "€590", low_text: "€566", high_text: "€614" },
@@ -43,12 +43,19 @@ describe("EditionFigure", () => {
   });
 
   it("fades the rows a control has not chosen, and calls a segment of a few rows too few", () => {
-    render(<PairRows better="up" fmt={v => String(v)} change={() => ""} dim={l => l !== "Mytheresa"}
-      rows={[{ label: "Mytheresa", now: 38840, base: 29849 }, { label: "YOOX", now: 9845, base: 11051, thin: true }]} />);
-    const rows = screen.getAllByRole("row");
-    expect(rows[0].getAttribute("data-faded")).toBeNull();
-    expect(rows[1].getAttribute("data-faded")).toBe("true");
-    expect(rows[1].textContent).toContain("too few");
+    const rows = [{ label: "Mytheresa", now: 38840, base: 29849 }, { label: "YOOX", now: 9845, base: 11051, thin: true },
+                  { label: "MR PORTER", now: 900, base: 1000 }];
+    const colors = { thin: "grey", plain: "blue", good: "green", bad: "amber" };
+    const spec = pairRowsSpec(rows, { fmt: v => String(v), change: (a, b) => (a! >= b! ? "up" : "down") }, "up", colors, l => l !== "Mytheresa")!;
+    const values = (spec.data as { values: { row: string; faded: boolean; tone: string; nowText: string; changeText: string }[] }).values;
+    expect(values.map(v => v.faded)).toEqual([false, true, true]);
+    expect(values.map(v => v.row)).toEqual(["Mytheresa", "YOOX · too few", "MR PORTER"]);
+    expect(values.map(v => v.tone)).toEqual(["good", "thin", "bad"]);          // too few to call is never good or bad
+    expect(values[0]).toMatchObject({ nowText: "38840", changeText: "up" });
+    expect([pairTone(5, 9, "down"), pairTone(5, 9, "none")]).toEqual(["good", "plain"]);   // a fall is good where down is better
+    expect(pairRowsSpec([], { fmt: String, change: () => "" }, "up", colors)).toBeNull();
+    render(<PairRows better="up" fmt={v => String(v)} change={() => "+30%"} rows={rows} />);
+    expect(screen.getByTestId("edition-pair-rows").getAttribute("aria-label")).toContain("YOOX (too few to call): 9845 against 11051");
   });
 
   it("draws one small chart per series, each against its own usual", () => {
@@ -57,15 +64,26 @@ describe("EditionFigure", () => {
                                                               { name: "Desktop", points: pts([2.0, 1.9, 2.1, 2.6]) }]} />);
     expect(screen.getByTestId("edition-multiples").textContent).toContain("App");
     expect(screen.getByTestId("edition-multiples").textContent).toContain("5.20%");
+    expect(screen.getByTestId("edition-multiples").textContent).toContain("usual 6.60%–6.80%");
+    // each against its OWN usual: the periods before the last, a standard deviation either side
+    expect(multipleOf(pts([6.8, 6.6, 6.7, 5.2]))).toMatchObject({ last: 5.2, tone: "below", band: true });
+    expect(multipleOf(pts([2.0, 1.9, 2.1, 2.6])).tone).toBe("above");
+    expect(multipleOf(pts([2.0, 2.6])).band).toBe(false);                      // one earlier period is no range
+    const spec = multipleSpec(pts([6.8, 6.6, 6.7, 5.2]), "amber");
+    expect((spec.data as { values: { last: boolean }[] }).values.map(v => v.last)).toEqual([false, false, false, true]);
+    expect(JSON.stringify(spec)).toContain('"color":"amber"');
   });
 
-  describe("drawn at the width it is shown", () => {
-    // jsdom lays nothing out: give every box the width a full block has on the page, and a ResizeObserver that reads it
-    afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-    const shownAt = (px: number) => {
-      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(px);
-      vi.stubGlobal("ResizeObserver", class { constructor(private cb: () => void) {} observe() { this.cb(); } disconnect() {} });
-    };
+  it("sets a few totals side by side, the first in the accent, each saying its figure", () => {
+    const spec = progressSpec([{ label: "Q3 2026", v: 2100 }, { label: "Q3 2025", v: -1900 }], v => `€${v}`, { first: "blue", rest: "grey" })!;
+    expect((spec.data as { values: unknown[] }).values).toEqual([
+      { row: "Q3 2026", order: 0, value: 2100, shown: "€2100", first: true }, { row: "Q3 2025", order: 1, value: 1900, shown: "€-1900", first: false }]);
+    expect(progressSpec([], String, { first: "", rest: "" })).toBeNull();
+    render(<ProgressBars rows={[{ label: "Q3 2026", v: 2100 }]} fmt={v => `€${v}`} />);
+    expect(screen.getByTestId("edition-progress").getAttribute("aria-label")).toBe("Q3 2026: €2100");
+  });
+
+  describe("a line over the periods read", () => {
     const POINTS = [{ x: "2026-10-05", v: 0.33 }, { x: "2026-10-12", v: 0.15 }, { x: "2026-10-19", v: 0.04 }];
 
     it("words a line's axis and its one mark in the figure's own unit", () => {

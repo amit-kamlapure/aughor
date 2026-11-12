@@ -2,7 +2,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { EditionFigure, EditionStoryline } from "@/lib/api";
-import { figureSpec, forReader, scoreOf, sideOf, standingOf, tallyOf, trackOf } from "./briefingAccount";
+import * as vl from "vega-lite";
+
+import {
+  bridgeSpec, figureSpec, forReader, lineMarkSpec, multipleSpec, pairRowsSpec, progressSpec, rangeBarsSpec, scoreOf, sideOf,
+  standingOf, tallyOf, trackOf,
+} from "./briefingAccount";
 
 const fig = (over: Partial<EditionFigure>): EditionFigure => ({
   id: "f", label: "F", metric: "f", unit: "EUR", better: "up", why: "", current: 110, previous: 100, last_year: null, rel: 0.1,
@@ -56,5 +61,27 @@ describe("briefingAccount", () => {
     expect([s.read, s.inside]).toEqual([4, 1]);
     expect(s.above.map(f => f.id)).toEqual(["far", "near"]);
     expect(s.below.map(f => f.id)).toEqual(["low"]);
+  });
+
+  it("writes specs the chart engine compiles — every figure the Briefing draws", () => {
+    // A spec is data until the compiler reads it: `axis: null` on an encoding shared between layers threw only in the
+    // browser (2026-11-12). Each is compiled here as VegaChart compiles it, at a width and a height.
+    const pts = [{ x: "2026-10-19", v: 6.5 }, { x: "2026-10-26", v: 6.6 }, { x: "2026-11-02", v: 6.8 }];
+    const colors = { thin: "#888", plain: "#48f", good: "#3a6", bad: "#d72" };
+    const specs: Record<string, Record<string, unknown> | null> = {
+      figure: figureSpec(fig({})), trend: figureSpec(fig({}), true), unread: figureSpec(fig({ usual: null })),
+      ranges: rangeBarsSpec(fig({}), { current: "#3a6", rest: "#888" }),
+      line: lineMarkSpec(pts, v => v.toFixed(2), { at: "2026-10-26", text: "carrier change" }),
+      bridge: bridgeSpec([{ label: "Average days from order to ship", value: 1.12, kind: "base" }, { label: "to delivery", value: 5.7, kind: "delta" },
+                          { label: "Order to delivery", value: 6.82, kind: "total" }], v => v.toFixed(2), { base: "#888", total: "#48f", up: "#3a6", down: "#d72" }),
+      pairs: pairRowsSpec([{ label: "Mytheresa", now: 78, base: 74.5 }, { label: "YOOX", now: 112, base: 115.3, thin: true }],
+                          { fmt: v => String(v), change: () => "+4.7%" }, "up", colors, l => l === "YOOX"),
+      progress: progressSpec([{ label: "Q3 2026", v: 2100 }, { label: "Q3 2025", v: 1900 }], v => `€${v}`, { first: "#48f", rest: "#888" }),
+      multiple: multipleSpec(pts, "#d72"),
+    };
+    for (const [name, spec] of Object.entries(specs)) {
+      expect(spec, name).not.toBeNull();
+      expect(() => vl.compile({ ...spec, width: 420, height: 160 } as unknown as Parameters<typeof vl.compile>[0]), name).not.toThrow();
+    }
   });
 });

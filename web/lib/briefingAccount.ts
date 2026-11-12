@@ -211,3 +211,112 @@ export function bridgeSpec(steps: { label: string; value: number; kind: "base" |
     ],
   };
 }
+
+// ── the last three of the edition's figures, as Vega-Lite specs (2026-11-12, "Yes, move them") ──────────────────
+
+/** An axis that draws nothing — `axis: null` on an encoding shared between layers breaks the compiler. */
+const NO_AXIS = { labels: false, domain: false, grid: false, ticks: false, title: null };
+export type FigureTone = "thin" | "plain" | "good" | "bad";
+export interface FigureColors { thin: string; plain: string; good: string; bad: string }
+const toneScale = (c: FigureColors) => ({ domain: ["thin", "plain", "good", "bad"], range: [c.thin, c.plain, c.good, c.bad] });
+/** A row the reader's control did not choose is drawn quieter, never removed. */
+const FADE = { condition: { test: "datum.faded", value: 0.35 }, value: 1 };
+
+/** How a segment stands against what it is compared with: too few rows to call, no better way said, or good/bad. */
+export function pairTone(now: number | null, base: number | null, better: string, thin?: boolean): FigureTone {
+  if (thin) return "thin";
+  if (better === "none") return "plain";
+  const up = now !== null && base !== null && now >= base;
+  return up === (better === "up") ? "good" : "bad";
+}
+
+/**
+ * Segments of this range against their usual (or any comparison): one row each — its name, a bar over the bar it is
+ * compared with, then the two figures and the change in the figure's own words. A segment behind too few rows is
+ * drawn grey and says so; a row a control has not chosen is faded. The three figures stand in columns at the right,
+ * so the bars keep the rest of the width.
+ */
+export function pairRowsSpec(rows: { label: string; now: number | null; base: number | null; thin?: boolean }[],
+                             words: { fmt: (v: number | null) => string; change: (now: number | null, base: number | null) => string },
+                             better: string, colors: FigureColors, dim?: (label: string) => boolean): Record<string, unknown> | null {
+  if (!rows.length) return null;
+  const values = rows.map((r, i) => ({
+    row: r.label + (r.thin ? " · too few" : ""), order: i, now: Math.abs(r.now ?? 0), base: Math.abs(r.base ?? 0),
+    nowText: words.fmt(r.now), baseText: words.fmt(r.base), changeText: words.change(r.now, r.base),
+    tone: pairTone(r.now, r.base, better, r.thin), faded: !!dim?.(r.label),
+  }));
+  const max = Math.max(1e-9, ...values.flatMap(v => [v.now, v.base]));
+  const y = { field: "row", type: "ordinal", sort: { field: "order" }, title: null,
+              axis: { domain: false, ticks: false, grid: false, labelLimit: 170, labelPadding: 8 } };
+  const scale = { domain: [0, max], range: [0, { expr: "max(40, width - 250)" }], nice: false };
+  const column = (field: string, right: number, muted = false) => ({
+    mark: { type: "text", align: "right", x: { expr: `width - ${right}` }, ...(muted ? { fillOpacity: 0.6 } : {}) },
+    encoding: { y, text: { field }, opacity: FADE },
+  });
+  const change = column("changeText", 0);
+  return {
+    data: { values },
+    layer: [
+      { mark: { type: "bar", size: 14, cornerRadius: 2, color: "#888888", fillOpacity: 0.2 },
+        encoding: { y, x: { field: "base", type: "quantitative", scale, axis: NO_AXIS }, opacity: FADE } },
+      { mark: { type: "bar", size: 6, cornerRadius: 2 },
+        encoding: { y, x: { field: "now", type: "quantitative", scale, axis: NO_AXIS }, opacity: FADE,
+                    color: { field: "tone", type: "nominal", legend: null, scale: toneScale(colors) },
+                    tooltip: [{ field: "row", type: "nominal", title: "Segment" }, { field: "nowText", type: "nominal", title: "This range" },
+                              { field: "baseText", type: "nominal", title: "Against" }, { field: "changeText", type: "nominal", title: "Change" }] } },
+      column("nowText", 156), column("baseText", 78, true),
+      { ...change, encoding: { ...change.encoding, color: { field: "tone", type: "nominal", legend: null, scale: toneScale(colors) } } },
+    ],
+  };
+}
+
+/** A few totals against each other — a quarter against last year's — the first in the accent, each saying its figure. */
+export function progressSpec(rows: { label: string; v: number }[], fmt: (v: number) => string,
+                             colors: { first: string; rest: string }): Record<string, unknown> | null {
+  if (!rows.length) return null;
+  const values = rows.map((r, i) => ({ row: r.label, order: i, value: Math.abs(r.v), shown: fmt(r.v), first: i === 0 }));
+  const max = Math.max(1e-9, ...values.map(v => v.value));
+  const y = { field: "row", type: "ordinal", sort: { field: "order" }, title: null,
+              axis: { domain: false, ticks: false, grid: false, labelLimit: 240, labelPadding: 8 } };
+  return {
+    data: { values },
+    layer: [
+      { mark: { type: "bar", size: 14, cornerRadius: 3 },
+        encoding: { y, x: { field: "value", type: "quantitative", axis: NO_AXIS,
+                            scale: { domain: [0, max], range: [0, { expr: "max(40, width - 100)" }], nice: false } },
+                    color: { condition: { test: "datum.first", value: colors.first }, value: colors.rest },
+                    tooltip: [{ field: "row", type: "nominal", title: "Total" }, { field: "shown", type: "nominal", title: "Figure" }] } },
+      { mark: { type: "text", align: "right", x: { expr: "width" } }, encoding: { y, text: { field: "shown" } } },
+    ],
+  };
+}
+
+/** One series of a set of small charts, read against its own usual: the mean of every period before the last, a
+ *  standard deviation either side. ``tone`` is where the last period stands against that band. */
+export function multipleOf(points: { x: string; v: number }[]): { last: number; low: number; high: number; band: boolean; tone: "below" | "above" | "inside" } {
+  const vals = points.map(p => p.v), usual = vals.slice(0, -1);
+  const mean = usual.reduce((a, c) => a + c, 0) / Math.max(1, usual.length);
+  const sd = usual.length > 1 ? Math.sqrt(usual.reduce((a, c) => a + (c - mean) ** 2, 0) / (usual.length - 1)) : 0;
+  const last = vals[vals.length - 1];
+  return { last, low: mean - sd, high: mean + sd, band: usual.length > 1, tone: last < mean - sd ? "below" : last > mean + sd ? "above" : "inside" };
+}
+
+/** One small chart of a set: the series as a line, its own usual range shaded, its last period marked in ``color``. */
+export function multipleSpec(points: { x: string; v: number }[], color: string): Record<string, unknown> {
+  const m = multipleOf(points);
+  const values = points.map((p, i) => ({ when: dayMonth(p.x), order: i, value: p.v, last: i === points.length - 1 }));
+  const x = { field: "when", type: "ordinal", sort: { field: "order" }, title: null, axis: NO_AXIS, scale: { padding: 0.1 } };
+  const y = { field: "value", type: "quantitative", title: null, axis: NO_AXIS, scale: { zero: false, nice: false } };
+  const tooltip = [{ field: "when", type: "nominal", title: "From" }, { field: "value", type: "quantitative", title: "Read", format: ",.2f" }];
+  return {
+    data: { values },
+    layer: [
+      ...(m.band ? [{ data: { values: [{ low: m.low, high: m.high, words: "usual" }] },
+                      layer: [{ mark: { type: "rect", color: "#888888", opacity: 0.16 }, encoding: { y: { field: "low", type: "quantitative" }, y2: { field: "high" } } },
+                              { mark: { type: "text", align: "right", baseline: "bottom", dy: -2, x: { expr: "width" }, fillOpacity: 0.6 },
+                                encoding: { y: { field: "high", type: "quantitative" }, text: { field: "words" } } }] }] : []),
+      { mark: { type: "line", strokeWidth: 1.6, color: "#888888" }, encoding: { x, y, tooltip } },
+      { transform: [{ filter: "datum.last" }], mark: { type: "point", size: 70, filled: true, opacity: 1, color }, encoding: { x, y, tooltip } },
+    ],
+  };
+}

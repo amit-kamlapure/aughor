@@ -139,9 +139,11 @@ describe("BriefingEdition", () => {
     render(<BriefingEdition connectionId="dcc63d83" schema="luxexperience" />);
     await screen.findByTestId("edition-lead");
     fireEvent.click(screen.getByRole("radio", { name: "Mytheresa" }));
-    const rows = within(screen.getAllByTestId("edition-pair-rows")[0]).getAllByRole("row");   // the comparison, not the map's list
-    expect(rows[0].getAttribute("data-faded")).toBeNull();                    // Mytheresa
-    expect(rows[1].getAttribute("data-faded")).toBe("true");                  // YOOX
+    // the comparison (not the map's list) is a chart since 2026-11-12: which rows are faded is in its spec
+    const drawn = JSON.parse(within(screen.getAllByTestId("edition-pair-rows")[0]).getByTestId("vega").getAttribute("data-spec") ?? "{}");
+    const rows = drawn.data.values as { row: string; faded: boolean }[];
+    expect([rows[0].row, rows[0].faded]).toEqual(["Mytheresa", false]);
+    expect([rows[1].row, rows[1].faded]).toEqual(["YOOX", true]);
   });
 
   const DRILL_COLUMNS = ["segment", "this_range", "usual", "change", "change_pct", "rows", "too_few"];

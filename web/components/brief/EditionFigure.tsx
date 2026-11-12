@@ -1,21 +1,18 @@
 /**
  * Arc BG (ROADMAP §3.66) — an edition's figures, drawn by code from what was measured.
  *
- * Two pictures, each showing what its story says: a figure's ranges as bars with its USUAL RANGE shaded
- * behind them (the range itself last, in the accent), and a figure's segments as the change each made on
- * its own usual — a change drawn as the change. A segment behind fewer than 30 rows is drawn grey: too
- * few to call. The model never draws; the server never sends a picture, only the numbers.
+ * Every one is a Vega-Lite spec (`lib/briefingAccount.ts`) drawn by the platform's chart engine under its own config
+ * (2026-11-12 — the user: "Why is the graph of some other library when we have a dedicated graph/chart library called
+ * vegalite made robust?"): a figure's ranges with its usual range shaded, a bridge, segments against their usual, small
+ * charts per series, a line with its mark, and a few totals side by side. A segment behind fewer than 30 rows is drawn
+ * grey: too few to call. The model never draws; the server never sends a picture, only the numbers.
  */
 import { resolveDeemph, resolveSeries } from "@/components/charts/palette";
 import { VegaChart } from "@/components/charts/vega/VegaChart";
 import type { EditionFigure } from "@/lib/api";
-import { bridgeSpec, lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
+import { bridgeSpec, lineMarkSpec, multipleOf, multipleSpec, pairRowsSpec, progressSpec, rangeBarsSpec } from "@/lib/briefingAccount";
 import { rangeWord, toneOf } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
-
-
-/** The usual range, and a comparison bar: a light tint over the card, in either theme — a dark token read as a hole. */
-const USUAL = "color-mix(in srgb, var(--t3) 16%, transparent)";
 
 
 /** The figure's ranges as bars, the usual range shaded behind them — a Vega-Lite spec (`rangeBarsSpec`), drawn by the
@@ -43,68 +40,49 @@ export function Bridge({ steps, fmt }: { steps: { label: string; value: number; 
   return <div role="img" aria-label="bridge" data-testid="edition-bridge"><VegaChart spec={spec} tier={2} height={190} /></div>;
 }
 
-/** Segments of this range against their usual (or any comparison): a bar each, the comparison behind it. */
+/** Where a figure stands, in the chart palette's own hues: too few to call is the quiet grey, no better way said is
+ *  the first series, the better way green and the worse amber — read when drawn, so they follow the theme. */
+const tones = () => {
+  const series = resolveSeries();
+  return { thin: resolveDeemph(), plain: series[0], good: series[1], bad: series[3] };
+};
+
+/** Segments of this range against their usual (or any comparison): a bar each over the bar it is compared with, then
+ *  the two figures and the change — a Vega-Lite spec (`pairRowsSpec`). A row a control has not chosen is faded. */
 export function PairRows({ rows, fmt, change, better, dim }: {
   rows: { label: string; now: number | null; base: number | null; thin?: boolean }[];
   fmt: (v: number | null) => string; change: (now: number | null, base: number | null) => string;
   better: string; dim?: (label: string) => boolean;
 }) {
-  const max = Math.max(1e-9, ...rows.flatMap(r => [r.now ?? 0, r.base ?? 0].map(Math.abs)));
+  const spec = pairRowsSpec(rows, { fmt, change }, better, tones(), dim);
+  if (!spec) return null;
   return (
-    <div role="table" data-testid="edition-pair-rows">
-      {rows.map((r, i) => {
-        const up = r.now !== null && r.base !== null && r.now >= r.base;
-        const good = better === "none" ? null : up === (better === "up");
-        const col = r.thin ? "var(--chart-deemph)" : good === null ? "var(--blue4)" : good ? "var(--grn4)" : "var(--amb4)";
-        const faded = dim?.(r.label);
-        return (
-          <div role="row" key={`${r.label}-${i}`} data-faded={faded ? "true" : undefined} className="aug-fs-sm"
-            style={{ display: "grid", gridTemplateColumns: "minmax(90px,160px) 1fr 76px 76px 64px", gap: 10, alignItems: "center",
-                     padding: "5px 0", borderTop: "1px solid var(--b1)", opacity: faded ? 0.35 : 1 }}>
-            <span style={{ color: "var(--t1)" }}>{r.label}{r.thin ? <span style={{ color: "var(--t3)" }}> · too few</span> : null}</span>
-            <svg viewBox="0 0 300 16" width="100%" aria-hidden>
-              <rect x={0} y={2} width={300 * Math.abs(r.base ?? 0) / max} height={12} rx={2} fill={USUAL} />
-              <rect x={0} y={5} width={300 * Math.abs(r.now ?? 0) / max} height={6} rx={2} fill={col} />
-            </svg>
-            <span style={{ textAlign: "right", color: "var(--t1)" }}>{fmt(r.now)}</span>
-            <span style={{ textAlign: "right", color: "var(--t3)" }}>{fmt(r.base)}</span>
-            <span style={{ textAlign: "right", color: col }}>{change(r.now, r.base)}</span>
-          </div>
-        );
-      })}
+    <div role="img" data-testid="edition-pair-rows"
+      aria-label={rows.map(r => `${r.label}${r.thin ? " (too few to call)" : ""}: ${fmt(r.now)} against ${fmt(r.base)}, ${change(r.now, r.base)}`).join("; ")}>
+      <VegaChart spec={spec} tier={2} height={rows.length * 30 + 6} />
     </div>
   );
 }
 
-/** The same measure for each value of a series, each small chart shading its own usual range. */
+/** The same measure for each value of a series, each small chart shading its own usual range (`multipleSpec`). */
 export function Multiples({ series, fmt }: { series: { name: string; points: { x: string; v: number }[] }[];
                                              fmt: (v: number) => string }) {
-  const w = 280, h = 92, pad = { l: 4, r: 36, t: 8, b: 14 };
+  const palette = tones();
   return (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(series.length, 4)}, minmax(0,1fr))`, gap: 16 }}
       data-testid="edition-multiples">
       {withUniqueKeys(series, x => x.name).map(([key, s]) => {
-        const vals = s.points.map(p => p.v);
-        const usual = vals.slice(0, -1);
-        const m = usual.reduce((a, c) => a + c, 0) / Math.max(1, usual.length);
-        const sd = usual.length > 1 ? Math.sqrt(usual.reduce((a, c) => a + (c - m) ** 2, 0) / (usual.length - 1)) : 0;
-        const lo = Math.min(...vals, m - sd), hi = Math.max(...vals, m + sd);
-        const Y = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
-        const X = (i: number) => pad.l + (w - pad.l - pad.r) * i / Math.max(1, vals.length - 1);
-        const last = vals[vals.length - 1];
-        const col = last < m - sd ? "var(--amb4)" : last > m + sd ? "var(--grn4)" : "var(--blue4)";
+        const m = multipleOf(s.points);
+        const col = m.tone === "below" ? "var(--amb4)" : m.tone === "above" ? "var(--grn4)" : "var(--blue4)";
         return (
-          <div key={key}>
+          <div key={key} style={{ minWidth: 0 }}>
             <div className="aug-fs-sm" style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "var(--t1)" }}>{s.name}</span><span style={{ color: col }}>{fmt(last)}</span>
+              <span style={{ color: "var(--t1)" }}>{s.name}</span><span style={{ color: col }}>{fmt(m.last)}</span>
             </div>
-            <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label={`${s.name} by period`}>
-              {usual.length > 1 && <rect x={pad.l} y={Y(m + sd)} width={w - pad.l - pad.r} height={Math.max(1, Y(m - sd) - Y(m + sd))} fill={USUAL} />}
-              <polyline fill="none" stroke="var(--t3)" strokeWidth={1.6} points={vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ")} />
-              <circle cx={X(vals.length - 1)} cy={Y(last)} r={4} fill={col} />
-              <text x={w - pad.r + 4} y={Y(m) + 4} fontSize={10.5} fill="var(--t3)">usual</text>
-            </svg>
-            <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>usual {fmt(m - sd)}–{fmt(m + sd)}</div>
+            <div role="img" aria-label={`${s.name} by period`}>
+              <VegaChart spec={multipleSpec(s.points, m.tone === "below" ? palette.bad : m.tone === "above" ? palette.good : palette.plain)} tier={2} height={92} />
+            </div>
+            {m.band && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>usual {fmt(m.low)}–{fmt(m.high)}</div>}
           </div>
         );
       })}
@@ -120,21 +98,14 @@ export function LineMark({ points, fmt, mark }: { points: { x: string; v: number
   return <div role="img" aria-label="line" data-testid="edition-line"><VegaChart spec={spec} tier={2} height={170} /></div>;
 }
 
-/** A few totals against each other — a quarter against last year's. */
+/** A few totals against each other — a quarter against last year's — a Vega-Lite spec (`progressSpec`). */
 export function ProgressBars({ rows, fmt }: { rows: { label: string; v: number }[]; fmt: (v: number) => string }) {
-  const max = Math.max(1e-9, ...rows.map(r => Math.abs(r.v)));
+  const palette = tones();
+  const spec = progressSpec(rows, fmt, { first: palette.plain, rest: palette.thin });
+  if (!spec) return null;
   return (
-    <div data-testid="edition-progress">
-      {rows.map((r, i) => (
-        <div key={`${r.label}-${i}`} className="aug-fs-sm"
-          style={{ display: "grid", gridTemplateColumns: "minmax(140px,240px) 1fr 90px", gap: 10, alignItems: "center", margin: "6px 0" }}>
-          <span>{r.label}</span>
-          <svg viewBox="0 0 400 14" width="100%" aria-hidden>
-            <rect width={400 * Math.abs(r.v) / max} height={14} rx={3} fill={i === 0 ? "var(--blue4)" : "var(--chart-deemph)"} />
-          </svg>
-          <span style={{ textAlign: "right", color: "var(--t1)" }}>{fmt(r.v)}</span>
-        </div>
-      ))}
+    <div role="img" data-testid="edition-progress" aria-label={rows.map(r => `${r.label}: ${fmt(r.v)}`).join("; ")}>
+      <VegaChart spec={spec} tier={2} height={rows.length * 30 + 6} />
     </div>
   );
 }
