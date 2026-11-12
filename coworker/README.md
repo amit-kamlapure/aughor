@@ -46,6 +46,10 @@ turned back on from the interface.
   the first time one is seen. The chart is drawn by the same resolver the
   app, the PDF export and `POST /charts/svg` use, so it is the chart Pramanyx would have drawn.
 
+- **The work, readable.** A turn's steps read down one line: the agent's own sentence, with a dot, then the calls
+  made for it as rows named by what they found — "Total GMV by platform, led by the largest shop · 5 rows" for an
+  answer, "Read the definition of the metric: gmv" for a read. A row opens to the SQL and the rows, or to what
+  came back. The shell's second fold, one per group of calls, is gone; the turn's own fold stays.
 - **Pramanyx's identity.** The mark and name in the sidebar and over a new conversation, the tab's title and icon,
   the first screen's wording, the app's dark palette, small corners, and a plain ring where the shell draws its
   animal while an answer is worked on.
@@ -73,7 +77,10 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
 
 ## What is not done
 
-- Only `ask` has a card. `deep_analysis` and the custom agents' tools still show the shell's plain row.
+- A deep analysis is one named row that opens to what came back. Its own steps — baseline, decomposition, what
+  each concluded — are not drawn, and it has no card.
+- A Pramanyx tool added since this was written, and each custom agent's, is named from the end of the first turn
+  that calls it; until then that one call shows the shell's plain row.
 - The chart is drawn from the answer's grid and chart type. The app's own `chart_config` and column units are
   not carried over MCP yet, so a chart the app would have labelled or formatted specially is drawn plainly here.
 - A result longer than the shell's cap reaches the page cut short. The card reads it without its receipt; a

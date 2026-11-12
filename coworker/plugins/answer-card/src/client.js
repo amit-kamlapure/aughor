@@ -8,8 +8,9 @@
  * retelling: this view takes the `ask` tool's own result and draws it — the chart, the table, the SQL and how it
  * was answered — and the model writes around it.
  *
- * It registers a view for ONE wire tool name in the shell's `tool.call.toolview` slot. Nothing here calls
- * Pramanyx, a model or the network: it reads the result the tool already returned.
+ * It registers a view per Pramanyx tool in the shell's `tool.call.toolview` slot: the card for a tool that answers,
+ * and for every tool a named row in the list of steps, so the work reads down as what was done and what it came
+ * to. Nothing here calls Pramanyx, a model or the network: it reads the result the tool already returned.
  */
 import { createElement as h, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -163,7 +164,7 @@ function AnswerTail(props) {
   useEffect(() => {
     for (const step of props.turn?.steps ?? []) {
       const blocks = step?.data?.entries?.get?.("assistant-step")?.value?.blocks ?? [];
-      for (const block of blocks) if (block?.kind === "tool-call") showAnswersOf(block.name);
+      for (const block of blocks) if (block?.kind === "tool-call") nameStepsOf(block.name);
     }
   });
   return h("div", { [TAIL]: "" });
@@ -199,11 +200,197 @@ function AnswerCard(props) {
     look();
     return () => { watch.disconnect(); if (timer !== null) clearTimeout(timer); };
   }, []);
-  const card = h(Card, props);
-  // In the tool list: one line that says where the answer is. Until the end of the turn exists, the card itself.
+  // In the list of steps: the answer as a named row that opens to its SQL and rows. At the end of the turn, once
+  // that place exists: the whole card.
   return h("div", { ref: here },
-    tail ? h("div", { style: { ...quiet, fontSize: 12.5, padding: "2px 0" } }, "Pramanyx answered — shown below the reply") : card,
-    tail ? createPortal(card, tail) : null);
+    h(AnswerStep, props),
+    tail ? createPortal(h(Card, props), tail) : null);
+}
+
+/** What a call was given, whichever of the shell's shapes carries it. Nothing readable is an empty object. */
+function argsOf(block) {
+  const parsed = (raw) => {
+    try {
+      // The shell hands a call's arguments as the pieces they streamed in as (`chunks`, with `object` once they are
+      // whole), as a reader to be called, as a plain object, or as the text they arrived in.
+      let given = typeof raw === "function" ? raw() : raw;
+      if (given && typeof given === "object" && Array.isArray(given.chunks)) {
+        if (given.object && typeof given.object === "object") return given.object;
+        given = given.chunks.join("");
+      }
+      if (given && typeof given === "object") return given;
+      const value = JSON.parse(given);
+      return value && typeof value === "object" ? value : {};
+    } catch {
+      return {};
+    }
+  };
+  for (const raw of [block?.args, block?.argsRaw, block?.call?.args, block?.call?.argsRaw]) {
+    const found = parsed(raw);
+    if (Object.keys(found).length) return found;
+  }
+  return {};
+}
+
+const ICONS = {
+  // A grid: something was read off the data.
+  rows: [["rect", { x: 2, y: 2.5, width: 12, height: 11, rx: 1.5 }], ["path", { d: "M2 6.5h12M6.5 6.5v7" }]],
+  // A page: something was read that a person or the platform wrote.
+  read: [["path", { d: "M4 2h6l3 3v9H4z" }], ["path", { d: "M6.5 8h4M6.5 10.5h4" }]],
+};
+
+function Icon({ kind, busy }) {
+  if (busy) return h("span", { className: "pramanyx-step-busy", "aria-hidden": "true" });
+  return h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.2,
+                    strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: { flex: "none", opacity: 0.7 } },
+    (ICONS[kind] ?? ICONS.read).map(([tag, attrs], i) => h(tag, { key: i, ...attrs })));
+}
+
+/**
+ * One step of the work, as a row a person can read down: what was done, in words, and what it came to. It opens
+ * when there is something behind it. A row looks pressable before the pointer reaches it.
+ */
+function Step({ kind, title, note, busy, failed, children }) {
+  const [open, setOpen] = useState(false);
+  const opens = Boolean(children);
+  return h("div", { className: "pramanyx-step", style: { border: `1px solid ${line}`, borderRadius: 4, margin: "3px 0", fontSize: 13 } },
+    h("button", {
+      type: "button", disabled: !opens, "aria-expanded": opens ? open : undefined, onClick: () => setOpen((was) => !was),
+      style: { display: "flex", gap: 8, alignItems: "center", width: "100%", textAlign: "left", font: "inherit", color: "inherit",
+               background: open ? faint : "transparent", border: 0, padding: "7px 10px", cursor: opens ? "pointer" : "default" },
+    },
+      h(Icon, { kind, busy }),
+      h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...(busy ? quiet : {}) } }, title),
+      failed ? h("span", { style: { flex: "none", fontSize: 12 } }, "did not work") : note ? h("span", { style: { ...quiet, flex: "none", fontSize: 12 } }, note) : null),
+    open && opens ? h("div", { style: { padding: 10, borderTop: `1px solid ${line}`, display: "flex", flexDirection: "column", gap: 10 } }, children) : null);
+}
+
+/** An answer in the list of steps: named by what Pramanyx found, opening to the SQL and the rows. */
+function AnswerStep(props) {
+  const asked = String(argsOf(props.block).question || "");
+  if (props.phase !== "result") return h(Step, { kind: "rows", busy: true, title: asked ? `Asking Pramanyx: ${asked}` : "Asking Pramanyx" });
+  const read = readAnswer(resultText(props.block));
+  if (!read || props.block?.isError) {
+    return h(Step, { kind: "rows", failed: true, title: asked || "A question to Pramanyx" },
+      h("pre", { style: { margin: 0, fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, resultText(props.block).slice(0, 2000) || "Nothing came back."));
+  }
+  const { answer } = read;
+  const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
+  return h(Step, { kind: "rows", title: answer.answer || asked || "An answer from Pramanyx", note: `${count} ${count === 1 ? "row" : "rows"}` },
+    h(Sql, { answer }), h(Table, { answer }));
+}
+
+/**
+ * Pramanyx's other tools, in the words of what each does. A tool's wire name is `mcp__pramanyx__get_metric`; a
+ * person reading the steps is told a metric's definition was read, and which. The second entry names the argument
+ * that says which. A tool not listed is named from its own name, with the underscores taken out.
+ */
+const DOES = {
+  deep_analysis: ["Ran a deep analysis", ["question"]],
+  explore: ["Explored", ["question", "topic", "focus"]],
+  explain: ["Asked how an answer was reached", ["investigation_id"]],
+  get_metric: ["Read the definition of the metric", ["name", "metric", "metric_name"]],
+  describe_entity: ["Read the object", ["entity", "name", "entity_id"]],
+  get_object: ["Read the object", ["name", "object", "object_id", "id"]],
+  list_objects: ["Listed the objects", ["kind", "type"]],
+  search_graph: ["Searched what is already known about", ["query", "q", "question"]],
+  list_findings: ["Read earlier findings", ["query", "table"]],
+  list_trusted_queries: ["Read the trusted queries", []],
+  get_table_health: ["Checked the health of the table", ["table", "table_name"]],
+  table_popularity: ["Read which tables are used most", []],
+  list_connections: ["Listed the connections", []],
+  list_platform_connections: ["Listed the connections", []],
+  get_briefing: ["Read the Briefing", []],
+  get_investigation: ["Read an earlier analysis", ["investigation_id", "id"]],
+  list_runs: ["Listed recent runs", []],
+  inspect_run: ["Looked into a run", ["trace_id"]],
+  read_run_span: ["Read one step of a run", ["span_id"]],
+  get_job: ["Checked on a job", ["job_id", "id"]],
+  list_jobs: ["Listed the jobs", []],
+  read_claims: ["Read the Record", ["subject", "kind"]],
+  read_contract: ["Read the agent contract", []],
+  read_restatements: ["Read what was restated", []],
+  post_claim: ["Wrote a claim to the Record", ["subject", "kind"]],
+  answer_accuracy: ["Read how accurate answers have been", []],
+  ground_agent: ["Read what an agent rests on", ["agent", "agent_id"]],
+  investigation_cadence: ["Read how often analyses run", []],
+  review_missed_move: ["Reviewed a missed move", ["id"]],
+  platform_audit: ["Read the audit log", []],
+  platform_guide: ["Read the platform guide", ["topic"]],
+  platform_limits: ["Read the platform's limits", []],
+  platform_premortem: ["Read the platform's pre-mortem", []],
+  platform_runs: ["Read the platform's runs", []],
+  platform_traces: ["Read the platform's traces", []],
+  platform_usage: ["Read usage and spend", []],
+};
+const PREFIX = "mcp__pramanyx__";
+
+function saidOf(toolName, args) {
+  const short = toolName.startsWith(PREFIX) ? toolName.slice(PREFIX.length) : toolName;
+  const [does, whichKeys] = DOES[short] ?? [short.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), []];
+  const which = whichKeys.map((key) => args[key]).find((value) => typeof value === "string" && value.trim());
+  return which ? `${does}: ${which}` : does;
+}
+
+/** Any other Pramanyx tool in the list of steps: named by what it does, opening to what came back. */
+function ToolStep(props) {
+  const title = saidOf(props.toolName || "", argsOf(props.block));
+  if (props.phase !== "result") return h(Step, { kind: "read", busy: true, title });
+  const text = resultText(props.block);
+  return h(Step, { kind: "read", title, failed: Boolean(props.block?.isError) },
+    text ? h("pre", { style: { margin: 0, fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflow: "auto" } },
+      text.length > 6000 ? `${text.slice(0, 6000)}\n… and ${text.length - 6000} more characters, not shown` : text) : null);
+}
+
+/**
+ * The steps as one line to read down. The shell lays a turn's work out as a column: the model's own sentence
+ * (`assistant-step`), then a group holding the calls it made for it (`data-step-process`), then the next sentence.
+ * A rule is drawn down the left of each sentence that is followed by a group, and of each group, with a dot at the
+ * sentence — so the sentences read as the plan and the rows under each as what was done for it. The reply itself
+ * is a sentence followed by no group, and is left as it is. Matched by the shell's own data attributes; if those
+ * change, the column is drawn as the shell draws it.
+ */
+const STEPS_LOOK = `
+[data-chat-flow-kind="assistant-step"]:has(+ [data-step-process]),
+[data-step-process] {
+  position: relative; margin-left: 7px; padding-left: 16px;
+  border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+/* The rule carries on across the gap the shell leaves between one row of the column and the next. */
+[data-chat-flow-kind="assistant-step"]:has(+ [data-step-process])::after,
+[data-step-process]:has(+ [data-chat-flow-kind="assistant-step"] + [data-step-process])::after {
+  content: ""; position: absolute; left: -1px; top: 100%; height: var(--dsh-chat-flow-gap, 12px);
+  border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+[data-chat-flow-kind="assistant-step"]:has(+ [data-step-process])::before {
+  content: ""; position: absolute; left: -4px; top: 0.72em; width: 7px; height: 7px; border-radius: 50%;
+  background: color-mix(in srgb, currentColor 55%, var(--dsw-alias-bg-base, #111113));
+}
+/*
+ * A group of calls is shown open, without its own "Called tools" fold. The turn already has one fold ("Completed
+ * in …"); a second inside it, per group, meant a click for every row before any of the work could be read.
+ */
+[data-step-process]:has(> div > button[data-process-activity="tools"]) > [data-step-process-body] {
+  content-visibility: visible !important; display: block !important; height: auto !important; overflow: visible !important;
+}
+[data-step-process] > div > button[data-process-activity="tools"] { display: none; }
+.pramanyx-step-busy {
+  flex: none; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
+  border: 1.5px solid currentColor; border-right-color: transparent; opacity: 0.7;
+  animation: pramanyx-step-turn 0.9s linear infinite;
+}
+@keyframes pramanyx-step-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pramanyx-step-busy { animation: none; } }
+`;
+
+function wearStepsLook() {
+  let style = document.getElementById("pramanyx-steps-look");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "pramanyx-steps-look";
+    document.head.appendChild(style);
+  }
+  style.textContent = STEPS_LOOK;
 }
 
 function Card(props) {
@@ -212,8 +399,7 @@ function Card(props) {
   const label = h("div", { style: { ...quiet, fontSize: 11, letterSpacing: "0.04em" } }, "PRAMANYX");
 
   if (props.phase !== "result") {
-    let question = "";
-    try { question = props.block?.args?.question ?? ""; } catch { question = ""; }
+    const question = String(argsOf(props.block).question || "");
     return h("div", { style: frame }, label, h("div", { style: quiet }, question ? `Asking: ${question}` : "Asking Pramanyx"));
   }
 
@@ -239,19 +425,25 @@ function Card(props) {
 
 export const inject = ["slots"];
 
-/** Take over the display of Pramanyx's `ask` tool. Every other tool keeps the shell's own row. */
-/** Give one tool the answer card, once. Set by `apply`; a name that is not an answer tool is left alone. */
-let showAnswersOf = () => {};
+/**
+ * Give one Pramanyx tool its row in the list of steps, once: the answer card for a tool that answers, a named
+ * step for any other. Set by `apply`. A tool that is not Pramanyx's keeps the shell's own row.
+ */
+let nameStepsOf = () => {};
 
 export function apply(ctx) {
-  const shown = new Set();
-  showAnswersOf = (name) => {
-    if (typeof name !== "string" || shown.has(name) || !ANSWERS.test(name)) return;
-    shown.add(name);
+  const named = new Set();
+  nameStepsOf = (name) => {
+    if (typeof name !== "string" || named.has(name) || !name.startsWith(PREFIX)) return;
+    named.add(name);
     ctx.slots.inject("tool.call.toolview", () =>
-      ctx.slots.register({ name: "tool.call.toolview", key: name }, AnswerCard));
+      ctx.slots.register({ name: "tool.call.toolview", key: name }, ANSWERS.test(name) ? AnswerCard : ToolStep));
   };
-  showAnswersOf(TOOL);
+  // The tools known when this was written are named from the first call. A view is keyed by exact tool name, so
+  // one added to Pramanyx since — and each custom agent's — gets its view at the end of the first turn that calls it.
+  nameStepsOf(TOOL);
+  for (const short of Object.keys(DOES)) nameStepsOf(PREFIX + short);
+  wearStepsLook();
   ctx.slots.inject("conversation.chat.turnTail", () =>
     ctx.slots.register({ name: "conversation.chat.turnTail", id: "pramanyx-coworker-answer-card" }, AnswerTail));
 }
