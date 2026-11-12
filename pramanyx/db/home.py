@@ -66,15 +66,11 @@ STATE_SUBDIR = "state"
 #: data held in the checkout, outside every backup of a migrated install. Both are
 #: `TOPPED_UP_ENTRIES` entries now; what the repository ships of each is under `shipped/`.
 AUTHORED_ENTRIES = frozenset({
-    "answer_sweep.jsonl",
     "demo_packs",
     "events.yaml",
     "global_rules.md",
     "glossary.yaml",
     "metrics.json",
-    "quality_sweep.jsonl",
-    "quality_sweep_findings.md",
-    "quality_sweep_report.md",
     "seed.py",
     "shipped",
 })

@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before filing, it is worth skimming [ROADMAP.md](../../ROADMAP.md) — the
-        idea may already be planned.
+        Before filing, it is worth searching the open issues — the idea may
+        already be there.
 
   - type: textarea
     id: problem

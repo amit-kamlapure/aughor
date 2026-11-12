@@ -67,10 +67,11 @@ def test_no_docs_means_empty_shelves_never_an_error():
 
 
 def test_the_real_shelves_are_loaded_in_a_checkout():
-    """The checkout ships docs/; the shelves are then real, and the wave's own arc answers."""
+    """The checkout ships docs/ and its glossary, so that shelf is real. It ships no roadmap, so
+    the arc shelf is empty: help never offers an internal arc code as a topic."""
     assert pt._DOCS_ROOT is not None
-    out = pt.platform_help("c1", {"topic": "tj"})
-    assert out["topic"] == "arc tj" and out["help"].startswith("Arc TJ — trajectories")
+    assert pt._ARC_TOPICS == {} and pt._ARC_ALIASES == {}
+    assert pt.platform_help("c1", {"topic": "tj"})["topic"] != "arc tj"
     finding = pt.platform_help("c1", {"topic": "finding"})
     assert finding["topic"] == "finding" and "evidence-backed fact" in finding["help"]
     assert pt.platform_help("c1", {"topic": "cartography"})["topic"] == "exploration"

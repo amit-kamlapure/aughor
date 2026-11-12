@@ -5,13 +5,14 @@ name: CI
 # stores honour PRAMANYX_*_DB overrides (REC-04) so CI never depends on real data.
 on:
   pull_request:
-    # Pure docs / data-file changes can't affect the tests, the build, or codegen,
+    # Pure docs, Pages site (site/) and data-file changes can't affect the tests, the build, or codegen,
     # so don't spend a run on them. paths-ignore skips a run only when *every*
     # changed file matches — a mixed commit (code + docs) still runs in full.
     paths-ignore:
       - '*.md'
       - '**/*.md'
       - 'docs/**'
+      - 'site/**'
       - '*.db'
       - '**/*.db'
       - 'LICENSE'
@@ -22,6 +23,7 @@ on:
       - '*.md'
       - '**/*.md'
       - 'docs/**'
+      - 'site/**'
       - '*.db'
       - '**/*.db'
       - 'LICENSE'
