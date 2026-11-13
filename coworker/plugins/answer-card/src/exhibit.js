@@ -310,7 +310,7 @@ function appOrigin() {
   return "http://localhost:3000";
 }
 
-/** The app's page for a metric, an object type of the ontology, or an answer's receipt — a path on the app. */
+/** The app's page for a metric, an entity of the ontology, or an answer's receipt — a path on the app. */
 export const pageFor = {
   metric: (name, connection) => `/metrics/${encodeURIComponent(name)}?conn=${encodeURIComponent(connection)}`,
   type: (name, connection) => `/ontology/${encodeURIComponent(name)}?conn=${encodeURIComponent(connection)}`,
@@ -344,7 +344,7 @@ function pageName(path) {
 
 /**
  * One of the app's own pages, shown beside the conversation. Not a summary of it drawn here: the page itself —
- * a metric's definition as the Semantic Layer shows it, an object type as the Ontology shows it, an answer's
+ * a metric's definition as the Semantic Layer shows it, an entity as the Ontology shows it, an answer's
  * receipt as "Why this number" shows it, a spreadsheet as Spreadsheets shows it — with everything on it working,
  * because it is the app. Only the app's own paths for those four are shown; anything else is refused, since the address arrives in a tab's name.
  */

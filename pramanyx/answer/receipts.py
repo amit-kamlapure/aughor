@@ -30,6 +30,7 @@ GUARD_LABEL: dict[str, str] = {
     "extra_filter_replan": "Queries re-planned around a filter the metric does not declare",
     "ambiguity_probe": "The question's readings were probed",
     "count_star_entity_grain": "Row count checked against the entity asked for",
+    "grouped_by_row_key": "A total checked for grouping by a row's own key",
     "repair_recheck": "A repair was re-checked before adoption",
     "time_order": "Timestamps that run backwards flagged",
     "day_window": "A period's last day read whole",

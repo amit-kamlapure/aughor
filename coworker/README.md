@@ -111,7 +111,7 @@ turned back on from the interface.
 - **The app's own pages open beside the conversation.** Under an answer: "Why this number" opens the app's
   receipt page for it; each metric the answer was held to opens that metric's page (`/metrics/<name>`, the
   Semantic Layer's provenance panel: where the definition came from, whose it is, what disagrees with it); each
-  table it read opens that object type's page (`/ontology/<type>`, the Ontology's own panel). These are the app's
+  table it read opens that entity's page (`/ontology/<type>`, the Ontology's own panel). These are the app's
   pages in a frame, not summaries drawn here, so everything on them works. A metric the answer did not use as
   approved says so on its button. An answer over the Sheets connection offers each spreadsheet it read, which
   opens as `/sheets/<id>`, the app's own sheet view. Past three ontology objects the rest fold behind one

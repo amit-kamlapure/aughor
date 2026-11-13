@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * `/ontology/<type>?conn=<connection>&schema=<schema>`: one object type of the ontology as a page of its own —
+ * `/ontology/<type>?conn=<connection>&schema=<schema>`: one entity of the ontology as a page of its own —
  * its source, properties, links, rules, the metrics and actions that use it. Opened beside an answer that read it
  * (the coworker's right-hand pane). A LAYOUT over `EntityTypePanel` in its full-page form, the page the Ontology's
  * register opens: same app, same tokens, same auth and org scoping. Another type opened from it opens here.
@@ -59,10 +59,11 @@ export default function OntologyTypeRoute({ params, searchParams }: {
   }
   // An answer names a table (`orders`) or a type (`Order`): the type is found by either, whatever its case.
   const want = open.toLowerCase();
-  const found = map.object_types.find((t) => t.object_type.toLowerCase() === want)
-    ?? map.object_types.find((t) => t.object_type.toLowerCase() === want.replace(/s$/, ""));
+  const entities = map.object_types.map((row) => ({ row, name: row.object_type }));
+  const found = (entities.find((e) => e.name.toLowerCase() === want)
+    ?? entities.find((e) => e.name.toLowerCase() === want.replace(/s$/, "")))?.row;
   if (!found) {
-    return <main style={{ padding: 20 }}><p className="aug-fs-sm" style={{ color: "var(--t2)" }}>The ontology of this connection has no object type named “{open}”.</p></main>;
+    return <main style={{ padding: 20 }}><p className="aug-fs-sm" style={{ color: "var(--t2)" }}>The ontology of this connection has no entity named “{open}”.</p></main>;
   }
   return (
     <main style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
