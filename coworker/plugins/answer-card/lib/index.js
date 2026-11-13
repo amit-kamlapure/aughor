@@ -76,7 +76,7 @@ export function apply(ctx) {
           res.writeHead(answer.status, { "content-type": answer.headers.get("content-type") || "application/json", "cache-control": "no-store" });
           return res.end(kept);
         } catch {
-          return reply(res, 502, { detail: "Pramanyx is not answering" });
+          return reply(res, 502, { detail: "The platform is not answering" });
         }
       },
     }), `pramanyx-answer-card: ${path}`);

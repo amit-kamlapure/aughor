@@ -99,7 +99,7 @@ function Block({ inputActions, here }) {
 
   if (down) {
     return h("div", { style: { ...quiet, fontSize: 12.5, paddingTop: 14 } },
-      "Pramanyx is not answering, so there are no suggestions to show. You can still ask.");
+      "Suggestions could not be read just now. You can still ask.");
   }
   if (!connections) return null;
 
@@ -126,14 +126,14 @@ function Block({ inputActions, here }) {
     h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
       questions === null ? h("div", { style: quiet }, "Reading the questions worth asking…")
         : questions.length ? questions.slice(0, QUESTIONS_SHOWN).map((q) => h(Row, { key: q.text, text: q.text, onPick: () => ask(q.text, shown) }))
-          : h("div", { style: quiet }, "Pramanyx has no suggested questions for this connection yet.")),
+          : h("div", { style: quiet }, "No suggested questions for this connection yet.")),
     h("div", { style: { display: "flex", flexWrap: "wrap", gap: 12 } },
       h(Card, { title: "Asked lately", empty: "Nothing has been asked yet." },
         (recent ?? []).slice(0, 5).map((r) => h(Row, {
           key: r.id, text: r.question, note: `${named(r.connection_id)} · ${ago(r.started_at)}`,
           onPick: () => ask(r.question, r.connection_id),
         }))),
-      h(Card, { title: "Your agents", empty: "No agents yet. They are made in Pramanyx." },
+      h(Card, { title: "Your agents", empty: "No agents yet." },
         (agents ?? []).slice(0, 5).map((a) => h(Row, {
           key: a.id, text: a.name, note: a.connection_id ? named(a.connection_id) : "",
           onPick: () => inputActions?.setDraft?.(`Ask the ${a.name} agent: `),
@@ -200,8 +200,8 @@ function AgentsPage({ ask }) {
                  color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-base)" };
   return h("div", { style: page },
     h("h1", { style: { margin: 0, fontSize: 20, fontWeight: 600 } }, "Agents"),
-    h("p", { style: { ...quiet, margin: "4px 0 20px" } }, "Your agents answer as Pramanyx set them up. They are made and changed in Pramanyx."),
-    down ? h("p", { style: quiet }, "Pramanyx is not answering, so the agents cannot be listed.")
+    h("p", { style: { ...quiet, margin: "4px 0 20px" } }, "Each agent answers the way it was set up."),
+    down ? h("p", { style: quiet }, "The agents could not be read just now.")
       : agents === null ? h("p", { style: quiet }, "Reading your agents…")
         : !agents.length ? h("p", { style: quiet }, "There are no agents yet.")
           : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 } },

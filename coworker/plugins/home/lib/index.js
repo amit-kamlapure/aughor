@@ -44,8 +44,8 @@ async function workspacePerConnection(ctx, api) {
     await writeFile(join(folder, "AGENTS.md"), [
       `# ${name}`,
       "",
-      `This conversation is about the Pramanyx connection "${name}". Its connection id is \`${id}\`.`,
-      `Use \`${id}\` as the connection for every Pramanyx tool call in this conversation, unless the person names`,
+      `This conversation is about the connection "${name}". Its connection id is \`${id}\`.`,
+      `Use \`${id}\` as the connection for every question, read and analysis in this conversation, unless the person names`,
       "another connection themselves.",
       "",
     ].join("\n"));
@@ -77,7 +77,7 @@ export function apply(ctx) {
           headers: { "content-type": answer.headers.get("content-type") || "application/json", "cache-control": "no-store" },
         });
       } catch {
-        return new Response(JSON.stringify({ detail: "Pramanyx is not answering" }), {
+        return new Response(JSON.stringify({ detail: "The platform is not answering" }), {
           status: 502, headers: { "content-type": "application/json" },
         });
       }

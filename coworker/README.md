@@ -51,9 +51,16 @@ turned back on from the interface.
   answer, "Read the definition of the metric: gmv" for a read. A row opens to the SQL and the rows, or to what
   came back. The shell's second fold, one per group of calls, is gone; the turn's own fold stays, and folds all
   of it — the calls and what was said between them — down to the answer.
-- **A result with no query in it is shown as words.** When Pramanyx declines a question or answers without running
-  anything, the card is its sentence, the question that was asked and "No query was run": no chart, table or SQL
-  tabs over three empty panes, and nothing to mark right or wrong. The step reads "no query run", not "0 rows".
+- **A running turn is folded to its latest row.** While an answer is worked on, one row shows — the call still
+  running, or the last one made — above the shell's running line, which carries "Show the work" to open it all.
+  The shell keeps a running turn wide open; a long one pushed the question off the screen. The next run starts
+  folded again.
+- **A result with no query in it gets no card.** When a question is declined, or answered in words with nothing
+  run, there is no chart, table or SQL to draw. It is a row in the work that reads "no query run" and opens to
+  the words; the agent is told to ask again another way and, if that fails, to say so in its reply.
+- **One voice.** The coworker is part of the platform and speaks as it: "I checked the approved definition", never
+  "I asked Pramanyx" or "Pramanyx flagged". The agent's instructions say so, and say the tools are its own ways
+  of working; the cards, the steps and the first screen do not name Pramanyx as another party.
 - **Was this right?** Under an answer, Right and Wrong. Both go to Pramanyx as the app's own control sends them:
   the judgement to `/chat/feedback`, and — when a person says what was wrong, or gives the SQL that would have
   been right — a verdict to `/verify/verdict`, which later answers on the connection are given. The page asks its
@@ -105,6 +112,12 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   person's statement and was left to a person.
 - A words-only result is told by what it lacks (no SQL, no rows). Pramanyx says which kind of answer it gave in
   its stream; the MCP client does not carry that yet.
+- "Show the work" is a button put on the shell's running line by hand, since the shell has no place there. If the
+  shell changes that line, the work stays folded while it runs and opens when the turn ends.
+- The voice is an instruction to a model, checked on two live answers. The MCP server's own tool descriptions
+  still speak of Pramanyx as someone else, because other callers read them.
+- A conversation is about a connection because the agent is told so, not because anything holds it there: it can
+  still list connections and ask another. Nothing fixes a conversation to a set of tables.
 - **Four things work around the shell rather than through it**, and each falls back to the shell's own if the shell
   changes: the tab title (a literal in the shell's layout), the first screen's wording (written into the shell's
   dictionary, which cannot be added to), the block under the question box (the shell has no place there) and the

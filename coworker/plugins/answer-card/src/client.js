@@ -144,24 +144,24 @@ function How({ answer, whole }) {
       ? trusted.map((t) => (typeof t === "string" ? t : t?.name || t?.label || JSON.stringify(t))).join(", ")
       : "None reported for this answer"),
     row("Tables read", (answer.tables_used ?? []).join(", ") || "Not reported"),
-    row("Receipt", answer.has_receipt ? `Kept in Pramanyx as ${answer.investigation_id}` : "None kept"),
-    cost ? row("Cost in Pramanyx", `${cost.llm_calls} model calls, ${cost.total_tokens} tokens, ${cost.query_count} queries`) : null,
-    whole ? null : row("Not shown", "The receipt was too long to reach this page whole. Open it in Pramanyx."));
+    row("Receipt", answer.has_receipt ? `Kept as ${answer.investigation_id}` : "None kept"),
+    cost ? row("Cost", `${cost.llm_calls} model calls, ${cost.total_tokens} tokens, ${cost.query_count} queries`) : null,
+    whole ? null : row("Not shown", "The receipt was too long to show here whole."));
 }
 
 const TABS = [["chart", "Chart", Chart], ["table", "Table", Table], ["sql", "SQL", Sql], ["how", "How it was answered", How]];
 
 /**
- * Pramanyx answered in words and ran nothing: it declined ("X is not present in this data"), or the question had
- * no query in it. Such a result has no chart, table or SQL, and a card that offers those three tabs anyway shows
- * three empty panes under a headline that reads like a finding. It is shown as what it is.
+ * A result in words, with nothing run: the question was declined ("X is not present in this data"), or it was
+ * answered from the glossary. Such a result has no chart, table or SQL. It gets no card; in the work it is a row
+ * that says "no query run" and opens to the words.
  */
 const inWordsOnly = (answer) => !answer.sql && !(answer.rows ?? []).length;
 
 function Words({ answer, asked }) {
   const question = asked || answer.question || "";
   return h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-    h("div", { style: { overflowWrap: "anywhere" } }, answer.answer || "Pramanyx sent nothing back."),
+    h("div", { style: { overflowWrap: "anywhere", whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto" } }, answer.answer || "Nothing came back."),
     question ? h("div", { style: { ...quiet, fontSize: 12.5 } }, `Asked: ${question}`) : null,
     h("div", { style: { ...quiet, fontSize: 12.5 } }, "No query was run for this, so there is no chart, table or SQL."));
 }
@@ -283,18 +283,18 @@ function Step({ kind, title, note, busy, failed, children }) {
 /** An answer in the list of steps: named by what Pramanyx found, opening to the SQL and the rows. */
 function AnswerStep(props) {
   const asked = String(argsOf(props.block).question || "");
-  if (props.phase !== "result") return h(Step, { kind: "rows", busy: true, title: asked ? `Asking Pramanyx: ${asked}` : "Asking Pramanyx" });
+  if (props.phase !== "result") return h(Step, { kind: "rows", busy: true, title: asked ? `Asking: ${asked}` : "Asking" });
   const read = readAnswer(resultText(props.block));
   if (!read || props.block?.isError) {
-    return h(Step, { kind: "rows", failed: true, title: asked || "A question to Pramanyx" },
+    return h(Step, { kind: "rows", failed: true, title: asked || "A question" },
       h("pre", { style: { margin: 0, fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, resultText(props.block).slice(0, 2000) || "Nothing came back."));
   }
   const { answer } = read;
   if (inWordsOnly(answer)) {
-    return h(Step, { kind: "rows", title: asked || answer.answer || "A question to Pramanyx", note: "no query run" }, h(Words, { answer }));
+    return h(Step, { kind: "rows", title: asked || answer.answer || "A question", note: "no query run" }, h(Words, { answer }));
   }
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
-  return h(Step, { kind: "rows", title: answer.answer || asked || "An answer from Pramanyx", note: `${count} ${count === 1 ? "row" : "rows"}` },
+  return h(Step, { kind: "rows", title: answer.answer || asked || "An answer", note: `${count} ${count === 1 ? "row" : "rows"}` },
     h(Sql, { answer }), h(Table, { answer }));
 }
 
@@ -399,13 +399,49 @@ const STEPS_LOOK = `
  * and stays.
  */
 [data-chat-flow-kind="assistant-step"]:has(+ [data-step-process][hidden]) { display: none; }
+/*
+ * While a turn runs, its work is folded to one row: the latest call, or what is being said now. The shell keeps a
+ * running turn wide open, so a long one pushed the question off the screen before there was an answer to read.
+ * A running turn is the one whose fold has no button yet. "Show the work" on the running line opens it all.
+ */
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-chat-flow-kind="assistant-step"]:has(+ [data-step-process]),
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process]:has(~ [data-step-process]),
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process] [data-step-process-content] > :not(:last-child):not(:has(.pramanyx-step-busy)),
+/* Calls made together finish in any order: the row shown is the last one still running, and the last row only when none is. */
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process] [data-step-process-content] > :has(.pramanyx-step-busy):has(~ * .pramanyx-step-busy),
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process] [data-step-process-content]:has(.pramanyx-step-busy) > :last-child:not(:has(.pramanyx-step-busy)) {
+  display: none;
+}
+.pramanyx-live-work {
+  position: absolute; right: 0; top: 2px; font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px;
+  cursor: pointer; color: inherit; background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
 .pramanyx-step-busy {
   flex: none; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
   border: 1.5px solid currentColor; border-right-color: transparent; opacity: 0.7;
   animation: pramanyx-step-turn 0.9s linear infinite;
 }
 @keyframes pramanyx-step-turn { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .pramanyx-step-busy { animation: none; } }
+@media (prefers-reduced-motion: reduce) { /*
+ * While a turn runs, its work is folded to one row: the latest call, or what is being said now. The shell keeps a
+ * running turn wide open, so a long one pushed the question off the screen before there was an answer to read.
+ * A running turn is the one whose fold has no button yet. "Show the work" on the running line opens it all.
+ */
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-chat-flow-kind="assistant-step"]:has(+ [data-step-process]),
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process]:has(~ [data-step-process]),
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process] [data-step-process-content] > :not(:last-child):not(:has(.pramanyx-step-busy)),
+/* Calls made together finish in any order: the row shown is the last one still running, and the last row only when none is. */
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process] [data-step-process-content] > :has(.pramanyx-step-busy):has(~ * .pramanyx-step-busy),
+:root:not([data-pramanyx-live-work="open"]) [data-chat-flow-kind="turn-process"]:not(:has(button[data-turn-process])) ~ [data-step-process] [data-step-process-content]:has(.pramanyx-step-busy) > :last-child:not(:has(.pramanyx-step-busy)) {
+  display: none;
+}
+.pramanyx-live-work {
+  position: absolute; right: 0; top: 2px; font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px;
+  cursor: pointer; color: inherit; background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+.pramanyx-step-busy { animation: none; } }
 `;
 
 function wearStepsLook() {
@@ -416,6 +452,35 @@ function wearStepsLook() {
     document.head.appendChild(style);
   }
   style.textContent = STEPS_LOOK;
+}
+
+/**
+ * The control that opens a running turn's work, on the shell's own running line. The line is the shell's and has
+ * no place for a plugin, so the button is put there by hand and put back if the shell redraws the line. Whether
+ * the work is open is kept on the page's root and forgotten when the run ends: the next run starts folded.
+ */
+function foldRunningWork() {
+  const root = document.documentElement;
+  const KEY = "data-pramanyx-live-work";
+  const words = () => (root.getAttribute(KEY) === "open" ? "Hide the work" : "Show the work");
+  const tend = () => {
+    const running = document.querySelector("[data-chat-running]:not([data-holding])");
+    if (!running) { if (root.hasAttribute(KEY)) root.removeAttribute(KEY); return; }
+    let control = running.querySelector(":scope > .pramanyx-live-work");
+    if (!control) {
+      control = document.createElement("button");
+      control.type = "button";
+      control.className = "pramanyx-live-work";
+      control.addEventListener("click", () => {
+        if (root.getAttribute(KEY) === "open") root.removeAttribute(KEY); else root.setAttribute(KEY, "open");
+        control.textContent = words();
+      });
+      running.appendChild(control);
+    }
+    if (control.textContent !== words()) control.textContent = words();
+  };
+  new MutationObserver(tend).observe(document.body, { childList: true, subtree: true });
+  tend();
 }
 
 const SAID = "pramanyx.coworker.said.";
@@ -465,9 +530,9 @@ function Feedback({ answer }) {
   };
 
   const SAYS = {
-    "right": "You said this was right. Recorded in Pramanyx.",
-    "right-kept": "You said this was right. Pramanyx keeps it as an accepted answer.",
-    "wrong": "You said this was wrong. Recorded in Pramanyx.",
+    "right": "You said this was right. Recorded.",
+    "right-kept": "You said this was right. It is kept as an accepted answer.",
+    "wrong": "You said this was wrong. Recorded.",
     "explained": "You said this was wrong, and why. Later answers on this connection are given it.",
     "corrected": "You gave the SQL that would have been right. Later answers on this connection are given it.",
   };
@@ -489,37 +554,33 @@ function Feedback({ answer }) {
       h("div", { style: { display: "flex", gap: 8 } },
         h("button", { type: "button", disabled: busy || !(note.trim() || fix.trim()), style: button(false), onClick: explain }, "Record it"),
         h("button", { type: "button", disabled: busy, style: button(false), onClick: () => setAsking(false) }, "Leave it at wrong"))) : null,
-    failed ? h("div", null, "That did not reach Pramanyx. Nothing was recorded; try again.") : null);
+    failed ? h("div", null, "That was not recorded. Try again.") : null);
 }
 
 function Card(props) {
   const [tab, setTab] = useState("chart");
   const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
-  const label = h("div", { style: { ...quiet, fontSize: 11, letterSpacing: "0.04em" } }, "PRAMANYX");
 
   if (props.phase !== "result") {
     const question = String(argsOf(props.block).question || "");
-    return h("div", { style: frame }, label, h("div", { style: quiet }, question ? `Asking: ${question}` : "Asking Pramanyx"));
+    return h("div", { style: frame }, h("div", { style: quiet }, question ? `Asking: ${question}` : "Asking"));
   }
 
   const read = readAnswer(resultText(props.block));
   if (!read || props.block?.isError) {
-    return h("div", { style: frame }, label,
-      h("div", null, props.block?.isError ? "Pramanyx could not answer this." : "Pramanyx answered, but this page could not read the result as an answer."),
+    return h("div", { style: frame },
+      h("div", null, props.block?.isError ? "This could not be answered." : "An answer came back, but this page could not read it."),
       props.inspect ? h("div", { style: { paddingTop: 8 } },
         h("button", { type: "button", style: button(false), onClick: props.inspect }, "Open the raw result")) : null);
   }
 
   const { answer, whole } = read;
-  if (inWordsOnly(answer)) {
-    return h("div", { style: frame },
-      h("div", { style: { ...quiet, fontSize: 11, letterSpacing: "0.04em", paddingBottom: 4 } }, "PRAMANYX · NO QUERY RUN"),
-      h(Words, { answer, asked: String(argsOf(props.block).question || "") }));
-  }
+  // Nothing was run, so there is nothing to draw. It is a row in the work ("no query run"), not a card among the
+  // answers: a card of words under the reply read as a finding, and a long one buried the real answers.
+  if (inWordsOnly(answer)) return null;
   const View = (TABS.find(([key]) => key === tab) ?? TABS[0])[2];
   return h("div", { style: frame },
-    label,
-    h("div", { style: { fontSize: 15, fontWeight: 600, padding: "2px 0 10px" } }, answer.answer || answer.question || "Answer"),
+    h("div", { style: { fontSize: 15, fontWeight: 600, padding: "0 0 10px" } }, answer.answer || answer.question || "Answer"),
     h("div", { role: "tablist", style: { display: "flex", flexWrap: "wrap", gap: 6, paddingBottom: 10 } },
       TABS.map(([key, name]) => h("button", {
         key, type: "button", role: "tab", "aria-selected": tab === key, style: button(tab === key), onClick: () => setTab(key),
@@ -549,6 +610,7 @@ export function apply(ctx) {
   nameStepsOf(TOOL);
   for (const short of Object.keys(DOES)) nameStepsOf(PREFIX + short);
   wearStepsLook();
+  foldRunningWork();
   ctx.slots.inject("conversation.chat.turnTail", () =>
     ctx.slots.register({ name: "conversation.chat.turnTail", id: "pramanyx-coworker-answer-card" }, AnswerTail));
 }
