@@ -563,7 +563,11 @@ function Exhibit({ answer, whole, asked }) {
   const toggle = (what) => setOpen((was) => (was === what ? "" : what));
   const ground = groundingOf(answer);
   const metrics = ground ? ground.metrics : [];
-  const tables = [...new Set([...(ground ? ground.objects : []), ...(answer.tables_used ?? [])])];
+  // The ontology's objects the receipt names, then any table read that is not one of them under another spelling
+  // (`orders` is the object `Order`).
+  const same = (a, b) => a.toLowerCase().replace(/s$/, "") === b.toLowerCase().replace(/s$/, "");
+  const objects = ground ? ground.objects : [];
+  const tables = [...objects, ...(answer.tables_used ?? []).filter((t) => !objects.some((o) => same(o, t)))];
   const receipt = answer.receipt?.artifact?.id || "";
   const connection = String(answer.connection || answer.receipt?.artifact?.conn_id || "");
   return h("div", { style: frame },

@@ -284,8 +284,11 @@ export function groundingOf(answer) {
       out.columns.push({ name, roles });
     } else if (item.relation === "grounded_in_graph") {
       // The graph holds two kinds of thing an answer leans on: an object of the ontology, and an earlier finding.
-      const into = String(item.ref).startsWith("finding:") ? out.findings : out.objects;
-      if (!into.includes(name)) into.push(name);
+      // …and the links between objects, which name two things and open as neither.
+      const ref = String(item.ref);
+      if (ref.includes("-->")) continue;
+      const into = ref.startsWith("finding:") ? out.findings : ref.startsWith("table:") ? out.objects : null;
+      if (into && !into.includes(name)) into.push(name);
     }
     else if (item.relation === "metric_drift") out.metrics.push({ name, departed: true, note: String(item.detail || "") });
     else if (item.relation === "metric_used" || item.relation === "trusted_metric") out.metrics.push({ name, departed: false, note: "" });
