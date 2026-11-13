@@ -101,6 +101,47 @@ const ENTER = `<!doctype html><meta charset="utf-8"><title>Pramanyx</title><scri
 })();
 </script>`;
 
+/**
+ * A CONVERSATION IS HELD TO ITS CONNECTION. Telling the agent which connection a conversation is about is an
+ * instruction, and an instruction is not a boundary: it could still list the connections and ask another one, and
+ * it did. This is the boundary. Every call to one of Pramanyx's tools passes the shell's guard before it runs; a
+ * call made from a connection's workspace that names another connection is refused there, with a sentence the
+ * agent reads and can repeat to the person. A guard can only refuse — nothing later in the shell can turn the
+ * refusal back into permission.
+ *
+ * What is held: the `connection` (or `connection_id`) a call names. A call that names none is let through for the
+ * tool to answer as it does — except a custom agent's, which would otherwise answer on the agent's own connection.
+ * A conversation that is not in a connection's workspace (the folder the shell was started in) is not held.
+ */
+const OURS = "mcp__pramanyx__";
+const LISTS = /^mcp__pramanyx__list_(platform_)?connections$/;
+const HELD_FOLDER = /[\\/]connections[\\/]([A-Za-z0-9_-]+)[\\/]?$/;
+
+/** The refusal for one call from a conversation held to `held`, or undefined when the call may run. Pure. */
+export function refusalFor(name, args, held) {
+  if (!held || typeof name !== "string" || !name.startsWith(OURS) || LISTS.test(name)) return undefined;
+  const given = args && typeof args === "object" ? (args.connection ?? args.connection_id) : undefined;
+  const named = typeof given === "string" ? given.trim() : "";
+  const here = `This conversation is held to the connection \`${held}\``;
+  if (named && named !== held) {
+    return `${here}. It cannot read \`${named}\`. Tell the person so: to ask about another connection they start a conversation on it.`;
+  }
+  if (!named && /^mcp__pramanyx__ask_[a-z0-9_]+$/.test(name)) {
+    return `${here}. An agent answers on its own connection unless told otherwise: pass connection \`${held}\`, or tell the person this agent cannot be asked here.`;
+  }
+  return undefined;
+}
+
+function holdToConnection(ctx) {
+  ctx.inject(["tools", "workingDirectory"], (at) => {
+    at.effect(() => at.tools.guard((call) => {
+      let folder = "";
+      try { folder = call.agent ? String(at.workingDirectory.get(call.agent.session) || "") : ""; } catch { folder = ""; }
+      return refusalFor(call.name, call.arguments, HELD_FOLDER.exec(folder)?.[1] ?? "");
+    }), "pramanyx-home: a conversation is held to its connection");
+  });
+}
+
 export const inject = ["webServer", "workspaceRegistry"];
 
 export function apply(ctx) {
@@ -110,6 +151,7 @@ export function apply(ctx) {
     console.warn(`pramanyx-home: no workspace per connection this start (${error?.message ?? error})`);
   });
   sayWhereThisIs(ctx, api);
+  holdToConnection(ctx);
   ctx.effect(() => ctx.webServer.register({
     kind: "exact",
     path: "/pramanyx-enter",

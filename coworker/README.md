@@ -105,6 +105,12 @@ turned back on from the interface.
   (`/pramanyx-enter`), not the shell's address: the shell's sign-in is a cookie a browser withholds on an arrival
   from another site, and the entry page makes the move from inside the coworker's address. Here the dots are
   mounted in the shell's overlay and shown in the header's corner, which holds one thing of the shell's already.
+- **A conversation is held to its connection.** The agent is told which connection a conversation is about, and
+  that is an instruction, not a boundary. The boundary is the shell's tool guard: a call to one of Pramanyx's
+  tools from a connection's workspace that names another connection is refused before it runs, with a sentence
+  the agent repeats to the person. A custom agent asked without a connection is refused too, since it would
+  answer on its own. A guard can only refuse; nothing later in the shell turns that back into permission.
+  `node --test plugins/home/test/held.test.mjs` covers the rule.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
   allowed origins being changed. It relays four paths (`/connections`, `/suggestions`, `/agents/custom`,
   `/investigations`), GET and HEAD only, and answers 404 for anything else.
@@ -147,8 +153,9 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   shell changes that line, the work stays folded while it runs and opens when the turn ends.
 - The voice is an instruction to a model, checked on two live answers. The MCP server's own tool descriptions
   still speak of Pramanyx as someone else, because other callers read them.
-- A conversation is about a connection because the agent is told so, not because anything holds it there: it can
-  still list connections and ask another. Nothing fixes a conversation to a set of tables.
+- A conversation is held to a connection, not to a set of tables: nothing yet fixes one to a Data Canvas's
+  tables. A conversation in the folder the shell was started in, and not a connection's workspace, is not held.
+  The agent can still list the connections' names.
 - **Four things work around the shell rather than through it**, and each falls back to the shell's own if the shell
   changes: the tab title (a literal in the shell's layout), the first screen's wording (written into the shell's
   dictionary, which cannot be added to), the block under the question box (the shell has no place there) and the
