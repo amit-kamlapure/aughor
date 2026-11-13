@@ -33,6 +33,70 @@ def mcp_tool_name(agent) -> str:
     return f"ask_{slug(getattr(agent, 'name', '') or getattr(agent, 'id', ''))}"
 
 
+def start_fold(agent_id: str, question: str) -> dict[str, Any]:
+    """An answer before its first frame — the shape every headless door hands back."""
+    return {"agent_id": agent_id, "question": question, "headline": "",
+            "sql": "", "columns": [], "rows": [], "row_count": None,
+            "receipt_id": "", "investigation_id": "", "error": "",
+            "truncated": False, "frames": 0, "_deltas": []}
+
+
+def fold_frame(out: dict[str, Any], frame: dict[str, Any], *, max_rows: int = 200) -> None:
+    """Fold one frame of the ask stream into the answer.
+
+    The one copy of what a door keeps. It is here, apart from the stream that feeds it, so the
+    MCP client — which reads the same frames over HTTP, not in process — folds with this and
+    not with a copy of it. It had a copy: first-wins columns, last-wins SQL and appended rows,
+    the fold this one replaced on 2026-10-03. Receipt 2026-11-13: an agent's turn ran its
+    ranking and then a date-coverage check, and the copy handed back the ranking's columns
+    over both queries' rows — a date in the category column — under the check's SQL.
+    """
+    out["frames"] += 1
+    t = frame.get("type")
+    if t == "headline":
+        out["headline"] = str(frame.get("headline") or "")
+    elif t == "headline_delta":
+        out["_deltas"].append(str(frame.get("headline") or frame.get("delta") or ""))
+    elif t == "sql":
+        out["sql"] = str(frame.get("sql") or "")
+    elif t == "columns":
+        # Last wins, as the Slack bot reads it: a turn may run several queries and
+        # emit its grid more than once; the one the closing prose is about is the one
+        # it finished on. Receipt 2026-10-03: first-wins columns + appended rows gave
+        # a door caller one row twice.
+        out["columns"] = list(frame.get("columns") or [])
+    elif t == "rows":
+        rows = list(frame.get("rows") or [])
+        out["rows"] = rows[:max_rows]
+        out["truncated"] = len(rows) > max_rows
+        # The count is this grid's: an earlier query's count must not stand over a later one's rows.
+        out["row_count"] = frame.get("row_count")
+    elif t == "receipt_id":
+        out["receipt_id"] = str(frame.get("receipt_id") or frame.get("id") or "")
+    elif t == "error":
+        out["error"] = str(frame.get("message") or frame.get("error") or "error")
+    elif t == "done":
+        # The quick path names the turn here as `inv_id` (the deep path as
+        # `investigation_id` on its start frame). Receipt 2026-10-03: the fold read
+        # one spelling, so a door answer carried a receipt and no turn to judge.
+        out["investigation_id"] = str(frame.get("investigation_id") or frame.get("inv_id")
+                                      or out["investigation_id"])
+    if frame.get("investigation_id") and not out["investigation_id"]:
+        out["investigation_id"] = str(frame["investigation_id"])
+
+
+def finish_fold(out: dict[str, Any]) -> dict[str, Any]:
+    """Close the answer once the stream has ended: the headline from its deltas, the row count."""
+    deltas = out.pop("_deltas", [])
+    if not out["headline"] and deltas:
+        # Deltas may be cumulative or incremental; the longest tail is the whole headline.
+        out["headline"] = max(deltas, key=len) if any(d.startswith(deltas[0][:3]) for d in deltas[1:]) \
+            else "".join(deltas)
+    if out["row_count"] is None:
+        out["row_count"] = len(out["rows"]) if out["rows"] else None
+    return out
+
+
 async def fold_ask(*, agent_id: str, question: str, connection_id: str = "",
                    principal_ref: str = "", session_id: str = "", depth: str = "quick",
                    max_rows: int = 200) -> dict[str, Any]:
@@ -47,11 +111,7 @@ async def fold_ask(*, agent_id: str, question: str, connection_id: str = "",
     req = AskRequest(question=question, connection_id=connection_id or "workspace",
                      agent_id=agent_id, principal_ref=principal_ref or None,
                      session_id=session_id or "", depth=depth, allow_clarify=False)
-    out: dict[str, Any] = {"agent_id": agent_id, "question": question, "headline": "",
-                           "sql": "", "columns": [], "rows": [], "row_count": None,
-                           "receipt_id": "", "investigation_id": "", "error": "",
-                           "truncated": False, "frames": 0}
-    deltas: list[str] = []
+    out = start_fold(agent_id, question)
     async for sse in build_ask_stream(req, None):
         for line in str(sse).splitlines():
             if not line.startswith("data:"):
@@ -63,45 +123,8 @@ async def fold_ask(*, agent_id: str, question: str, connection_id: str = "",
                 tolerate(exc, "a door's SSE frame was not JSON; the fold skips it and keeps reading",
                          counter="agents.door_frame_unparsed")
                 continue
-            out["frames"] += 1
-            t = frame.get("type")
-            if t == "headline":
-                out["headline"] = str(frame.get("headline") or "")
-            elif t == "headline_delta":
-                deltas.append(str(frame.get("headline") or frame.get("delta") or ""))
-            elif t == "sql":
-                out["sql"] = str(frame.get("sql") or "")
-            elif t == "columns":
-                # Last wins, as the Slack bot reads it: a turn may run several queries and
-                # emit its grid more than once; the one the closing prose is about is the one
-                # it finished on. Receipt 2026-10-03: first-wins columns + appended rows gave
-                # a door caller one row twice.
-                out["columns"] = list(frame.get("columns") or [])
-            elif t == "rows":
-                rows = list(frame.get("rows") or [])
-                out["rows"] = rows[:max_rows]
-                out["truncated"] = len(rows) > max_rows
-                if frame.get("row_count") is not None:
-                    out["row_count"] = frame.get("row_count")
-            elif t == "receipt_id":
-                out["receipt_id"] = str(frame.get("receipt_id") or frame.get("id") or "")
-            elif t == "error":
-                out["error"] = str(frame.get("message") or frame.get("error") or "error")
-            elif t == "done":
-                # The quick path names the turn here as `inv_id` (the deep path as
-                # `investigation_id` on its start frame). Receipt 2026-10-03: the fold read
-                # one spelling, so a door answer carried a receipt and no turn to judge.
-                out["investigation_id"] = str(frame.get("investigation_id") or frame.get("inv_id")
-                                              or out["investigation_id"])
-            if frame.get("investigation_id") and not out["investigation_id"]:
-                out["investigation_id"] = str(frame["investigation_id"])
-    if not out["headline"] and deltas:
-        # Deltas may be cumulative or incremental; the longest tail is the whole headline.
-        out["headline"] = max(deltas, key=len) if any(d.startswith(deltas[0][:3]) for d in deltas[1:]) \
-            else "".join(deltas)
-    if out["row_count"] is None:
-        out["row_count"] = len(out["rows"]) if out["rows"] else None
-    return out
+            fold_frame(out, frame, max_rows=max_rows)
+    return finish_fold(out)
 
 
 def doors_for(agent, *, public_api: str = "", public_web: str = "") -> dict[str, Any]:

@@ -667,6 +667,24 @@ def list_metrics(path: Path | None = None,
     return [MetricDefinition(**m) for m in _scoped_rows(rows, connection_id, schema_name)]
 
 
+def metrics_named_in(question: str, connection_id: str,
+                     schema_name: Optional[str] = None) -> list[MetricDefinition]:
+    """The metrics of ``connection_id`` that ``question`` names, by name or by label, as whole words.
+
+    Words only, no model and no embedding: "What is GMV?" names ``gmv``; "what is our net
+    margin" names a metric labelled "Net margin". Every status counts — a metric a connection
+    has proposed or retired is still this connection's own word for the term."""
+    said = f" {_normal(question).replace('_', ' ')} "
+    named = []
+    for m in list_metrics(connection_id=connection_id, schema_name=schema_name):
+        for spelling in (m.name, m.label):
+            words = _normal(spelling).replace("_", " ")
+            if words and f" {words} " in said:
+                named.append(m)
+                break
+    return named
+
+
 def get_metric(name: str, path: Path | None = None,
                connection_id: str | None = None,
                schema_name: str | None = None) -> MetricDefinition | None:

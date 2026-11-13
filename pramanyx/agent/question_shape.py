@@ -171,6 +171,44 @@ def is_wide(question: str) -> bool:
     return any(m in q for m in _WIDE_MARKERS)
 
 
+#: How a question that asks what a TERM means begins. The glossary shortcut's own opener, unchanged.
+_ASKS_MEANING_OPENER_RE = re.compile(
+    r"^\s*(what is|what are|what does|define|explain|meaning of)\b", re.I)
+#: The words of a question that asks for FIGURES, however it begins: a cut, a ranking, a count, a
+#: period, a cause. "What is GMV?" has none; "What is total GMV by order status?" has two.
+_ASKS_FOR_FIGURES_RE = re.compile(
+    r"\b(by|per|for each|each|across|over|between|versus|vs|compar\w*|top|bottom|highest|lowest|best|"
+    r"worst|most|least|rank\w*|trend\w*|total|sum|count|number of|how many|how much|average|avg|"
+    r"median|share of|current\w*|today\w*|yesterday|this|last|past|previous|latest|since|during|"
+    r"month\w*|quarter\w*|year\w*|week\w*|daily|show|list|which|break\s?down|caus\w*|why|"
+    r"analysis|value of|\d{4})\b", re.I)
+#: A term is a few words. A question that runs longer is asking about the data, not for a meaning.
+_TERM_WORDS = 6
+
+
+def asks_what_a_term_means(question: str) -> bool:
+    """Whether ``question`` asks what a TERM means — "What is GMV?", "Define take rate" — and
+    not for figures that happen to be asked for with the same first words.
+
+    The chat path answers a definitional question from the glossary without running anything.
+    Its test was the opener alone — ``^(what is|what are|…)`` — which is how most questions for
+    FIGURES begin too. Measured 2026-11-13 on the 500 most recent stored turns: 25 distinct
+    questions matched the opener and every one of them asked for figures ("What is total GMV by
+    order status?", "What are the top 10 products by revenue?"); two were answered with three
+    glossary entries about marketplaces and restaurant take rates, and no query. The opener
+    stays; a question that also names a cut, a ranking, a count, a period or a cause, or that
+    runs past a term's length, is not definitional."""
+    q = (question or "").strip()
+    opener = _ASKS_MEANING_OPENER_RE.match(q)
+    if not opener:
+        return False
+    rest = q[opener.end():]
+    if _ASKS_FOR_FIGURES_RE.search(rest):
+        return False
+    term = re.sub(r"\b(a|an|the|our|mean|means|stand for|stands for|is|are)\b", " ", rest, flags=re.I)
+    return 0 < len(re.findall(r"[A-Za-z0-9][\w'%-]*", term)) <= _TERM_WORDS
+
+
 def question_shape(question: str, *, default: Optional[str] = "diagnose") -> Optional[str]:
     """The shape of ``question`` — ``"describe"``, ``"check"``, ``"diagnose"`` or ``"survey"`` —
     read from its words, or ``default`` when no rule fires.
