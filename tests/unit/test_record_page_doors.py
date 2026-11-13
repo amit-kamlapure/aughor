@@ -259,14 +259,14 @@ def test_an_edited_mission_keeps_the_day_of_its_next_report_and_a_past_report_is
     first = R.write_record_mission(R.MissionRequest(**body, written_by="someone else"), principal=None)
     assert first["written_by"] == "user:ana" and first["version"] == 1
     m = M.get_mission(first["id"])
-    m.review.next_report_on, m.extra["last_report_headline"] = "2026-11-20", "ahead"
+    m.review.next_report_on, m.extra["last_report_headline"] = "2001-01-01", "ahead"
     kept = M._book(m)
     edited = R.write_record_mission(R.MissionRequest(**{**body, "key": kept.key, "budget": R.BudgetIn(interruptions_per_week=5)},
                                                      written_by="ana"), principal=None)
     assert edited["version"] == kept.version + 1 and edited["budget"]["interruptions_per_week"] == 5
-    assert edited["review"]["next_report_on"] == "2026-11-20" and edited["extra"]["last_report_headline"] == "ahead"
+    assert edited["review"]["next_report_on"] == "2001-01-01" and edited["extra"]["last_report_headline"] == "ahead"
     faster = R.write_record_mission(R.MissionRequest(**{**body, "key": kept.key, "cadence": "weekly"}, written_by="ana"), principal=None)
-    assert faster["review"]["next_report_on"] != "2026-11-20"           # a new cadence sets a new day
+    assert faster["review"]["next_report_on"] != "2001-01-01"           # a new cadence sets a new day
     # a report is read by its id, in full, and only under the mission that wrote it
     current = M.latest(kept.key)
     rid, _ = M.book_report(current, {"period": {"from": "2026-09-01", "to": "2026-09-30"}, "headline": "held",

@@ -760,6 +760,10 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             name_lower = m.name.lower()
             if any(token in hyp_lower for token in [name_lower, label_lower] if len(token) > 3):
                 _targeted_metrics.append(m)
+                if m.status != "approved":
+                    # The heading below says APPROVED. A draft, proposed or retired metric is not, and the
+                    # catalogue block in the schema context already says which it is.
+                    continue
                 formula_line = f"  {m.label} ({m.name}): {m.sql}"
                 if m.caveats:
                     formula_line += f"  — NOTE: {m.caveats}"

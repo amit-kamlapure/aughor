@@ -263,8 +263,8 @@ class PramanyxClient:
 
     async def ask_as_agent(self, agent_id: str, question: str, connection: str = "", *,
                            asker: str = "") -> dict:
-        """One question through `/ask` AS a custom agent, folded to one answer — the same
-        fold the HTTP door makes server-side (`custom_agents/reach.fold_ask`): headline,
+        """One question through `/ask` AS a custom agent, folded to one answer — by the same
+        fold the HTTP door makes server-side (`custom_agents/reach.fold_frame`): headline,
         the SQL that ran, rows (capped), receipt and investigation id. This process is the
         principal (`api:mcp:<asker>`), attributed by the ask door when no session is in scope."""
         body = {
@@ -273,44 +273,14 @@ class PramanyxClient:
             "principal_ref": f"api:mcp:{(asker or 'anonymous')[:64]}", "history": [],
             "session_id": "",
         }
-        acc: dict[str, Any] = {"agent_id": agent_id, "question": question, "headline": "",
-                               "sql": "", "columns": [], "rows": [], "row_count": None,
-                               "receipt_id": "", "investigation_id": "", "error": "",
-                               "truncated": False}
-        deltas: list[str] = []
+        # The server's own fold, frame by frame — not a copy of it. This had a copy, and the copy kept the
+        # first query's columns over every query's rows under the last query's SQL (receipt 2026-11-13).
+        from pramanyx.custom_agents.reach import finish_fold, fold_frame, start_fold
+        acc = start_fold(agent_id, question)
         async for ev in self._stream_sse("POST", "/ask", body, timeout=self.deep_timeout):
-            t = ev.get("type")
-            if t == "headline":
-                acc["headline"] = str(ev.get("headline") or "")
-            elif t == "headline_delta":
-                deltas.append(str(ev.get("headline") or ev.get("delta") or ""))
-            elif t == "sql":
-                acc["sql"] = str(ev.get("sql") or "")
-            elif t == "columns" and not acc["columns"]:
-                acc["columns"] = list(ev.get("columns") or [])
-            elif t == "rows":
-                rows = list(ev.get("rows") or [])
-                room = 200 - len(acc["rows"])
-                if room > 0:
-                    acc["rows"].extend(rows[:room])
-                if len(rows) > room:
-                    acc["truncated"] = True
-                if ev.get("row_count") is not None:
-                    acc["row_count"] = ev.get("row_count")
-            elif t == "receipt_id":
-                acc["receipt_id"] = str(ev.get("receipt_id") or ev.get("id") or "")
-            elif t == "error":
-                acc["error"] = str(ev.get("message") or ev.get("error") or "error")
-            if ev.get("investigation_id") and not acc["investigation_id"]:
-                acc["investigation_id"] = str(ev["investigation_id"])
-            # The quick path names its turn `inv_id` on the done frame (as `ask` below
-            # already reads); the agent fold read one spelling and lost the turn (2026-10-03).
-            if ev.get("type") == "done" and ev.get("inv_id") and not acc["investigation_id"]:
-                acc["investigation_id"] = str(ev["inv_id"])
-        if not acc["headline"] and deltas:
-            acc["headline"] = max(deltas, key=len)
-        if acc["row_count"] is None and acc["rows"]:
-            acc["row_count"] = len(acc["rows"])
+            fold_frame(acc, ev)
+        acc = finish_fold(acc)
+        acc.pop("frames", None)   # the door's own count of what it read; no use to a tool's caller
         return acc
 
     # ── Arc FA, FA-7: the grounding read ────────────────────────────────────────

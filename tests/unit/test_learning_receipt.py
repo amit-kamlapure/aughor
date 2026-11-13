@@ -86,12 +86,18 @@ def test_crystallize_records_a_signal_within_a_run(run):
 # ── the Trust-Receipt integration (no LLM) ────────────────────────────────────
 
 def _capture_artifacts(monkeypatch):
-    """Patch artifact_write/emit on the real Ledger singleton; return the captured-payload list."""
+    """Patch artifact_write/emit on the Ledger CLASS; return the captured-payload list.
+
+    On the class, not on the singleton. Patched on the instance, monkeypatch "restores" by setting the old
+    bound method ON THE INSTANCE, where there was none before: from then on the singleton carries its own
+    `emit`, which shadows the class's, and every later test that patches `Ledger.emit` patches something the
+    singleton no longer reads. Receipt 2026-11-13: `test_tc5_govern_justifications` raised from a patched
+    `Ledger.emit`, the route never saw it, and a read that must be refused was served — but only when this
+    file had run first in the same process, which a new set of test files made CI's sharding do."""
     from pramanyx.kernel.ledger import Ledger
     payloads: list[dict] = []
-    real = Ledger.default()
-    monkeypatch.setattr(real, "artifact_write", lambda kind, nk, payload, **kw: payloads.append(payload))
-    monkeypatch.setattr(real, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(Ledger, "artifact_write", lambda self, kind, nk, payload, **kw: payloads.append(payload))
+    monkeypatch.setattr(Ledger, "emit", lambda self, *a, **k: None)
     return payloads
 
 

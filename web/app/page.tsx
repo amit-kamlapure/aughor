@@ -11,6 +11,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
+import { AppSwitcher } from "@/components/shell/AppSwitcher";
 import { applyTheme, THEME_KEY } from "@/lib/themeSwitch";
 import { cleanLook, getLook, setLook } from "@/lib/look";
 import { AppearancePanel } from "@/components/settings/AppearancePanel";
@@ -294,6 +295,8 @@ function Topbar({
         {/* The theme toggle: a segmented pair, one click from every screen. */}
         <Segmented label="Theme" value={theme} onChange={onThemeChange}
           options={[{ value: "dark", label: "dark" }, { value: "light", label: "light" }]} />
+        {/* The nine dots — the way to the coworker. Drawn only while one is running. */}
+        <AppSwitcher connectionId={selectedConn || undefined} theme={theme} />
         <AuthControl />
       </div>
     </div>

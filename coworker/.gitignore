@@ -1,0 +1,3 @@
+# Built by build.sh from src/ and the web app's chart code.
+plugins/*/lib/client.js
+node_modules/

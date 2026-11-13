@@ -58,6 +58,7 @@ import {
   IconPlayerStop, IconRobot, IconSchema, IconServer, IconTarget, IconTerminal2,
   IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
   IconBulb, IconFlask, IconScale, IconZoomIn, IconArrowDownRight, IconArrowUpRight,
+  IconGridDots,
   IconArrowsSort, IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
   IconList, IconPaperclip, IconNumber123, IconBraces, IconBinary, createReactComponent,
 } from "@tabler/icons-react";
@@ -167,6 +168,8 @@ const ICONS = {
   more: IconDots,
   history: IconHistory,
   panel: IconLayoutSidebar,
+  /** Nine dots: the way between the app and the coworker (`shell/AppSwitcher`). */
+  apps: IconGridDots,
   next: IconArrowRight,
   back: IconArrowLeft,
   edit: IconPencil,

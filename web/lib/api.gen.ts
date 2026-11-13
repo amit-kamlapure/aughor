@@ -4390,6 +4390,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coworker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where The Coworker Is
+         * @description Whether a coworker is running, and the address to open. Reads what was last said; asks nothing.
+         */
+        get: operations["where_the_coworker_is_coworker_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coworker/address": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Say Where The Coworker Is
+         * @description The coworker's own announcement of its address. Refused from another machine, and for an address on one.
+         */
+        put: operations["say_where_the_coworker_is_coworker_address_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cron/tick": {
         parameters: {
             query?: never;
@@ -10050,6 +10090,46 @@ export interface paths {
          *     that may be a different model entirely.
          */
         post: operations["test_llm_config_llm_config_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm/door/v1/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Door Chat
+         * @description One chat-completions call, made by Pramanyx with the organisation's model for the role named in `model`.
+         */
+        post: operations["door_chat_llm_door_v1_chat_completions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm/door/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Door Models
+         * @description The roles the door serves — what a caller may put in `model`. A role with no usable binding is not listed.
+         */
+        get: operations["door_models_llm_door_v1_models_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -20041,6 +20121,27 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** CoworkerAddress */
+        CoworkerAddress: {
+            /**
+             * Url
+             * @description The address a person opens to reach the coworker.
+             */
+            url: string;
+        };
+        /** CoworkerDoor */
+        CoworkerDoor: {
+            /**
+             * Available
+             * @description Whether a coworker has said it is running within the last two minutes.
+             */
+            available: boolean;
+            /**
+             * Url
+             * @description The address to open, when one is running.
+             */
+            url?: string | null;
+        };
         /** CreateArtifactRequest */
         CreateArtifactRequest: {
             /**
@@ -22197,6 +22298,11 @@ export interface components {
              * @description Copy a source's rows into the federation engine for cross-source joins, where it cannot be read in place. Rows leave their source for the session. Off by default.
              */
             copy_rows_across_sources?: boolean | null;
+            /**
+             * Coworker Models
+             * @description Let the coworker make its model calls through Pramanyx, with the organisation's models and keys. A conversation there, and the answers in it, go to that provider. Each call is recorded and counts against the usage caps. Off by default.
+             */
+            coworker_models?: boolean | null;
             /**
              * Currency Code
              * @description ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is stated as such (org_context: 'reports in GBP'). It does NOT relabel figures read from a warehouse — nothing converts; a figure carries the currency a person confirmed for its dataset (store.data_currency). Empty = unset.
@@ -33948,6 +34054,59 @@ export interface operations {
             };
         };
     };
+    where_the_coworker_is_coworker_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoworkerDoor"];
+                };
+            };
+        };
+    };
+    say_where_the_coworker_is_coworker_address_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoworkerAddress"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoworkerDoor"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cron_tick_cron_tick_get: {
         parameters: {
             query?: {
@@ -43182,6 +43341,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    door_chat_llm_door_v1_chat_completions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    door_models_llm_door_v1_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

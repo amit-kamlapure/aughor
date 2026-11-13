@@ -384,3 +384,56 @@ def test_the_fold_takes_the_turn_id_from_the_quick_paths_done_frame(monkeypatch)
     assert out["headline"] == "October." and out["frames"] == 8
     assert out["columns"] == ["month", "revenue"] and out["rows"] == [["2023-10", 49602.4]]
     assert out["row_count"] == 1 and out["truncated"] is False
+
+
+# ── the MCP client folds with the door's own fold, not a copy of it ───────────────
+
+#: Receipt 2026-11-13: a custom agent ranked return rates by category, then checked the dates
+#: its rows covered. Two queries, two grids, in this order.
+_TWO_QUERIES = [
+    {"type": "sql", "sql": "SELECT category, items_sold, item_return_rate FROM returns_by_category"},
+    {"type": "columns", "columns": ["category", "items_sold", "item_return_rate"]},
+    {"type": "rows", "rows": [["beauty", 5196, 0.398], ["womenswear", 120456, 0.296]], "row_count": 2},
+    {"type": "sql", "sql": "SELECT MIN(order_date), MAX(order_date), COUNT(*) FROM orders"},
+    {"type": "columns", "columns": ["first_order", "last_order", "items_total"]},
+    {"type": "rows", "rows": [["2020-07-01", "2026-11-12", 275427]]},
+    {"type": "headline", "headline": "Beauty returns most."},
+    {"type": "done", "inv_id": "quick-9"},
+]
+
+
+def test_an_agents_answer_over_mcp_is_one_querys_grid_under_that_querys_sql():
+    """The MCP client had its own copy of the fold — first-wins columns, last-wins SQL, rows
+    appended — the fold the server replaced on 2026-10-03. A coworker's card drew a date in
+    the category column, under the SQL of the other query. Columns, rows and SQL must be
+    one query's, and the count must be that grid's."""
+    import asyncio
+    api = _mcp_client({"/ask": httpx.Response(
+        200, headers={"content-type": "text/event-stream"}, text=_sse(_TWO_QUERIES))})
+    out = asyncio.run(api.ask_as_agent("ua_1", "which categories return most?", "workspace", asker="t"))
+    assert out["columns"] == ["first_order", "last_order", "items_total"]
+    assert out["rows"] == [["2020-07-01", "2026-11-12", 275427]]
+    assert out["sql"].startswith("SELECT MIN(order_date)")
+    assert out["row_count"] == 1                      # this grid's, not the ranking's 2
+    assert all(len(row) == len(out["columns"]) for row in out["rows"])
+    assert out["headline"] == "Beauty returns most." and out["investigation_id"] == "quick-9"
+    assert "frames" not in out and "_deltas" not in out
+
+
+def test_the_mcp_client_and_the_http_door_fold_one_stream_to_one_answer(monkeypatch):
+    """Two folds of one stream is how they drifted. The same frames through both doors come
+    back the same, field for field."""
+    import asyncio
+    from pramanyx.custom_agents import reach
+
+    async def _stream(_req, _user):
+        for e in _TWO_QUERIES:
+            yield f"data: {json.dumps(e)}\n\n"
+
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", _stream)
+    door = asyncio.run(reach.fold_ask(agent_id="ua_1", question="q", connection_id="workspace"))
+    api = _mcp_client({"/ask": httpx.Response(
+        200, headers={"content-type": "text/event-stream"}, text=_sse(_TWO_QUERIES))})
+    mcp = asyncio.run(api.ask_as_agent("ua_1", "q", "workspace", asker="t"))
+    door.pop("frames")
+    assert mcp == door

@@ -2110,11 +2110,25 @@ def _answer_core(
                      counter="chat.context_cap")
 
         # ── final_text path: definitional questions answered from KB ──
-        definitional = re.search(
-            r"^(what is|what are|what does|define|explain|meaning of)",
-            question,
-            re.IGNORECASE,
-        )
+        # Two conditions, both paid for on 2026-11-13. The question must ask what a TERM means: the
+        # opener alone ("what is …") is how most questions for figures begin, and "What is total GMV
+        # by order status?" was answered with the glossary and no query. And the term must not be one
+        # this connection defines: the glossary is general — marketplaces, restaurants — and on a
+        # connection whose approved GMV is SUM(gmv_eur) it answered "quantity × unit_price, excluding
+        # cancelled orders" as if that were this business's. A connection's own definition is the
+        # answer path's to give, with its figure, so such a question falls through to it.
+        from pramanyx.agent.question_shape import asks_what_a_term_means
+        definitional = asks_what_a_term_means(question)
+        if definitional:
+            try:
+                from pramanyx.semantic.metrics import metrics_named_in
+                definitional = not metrics_named_in(question, connection_id, canvas_scope_eff_schema or None)
+            except Exception as exc:
+                from pramanyx.kernel.errors import tolerate
+                tolerate(exc, "could not read this connection's metrics; the general glossary must not answer "
+                              "for a term it may define, so the question goes to the answer path",
+                         counter="chat.kb_definitional")
+                definitional = False
         if definitional:
             try:
                 # READER register, never the planning one: retrieve_for_planning is a

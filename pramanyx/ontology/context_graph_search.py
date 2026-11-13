@@ -87,18 +87,25 @@ def graph_scope_filter(scope: str):
 
 # ── lexical (always available) ────────────────────────────────────────────────
 
-def lexical_search(cg: ContextGraph, question: str, top_k: int) -> list[tuple[GraphNode, float]]:
+def lexical_score(node: GraphNode, question: str) -> float:
+    """How much of the question one node's text covers, 0–1: the share of the question's words found in it.
+
+    The one relevance measure this module has, named so the read-back can order a table's neighbours by it. A table
+    with a hundred findings hands the prompt five, and which five must be decided by what was asked."""
     qtok = _tokens(question)
     if not qtok:
+        return 0.0
+    return round(len(qtok & _tokens(node_text(node))) / len(qtok), 3)
+
+
+def lexical_search(cg: ContextGraph, question: str, top_k: int) -> list[tuple[GraphNode, float]]:
+    if not _tokens(question):
         return []
     scored: list[tuple[GraphNode, float]] = []
     for n in cg.nodes.values():
-        ntok = _tokens(node_text(n))
-        if not ntok:
-            continue
-        score = len(qtok & ntok) / len(qtok)
+        score = lexical_score(n, question)
         if score >= _MIN_LEXICAL_SCORE:
-            scored.append((n, round(score, 3)))
+            scored.append((n, score))
     scored.sort(key=lambda x: x[1], reverse=True)
     return scored[:top_k]
 
@@ -181,13 +188,17 @@ def search_graph(cg: ContextGraph, question: str, *, top_k: int = 6) -> list[tup
 def one_hop(cg: ContextGraph, seed_ids: list[str]) -> tuple[list[GraphNode], list]:
     """The 1-hop subgraph around the seed nodes: every edge touching a seed, plus the
     nodes on the far end. This is where the read-back gains its reach — a matched
-    `table` pulls in the `finding` nodes and `resolves` edges attached to it."""
+    `table` pulls in the `finding` nodes and `resolves` edges attached to it.
+
+    The nodes come back in one order every time: the seeds as given, then the far ends in the graph's edge order. They
+    were gathered in a set, whose order changes with each process, and the read-back keeps only the first few of each
+    kind — so the same question was handed different findings after every restart."""
     seed = set(seed_ids)
     edges = [e for e in cg.edges.values() if e.from_id in seed or e.to_id in seed]
-    node_ids = set(seed)
+    node_ids: dict[str, None] = dict.fromkeys(seed_ids)
     for e in edges:
-        node_ids.add(e.from_id)
-        node_ids.add(e.to_id)
+        node_ids.setdefault(e.from_id)
+        node_ids.setdefault(e.to_id)
     nodes = [cg.nodes[nid] for nid in node_ids if nid in cg.nodes]
     return nodes, edges
 

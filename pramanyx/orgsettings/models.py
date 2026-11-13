@@ -147,6 +147,15 @@ class OrgSettings(BaseModel):
                     "read in place. Rows leave their source for the session. Off by default.",
     )
 
+    # 2026-11-13 — the model door (`routers/model_door.py`). The coworker is another runtime: without this it has
+    # a model key of its own, which Pramanyx neither counts nor caps. With it, its model calls are made by Pramanyx.
+    coworker_models: Optional[bool] = Field(
+        default=None,
+        description="Let the coworker make its model calls through Pramanyx, with the organisation's models and "
+                    "keys. A conversation there, and the answers in it, go to that provider. Each call is recorded "
+                    "and counts against the usage caps. Off by default.",
+    )
+
     # ── Working memory (CB-6) ──
     priorities: list[Priority] = Field(
         default_factory=list,
