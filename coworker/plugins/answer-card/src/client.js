@@ -16,7 +16,7 @@ import { createElement as h, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
 import {
-  PANE, PANE_PATTERN, PaneBody, groundingOf, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
+  PANE, PANE_PATTERN, PaneBody, groundingOf, pageFor, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
   rememberThing, setOpener, thingId, useChosen,
 } from "./exhibit";
 
@@ -559,10 +559,13 @@ function Exhibit({ answer, whole, asked }) {
   useEffect(() => { remember(id, answer, asked); }, [id, answer, asked]);
   const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
-  const tables = (answer.tables_used ?? []).join(", ");
+  const read = (answer.tables_used ?? []).join(", ");
   const toggle = (what) => setOpen((was) => (was === what ? "" : what));
   const ground = groundingOf(answer);
-  const departed = ground ? ground.metrics.filter((m) => m.departed).length : 0;
+  const metrics = ground ? ground.metrics : [];
+  const tables = [...new Set([...(ground ? ground.objects : []), ...(answer.tables_used ?? [])])];
+  const receipt = answer.receipt?.artifact?.id || "";
+  const connection = String(answer.connection || answer.receipt?.artifact?.conn_id || "");
   return h("div", { style: frame },
     h("div", { style: { fontSize: 15, fontWeight: 600, padding: "0 0 10px" } }, answer.answer || answer.question || "Answer"),
     h("div", { className: "pramanyx-exhibit-chart", style: { position: "relative" } },
@@ -572,18 +575,25 @@ function Exhibit({ answer, whole, asked }) {
         onClick: () => openBeside("viz", id),
       }, h(Pencil)) : null),
     h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", paddingTop: 8 } },
-      tables ? h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5 } }, tables) : null,
+      read ? h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5 } }, read) : null,
       h("span", { style: { ...quiet, fontSize: 12.5 } }, `${count} ${count === 1 ? "row" : "rows"}`),
       h("span", { style: { flex: "1 1 auto" } }),
       h("button", { type: "button", "aria-expanded": open === "table", style: button(open === "table"), onClick: () => toggle("table") },
         `${open === "table" ? "⌄" : "›"} Table`),
       h("button", { type: "button", style: button(open === "sql"), onClick: () => { if (!openBeside("sql", id)) toggle("sql"); } }, "SQL"),
       h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered"),
-      ground && hasPane() ? h("button", {
-        type: "button", style: button(false), title: "The definitions this answer was held to, what it referenced, and on what warrant",
-        onClick: () => openBeside("ground", id),
-      }, departed ? `Grounding · ${departed} ${departed === 1 ? "definition" : "definitions"} not used as approved`
-        : ground.metrics.length ? "Grounding · definitions used as approved" : "Grounding · no approved definition") : null),
+      receipt && hasPane() ? h("button", { type: "button", style: button(false), title: "The app's own page for how this number was produced",
+        onClick: () => openBeside("page", pageFor.receipt(receipt)) }, "Why this number") : null),
+    // What the answer was held to and what it read, each opening the app's own page for it beside the conversation.
+    hasPane() && connection && (metrics.length || tables.length) ? h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", paddingTop: 8, fontSize: 12.5 } },
+      metrics.map((m) => h("button", {
+        key: `m-${m.name}`, type: "button", style: button(false), title: m.departed ? "The answer did not use this metric as approved. Opens its definition." : "Opens this metric's definition",
+        onClick: () => openBeside("page", pageFor.metric(m.name, connection)),
+      }, m.departed ? `Metric · ${m.name} · not used as approved` : `Metric · ${m.name}`)),
+      tables.map((t) => h("button", {
+        key: `t-${t}`, type: "button", style: button(false), title: "Opens this object in the ontology",
+        onClick: () => openBeside("page", pageFor.type(t, connection)),
+      }, `Ontology · ${t}`))) : null,
     open === "table" ? h("div", { style: { paddingTop: 10 } }, h(ResultGrid, { answer })) : null,
     open === "sql" ? h("div", { style: { paddingTop: 10 } }, h(Sql, { answer })) : null,
     open === "how" ? h("div", { style: { paddingTop: 10 } }, h(How, { answer, whole })) : null,

@@ -15,8 +15,6 @@ const READS = [
   /^\/suggestions$/,          // starter questions for one connection (cached; a first read may cost a model call)
   /^\/agents\/custom$/,       // a person's own agents
   /^\/investigations$/,       // recent questions
-  /^\/metrics$/,              // a connection's metric definitions, to show the one an answer was held to
-  /^\/receipt\/[A-Za-z0-9_-]+\/trace$/,   // what an answer stood on, as the platform itself resolves it
 ];
 
 import { mkdir, writeFile } from "node:fs/promises";
