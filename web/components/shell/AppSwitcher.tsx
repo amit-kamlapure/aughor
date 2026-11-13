@@ -61,7 +61,16 @@ export function AppSwitcher({ connectionId, theme }: { connectionId?: string; th
   const look = useCallback(() => {
     fetchCoworkerDoor().then(setDoor).catch(() => setDoor(null));
   }, []);
-  useEffect(() => { look(); }, [look]);
+  // Looked for when the page opens, when a person comes back to its tab, and every half minute: a coworker
+  // started after this page loaded was never offered, because the page had asked once and been told "none".
+  useEffect(() => {
+    look();
+    const again = window.setInterval(look, 30_000);
+    const back = () => { if (document.visibilityState === "visible") look(); };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", look);
+    return () => { window.clearInterval(again); document.removeEventListener("visibilitychange", back); window.removeEventListener("focus", look); };
+  }, [look]);
 
   // Closed by a click anywhere else and by Escape, like every menu a button opens here.
   useEffect(() => {
@@ -79,7 +88,10 @@ export function AppSwitcher({ connectionId, theme }: { connectionId?: string; th
   });
   return (
     <div ref={host} style={{ position: "relative" }}>
-      <Button variant="ghost" size="icon-xs" aria-label="Switch to" aria-expanded={open} data-testid="app-switcher"
+      <Button variant="ghost" size="icon-xs" aria-label="Switch to" title="Switch to the coworker" aria-expanded={open} data-testid="app-switcher"
+        // Drawn as the top bar's other controls are — an edge and full-strength ink — where a bare grey glyph
+        // beside the avatar went unseen.
+        style={{ width: 26, height: 26, border: "1px solid var(--b2)", borderRadius: "var(--r2)", background: "var(--bg-3)", color: "var(--t1)" }}
         // Looked at again as it opens: a coworker that stopped since the page loaded is not offered.
         onClick={() => { if (!open) look(); setOpen((was) => !was); }}>
         <Icon name="apps" size={16} />
