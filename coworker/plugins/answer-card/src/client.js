@@ -151,6 +151,21 @@ function How({ answer, whole }) {
 
 const TABS = [["chart", "Chart", Chart], ["table", "Table", Table], ["sql", "SQL", Sql], ["how", "How it was answered", How]];
 
+/**
+ * Pramanyx answered in words and ran nothing: it declined ("X is not present in this data"), or the question had
+ * no query in it. Such a result has no chart, table or SQL, and a card that offers those three tabs anyway shows
+ * three empty panes under a headline that reads like a finding. It is shown as what it is.
+ */
+const inWordsOnly = (answer) => !answer.sql && !(answer.rows ?? []).length;
+
+function Words({ answer, asked }) {
+  const question = asked || answer.question || "";
+  return h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+    h("div", { style: { overflowWrap: "anywhere" } }, answer.answer || "Pramanyx sent nothing back."),
+    question ? h("div", { style: { ...quiet, fontSize: 12.5 } }, `Asked: ${question}`) : null,
+    h("div", { style: { ...quiet, fontSize: 12.5 } }, "No query was run for this, so there is no chart, table or SQL."));
+}
+
 const TAIL = "data-pramanyx-answers";
 
 /**
@@ -275,6 +290,9 @@ function AnswerStep(props) {
       h("pre", { style: { margin: 0, fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, resultText(props.block).slice(0, 2000) || "Nothing came back."));
   }
   const { answer } = read;
+  if (inWordsOnly(answer)) {
+    return h(Step, { kind: "rows", title: asked || answer.answer || "A question to Pramanyx", note: "no query run" }, h(Words, { answer }));
+  }
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
   return h(Step, { kind: "rows", title: answer.answer || asked || "An answer from Pramanyx", note: `${count} ${count === 1 ? "row" : "rows"}` },
     h(Sql, { answer }), h(Table, { answer }));
@@ -374,6 +392,13 @@ const STEPS_LOOK = `
   content-visibility: visible !important; display: block !important; height: auto !important; overflow: visible !important;
 }
 [data-step-process] > div > button[data-process-activity="tools"] { display: none; }
+/*
+ * Folding the turn folds all of the work. The shell hides only the calls and leaves what was said between them
+ * standing, so a "folded" turn was still a screen of working notes above the answer. A note that leads into
+ * hidden calls is part of the work and goes with it; the last thing said — the answer — is followed by no calls
+ * and stays.
+ */
+[data-chat-flow-kind="assistant-step"]:has(+ [data-step-process][hidden]) { display: none; }
 .pramanyx-step-busy {
   flex: none; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
   border: 1.5px solid currentColor; border-right-color: transparent; opacity: 0.7;
@@ -391,6 +416,80 @@ function wearStepsLook() {
     document.head.appendChild(style);
   }
   style.textContent = STEPS_LOOK;
+}
+
+const SAID = "pramanyx.coworker.said.";
+
+async function say(path, body) {
+  const answer = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!answer.ok) throw new Error(String(answer.status));
+  return answer.json().catch(() => ({}));
+}
+
+/**
+ * Was this right? The one thing a card writes. It goes to Pramanyx as the app's own control sends it: the
+ * judgement to the answer's record, and — when a person says what was wrong, or gives the SQL that would have
+ * been right — a verdict that later answers on the connection are given. What was said is remembered in this
+ * browser by the answer's id, so a card reopened later says what was said and does not ask again.
+ */
+function Feedback({ answer }) {
+  const id = String(answer.investigation_id || "");
+  const connection = String(answer.connection || "");
+  const kept = () => { try { return localStorage.getItem(SAID + id) || ""; } catch { return ""; } };
+  const [said, setSaid] = useState(kept);
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
+  const [fix, setFix] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  if (!id || !connection) return null;
+
+  const settle = (what) => { try { localStorage.setItem(SAID + id, what); } catch { /* said for this visit */ } setSaid(what); };
+  const judge = async (verdict) => {
+    setBusy(true); setFailed(false);
+    try {
+      const got = await say("/pramanyx-feedback", { connection, answer: id, verdict });
+      if (verdict === "helpful") settle(got.accepted ? "right-kept" : "right");
+      else { settle("wrong"); setAsking(true); }
+    } catch { setFailed(true); } finally { setBusy(false); }
+  };
+  const explain = async () => {
+    setBusy(true); setFailed(false);
+    try {
+      await say("/pramanyx-verdict", {
+        connection, answer: id, verdict: fix.trim() ? "correct" : "reject", note: note.trim(),
+        headline: answer.answer || "", sql: answer.sql || "", corrected_sql: fix.trim(),
+      });
+      settle(fix.trim() ? "corrected" : "explained"); setAsking(false);
+    } catch { setFailed(true); } finally { setBusy(false); }
+  };
+
+  const SAYS = {
+    "right": "You said this was right. Recorded in Pramanyx.",
+    "right-kept": "You said this was right. Pramanyx keeps it as an accepted answer.",
+    "wrong": "You said this was wrong. Recorded in Pramanyx.",
+    "explained": "You said this was wrong, and why. Later answers on this connection are given it.",
+    "corrected": "You gave the SQL that would have been right. Later answers on this connection are given it.",
+  };
+  const field = { font: "inherit", fontSize: 12.5, color: "inherit", background: "transparent", border: `1px solid ${line}`,
+                  borderRadius: 4, padding: "6px 8px", width: "100%", boxSizing: "border-box", resize: "vertical" };
+  return h("div", { style: { borderTop: `1px solid ${line}`, marginTop: 12, paddingTop: 10, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 8 } },
+    said && !asking ? h("div", { style: quiet }, SAYS[said] ?? SAYS.right)
+      : !asking ? h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
+          h("span", { style: quiet }, "Was this right?"),
+          h("button", { type: "button", disabled: busy, style: button(false), onClick: () => judge("helpful") }, "Right"),
+          h("button", { type: "button", disabled: busy, style: button(false), onClick: () => judge("unhelpful") }, "Wrong"))
+        : null,
+    asking ? h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+      h("div", { style: quiet }, SAYS.wrong),
+      h("label", { htmlFor: `why-${id}` }, "What was wrong?"),
+      h("textarea", { id: `why-${id}`, rows: 2, value: note, onChange: (e) => setNote(e.target.value), style: field }),
+      h("label", { htmlFor: `fix-${id}` }, "The SQL that would have been right, if you have it"),
+      h("textarea", { id: `fix-${id}`, rows: 3, value: fix, onChange: (e) => setFix(e.target.value), style: { ...field, fontFamily: "ui-monospace, monospace" } }),
+      h("div", { style: { display: "flex", gap: 8 } },
+        h("button", { type: "button", disabled: busy || !(note.trim() || fix.trim()), style: button(false), onClick: explain }, "Record it"),
+        h("button", { type: "button", disabled: busy, style: button(false), onClick: () => setAsking(false) }, "Leave it at wrong"))) : null,
+    failed ? h("div", null, "That did not reach Pramanyx. Nothing was recorded; try again.") : null);
 }
 
 function Card(props) {
@@ -412,6 +511,11 @@ function Card(props) {
   }
 
   const { answer, whole } = read;
+  if (inWordsOnly(answer)) {
+    return h("div", { style: frame },
+      h("div", { style: { ...quiet, fontSize: 11, letterSpacing: "0.04em", paddingBottom: 4 } }, "PRAMANYX · NO QUERY RUN"),
+      h(Words, { answer, asked: String(argsOf(props.block).question || "") }));
+  }
   const View = (TABS.find(([key]) => key === tab) ?? TABS[0])[2];
   return h("div", { style: frame },
     label,
@@ -420,7 +524,8 @@ function Card(props) {
       TABS.map(([key, name]) => h("button", {
         key, type: "button", role: "tab", "aria-selected": tab === key, style: button(tab === key), onClick: () => setTab(key),
       }, name))),
-    h(View, { answer, whole }));
+    h(View, { answer, whole }),
+    h(Feedback, { answer }));
 }
 
 export const inject = ["slots"];

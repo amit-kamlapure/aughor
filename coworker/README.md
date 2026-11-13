@@ -49,7 +49,18 @@ turned back on from the interface.
 - **The work, readable.** A turn's steps read down one line: the agent's own sentence, with a dot, then the calls
   made for it as rows named by what they found — "Total GMV by platform, led by the largest shop · 5 rows" for an
   answer, "Read the definition of the metric: gmv" for a read. A row opens to the SQL and the rows, or to what
-  came back. The shell's second fold, one per group of calls, is gone; the turn's own fold stays.
+  came back. The shell's second fold, one per group of calls, is gone; the turn's own fold stays, and folds all
+  of it — the calls and what was said between them — down to the answer.
+- **A result with no query in it is shown as words.** When Pramanyx declines a question or answers without running
+  anything, the card is its sentence, the question that was asked and "No query was run": no chart, table or SQL
+  tabs over three empty panes, and nothing to mark right or wrong. The step reads "no query run", not "0 rows".
+- **Was this right?** Under an answer, Right and Wrong. Both go to Pramanyx as the app's own control sends them:
+  the judgement to `/chat/feedback`, and — when a person says what was wrong, or gives the SQL that would have
+  been right — a verdict to `/verify/verdict`, which later answers on the connection are given. The page asks its
+  own server (`/pramanyx-feedback`, `/pramanyx-verdict`) and the server asks Pramanyx. These are the only writes
+  the page can make, and the route is narrow: POST and JSON only, refused when a browser marks the request as
+  another site's, ids checked, the body rebuilt from named fields, two fixed destinations. What was said is
+  remembered in the browser by the answer's id, so a card opened again says it and does not ask twice.
 - **Pramanyx's identity.** The mark and name in the sidebar and over a new conversation, the tab's title and icon,
   the first screen's wording, the app's dark palette, small corners, and a plain ring where the shell draws its
   animal while an answer is worked on.
@@ -85,9 +96,15 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   not carried over MCP yet, so a chart the app would have labelled or formatted specially is drawn plainly here.
 - A result longer than the shell's cap reaches the page cut short. The card reads it without its receipt; a
   result cut inside its rows is not drawn.
-- **The relay answers without the page's sign-in.** The shell does not put a plugin's route behind its token. On
-  this machine that is the same reach as the Pramanyx API already has; if the page is ever served to other
-  machines, the relay must check who is asking first.
+- **The relay and the two feedback routes answer without the page's sign-in.** The shell does not put a plugin's
+  route behind its token. On this machine that is the same reach as the Pramanyx API already has; if the page is
+  ever served to other machines, they must check who is asking first — the feedback routes above all, since they
+  write.
+- Right and Wrong have not been pressed on a live answer. The route is covered by a test against a stand-in
+  Pramanyx (what is sent on, and eleven refusals), checked by breaking each guard in turn; the press itself is a
+  person's statement and was left to a person.
+- A words-only result is told by what it lacks (no SQL, no rows). Pramanyx says which kind of answer it gave in
+  its stream; the MCP client does not carry that yet.
 - **Four things work around the shell rather than through it**, and each falls back to the shell's own if the shell
   changes: the tab title (a literal in the shell's layout), the first screen's wording (written into the shell's
   dictionary, which cannot be added to), the block under the question box (the shell has no place there) and the
@@ -115,5 +132,6 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
 - Nothing in the app leads here, and light or dark is chosen again here.
 - The custom agents' card is untested live: asked for an agent by name, the model used `ask`.
 - The person's file panel is still on.
-- No test covers the card or the tool removal. The card was checked by eye on three real answers, one of them
+- No test covers the card's drawing or the tool removal. `node --test plugins/answer-card/test/feedback-route.test.mjs`
+  covers the feedback routes. The card was checked by eye on three real answers, one of them
   live; the tool removal by asking a fresh session to list its tools.
