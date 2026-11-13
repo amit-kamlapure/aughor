@@ -15,19 +15,28 @@ import { fetchCoworkerDoor, type CoworkerDoor } from "@/lib/api";
  *
  * What is carried across, so the person arrives where they were: the connection in the top bar, light or dark,
  * and this page's own address as the way back. They ride in the address's fragment — the coworker drops a query
- * string on arrival, and a fragment is never sent to a server.
+ * string on arrival, and a fragment is never sent to a server. The coworker's access rides there too.
  */
 export type Carried = { connectionId?: string; theme?: string; back?: string };
 
-/** The coworker's address with what is carried in its fragment. An address that will not parse is returned as it is. */
+/**
+ * The address the dots open: the coworker's own entry page, with the coworker's access and what is carried in the
+ * fragment. Not the coworker's address itself — its sign-in is a cookie a browser withholds on an arrival from
+ * another site, which the app is, and opened directly it answers "authentication required". The entry page is on
+ * the coworker's address and makes the move from there (`coworker/plugins/home`, "the way in from the app").
+ * An address that will not parse is returned as it is.
+ */
 export function coworkerHref(url: string, carried: Carried): string {
   try {
-    const to = new URL(url);
+    const at = new URL(url);
+    const to = new URL("pramanyx-enter", at);
     const said = new URLSearchParams();
+    const access = at.searchParams.get("token");
+    if (access) said.set("t", access);
     if (carried.connectionId) said.set("conn", carried.connectionId);
     if (carried.theme) said.set("theme", carried.theme);
     if (carried.back) said.set("back", carried.back);
-    to.hash = said.toString() ? `pramanyx:${said.toString()}` : "";
+    to.hash = said.toString();
     return to.toString();
   } catch {
     return url;

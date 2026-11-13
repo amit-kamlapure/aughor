@@ -83,6 +83,24 @@ function sayWhereThisIs(ctx, api) {
   });
 }
 
+/**
+ * THE WAY IN FROM THE APP. The shell signs a person in with a cookie a browser will not send on an arrival from
+ * another site — and the app, on its own address, is another site. Opened straight from the app, the shell's
+ * address answered "authentication required". So the app opens this page instead: it is on the coworker's own
+ * address, and what it does next — going to the shell's address with the shell's access — is then a move within
+ * one site, which the cookie survives. The access and what the app carries arrive in the fragment, which is never
+ * sent to a server; this page reads them and goes. It writes nothing and shows nothing.
+ */
+const ENTER = `<!doctype html><meta charset="utf-8"><title>Pramanyx</title><script>
+(function () {
+  var said = new URLSearchParams(location.hash.slice(1));
+  var access = said.get("t") || "";
+  said.delete("t");
+  var carried = said.toString();
+  location.replace("./" + (access ? "?token=" + encodeURIComponent(access) : "") + (carried ? "#pramanyx:" + carried : ""));
+})();
+</script>`;
+
 export const inject = ["webServer", "workspaceRegistry"];
 
 export function apply(ctx) {
@@ -92,6 +110,15 @@ export function apply(ctx) {
     console.warn(`pramanyx-home: no workspace per connection this start (${error?.message ?? error})`);
   });
   sayWhereThisIs(ctx, api);
+  ctx.effect(() => ctx.webServer.register({
+    kind: "exact",
+    path: "/pramanyx-enter",
+    handler: (req, res) => {
+      if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405); return res.end(); }
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+      return res.end(req.method === "HEAD" ? undefined : ENTER);
+    },
+  }), "pramanyx-home: the way in from the app");
   ctx.effect(() => ctx.webServer.register({
     kind: "prefix",
     path: "/pramanyx",          // no trailing slash: the server matches the prefix itself, or the prefix and a "/"

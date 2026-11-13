@@ -42,9 +42,10 @@ describe("the way to the coworker", () => {
 
     const there = screen.getByText("Coworker").closest("a") as HTMLAnchorElement;
     const to = new URL(there.href);
-    expect(to.origin + to.pathname + to.search).toBe("http://127.0.0.1:3090/?token=abc");
-    const carried = new URLSearchParams(to.hash.replace(/^#pramanyx:/, ""));
-    expect(to.hash.startsWith("#pramanyx:")).toBe(true);
+    // The coworker's own entry page, and nothing in the query: its access is not sent in a request line.
+    expect(to.origin + to.pathname + to.search).toBe("http://127.0.0.1:3090/pramanyx-enter");
+    const carried = new URLSearchParams(to.hash.slice(1));
+    expect(carried.get("t")).toBe("abc");
     expect(carried.get("conn")).toBe("c1");
     expect(carried.get("theme")).toBe("light");
     expect(carried.get("back")).toBe(window.location.href);
@@ -71,14 +72,21 @@ describe("the way to the coworker", () => {
 });
 
 describe("what is carried to the coworker", () => {
-  it("rides in the fragment and leaves the address itself alone", () => {
-    const href = coworkerHref("http://localhost:3090/?token=t", { connectionId: "abc", theme: "dark", back: "http://localhost:3000/?tab=home" });
-    expect(href.startsWith("http://localhost:3090/?token=t#pramanyx:")).toBe(true);
-    expect(new URLSearchParams(href.split("#pramanyx:")[1]).get("back")).toBe("http://localhost:3000/?tab=home");
+  it("goes to the coworker's entry page, with its access and the rest in the fragment", () => {
+    const href = coworkerHref("http://localhost:3090/?token=t0", { connectionId: "abc", theme: "dark", back: "http://localhost:3000/?tab=home" });
+    expect(href.startsWith("http://localhost:3090/pramanyx-enter#")).toBe(true);
+    const said = new URLSearchParams(href.split("#")[1]);
+    expect(said.get("t")).toBe("t0");
+    expect(said.get("back")).toBe("http://localhost:3000/?tab=home");
+    expect(href.split("#")[0]).not.toContain("t0");
   });
 
-  it("adds no fragment when there is nothing to carry", () => {
-    expect(coworkerHref("http://localhost:3090/", {})).toBe("http://localhost:3090/");
+  it("keeps a coworker served under a path under that path", () => {
+    expect(coworkerHref("https://localhost/ui/?token=t0", {}).split("#")[0]).toBe("https://localhost/ui/pramanyx-enter");
+  });
+
+  it("carries nothing it was not given", () => {
+    expect(coworkerHref("http://localhost:3090/", {})).toBe("http://localhost:3090/pramanyx-enter");
   });
 
   it("returns an address it cannot read as it was given", () => {
