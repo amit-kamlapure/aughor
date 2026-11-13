@@ -94,7 +94,10 @@ turned back on from the interface.
   where it is to the API (`PUT /coworker/address`, at start and every half minute); the API forgets it after two
   minutes, so the app never offers a way in that leads nowhere. Arriving, the coworker opens a new conversation
   on the connection the app's top bar was on and takes the app's light or dark. Those ride in the address's
-  fragment: the shell drops a query string on arrival.
+  fragment: the shell drops a query string on arrival. The dots open the coworker's own entry page
+  (`/pramanyx-enter`), not the shell's address: the shell's sign-in is a cookie a browser withholds on an arrival
+  from another site, and the entry page makes the move from inside the coworker's address. Here the dots are
+  mounted in the shell's overlay and shown in the header's corner, which holds one thing of the shell's already.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
   allowed origins being changed. It relays four paths (`/connections`, `/suggestions`, `/agents/custom`,
   `/investigations`), GET and HEAD only, and answers 404 for anything else.

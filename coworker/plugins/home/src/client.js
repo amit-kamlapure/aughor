@@ -356,7 +356,7 @@ function Switcher() {
       role: "menu", "aria-label": "Switch to",
       style: { position: "absolute", right: 0, top: 32, zIndex: 60, width: 300, boxSizing: "border-box", padding: 8, display: "flex",
                flexDirection: "column", gap: 2, fontSize: 13, color: "var(--dsw-alias-label-primary)",
-               background: "var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-base))", border: `1px solid ${line}`, borderRadius: 8,
+               background: "color-mix(in srgb, currentColor 8%, var(--dsw-alias-bg-base, #111113))", border: `1px solid ${line}`, borderRadius: 8,
                boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)" },
     },
       h("span", { style: { ...quiet, fontSize: 12, padding: "2px 9px 6px" } }, "Switch to"),
@@ -364,13 +364,42 @@ function Switcher() {
       h("div", { role: "menuitem", "aria-current": "page", style: { ...row, background: faint } }, h("span", { style: tile, "aria-hidden": "true" }, "C"), words("Coworker", "You are here."))) : null);
 }
 
+/**
+ * The dots, put in the header's corner. The corner holds one thing and the shell's own panel toggle is it — a
+ * second occupant there fails the whole page's start — and the header's other places are not drawn on the first
+ * screen. So this is mounted where the shell always draws (its overlay) and shows the dots in a place it adds at
+ * the front of the corner, found again whenever the shell redraws the header. No corner, no dots.
+ */
+function SwitcherInTheCorner() {
+  const [place, setPlace] = useState(null);
+  useEffect(() => {
+    const tend = () => {
+      const corner = document.querySelector("[data-conversation-header-corner]");
+      if (!corner) { setPlace(null); return; }
+      let seat = corner.querySelector(":scope > [data-pramanyx-switcher]");
+      if (!seat) {
+        seat = document.createElement("span");
+        seat.setAttribute("data-pramanyx-switcher", "");
+        seat.style.cssText = "display:inline-flex;align-items:center;margin-right:4px";
+        corner.prepend(seat);
+      }
+      setPlace((was) => (was === seat ? was : seat));
+    };
+    const watch = new MutationObserver(tend);
+    watch.observe(document.body, { childList: true, subtree: true });
+    tend();
+    return () => watch.disconnect();
+  }, []);
+  return place ? createPortal(h(Switcher), place) : null;
+}
+
 export const inject = ["slots", "uiWorkspace"];
 
 export function apply(ctx) {
   wearHomeLook();
   arrive(ctx);
-  ctx.slots.inject("conversation.session.header.corner", () =>
-    ctx.slots.register({ name: "conversation.session.header.corner", id: "pramanyx-switcher" }, Switcher));
+  ctx.slots.inject("shell.overlay", () =>
+    ctx.slots.register({ name: "shell.overlay", id: "pramanyx-switcher" }, SwitcherInTheCorner));
   ctx.slots.inject("conversation.hero.options", () =>
     ctx.slots.register({ name: "conversation.hero.options", id: "pramanyx-coworker-home" }, Home));
 
