@@ -40,16 +40,28 @@ function resultText(block) {
 export function readAnswer(text) {
   if (!text) return null;
   try {
-    return { answer: JSON.parse(text), whole: true };
+    return { answer: inOneShape(JSON.parse(text)), whole: true };
   } catch {
     const at = text.indexOf('\n  "receipt":');
     if (at < 0) return null;
     try {
-      return { answer: JSON.parse(text.slice(0, at).replace(/,\s*$/, "") + "\n}"), whole: false };
+      return { answer: inOneShape(JSON.parse(text.slice(0, at).replace(/,\s*$/, "") + "\n}")), whole: false };
     } catch {
       return null;
     }
   }
+}
+
+/**
+ * A custom agent's answer names two things differently from `ask`'s: its sentence is `headline`, and its receipt
+ * is a `receipt_id`. Read as `ask`'s, the card was titled with the question and said no receipt was kept.
+ */
+function inOneShape(answer) {
+  if (!answer || typeof answer !== "object") return answer;
+  const out = { ...answer };
+  if (out.answer == null && typeof out.headline === "string" && out.headline) out.answer = out.headline;
+  if (out.has_receipt == null && out.receipt_id) out.has_receipt = true;
+  return out;
 }
 
 const line = "color-mix(in srgb, currentColor 18%, transparent)";
@@ -144,7 +156,7 @@ function How({ answer, whole }) {
       ? trusted.map((t) => (typeof t === "string" ? t : t?.name || t?.label || JSON.stringify(t))).join(", ")
       : "None reported for this answer"),
     row("Tables read", (answer.tables_used ?? []).join(", ") || "Not reported"),
-    row("Receipt", answer.has_receipt ? `Kept as ${answer.investigation_id}` : "None kept"),
+    row("Receipt", answer.has_receipt ? `Kept as ${answer.investigation_id || answer.receipt_id}` : "None kept"),
     cost ? row("Cost", `${cost.llm_calls} model calls, ${cost.total_tokens} tokens, ${cost.query_count} queries`) : null,
     whole ? null : row("Not shown", "The receipt was too long to show here whole."));
 }

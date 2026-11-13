@@ -74,8 +74,11 @@ turned back on from the interface.
 - **The sidebar.** New conversation, Agents, Schedules, and conversations in one newest-first list. Agents opens a
   page of a person's own agents; asking one begins a new conversation. Schedules is the shell's own scheduled
   runs, reworded. The one-list view is the shell's own option, chosen once on a first visit.
-- **The first screen.** Under the question box: questions worth asking of a chosen connection, the questions asked
-  lately, and a person's own agents. Each row writes a question into the box; nothing is asked until it is sent.
+- **The first screen.** The mark on a tile over a large headline, then the question box. Under it: questions worth
+  asking of a chosen connection as plain lines, and two cards — the questions asked lately (each with its
+  connection and how long ago) and a person's own agents. Each row writes a question into the box; nothing is
+  asked until it is sent. The tile, the headline size and the box's corners restyle the shell's own elements by
+  the names its stylesheet gives them, and fall back to the shell's look if it renames them.
 - **A workspace per connection.** At start, each Pramanyx connection gets a folder whose `AGENTS.md` names it, and
   a workspace over that folder titled with the connection's name. The shell gives its agent that file before the
   first question, so the shell's own picker above the question box chooses the connection and the agent is told
@@ -143,7 +146,9 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   as in the app. Where identity is required, every person here is the one principal the MCP server was started
   as.
 - Nothing in the app leads here, and light or dark is chosen again here.
-- The custom agents' card is untested live: asked for an agent by name, the model used `ask`.
+- A custom agent's answer has a card, seen live once. It has no Right and Wrong: the agent's answer does not say
+  which connection it was for. An agent's turn may run several queries; the card shows the last one's grid and
+  SQL, which is what the platform's fold keeps, and that is not always the one the answer is about.
 - The person's file panel is still on.
 - No test covers the card's drawing or the tool removal. `node --test plugins/answer-card/test/feedback-route.test.mjs`
   covers the feedback routes. The card was checked by eye on three real answers, one of them

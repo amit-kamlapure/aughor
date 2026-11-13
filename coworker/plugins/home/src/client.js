@@ -39,30 +39,76 @@ function ago(stamp) {
   const then = Date.parse(stamp);
   if (!Number.isFinite(then)) return "";
   const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (minutes < 60) return `${minutes || 1}m`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)}h`;
-  return `${Math.round(minutes / 1440)}d`;
+  const said = (n, unit) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (minutes < 60) return said(minutes || 1, "minute");
+  if (minutes < 60 * 24) return said(Math.round(minutes / 60), "hour");
+  return said(Math.round(minutes / 1440), "day");
 }
 
-/** A row that writes a question into the box. It looks pressable before the pointer reaches it. */
-function Row({ text, note, onPick }) {
-  return h("button", {
-    type: "button", onClick: onPick, title: text,
-    style: {
-      display: "flex", gap: 10, alignItems: "baseline", width: "100%", textAlign: "left", font: "inherit",
-      fontSize: 13, color: "inherit", cursor: "pointer", padding: "7px 10px", background: "transparent",
-      border: `1px solid ${line}`, borderRadius: 4,
-    },
-  },
-    h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, text),
-    note ? h("span", { style: { ...quiet, flex: "none", fontSize: 12 } }, note) : null);
+/**
+ * The first screen's look: the mark on a tile over a large headline, a roomier question box, and under it plain
+ * rows and two cards with space in them. The headline, the tile and the box are the shell's, found by the names
+ * its stylesheet gives them; if it renames them they keep the shell's own look and nothing breaks.
+ */
+const HOME_LOOK = `
+[class*="composerHero"] { gap: 14px; }
+[class*="composerHero"] [class*="_headline"] { flex-direction: column; gap: 22px; padding-bottom: 14px; }
+[class*="composerHero"] [class*="_fishHitbox"] {
+  width: 72px; height: 72px; border-radius: 14px; display: grid; place-items: center;
+  color: var(--dsw-alias-brand-primary, #46a0c4);
+  background: color-mix(in srgb, currentColor 9%, var(--dsw-alias-bg-base, #111113));
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent), 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+[class*="composerHero"] [class*="_titleGroup"] { font-size: 34px; line-height: 1.15; font-weight: 400; letter-spacing: -0.01em; align-items: center; }
+[class*="composerHero"] [data-composer-card] { border-radius: 10px; }
+.pramanyx-home-row {
+  display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; font: inherit; color: inherit;
+  cursor: pointer; background: transparent; border: 0; border-radius: 6px; padding: 9px 10px;
+}
+.pramanyx-home-row:hover, .pramanyx-home-row:focus-visible { background: color-mix(in srgb, currentColor 7%, transparent); }
+.pramanyx-home-row:focus-visible { outline: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
+.pramanyx-home-row svg { flex: none; opacity: 0.62; }
+`;
+
+function wearHomeLook() {
+  let style = document.getElementById("pramanyx-home-look");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "pramanyx-home-look";
+    document.head.appendChild(style);
+  }
+  style.textContent = HOME_LOOK;
+}
+
+const drawn = { width: 18, height: 18, viewBox: "0 0 18 18", fill: "none", stroke: "currentColor", strokeWidth: 1.3, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
+/** A four-pointed star: a question worth asking. */
+const Spark = () => h("svg", drawn, h("path", { d: "M9 2.5c.5 3.6 2.4 5.5 6 6-3.6.5-5.5 2.4-6 6-.5-3.6-2.4-5.5-6-6 3.6-.5 5.5-2.4 6-6Z" }));
+/** A speech bubble: a question that was asked. */
+const Asked = () => h("svg", drawn, h("path", { d: "M3 4.5h12v8H8.5L5.5 15v-2.5H3z" }));
+
+/** A suggested question: one plain line that writes itself into the box. */
+function Row({ text, onPick }) {
+  return h("button", { type: "button", className: "pramanyx-home-row", onClick: onPick, title: text, style: { fontSize: 14.5 } },
+    h(Spark),
+    h("span", { style: { flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, text));
+}
+
+/** A thing in a card: what it is, and under it where it is from and when. */
+function Item({ icon, text, note, onPick }) {
+  const one = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+  return h("button", { type: "button", className: "pramanyx-home-row", onClick: onPick, title: text, style: { alignItems: "flex-start" } },
+    h("span", { style: { paddingTop: 1, display: "inline-flex" } }, icon),
+    h("span", { style: { flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 } },
+      h("span", { style: { ...one, fontSize: 14, fontWeight: 600 } }, text),
+      note ? h("span", { style: { ...one, ...quiet, fontSize: 12.5 } }, note) : null));
 }
 
 function Card({ title, empty, children }) {
   const rows = Array.isArray(children) ? children.filter(Boolean) : children;
-  return h("section", { style: { flex: "1 1 280px", minWidth: 0, border: `1px solid ${line}`, borderRadius: 6, padding: 12, background: faint } },
-    h("div", { style: { ...quiet, fontSize: 12, paddingBottom: 8 } }, title),
-    rows && rows.length ? h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, rows) : h("div", { style: { ...quiet, fontSize: 12.5 } }, empty));
+  return h("section", { style: { flex: "1 1 300px", minWidth: 0, border: `1px solid ${line}`, borderRadius: 10, padding: "16px 12px 10px", minHeight: 150, display: "flex", flexDirection: "column" } },
+    h("div", { style: { ...quiet, fontSize: 13, padding: "0 10px 8px" } }, title),
+    rows && rows.length ? h("div", { style: { display: "flex", flexDirection: "column", gap: 2 } }, rows)
+      : h("div", { style: { ...quiet, flex: "1 1 auto", display: "grid", placeItems: "center", fontSize: 13, padding: "18px 10px" } }, empty));
 }
 
 function Block({ inputActions, here }) {
@@ -114,8 +160,8 @@ function Block({ inputActions, here }) {
 
   // Inset as the box above it is, so the block's edges meet the box's.
   const inset = "var(--dsh-composer-side-clearance, 14px)";
-  return h("div", { style: { display: "flex", flexDirection: "column", gap: 12, padding: `16px ${inset} 0`, fontSize: 13 } },
-    settled ? h("div", { style: quiet }, `Questions for ${named(settled)}. Choose another connection above the box.`)
+  return h("div", { style: { display: "flex", flexDirection: "column", gap: 14, padding: `10px ${inset} 0`, fontSize: 13 } },
+    settled ? h("div", { style: { ...quiet, fontSize: 12.5, padding: "0 10px" } }, `Questions for ${named(settled)}. Choose another connection above the box.`)
     : h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
       h("label", { htmlFor: "pramanyx-connection", style: quiet }, "Questions for"),
       h("select", {
@@ -123,19 +169,19 @@ function Block({ inputActions, here }) {
         onChange: (e) => { remember(e.target.value); setChosen(e.target.value); },
         style: { font: "inherit", color: "inherit", background: "transparent", border: `1px solid ${line}`, borderRadius: 4, padding: "3px 8px" },
       }, connections.map((c) => h("option", { key: c.id, value: c.id }, c.name)))),
-    h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-      questions === null ? h("div", { style: quiet }, "Reading the questions worth asking…")
+    h("div", { style: { display: "flex", flexDirection: "column", gap: 2 } },
+      questions === null ? h("div", { style: { ...quiet, padding: "9px 10px" } }, "Reading the questions worth asking…")
         : questions.length ? questions.slice(0, QUESTIONS_SHOWN).map((q) => h(Row, { key: q.text, text: q.text, onPick: () => ask(q.text, shown) }))
-          : h("div", { style: quiet }, "No suggested questions for this connection yet.")),
-    h("div", { style: { display: "flex", flexWrap: "wrap", gap: 12 } },
+          : h("div", { style: { ...quiet, padding: "9px 10px" } }, "No suggested questions for this connection yet.")),
+    h("div", { style: { display: "flex", flexWrap: "wrap", gap: 16, paddingTop: 10 } },
       h(Card, { title: "Asked lately", empty: "Nothing has been asked yet." },
-        (recent ?? []).slice(0, 5).map((r) => h(Row, {
-          key: r.id, text: r.question, note: `${named(r.connection_id)} · ${ago(r.started_at)}`,
+        (recent ?? []).slice(0, 4).map((r) => h(Item, {
+          key: r.id, icon: h(Asked), text: r.question, note: [named(r.connection_id), ago(r.started_at)].filter(Boolean).join(" · "),
           onPick: () => ask(r.question, r.connection_id),
         }))),
       h(Card, { title: "Your agents", empty: "No agents yet." },
-        (agents ?? []).slice(0, 5).map((a) => h(Row, {
-          key: a.id, text: a.name, note: a.connection_id ? named(a.connection_id) : "",
+        (agents ?? []).slice(0, 4).map((a) => h(Item, {
+          key: a.id, icon: h(AgentsIcon, { size: 18 }), text: a.name, note: a.connection_id ? named(a.connection_id) : "",
           onPick: () => inputActions?.setDraft?.(`Ask the ${a.name} agent: `),
         })))));
 }
@@ -221,6 +267,7 @@ function AgentsPage({ ask }) {
 export const inject = ["slots", "uiWorkspace"];
 
 export function apply(ctx) {
+  wearHomeLook();
   ctx.slots.inject("conversation.hero.options", () =>
     ctx.slots.register({ name: "conversation.hero.options", id: "pramanyx-coworker-home" }, Home));
 
