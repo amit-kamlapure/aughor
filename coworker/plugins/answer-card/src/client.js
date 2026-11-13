@@ -15,6 +15,10 @@
 import { createElement as h, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
+import {
+  PANE, PANE_PATTERN, PaneBody, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
+  setOpener, useChosen,
+} from "./exhibit";
 
 const TOOL = "mcp__pramanyx__ask";
 /**
@@ -64,15 +68,7 @@ function inOneShape(answer) {
   return out;
 }
 
-const line = "color-mix(in srgb, currentColor 18%, transparent)";
-const faint = "color-mix(in srgb, currentColor 6%, transparent)";
-const quiet = { opacity: 0.68 };
-const button = (on) => ({
-  font: "inherit", fontSize: 12, padding: "3px 10px", borderRadius: 4, cursor: "pointer", color: "inherit",
-  border: `1px solid ${line}`, background: on ? "color-mix(in srgb, currentColor 14%, transparent)" : "transparent",
-});
-
-function Chart({ answer }) {
+function Chart({ answer, viz }) {
   const box = useRef(null);
   const [none, setNone] = useState(false);
   useEffect(() => {
@@ -81,59 +77,18 @@ function Chart({ answer }) {
     try {
       remove = drawChart(box.current, {
         columns: answer.columns ?? [], rows: answer.rows ?? [], chart_type: answer.chart_type,
-        chart_config: answer.chart_config, column_units: answer.column_units, title: null,
+        chart_config: answer.chart_config, column_units: answer.column_units, title: null, viz,
       });
     } catch {
       remove = null;
     }
     setNone(!remove);
     return () => { if (remove) remove(); };
-  }, [answer]);
+  }, [answer, viz]);
   return h("div", null,
     h("div", { ref: box, style: { width: "100%", minHeight: none ? 0 : 220 } }),
     none ? h("div", { style: { ...quiet, padding: "8px 0" } },
       "These rows have no chart worth drawing. The table has them.") : null);
-}
-
-function toCsv(columns, rows) {
-  const cell = (v) => {
-    const s = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [columns, ...rows].map((r) => r.map(cell).join(",")).join("\n");
-}
-
-function Table({ answer }) {
-  const columns = answer.columns ?? [];
-  const rows = answer.rows ?? [];
-  const total = typeof answer.row_count === "number" ? answer.row_count : rows.length;
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    const text = [columns, ...rows].map((r) => r.join("\t")).join("\n");
-    navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
-  };
-  const csv = () => {
-    const url = URL.createObjectURL(new Blob([toCsv(columns, rows)], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = "pramanyx-answer.csv"; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  const cell = { padding: "5px 10px", textAlign: "left", whiteSpace: "nowrap", borderTop: `1px solid ${line}` };
-  return h("div", null,
-    h("div", { style: { overflowX: "auto", border: `1px solid ${line}`, borderRadius: 4 } },
-      h("table", { style: { borderCollapse: "collapse", width: "100%", fontSize: 12.5 } },
-        h("thead", null, h("tr", { style: { background: faint } },
-          columns.map((c) => h("th", { key: c, style: { ...cell, borderTop: 0, fontWeight: 600 } }, c)))),
-        h("tbody", null, rows.slice(0, ROWS_SHOWN).map((r, i) => h("tr", { key: i },
-          r.map((v, j) => h("td", { key: j, style: { ...cell, fontVariantNumeric: "tabular-nums" } },
-            v === null || v === undefined ? "" : String(v)))))))),
-    h("div", { style: { display: "flex", gap: 8, alignItems: "center", paddingTop: 8 } },
-      h("button", { type: "button", style: button(false), onClick: copy }, copied ? "Copied" : "Copy"),
-      h("button", { type: "button", style: button(false), onClick: csv }, "CSV"),
-      h("span", { style: { ...quiet, fontSize: 12 } },
-        total > rows.length || rows.length > ROWS_SHOWN
-          ? `${Math.min(rows.length, ROWS_SHOWN)} of ${total} rows shown; Copy and CSV carry ${rows.length}`
-          : `${rows.length} ${rows.length === 1 ? "row" : "rows"}`)));
 }
 
 function Sql({ answer }) {
@@ -160,8 +115,6 @@ function How({ answer, whole }) {
     cost ? row("Cost", `${cost.llm_calls} model calls, ${cost.total_tokens} tokens, ${cost.query_count} queries`) : null,
     whole ? null : row("Not shown", "The receipt was too long to show here whole."));
 }
-
-const TABS = [["chart", "Chart", Chart], ["table", "Table", Table], ["sql", "SQL", Sql], ["how", "How it was answered", How]];
 
 /**
  * A result in words, with nothing run: the question was declined ("X is not present in this data"), or it was
@@ -307,7 +260,7 @@ function AnswerStep(props) {
   }
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
   return h(Step, { kind: "rows", title: answer.answer || asked || "An answer", note: `${count} ${count === 1 ? "row" : "rows"}` },
-    h(Sql, { answer }), h(Table, { answer }));
+    h(Sql, { answer }), h(ResultGrid, { answer, compact: true }));
 }
 
 /**
@@ -429,6 +382,13 @@ const STEPS_LOOK = `
   cursor: pointer; color: inherit; background: transparent;
   border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
 }
+/* The pencil on a chart: there when the chart is pointed at or the pencil is reached by keyboard, as in the app. */
+.pramanyx-exhibit-edit {
+  position: absolute; top: 2px; right: 2px; width: 28px; height: 28px; border-radius: 4px; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; color: inherit; opacity: 0;
+  background: var(--dsw-alias-bg-base, #111113); border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+.pramanyx-exhibit-chart:hover .pramanyx-exhibit-edit, .pramanyx-exhibit-edit:focus-visible { opacity: 1; }
 .pramanyx-step-busy {
   flex: none; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
   border: 1.5px solid currentColor; border-right-color: transparent; opacity: 0.7;
@@ -569,13 +529,53 @@ function Feedback({ answer }) {
     failed ? h("div", null, "That was not recorded. Try again.") : null);
 }
 
-function Card(props) {
-  const [tab, setTab] = useState("chart");
+/** A pencil, for "Edit visualization". */
+const Pencil = () => h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.4, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" },
+  h("path", { d: "M11.2 2.6l2.2 2.2-7.6 7.6-3 .8.8-3z" }), h("path", { d: "M9.8 4l2.2 2.2" }));
+
+/**
+ * An answer, as a Data Canvas shows one. The chart; under it the tables it read and how many rows, and on the
+ * right Table and SQL. Table opens the rows in place. SQL opens the query and the rows beside the conversation,
+ * in the shell's right-hand pane, and the pencil on the chart opens its editor there — where the shell has no
+ * such pane, the SQL opens in place and there is no pencil.
+ */
+function Exhibit({ answer, whole, asked }) {
+  const id = idOf(answer, asked);
+  const viz = useChosen(id);
+  const [open, setOpen] = useState("");
+  useEffect(() => { remember(id, answer, asked); }, [id, answer, asked]);
   const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
+  const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
+  const tables = (answer.tables_used ?? []).join(", ");
+  const toggle = (what) => setOpen((was) => (was === what ? "" : what));
+  return h("div", { style: frame },
+    h("div", { style: { fontSize: 15, fontWeight: 600, padding: "0 0 10px" } }, answer.answer || answer.question || "Answer"),
+    h("div", { className: "pramanyx-exhibit-chart", style: { position: "relative" } },
+      h(Chart, { answer, viz }),
+      hasPane() ? h("button", {
+        type: "button", className: "pramanyx-exhibit-edit", "aria-label": "Edit visualization", title: "Edit visualization",
+        onClick: () => openBeside("viz", id),
+      }, h(Pencil)) : null),
+    h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", paddingTop: 8 } },
+      tables ? h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5 } }, tables) : null,
+      h("span", { style: { ...quiet, fontSize: 12.5 } }, `${count} ${count === 1 ? "row" : "rows"}`),
+      h("span", { style: { flex: "1 1 auto" } }),
+      h("button", { type: "button", "aria-expanded": open === "table", style: button(open === "table"), onClick: () => toggle("table") },
+        `${open === "table" ? "⌄" : "›"} Table`),
+      h("button", { type: "button", style: button(open === "sql"), onClick: () => { if (!openBeside("sql", id)) toggle("sql"); } }, "SQL"),
+      h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered")),
+    open === "table" ? h("div", { style: { paddingTop: 10 } }, h(ResultGrid, { answer })) : null,
+    open === "sql" ? h("div", { style: { paddingTop: 10 } }, h(Sql, { answer })) : null,
+    open === "how" ? h("div", { style: { paddingTop: 10 } }, h(How, { answer, whole })) : null,
+    h(Feedback, { answer }));
+}
+
+function Card(props) {
+  const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
+  const asked = String(argsOf(props.block).question || "");
 
   if (props.phase !== "result") {
-    const question = String(argsOf(props.block).question || "");
-    return h("div", { style: frame }, h("div", { style: quiet }, question ? `Asking: ${question}` : "Asking"));
+    return h("div", { style: frame }, h("div", { style: quiet }, asked ? `Asking: ${asked}` : "Asking"));
   }
 
   const read = readAnswer(resultText(props.block));
@@ -586,19 +586,10 @@ function Card(props) {
         h("button", { type: "button", style: button(false), onClick: props.inspect }, "Open the raw result")) : null);
   }
 
-  const { answer, whole } = read;
   // Nothing was run, so there is nothing to draw. It is a row in the work ("no query run"), not a card among the
   // answers: a card of words under the reply read as a finding, and a long one buried the real answers.
-  if (inWordsOnly(answer)) return null;
-  const View = (TABS.find(([key]) => key === tab) ?? TABS[0])[2];
-  return h("div", { style: frame },
-    h("div", { style: { fontSize: 15, fontWeight: 600, padding: "0 0 10px" } }, answer.answer || answer.question || "Answer"),
-    h("div", { role: "tablist", style: { display: "flex", flexWrap: "wrap", gap: 6, paddingBottom: 10 } },
-      TABS.map(([key, name]) => h("button", {
-        key, type: "button", role: "tab", "aria-selected": tab === key, style: button(tab === key), onClick: () => setTab(key),
-      }, name))),
-    h(View, { answer, whole }),
-    h(Feedback, { answer }));
+  if (inWordsOnly(read.answer)) return null;
+  return h(Exhibit, { answer: read.answer, whole: read.whole, asked });
 }
 
 export const inject = ["slots"];
@@ -623,6 +614,19 @@ export function apply(ctx) {
   for (const short of Object.keys(DOES)) nameStepsOf(PREFIX + short);
   wearStepsLook();
   foldRunningWork();
+  // The shell's right-hand pane, when it has one: one kind of tab, for an answer's SQL and rows and for its chart's
+  // editor. Without it the SQL opens in the card and there is no editor.
+  ctx.inject(["sidebarRightTabs", "sidebarRight"], (at) => {
+    at.effect(() => at.sidebarRightTabs.register({
+      id: PANE, kind: PANE, patterns: [PANE_PATTERN], canOpen: () => true, title: () => "Answer",
+    }), "pramanyx-answer-card: pane type");
+    at.effect(() => at.slots.inject("sidebar.right.pane.tab", () =>
+      at.slots.register({ name: "sidebar.right.pane.tab", key: PANE }, PaneBody)), "pramanyx-answer-card: pane body");
+    at.effect(() => at.slots.inject("sidebar.right.pane.tab.title", () =>
+      at.slots.register({ name: "sidebar.right.pane.tab.title", key: PANE }, PaneTitle)), "pramanyx-answer-card: pane title");
+    setOpener((address) => at.sidebarRight.openResource(address));
+    at.effect(() => () => setOpener(null), "pramanyx-answer-card: pane opener");
+  });
   ctx.slots.inject("conversation.chat.turnTail", () =>
     ctx.slots.register({ name: "conversation.chat.turnTail", id: "pramanyx-coworker-answer-card" }, AnswerTail));
 }

@@ -48,10 +48,17 @@ turned back on from the interface.
   mounts none of Agent's planning, delegation, schedule or to-do tools.
 - **Pramanyx's MCP server** (`python -m pramanyx.mcp`), a thin client of the running API. The agent reaches
   Pramanyx through it and through nothing else.
-- **The answer card.** It takes over the display of the `ask` tool, and of each custom agent's `ask_<agent>` tool
-  the first time one is seen. The chart is drawn by the same resolver the
-  app, the PDF export and `POST /charts/svg` use, so it is the chart Pramanyx would have drawn.
-
+- **An answer is an exhibit, as a Data Canvas shows one.** It takes over the display of the `ask` tool, and of each
+  custom agent's `ask_<agent>` tool the first time one is seen. The chart is drawn by the same resolver the app,
+  the PDF export and `POST /charts/svg` use. Under it: the tables read and the row count, and on the right
+  **Table** and **SQL**. Table opens the rows in place — headings named as the app names them, numbers aligned
+  and grouped, a click on a heading sorts, Totals sums each column of numbers, Copy and CSV carry the rows as
+  they were answered.
+- **Things open beside the conversation.** The shell has a right-hand pane with tabs, and the coworker adds a kind
+  of tab to it. **SQL** opens an answer's query and rows there. The pencil on a chart opens **Edit
+  visualization**: what it is drawn as, its X and Y axis, a colour, labels, tooltip and orientation. What is
+  offered comes from the app's own chart vocabulary for that grid; a choice redraws the chart in the conversation
+  as it is made and is kept for that answer in the browser. A tab stays through a reload.
 - **The work, readable.** A turn's steps read down one line: the agent's own sentence, with a dot, then the calls
   made for it as rows named by what they found — "Total GMV by platform, led by the largest shop · 5 rows" for an
   answer, "Read the definition of the metric: gmv" for a read. A row opens to the SQL and the rows, or to what
@@ -119,6 +126,12 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   that calls it; until then that one call shows the shell's plain row.
 - The chart is drawn from the answer's grid and chart type. The app's own `chart_config` and column units are
   not carried over MCP yet, so a chart the app would have labelled or formatted specially is drawn plainly here.
+- The table shows plain numbers: a column's unit (€, %) is not carried over MCP, so nothing is formatted as
+  money. The app's editor also offers a transform (period over period, share, rolling, cumulative), an annotation
+  and a pivot; those are not here. Nothing but an answer opens in the right-hand pane yet: not an object of the
+  ontology, a metric's definition, a document or a sheet.
+- The exhibit, the table and the editor were checked by hand on a live answer (sort, totals against the approved
+  figure, pie, labels off, vertical, back to as answered). No test draws them.
 - A result longer than the shell's cap reaches the page cut short. The card reads it without its receipt; a
   result cut inside its rows is not drawn.
 - **The relay and the two feedback routes answer without the page's sign-in.** The shell does not put a plugin's
