@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { fetchCoworkerDoor, type CoworkerDoor } from "@/lib/api";
 
 /**
@@ -43,22 +44,13 @@ export function coworkerHref(url: string, carried: Carried): string {
   }
 }
 
-function NineDots() {
-  const at = [3, 8, 13];
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      {at.flatMap((y) => at.map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.4" />))}
-    </svg>
-  );
-}
-
 const row: React.CSSProperties = {
   display: "flex", gap: 10, alignItems: "center", padding: "8px 9px", borderRadius: "var(--r2)",
   color: "var(--t1)", textDecoration: "none",
 };
 const tile: React.CSSProperties = {
   width: 32, height: 32, flex: "none", borderRadius: "var(--r2)", border: "1px solid var(--b2)", background: "var(--bg-1)",
-  display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13,
+  display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
 };
 
 export function AppSwitcher({ connectionId, theme }: { connectionId?: string; theme?: string }) {
@@ -90,7 +82,7 @@ export function AppSwitcher({ connectionId, theme }: { connectionId?: string; th
       <Button variant="ghost" size="icon-xs" aria-label="Switch to" aria-expanded={open} data-testid="app-switcher"
         // Looked at again as it opens: a coworker that stopped since the page loaded is not offered.
         onClick={() => { if (!open) look(); setOpen((was) => !was); }}>
-        <NineDots />
+        <Icon name="apps" size={16} />
       </Button>
       {open && (
         <div role="menu" aria-label="Switch to" style={{
@@ -100,14 +92,14 @@ export function AppSwitcher({ connectionId, theme }: { connectionId?: string; th
         }}>
           <span className="aug-fs-xs" style={{ color: "var(--t3)", padding: "2px 9px 6px" }}>Switch to</span>
           <div role="menuitem" aria-current="page" style={{ ...row, background: "var(--bg-2)" }}>
-            <span style={tile} aria-hidden>P</span>
+            <span className="aug-fs-chrome" style={tile} aria-hidden>P</span>
             <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
               <span className="aug-fs-sm" style={{ fontWeight: 600 }}>Pramanyx</span>
               <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>The platform. You are here.</span>
             </span>
           </div>
           <a role="menuitem" href={href} className="aug-switch-row" style={row}>
-            <span style={tile} aria-hidden>C</span>
+            <span className="aug-fs-chrome" style={tile} aria-hidden>C</span>
             <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
               <span className="aug-fs-sm" style={{ fontWeight: 600 }}>Coworker</span>
               <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Ask, and have it worked through.</span>
