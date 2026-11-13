@@ -23,13 +23,14 @@ class _Cap:
 
 @pytest.fixture
 def cap_ledger(monkeypatch):
-    # Patch only artifact_write/emit on the REAL singleton — leave kv_get intact so
-    # flag_enabled (which reads flags through the ledger) still works.
+    # Patch only artifact_write/emit — leave kv_get intact so flag_enabled (which reads flags through the
+    # ledger) still works. On the CLASS, not the singleton: undone on an instance, monkeypatch leaves the
+    # old bound method ON the instance, which then shadows every later patch of `Ledger.emit`
+    # (see `test_learning_receipt._capture_artifacts`, receipt 2026-11-13).
     from pramanyx.kernel.ledger import Ledger
     cap = _Cap()
-    real = Ledger.default()
-    monkeypatch.setattr(real, "artifact_write", cap.artifact_write)
-    monkeypatch.setattr(real, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(Ledger, "artifact_write", lambda self, *a, **k: cap.artifact_write(*a, **k))
+    monkeypatch.setattr(Ledger, "emit", lambda self, *a, **k: None)
     return cap
 
 
