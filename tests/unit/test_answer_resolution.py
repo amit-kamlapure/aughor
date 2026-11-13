@@ -580,3 +580,36 @@ def test_the_presence_signal_still_counts_a_month():
     from pramanyx.routers.investigations import _is_overview_question
     assert _is_overview_question("tell me about October") is False
     assert _is_overview_question("what's notable in this dataset") is True
+
+
+# ── a word that is part of a column's own name is not a value to filter by ─────────────────
+# Receipt 2026-11-13 (LuxExperience): "What is total GMV (EUR) by platform?" was refused with
+# `“EUR” is not present in this data` on a table whose measure is `gmv_eur`. The unit a column
+# carries in its name describes the measure; nothing in the data is *called* EUR.
+
+_UNIT = """\
+TABLE: lux.orders  (146548 rows)
+  order_id  BIGINT
+  platform  VARCHAR
+  status  VARCHAR
+  gmv_eur  DOUBLE
+"""
+
+
+def test_a_unit_a_column_carries_in_its_name_is_not_declared_absent():
+    db = _FakeDB(hits={})                       # no row's platform or status is 'EUR'
+    r = R.resolve("What is total GMV (EUR) by platform?", schema=_UNIT, db=db)
+    assert r.not_found == []
+    assert r.feasibility != "not_answerable"
+
+
+def test_a_word_in_no_column_name_and_no_row_still_abstains():
+    db = _FakeDB(hits={})
+    r = R.resolve("What is total GMV for Zalando by platform?", schema=_UNIT, db=db)
+    assert [t.lower() for t in r.not_found] == ["zalando"]
+
+
+def test_name_parts_are_the_words_of_column_names_only():
+    parts = R._name_parts({"lux.orders": ["gmv_eur", "order_id", "x"]})
+    assert {"gmv", "eur", "order", "id"} <= parts
+    assert "orders" not in parts and "lux" not in parts and "x" not in parts

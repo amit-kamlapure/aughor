@@ -37,7 +37,8 @@ def _graph() -> ContextGraph:
                                                 note="value_overlap=0.970 join_confidence=verified")))
     cg.add_node(GraphNode(id="finding:f1", kind="finding", label="orders never terminal",
                           summary="32% of orders never reach a terminal state",
-                          provenance=Provenance(source="dossier"), data={"tables": ["orders"]}))
+                          # a finding a person approved: only those are shown to the planner
+                          provenance=Provenance(source="record", note="tier=approved"), data={"tables": ["orders"]}))
     cg.add_edge(GraphEdge(id="e2", kind="grounded_in", from_id="finding:f1", to_id="table:Order",
                           provenance=Provenance(source="dossier")))
     return cg
@@ -174,10 +175,10 @@ def _busy_graph() -> ContextGraph:
                           provenance=Provenance(source="ontology.entity"),
                           data={"source_tables": ["orders"], "columns": ["order_id"]}))
 
-    def finding(fid: str, text: str, observed: str = "2026-10-01T00:00:00+00:00", **data):
+    def finding(fid: str, text: str, observed: str = "2026-10-01T00:00:00+00:00", tier: str = "approved", **data):
         cg.add_node(GraphNode(id=f"finding:{fid}", kind="finding", label=text, summary=text,
-                              provenance=Provenance(source="record", observed_at=observed),
-                              data={"tables": ["orders"], "tier": "measured", **data}))
+                              provenance=Provenance(source="record", observed_at=observed, note=f"tier={tier}"),
+                              data={"tables": ["orders"], "tier": tier, **data}))
         cg.add_edge(GraphEdge(id=f"g:{fid}", kind="grounded_in", from_id=f"finding:{fid}", to_id="table:Order",
                               provenance=Provenance(source="record")))
 
@@ -239,3 +240,40 @@ def test_one_hop_gives_one_order_whatever_the_process():
     outs = {subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True,
                            env={**os.environ, "PYTHONHASHSEED": seed}).stdout for seed in ("1", "2", "3")}
     assert len(outs) == 1
+
+
+# ── only a finding a person confirmed is put before the planner ─────────────────────────────
+# Receipt 2026-11-13 (LuxExperience): five earlier findings were shown under "already established
+# … build on them"; none was confirmed, and one stated total GMV at four times the approved figure.
+
+def _two_findings(confirmed_tier: str = "approved") -> ContextGraph:
+    cg = ContextGraph(org_id="o", connection_id="c", schema_name="main")
+    cg.add_node(GraphNode(id="table:Order", kind="table", label="Order",
+                          provenance=Provenance(source="ontology.entity"),
+                          data={"source_tables": ["orders"], "columns": ["order_id"]}))
+    for fid, text, tier in (("ok", "refund share of orders is nine percent", confirmed_tier),
+                            ("raw", "refund total of orders is 224 million", "measured")):
+        cg.add_node(GraphNode(id=f"finding:{fid}", kind="finding", label=text, summary=text,
+                              provenance=Provenance(source="record", note=f"tier={tier}"), data={"tables": ["orders"]}))
+        cg.add_edge(GraphEdge(id=f"g:{fid}", kind="grounded_in", from_id=f"finding:{fid}", to_id="table:Order",
+                              provenance=Provenance(source="record")))
+    return cg
+
+
+def test_an_unconfirmed_finding_is_not_shown_and_is_counted(monkeypatch, tmp_path):
+    _save(_two_findings(), monkeypatch, tmp_path)
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
+    prior = build_graph_prior("what is the refund share of orders", "c", org_id="o")
+    assert "nine percent" in prior.section
+    assert "224 million" not in prior.section                      # computed once, confirmed by nobody
+    assert "1 earlier finding on these entities has not been confirmed by a person and is not shown" in prior.section
+    assert "finding:ok" in prior.cited_node_ids and "finding:raw" not in prior.cited_node_ids
+
+
+def test_with_no_confirmed_finding_none_is_shown_as_established(monkeypatch, tmp_path):
+    _save(_two_findings(confirmed_tier="mined"), monkeypatch, tmp_path)
+    from pramanyx.ontology.context_graph_readback import build_graph_prior
+    prior = build_graph_prior("what is the refund share of orders", "c", org_id="o")
+    assert "Findings a person has confirmed" not in prior.section
+    assert "nine percent" not in prior.section and "224 million" not in prior.section
+    assert "2 earlier findings on these entities have not been confirmed by a person and are not shown" in prior.section

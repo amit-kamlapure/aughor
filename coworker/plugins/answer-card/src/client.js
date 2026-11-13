@@ -559,6 +559,8 @@ function Feedback({ answer }) {
     failed ? h("div", null, "That was not recorded. Try again.") : null);
 }
 
+const OBJECTS_SHOWN = 3;
+
 /** A pencil, for "Edit visualization". */
 const Pencil = () => h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.4, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" },
   h("path", { d: "M11.2 2.6l2.2 2.2-7.6 7.6-3 .8.8-3z" }), h("path", { d: "M9.8 4l2.2 2.2" }));
@@ -573,6 +575,7 @@ function Exhibit({ answer, whole, asked }) {
   const id = idOf(answer, asked);
   const viz = useChosen(id);
   const [open, setOpen] = useState("");
+  const [allObjects, setAllObjects] = useState(false);
   useEffect(() => { remember(id, answer, asked); }, [id, answer, asked]);
   const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
@@ -611,10 +614,14 @@ function Exhibit({ answer, whole, asked }) {
         key: `m-${m.name}`, type: "button", style: button(false), title: m.departed ? "The answer did not use this metric as approved. Opens its definition." : "Opens this metric's definition",
         onClick: () => openBeside("page", pageFor.metric(m.name, connection)),
       }, m.departed ? `Metric · ${m.name} · not used as approved` : `Metric · ${m.name}`)),
-      tables.map((t) => h("button", {
+      // The first few objects, and the rest behind one button: an answer grounded in eight would otherwise put
+      // a wall of buttons under its chart.
+      (allObjects ? tables : tables.slice(0, OBJECTS_SHOWN)).map((t) => h("button", {
         key: `t-${t}`, type: "button", style: button(false), title: "Opens this object in the ontology",
         onClick: () => openBeside("page", pageFor.type(t, connection)),
-      }, `Ontology · ${t}`))) : null,
+      }, `Ontology · ${t}`)),
+      tables.length > OBJECTS_SHOWN ? h("button", { type: "button", "aria-expanded": allObjects, style: button(false), onClick: () => setAllObjects((was) => !was) },
+        allObjects ? "Fewer" : `and ${tables.length - OBJECTS_SHOWN} more`) : null) : null,
     open === "table" ? h("div", { style: { paddingTop: 10 } }, h(ResultGrid, { answer })) : null,
     open === "sql" ? h("div", { style: { paddingTop: 10 } }, h(Sql, { answer })) : null,
     open === "how" ? h("div", { style: { paddingTop: 10 } }, h(How, { answer, whole })) : null,

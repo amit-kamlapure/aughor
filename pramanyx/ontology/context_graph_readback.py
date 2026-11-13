@@ -220,8 +220,18 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
         if len(joins) > _MAX_JOINS:
             lines.append(f"  … and {len(joins) - _MAX_JOINS} more joins on these entities, not shown")
 
+    # Only a finding a PERSON has confirmed is put before the planner as established. An earlier
+    # finding is something Pramanyx computed once; under the heading below ("already established …
+    # do NOT re-derive; build on them") an unconfirmed one was handed to the model as ground truth.
+    # Receipt 2026-11-13 (LuxExperience, "total GMV by platform"): five were shown, none confirmed,
+    # one stating total GMV as 224.67M where the approved metric reads 56.9M. (The user, same day:
+    # "it's not the old findings that are very critical unless user has given an upvote.") The rest
+    # are counted and said to be withheld, never silently dropped.
+    unconfirmed = [f for f in findings if warrant_of_node(f).warrant != "human"]
+    findings = [f for f in findings if warrant_of_node(f).warrant == "human"]
+
     if findings:
-        lines.append("\nFindings already established on these entities (from prior "
+        lines.append("\nFindings a person has confirmed on these entities (from prior "
                      "investigations — do NOT re-derive; build on them):")
         for f in findings[:_MAX_FINDINGS]:
             v = warrant_of_node(f)
@@ -232,6 +242,11 @@ def _build(question: str, connection_id: str, org_id: str, top_k: int,
         if len(findings) > _MAX_FINDINGS:
             lines.append(f"  … and {len(findings) - _MAX_FINDINGS} more findings on these entities, not shown "
                          f"(the closest to the question are above)")
+    if unconfirmed:
+        lines.append(f"\n{len(unconfirmed)} earlier "
+                     f"{'finding' if len(unconfirmed) == 1 else 'findings'} on these entities "
+                     f"{'has' if len(unconfirmed) == 1 else 'have'} not been confirmed by a person and "
+                     f"{'is' if len(unconfirmed) == 1 else 'are'} not shown: measure what you need from the data.")
 
     if terms or resolves:
         lines.append("\nResolved meanings on this connection (settled earlier — use "

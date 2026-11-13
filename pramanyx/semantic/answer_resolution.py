@@ -627,6 +627,22 @@ def _relation_names(tables: dict) -> set:
     return names
 
 
+def _name_parts(tables: dict) -> set:
+    """Every word a column's name is made of — ``gmv_eur`` gives ``gmv`` and ``eur`` — normalised.
+
+    A word in a question that is PART of a column's name describes the measure, it does not
+    filter it: "total GMV (EUR) by platform" names the unit the column itself carries. Used
+    only to stop an abstention, never to bind anything."""
+    parts = set()
+    for cols in (tables or {}).values():
+        for c in cols or []:
+            for word in re.split(r"[^A-Za-z0-9]+", str(c)):
+                if len(word) >= 2:
+                    parts.add(_norm_name(word))
+    parts.discard("")
+    return parts
+
+
 def _db_find_value(db, schema: str, token: str, *, prefer_tables: Optional[set] = None,
                    value_samples: Optional[dict] = None, question: str = ""):
     """Injection-safe existence probe: is ``token`` a value in any string dimension column?
@@ -834,6 +850,7 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
         # nouns can anticipate the next warehouse's subject (shipments, claims, trips,
         # policies). The schema in front of us already knows its own nouns.
         schema_names = _relation_names(tables)
+        name_parts = _name_parts(tables)
         for token in candidates:
             if _norm_name(token) in schema_names:
                 continue
@@ -847,6 +864,14 @@ def resolve(question: str, *, schema: str = "", db=None, connection_id: str = ""
             if isinstance(probe, tuple):
                 r.entity_bindings.append(EntityBinding(token, probe[0], probe[1], probe[2], 0.95))
             elif probe == "absent" and not inherited:
+                # Absent as a VALUE — but a word that is part of a column's own name is not asking
+                # for a value. "What is total GMV (EUR) by platform?" was refused with `“EUR” is not
+                # present in this data` on a table whose measure is `gmv_eur` (receipt 2026-11-13).
+                # Checked only here, after the annotations and the probe had their say, so a word
+                # that IS a value in the data ("Premium" beside a `premium_amount` column) still
+                # binds as one; this can only turn an abstention into an answer.
+                if _norm_name(token) in name_parts:
+                    continue
                 r.not_found.append(token)
         # STATUS words ("orders were delivered") — the weaker class. Offline only: `db=None`
         # takes `_db_find_value`'s annotation and warmed-sample reads and stops before its

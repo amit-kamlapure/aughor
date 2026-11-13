@@ -31,6 +31,37 @@ def _norm(sql: str) -> str:
     return _WS.sub("", (sql or "").lower())
 
 
+_STATEMENT = re.compile(r"^\s*select\s+(?P<what>.+?)\s+from\s", re.I | re.S)
+_ALIAS = re.compile(r"\s+as\s+[A-Za-z_][A-Za-z0-9_]*\s*$", re.I)
+
+
+def _formula_of(metric_sql: str) -> str:
+    """The formula a metric's definition measures, as a signature to look for in an answer's SQL.
+
+    A definition is stored either as the expression itself (``SUM(amount)``) or as a whole
+    statement (``SELECT SUM(gmv_eur) AS gmv_eur FROM orders``). The whole statement can never
+    appear inside an answer that groups, rounds or renames — so every answer over such a metric
+    read "did not use the governed formula", however faithfully it used it. Receipt 2026-11-13:
+    ``SELECT platform, ROUND(SUM(gmv_eur), 2) … FROM orders GROUP BY platform`` was flagged
+    against exactly that definition. For a statement of ONE expression, the expression is the
+    formula; anything else (several expressions, a subquery in the list) keeps the whole text,
+    the conservative reading."""
+    text = (metric_sql or "").strip().rstrip(";")
+    m = _STATEMENT.match(text)
+    if not m:
+        return _norm(text)
+    what = m.group("what")
+    depth = 0
+    for ch in what:                      # a comma outside brackets means more than one expression
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            return _norm(text)
+    if re.search(r"\bselect\b", what, re.I):
+        return _norm(text)
+    return _norm(_ALIAS.sub("", what))
+
+
 def _targets(question: str, metric) -> bool:
     """Does the question target this metric? Name, label, or any label word
     (so 'average order value' matches the `aov` metric labelled that)."""
@@ -98,7 +129,7 @@ def check_metric_enforcement(question: str, sql: str, metrics: list) -> list[dic
     for m in metrics or []:
         if not _targets(question, m):
             continue
-        formula = _norm(getattr(m, "sql", ""))
+        formula = _formula_of(getattr(m, "sql", ""))
         if formula and formula in s:
             out.append({"metric": m.name, "status": "used",
                         "formula": m.sql, "detail": "answer used the governed formula"})

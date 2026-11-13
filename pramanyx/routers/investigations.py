@@ -2702,6 +2702,20 @@ def _answer_core(
             from pramanyx.kernel.errors import tolerate
             tolerate(exc, "entity-count grain check is best-effort; the SQL runs as written",
                      counter="chat.entity_grain")
+        # A total "by <dimension>" grouped by a row's own key as well (2026-11-13): "total GMV by order
+        # status" came back grouped by order_id and status — 500 rows, nothing totalled. Same repair round.
+        try:
+            from pramanyx.sql.grain_intent import grouped_by_a_row_key as _gbrk
+            from pramanyx.sql.lint import LintIssue as _LintIssueK
+            _key_dx = _gbrk(question, final_sql)
+            if _key_dx:
+                _lint_issues = list(_lint_issues) + [_LintIssueK(
+                    severity="error", rule="grouped_by_row_key", message=_key_dx, hint=_key_dx)]
+                _receipt({"guard": "grouped_by_row_key", "action": "hinted", "detail": _key_dx[:400]})
+        except Exception as exc:
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "row-key grouping check is best-effort; the SQL runs as written",
+                     counter="chat.row_key_grouping")
         if _lint_has_errors(_lint_issues):
             try:
                 _writer = SqlWriter(db, schema_str=schema)
