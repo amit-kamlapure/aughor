@@ -17,7 +17,7 @@ import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
 import {
   PANE, PANE_PATTERN, PaneBody, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
-  setOpener, useChosen,
+  rememberThing, setOpener, thingId, useChosen,
 } from "./exhibit";
 
 const TOOL = "mcp__pramanyx__ask";
@@ -315,12 +315,25 @@ function saidOf(toolName, args) {
   return which ? `${does}: ${which}` : does;
 }
 
-/** Any other Pramanyx tool in the list of steps: named by what it does, opening to what came back. */
+/**
+ * Any other Pramanyx tool in the list of steps: named by what it does, opening to what came back. What came back
+ * — a metric's definition, an object of the ontology, the Briefing, earlier findings — can be opened beside the
+ * conversation, laid out to be read, as a tab that stays while the conversation goes on.
+ */
 function ToolStep(props) {
-  const title = saidOf(props.toolName || "", argsOf(props.block));
-  if (props.phase !== "result") return h(Step, { kind: "read", busy: true, title });
-  const text = resultText(props.block);
-  return h(Step, { kind: "read", title, failed: Boolean(props.block?.isError) },
+  const args = argsOf(props.block);
+  const title = saidOf(props.toolName || "", args);
+  const done = props.phase === "result";
+  const text = done ? resultText(props.block) : "";
+  const failed = Boolean(props.block?.isError);
+  const id = thingId(props.toolName || "", args);
+  let value = null;
+  if (done && !failed && text) { try { value = JSON.parse(text); } catch { value = null; } }
+  const opens = value !== null && typeof value === "object" && hasPane();
+  useEffect(() => { if (opens) rememberThing(id, title, value); }, [opens, id, title, text]);
+  if (!done) return h(Step, { kind: "read", busy: true, title });
+  return h(Step, { kind: "read", title, failed },
+    opens ? h("div", null, h("button", { type: "button", style: button(false), onClick: () => openBeside("thing", id) }, "Open beside the conversation")) : null,
     text ? h("pre", { style: { margin: 0, fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflow: "auto" } },
       text.length > 6000 ? `${text.slice(0, 6000)}\n… and ${text.length - 6000} more characters, not shown` : text) : null);
 }
