@@ -17,7 +17,7 @@ import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
 import {
   PANE, PANE_PATTERN, PaneBody, groundingOf, pageFor, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
-  rememberThing, setOpener, thingId, useChosen,
+  rememberThing, setOpener, sheetsByTable, thingId, useChosen,
 } from "./exhibit";
 
 const TOOL = "mcp__pramanyx__ask";
@@ -576,6 +576,10 @@ function Exhibit({ answer, whole, asked }) {
   const viz = useChosen(id);
   const [open, setOpen] = useState("");
   const [allObjects, setAllObjects] = useState(false);
+  const [sheets, setSheets] = useState(null);
+  // An answer over the Sheets connection read spreadsheets: each opens as itself, beside the conversation.
+  const overSheets = String(answer.connection || answer.receipt?.artifact?.conn_id || "") === "sheets";
+  useEffect(() => { if (overSheets) sheetsByTable().then(setSheets); }, [overSheets]);
   useEffect(() => { remember(id, answer, asked); }, [id, answer, asked]);
   const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
@@ -614,6 +618,9 @@ function Exhibit({ answer, whole, asked }) {
         key: `m-${m.name}`, type: "button", style: button(false), title: m.departed ? "The answer did not use this metric as approved. Opens its definition." : "Opens this metric's definition",
         onClick: () => openBeside("page", pageFor.metric(m.name, connection)),
       }, m.departed ? `Metric · ${m.name} · not used as approved` : `Metric · ${m.name}`)),
+      (overSheets && sheets ? (answer.tables_used ?? []) : []).map((t) => sheets.get(String(t).split(".").pop().toLowerCase())).filter(Boolean).map((sheet) =>
+        h("button", { key: `s-${sheet.id}`, type: "button", style: button(false), title: "Opens this spreadsheet",
+                      onClick: () => openBeside("page", pageFor.sheet(sheet.id)) }, `Sheet · ${sheet.name}`)),
       // The first few objects, and the rest behind one button: an answer grounded in eight would otherwise put
       // a wall of buttons under its chart.
       (allObjects ? tables : tables.slice(0, OBJECTS_SHOWN)).map((t) => h("button", {

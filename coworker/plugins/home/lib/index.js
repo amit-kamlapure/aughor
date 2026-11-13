@@ -15,6 +15,7 @@ const READS = [
   /^\/suggestions$/,          // starter questions for one connection (cached; a first read may cost a model call)
   /^\/agents\/custom$/,       // a person's own agents
   /^\/investigations$/,       // recent questions
+  /^\/sheets$/,               // the sheets by name, so an answer that read one can open it
 ];
 
 import { mkdir, writeFile } from "node:fs/promises";

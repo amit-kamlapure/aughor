@@ -315,8 +315,20 @@ export const pageFor = {
   metric: (name, connection) => `/metrics/${encodeURIComponent(name)}?conn=${encodeURIComponent(connection)}`,
   type: (name, connection) => `/ontology/${encodeURIComponent(name)}?conn=${encodeURIComponent(connection)}`,
   receipt: (id) => `/receipt/${encodeURIComponent(id)}`,
+  sheet: (id) => `/sheets/${encodeURIComponent(id)}`,
 };
-const NAMED = [[/^\/metrics\/([^/?]+)/, "Metric"], [/^\/ontology\/([^/?]+)/, "Ontology"], [/^\/receipt\//, "Why this number"]];
+const NAMED = [[/^\/metrics\/([^/?]+)/, "Metric"], [/^\/ontology\/([^/?]+)/, "Ontology"], [/^\/receipt\//, "Why this number"],
+               [/^\/sheets\/[^/?]+/, "Sheet"]];
+
+/** The sheets by the table each is read as, read once: an answer names a sheet's table, and its page wants its id. */
+let sheetsRead = null;
+export function sheetsByTable() {
+  sheetsRead ??= fetch("/pramanyx/sheets", { headers: { accept: "application/json" } })
+    .then((got) => (got.ok ? got.json() : { sheets: [] }))
+    .then((got) => new Map((got.sheets ?? []).map((sheet) => [String(sheet.table || "").toLowerCase(), sheet])))
+    .catch(() => new Map());
+  return sheetsRead;
+}
 
 /** What a page tab is called: the kind of page, and the thing it is about. */
 function pageName(path) {
@@ -333,8 +345,8 @@ function pageName(path) {
 /**
  * One of the app's own pages, shown beside the conversation. Not a summary of it drawn here: the page itself —
  * a metric's definition as the Semantic Layer shows it, an object type as the Ontology shows it, an answer's
- * receipt as "Why this number" shows it — with everything on it working, because it is the app. Only the app's
- * own paths for those three are shown; anything else is refused, since the address arrives in a tab's name.
+ * receipt as "Why this number" shows it, a spreadsheet as Spreadsheets shows it — with everything on it working,
+ * because it is the app. Only the app's own paths for those four are shown; anything else is refused, since the address arrives in a tab's name.
  */
 function AppPage({ path }) {
   if (!NAMED.some(([shape]) => shape.test(path))) return h("div", { style: { ...page, ...quiet } }, "This tab names a page this pane does not show.");
