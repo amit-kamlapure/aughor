@@ -506,10 +506,29 @@ def _fanout_hit(sql: str, full_cols: dict, dialect: str):
 
 
 def _breakdown_grain_hint(question: str, sql: str, dialect: str = "duckdb") -> str:
-    """Catch a breakdown grouped at TOO FINE a grain: the question names a categorical
-    dimension ('top product CATEGORIES', 'by brand') but the SQL GROUPs BY an id/key column
-    (product_id) instead, so it ranks individual rows, not the category. High-precision: fires
-    only when EVERY group-by column is id-like AND the question names a real dimension noun."""
+    """Catch a breakdown grouped at TOO FINE a grain, in its two shapes.
+
+    The question names a categorical dimension ('top product CATEGORIES', 'by brand') but the SQL
+    GROUPs BY an id/key column (product_id) instead, so it ranks individual rows, not the category:
+    fires only when EVERY group-by column is id-like AND the question names a real dimension noun.
+
+    Or the SQL groups by the dimension AND a row's own key ("total GMV by order status" grouped by
+    order_id, status — 500 rows, nothing totalled; `sql/grain_intent.grouped_by_a_row_key`). It is
+    asked HERE, and not as a lint before the query runs, because this is the check a repair is
+    re-checked against (`_checks_still_firing`): asked only before the run, a later repair wrote
+    the same grouping back and it was adopted (receipt 2026-11-14, the first live run of the fix)."""
+    hint = _all_keys_grain_hint(question, sql, dialect)
+    if hint:
+        return hint
+    try:
+        from pramanyx.sql.grain_intent import grouped_by_a_row_key
+        return grouped_by_a_row_key(question, sql) or ""
+    except Exception:
+        return ""
+
+
+def _all_keys_grain_hint(question: str, sql: str, dialect: str = "duckdb") -> str:
+    """The first shape above: every group-by column is a key, and the question names a dimension."""
     try:
         import sqlglot
         from sqlglot import exp
@@ -2702,20 +2721,6 @@ def _answer_core(
             from pramanyx.kernel.errors import tolerate
             tolerate(exc, "entity-count grain check is best-effort; the SQL runs as written",
                      counter="chat.entity_grain")
-        # A total "by <dimension>" grouped by a row's own key as well (2026-11-13): "total GMV by order
-        # status" came back grouped by order_id and status — 500 rows, nothing totalled. Same repair round.
-        try:
-            from pramanyx.sql.grain_intent import grouped_by_a_row_key as _gbrk
-            from pramanyx.sql.lint import LintIssue as _LintIssueK
-            _key_dx = _gbrk(question, final_sql)
-            if _key_dx:
-                _lint_issues = list(_lint_issues) + [_LintIssueK(
-                    severity="error", rule="grouped_by_row_key", message=_key_dx, hint=_key_dx)]
-                _receipt({"guard": "grouped_by_row_key", "action": "hinted", "detail": _key_dx[:400]})
-        except Exception as exc:
-            from pramanyx.kernel.errors import tolerate
-            tolerate(exc, "row-key grouping check is best-effort; the SQL runs as written",
-                     counter="chat.row_key_grouping")
         if _lint_has_errors(_lint_issues):
             try:
                 _writer = SqlWriter(db, schema_str=schema)

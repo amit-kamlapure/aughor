@@ -5,8 +5,6 @@ Receipt 2026-11-13 (LuxExperience): "What is total GMV by order status?" → `GR
 """
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 from pramanyx.sql.grain_intent import grouped_by_a_row_key as check
@@ -54,7 +52,17 @@ def test_other_breakdowns_grouped_by_a_key_are_caught(question, sql, key):
     assert said and f"also groups by {key}" in said
 
 
-def test_the_chat_path_runs_the_check():
-    from pramanyx.routers import investigations
-    src = inspect.getsource(investigations)
-    assert "grouped_by_a_row_key" in src and '"grouped_by_row_key"' in src
+def test_the_chat_path_asks_it_where_a_repair_is_re_checked():
+    """Asked only as a lint before the run, the mistake came back in a later repair and was adopted. It is part of
+    the breakdown-grain check, which both starts a repair and is asked again of every repair."""
+    from pramanyx.routers import investigations as I
+    assert "also groups by order_id" in I._breakdown_grain_hint("What is total GMV by order status?", _RECEIPT)
+    assert I._checks_still_firing(_RECEIPT, {"grain"}, question="What is total GMV by order status?", dialect="duckdb",
+                                  full_cols={}, schema_cols={}) == ["grain"]
+    good = "SELECT status, ROUND(SUM(gmv_eur), 2) AS total FROM orders GROUP BY status"
+    assert I._breakdown_grain_hint("What is total GMV by order status?", good) == ""
+    assert I._checks_still_firing(good, {"grain"}, question="What is total GMV by order status?", dialect="duckdb",
+                                  full_cols={}, schema_cols={}) == []
+    # the first shape still fires as it did
+    assert "BREAKDOWN GRAIN MISMATCH" in I._breakdown_grain_hint(
+        "top product categories by revenue", "SELECT product_id, SUM(x) FROM t GROUP BY product_id")

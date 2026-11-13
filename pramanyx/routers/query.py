@@ -1766,7 +1766,6 @@ _ASK_GUARD_WORDS: dict[tuple[str, str], str] = {
     ("fanout_defan", "rewrote_sql"): "a join that would have double-counted was rewritten",
     ("fanout_defan", "hinted"): "check: a join here may double-count",
     ("count_star_entity_grain", "hinted"): "check: COUNT(*) may count rows rather than the thing asked about",
-    ("grouped_by_row_key", "hinted"): "check: the total may be grouped by each row's own key, so nothing is totalled",
     ("sql_lint", "rewrote_sql"): "repaired after the lint",
     ("preflight_repair", "repaired_sql"): "names repaired against the schema",
 }
