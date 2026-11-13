@@ -89,6 +89,12 @@ turned back on from the interface.
   a workspace over that folder titled with the connection's name. The shell gives its agent that file before the
   first question, so the shell's own picker above the question box chooses the connection and the agent is told
   it in its instructions, not in the person's question.
+- **The way in and the way back: nine dots.** The app's top bar draws nine dots while a coworker is running, and
+  they open it in the full window; the same nine dots, in the coworker's corner, lead back. The coworker says
+  where it is to the API (`PUT /coworker/address`, at start and every half minute); the API forgets it after two
+  minutes, so the app never offers a way in that leads nowhere. Arriving, the coworker opens a new conversation
+  on the connection the app's top bar was on and takes the app's light or dark. Those ride in the address's
+  fragment: the shell drops a query string on arrival.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
   allowed origins being changed. It relays four paths (`/connections`, `/suggestions`, `/agents/custom`,
   `/investigations`), GET and HEAD only, and answers 404 for anything else.
@@ -153,7 +159,12 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
 - On an install where Pramanyx does not require identity, a question from here is the local operator's, the same
   as in the app. Where identity is required, every person here is the one principal the MCP server was started
   as.
-- Nothing in the app leads here, and light or dark is chosen again here.
+- A person who opens the coworker's address directly, and not from the app, has no nine dots: there is no
+  place known to go back to. Who they are does not carry across: the coworker has the shell's own access, in the
+  address the app is given, and not the app's sign-in.
+- The API hands the coworker's address, with the shell's access in it, to the app's page. On one machine that is
+  the reach the address printed in the terminal has. An install that serves the app to other machines must decide
+  who may be given it; the route accepts only an address on its own machine, from its own machine.
 - A custom agent's answer has a card, seen live once. It has no Right and Wrong: the agent's answer does not say
   which connection it was for. An agent's turn may run several queries; the card shows the last one's grid and
   SQL, which is what the platform's fold keeps, and that is not always the one the answer is about.

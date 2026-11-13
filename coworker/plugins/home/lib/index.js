@@ -1,6 +1,6 @@
 /**
- * The host half. Two things the page cannot do for itself: read Pramanyx, and tell the agent which connection a
- * conversation is about.
+ * The host half. Three things the page cannot do for itself: read Pramanyx, tell the agent which connection a
+ * conversation is about, and say to Pramanyx where the coworker is.
  *
  * A READ-ONLY RELAY from the coworker's page to the Pramanyx API.
  *
@@ -55,6 +55,34 @@ async function workspacePerConnection(ctx, api) {
   }
 }
 
+/**
+ * SAYING WHERE THIS IS. The app leads here from the nine dots in its top bar, and for that Pramanyx has to know a
+ * coworker is running and the address to open. The address is the one the shell prints for a person at start,
+ * with the shell's own access in it. It is said to the API at start and every half minute after; the API forgets
+ * it two minutes after the last time, so a coworker that has stopped is not offered.
+ *
+ * The API hands that address to the app's page. On this machine that is the same reach the address printed in the
+ * terminal has; an install that serves the app to other machines must decide who may be given it first.
+ */
+function sayWhereThisIs(ctx, api) {
+  ctx.inject(["webApp", "connection"], (at) => {
+    const say = async () => {
+      try {
+        const url = String(at.connection.authenticatedUrl(at.webApp.getAdvertisedUrl()));
+        await fetch(`${api}/coworker/address`, {
+          method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }),
+        });
+      } catch {
+        // Pramanyx is not answering, or is older than this route: the app draws no way in, and this tries again.
+      }
+    };
+    say();
+    const again = setInterval(say, 30_000);
+    again.unref?.();
+    at.effect(() => () => clearInterval(again), "pramanyx-home: saying where the coworker is");
+  });
+}
+
 export const inject = ["webServer", "workspaceRegistry"];
 
 export function apply(ctx) {
@@ -63,6 +91,7 @@ export function apply(ctx) {
     // Pramanyx not answering at start is not a reason for the page not to open; it says so where it reads.
     console.warn(`pramanyx-home: no workspace per connection this start (${error?.message ?? error})`);
   });
+  sayWhereThisIs(ctx, api);
   ctx.effect(() => ctx.webServer.register({
     kind: "prefix",
     path: "/pramanyx",          // no trailing slash: the server matches the prefix itself, or the prefix and a "/"

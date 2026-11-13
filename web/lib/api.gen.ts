@@ -4390,6 +4390,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/coworker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where The Coworker Is
+         * @description Whether a coworker is running, and the address to open. Reads what was last said; asks nothing.
+         */
+        get: operations["where_the_coworker_is_coworker_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/coworker/address": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Say Where The Coworker Is
+         * @description The coworker's own announcement of its address. Refused from another machine, and for an address on one.
+         */
+        put: operations["say_where_the_coworker_is_coworker_address_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cron/tick": {
         parameters: {
             query?: never;
@@ -20081,6 +20121,27 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** CoworkerAddress */
+        CoworkerAddress: {
+            /**
+             * Url
+             * @description The address a person opens to reach the coworker.
+             */
+            url: string;
+        };
+        /** CoworkerDoor */
+        CoworkerDoor: {
+            /**
+             * Available
+             * @description Whether a coworker has said it is running within the last two minutes.
+             */
+            available: boolean;
+            /**
+             * Url
+             * @description The address to open, when one is running.
+             */
+            url?: string | null;
+        };
         /** CreateArtifactRequest */
         CreateArtifactRequest: {
             /**
@@ -33980,6 +34041,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    where_the_coworker_is_coworker_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoworkerDoor"];
+                };
+            };
+        };
+    };
+    say_where_the_coworker_is_coworker_address_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoworkerAddress"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoworkerDoor"];
                 };
             };
             /** @description Validation Error */

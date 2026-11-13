@@ -271,10 +271,106 @@ function AgentsPage({ ask }) {
                 }, "Ask this agent"))))));
 }
 
+const BACK = "pramanyx.coworker.back";
+const CARRIED = "#pramanyx:";
+
+/** An http(s) address on this machine: the only kind this page will keep as the way back, or send a person to. */
+function onThisMachine(address) {
+  try {
+    const to = new URL(address);
+    return (to.protocol === "http:" || to.protocol === "https:") && ["localhost", "127.0.0.1", "[::1]"].includes(to.hostname);
+  } catch { return false; }
+}
+
+function wayBack() {
+  try { const kept = localStorage.getItem(BACK) || ""; return onThisMachine(kept) ? kept : ""; } catch { return ""; }
+}
+
+/**
+ * ARRIVING FROM THE APP. The app's nine dots open this page with three things in the address's fragment: the
+ * connection the person was on, light or dark, and the app's own address. A new conversation is opened on that
+ * connection's workspace, the theme is set to the app's, and the address is kept as the way back. The fragment is
+ * then taken off, so a reload is not a second arrival. Each is checked: a connection is an id, a theme is one of
+ * two words, and the way back is an address on this machine — it came in an address anyone could write.
+ */
+function arrive(ctx) {
+  if (!location.hash.startsWith(CARRIED)) return;
+  const said = new URLSearchParams(location.hash.slice(CARRIED.length));
+  history.replaceState(null, "", location.pathname + location.search);
+  const back = said.get("back") || "";
+  if (onThisMachine(back)) { try { localStorage.setItem(BACK, back); } catch { /* the dots are not drawn this visit */ } }
+  const theme = said.get("theme");
+  if (theme === "dark" || theme === "light") {
+    ctx.inject(["theme"], (at) => { try { at.theme.setTheme(theme); } catch { /* the shell's own theme stands */ } });
+  }
+  const connection = said.get("conn") || "";
+  if (/^[A-Za-z0-9_-]{1,64}$/.test(connection)) openOn(ctx, connection);
+}
+
+/** A new conversation on a connection's workspace, once the shell has read its workspaces. Gives up quietly. */
+function openOn(ctx, connection, tries = 0) {
+  const folder = new RegExp(`[\\\\/]connections[\\\\/]${connection}(?:[\\\\/"]|$)`);
+  let found = null;
+  try {
+    const items = ctx.uiWorkspace?.workspaces?.list?.getSnapshot?.()?.items ?? [];
+    found = items.find((item) => folder.test(JSON.stringify(item))) ?? null;
+  } catch { found = null; }
+  if (found?.workspaceId !== undefined) { ctx.uiWorkspace.startSession(found.workspaceId); return; }
+  if (tries < 40) setTimeout(() => openOn(ctx, connection, tries + 1), 250);
+}
+
+function NineDots() {
+  const at = [3, 8, 13];
+  return h("svg", { width: 15, height: 15, viewBox: "0 0 16 16", fill: "currentColor", "aria-hidden": "true" },
+    at.flatMap((y) => at.map((x) => h("circle", { key: `${x}-${y}`, cx: x, cy: y, r: 1.4 }))));
+}
+
+/**
+ * The nine dots, here: the way back to the app. The same control, in the same corner, as the one that led here.
+ * Drawn only when this page was reached from the app, which is when there is a place to go back to.
+ */
+function Switcher() {
+  const [open, setOpen] = useState(false);
+  const host = useRef(null);
+  const back = wayBack();
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (host.current && !host.current.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); };
+  }, [open]);
+  if (!back) return null;
+  const row = { display: "flex", gap: 10, alignItems: "center", padding: "8px 9px", borderRadius: 6, color: "inherit", textDecoration: "none" };
+  const tile = { width: 32, height: 32, flex: "none", borderRadius: 6, border: `1px solid ${line}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13 };
+  const words = (name, note) => h("span", { style: { display: "flex", flexDirection: "column", gap: 1, minWidth: 0 } },
+    h("span", { style: { fontSize: 13.5, fontWeight: 600 } }, name), h("span", { style: { ...quiet, fontSize: 12 } }, note));
+  return h("div", { ref: host, style: { position: "relative", display: "inline-flex" } },
+    h("button", {
+      type: "button", "aria-label": "Switch to", "aria-expanded": open, onClick: () => setOpen((was) => !was),
+      style: { width: 28, height: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", color: "inherit",
+               background: open ? faint : "transparent", border: 0, borderRadius: 4, cursor: "pointer", padding: 0 },
+    }, h(NineDots)),
+    open ? h("div", {
+      role: "menu", "aria-label": "Switch to",
+      style: { position: "absolute", right: 0, top: 32, zIndex: 60, width: 300, boxSizing: "border-box", padding: 8, display: "flex",
+               flexDirection: "column", gap: 2, fontSize: 13, color: "var(--dsw-alias-label-primary)",
+               background: "var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-base))", border: `1px solid ${line}`, borderRadius: 8,
+               boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)" },
+    },
+      h("span", { style: { ...quiet, fontSize: 12, padding: "2px 9px 6px" } }, "Switch to"),
+      h("a", { role: "menuitem", href: back, className: "pramanyx-home-row", style: row }, h("span", { style: tile, "aria-hidden": "true" }, "P"), words("Pramanyx", "The platform.")),
+      h("div", { role: "menuitem", "aria-current": "page", style: { ...row, background: faint } }, h("span", { style: tile, "aria-hidden": "true" }, "C"), words("Coworker", "You are here."))) : null);
+}
+
 export const inject = ["slots", "uiWorkspace"];
 
 export function apply(ctx) {
   wearHomeLook();
+  arrive(ctx);
+  ctx.slots.inject("conversation.session.header.corner", () =>
+    ctx.slots.register({ name: "conversation.session.header.corner", id: "pramanyx-switcher" }, Switcher));
   ctx.slots.inject("conversation.hero.options", () =>
     ctx.slots.register({ name: "conversation.hero.options", id: "pramanyx-coworker-home" }, Home));
 

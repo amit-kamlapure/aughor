@@ -216,6 +216,16 @@ export interface OrgSettings {
   coworker_models?: boolean | null;
 }
 
+/** Whether a coworker is running beside the app, and the address to open (`routers/coworker.py`). */
+export type CoworkerDoor = { available: boolean; url?: string | null };
+
+/** Where the coworker is. An API from before the route, or one not answering, is "none running". */
+export async function fetchCoworkerDoor(): Promise<CoworkerDoor> {
+  const res = await fetch(`${getApiBase()}/coworker`);
+  if (!res.ok) return { available: false };
+  return res.json();
+}
+
 /** The choices an organisation makes about what Pramanyx may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
 export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work"
   | "read_query_history" | "copy_rows_across_sources" | "coworker_models";
