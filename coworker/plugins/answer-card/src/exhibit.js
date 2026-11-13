@@ -6,7 +6,7 @@
  * This file holds what the card and the pane share: which answers this page has seen, what a person chose in the
  * editor for each, and the two things drawn in both places (the result grid and the editor).
  */
-import { createElement as h, useState, useSyncExternalStore } from "react";
+import { createElement as h, useEffect, useState, useSyncExternalStore } from "react";
 import { labelOf, numericColumns, vizChoices } from "./chart";
 
 export const line = "color-mix(in srgb, currentColor 18%, transparent)";
@@ -297,64 +297,132 @@ export function groundingOf(answer) {
   return out;
 }
 
-const NODE_W = 168, NODE_H = 34, GAP = 10, COL = [0, 206, 412], WIDTH = 580;
-
-/** The picture: what the answer was grounded in on the left, the answer, and what it read on the right. */
-function GroundingMap({ ground, headline }) {
-  const cap = (items, kind) => {
-    const shown = items.slice(0, 7).map((it) => ({ ...it, kind }));
-    return items.length > 7 ? [...shown, { label: `and ${items.length - 7} more`, kind: "more" }] : shown;
-  };
-  const left = [
-    ...cap(ground.metrics.map((m) => ({ label: m.name, sub: m.departed ? "approved metric · not used as approved" : "approved metric", warn: m.departed })), "metric"),
-    ...cap(ground.objects.map((o) => ({ label: o, sub: "ontology object" })), "object"),
-    ...cap(ground.findings.map((f) => ({ label: `finding ${f.slice(0, 8)}`, sub: "earlier finding" })), "finding"),
-  ];
-  const right = [
-    ...cap(ground.tables.map((t) => ({ label: t, sub: "table" })), "table"),
-    ...cap(ground.columns.map((c) => ({ label: c.name, sub: c.roles.length ? `column · ${c.roles.join(", ")}` : "column" })), "column"),
-  ];
-  const rows = Math.max(left.length, right.length, 1);
-  const height = rows * (NODE_H + GAP) + GAP;
-  const y = (i, n) => GAP + (height - 2 * GAP - n * (NODE_H + GAP) + GAP) / 2 + i * (NODE_H + GAP);
-  const mid = height / 2 - NODE_H / 2;
-  const node = (it, x, top, key, strong) => h("g", { key },
-    h("rect", { x, y: top, width: NODE_W, height: NODE_H, rx: 5, fill: strong ? "color-mix(in srgb, currentColor 10%, transparent)" : "transparent",
-                stroke: "currentColor", strokeOpacity: it.warn ? 0.85 : 0.3, strokeDasharray: it.warn ? "4 3" : undefined }),
-    h("text", { x: x + 10, y: top + (it.sub ? 14 : 21), fontSize: 12, fontWeight: 600, fill: "currentColor" },
-      it.label.length > 24 ? `${it.label.slice(0, 23)}…` : it.label),
-    it.sub ? h("text", { x: x + 10, y: top + 27, fontSize: 10.5, fill: "currentColor", fillOpacity: 0.62 }, it.sub.length > 30 ? `${it.sub.slice(0, 29)}…` : it.sub) : null,
-    h("title", null, it.sub ? `${it.label} — ${it.sub}` : it.label));
-  const link = (x1, y1, x2, y2, key, dashed) => h("path", {
-    key, d: `M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}`, fill: "none", stroke: "currentColor",
-    strokeOpacity: 0.3, strokeDasharray: dashed ? "4 3" : undefined });
-  return h("svg", { viewBox: `0 0 ${WIDTH} ${height}`, width: "100%", role: "img", style: { maxWidth: WIDTH, display: "block" },
-                    "aria-label": `What this answer stood on: ${left.length} on the semantic side, ${right.length} read from the warehouse` },
-    left.map((it, i) => link(COL[0] + NODE_W, y(i, left.length) + NODE_H / 2, COL[1], mid + NODE_H / 2, `l${i}`, it.warn)),
-    right.map((it, i) => link(COL[1] + NODE_W, mid + NODE_H / 2, COL[2], y(i, right.length) + NODE_H / 2, `r${i}`)),
-    left.map((it, i) => node(it, COL[0], y(i, left.length), `ln${i}`)),
-    right.map((it, i) => node(it, COL[2], y(i, right.length), `rn${i}`)),
-    node({ label: headline || "This answer", sub: "the answer" }, COL[1], mid, "answer", true));
+async function readPlatform(path) {
+  const got = await fetch(`/pramanyx${path}`, { headers: { accept: "application/json" } });
+  if (!got.ok) throw new Error(String(got.status));
+  return got.json();
 }
 
+const when = (stamp) => { const d = new Date(stamp); return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); };
+const code = { margin: 0, padding: 10, border: `1px solid ${line}`, borderRadius: 4, background: faint, fontSize: 12.5, lineHeight: 1.5,
+               whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" };
+const tag = (strong) => ({ fontSize: 11.5, padding: "1px 7px", borderRadius: 4, border: `1px solid ${line}`, whiteSpace: "nowrap",
+                           ...(strong ? { fontWeight: 600 } : quiet) });
+const block = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, display: "flex", flexDirection: "column", gap: 8 };
+
+/** One metric the answer was held to: the definition, where it was fetched from, and what the answer ran instead. */
+function MetricGrounding({ metric, definition, sql, connection }) {
+  const approved = definition && definition.status === "approved" || Boolean(definition?.approved_by);
+  const from = !definition ? "" : definition.connection && definition.connection !== "*"
+    ? `Fetched from the semantic layer: this connection's own definition${definition.schema_name && definition.schema_name !== "*" ? `, dataset ${definition.schema_name}` : ""}.`
+    : "Fetched from the semantic layer: the organisation-wide definition (this connection has none of its own).";
+  return h("div", { style: block },
+    h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
+      h("span", { style: { fontWeight: 600, fontSize: 14 } }, definition?.label || metric.name),
+      h("span", { style: { ...quiet, fontFamily: code.fontFamily, fontSize: 12 } }, metric.name),
+      definition ? h("span", { style: tag(approved) }, approved ? "Approved" : `Not approved (${definition.status || "draft"})`) : null,
+      h("span", { style: tag(metric.departed) }, metric.departed ? "Not used as approved" : "Used as approved")),
+    definition ? h("div", { style: { ...quiet, fontSize: 12.5 } },
+      [from, approved && definition.approved_by ? `Approved by ${definition.approved_by}${definition.approved_at ? ` on ${when(definition.approved_at)}` : ""}.` : "",
+       definition.version ? `Version ${definition.version}.` : ""].filter(Boolean).join(" ")) : h("div", { style: quiet }, "Its definition could not be read just now."),
+    definition ? h("div", null, h("div", { style: { ...quiet, fontSize: 12, paddingBottom: 4 } }, "The approved formula"), h("pre", { style: code }, definition.sql || "—")) : null,
+    definition?.caveats ? h("div", { style: { fontSize: 12.5 } }, definition.caveats) : null,
+    h("div", null, h("div", { style: { ...quiet, fontSize: 12, paddingBottom: 4 } }, "What this answer ran"), h("pre", { style: code }, sql || "No SQL came back with this answer.")),
+    metric.departed ? h("div", { style: { fontSize: 12.5, fontWeight: 600 } },
+      `Pramanyx's own check: ${metric.note || "the answer did not use the approved formula"}. Compare the two above before relying on the figure.`) : null,
+    definition?.connection && connection && definition.connection !== "*" && definition.connection !== connection
+      ? h("div", { style: { fontSize: 12.5, fontWeight: 600 } }, "This definition belongs to another connection.") : null);
+}
+
+/**
+ * How grounded an answer is — not a picture of everything near it. Three things a person needs to judge a figure:
+ *
+ * 1. THE DEFINITIONS. Each metric the answer was held to: the approved formula, where it was fetched from (this
+ *    connection's own definition or the organisation-wide one), who approved it and when — beside the SQL the
+ *    answer actually ran, and Pramanyx's own check of whether it used the formula as approved.
+ * 2. WHAT IT REFERENCED. The objects of the ontology the answer stood on, each with why it is here (the SQL read
+ *    it, or the planner was shown it before writing the SQL) and its warrant — whether your schema declares it, a
+ *    person asserted it, or a name match guessed it — and the columns read, by role.
+ * 3. EARLIER FINDINGS, only when a person has confirmed them. An earlier finding is something Pramanyx computed
+ *    once; shown to the planner it is context, not ground. Unconfirmed ones are counted, said to be unconfirmed,
+ *    and kept behind a fold. (The user, 2026-11-13: "It's not the old findings that are very critical unless
+ *    user has given an upvote.")
+ *
+ * The receipt comes with the answer. The definitions and the resolved references are read from Pramanyx when the
+ * tab opens; if either cannot be read the tab says which, and shows what the receipt alone holds.
+ */
 function Grounding({ answer }) {
   const ground = groundingOf(answer);
+  const receipt = answer?.receipt?.artifact?.id || "";
+  const connection = answer?.connection || answer?.receipt?.artifact?.conn_id || "";
+  const [definitions, setDefinitions] = useState(null);     // null = reading, false = could not
+  const [trace, setTrace] = useState(null);
+  useEffect(() => {
+    let live = true;
+    if (connection) readPlatform(`/metrics?connection_id=${encodeURIComponent(connection)}`).then((d) => live && setDefinitions(d)).catch(() => live && setDefinitions(false));
+    else setDefinitions(false);
+    if (receipt) readPlatform(`/receipt/${encodeURIComponent(receipt)}/trace`).then((d) => live && setTrace(d)).catch(() => live && setTrace(false));
+    else setTrace(false);
+    return () => { live = false; };
+  }, [connection, receipt]);
+
   const title = h("div", null,
-    h("div", { style: { fontSize: 15, fontWeight: 600 } }, "What this answer stood on"),
+    h("div", { style: { fontSize: 15, fontWeight: 600 } }, "How this answer is grounded"),
     h("div", { style: { ...quiet, fontSize: 12.5, paddingTop: 2 } }, answer.answer || answer.question || ""));
-  if (!ground) return h("div", { style: page }, title, h("div", { style: quiet }, "The receipt for this answer did not reach this page, so what it stood on cannot be shown here."));
-  const list = (name, items, each) => (items.length ? h("section", { style: { display: "flex", flexDirection: "column", gap: 6 } },
-    h("div", { style: heading }, name), items.map(each)) : null);
-  const row = (key, main, note, warn) => h("div", { key, style: { display: "flex", gap: 10, alignItems: "baseline", padding: "5px 0", borderTop: `1px solid ${line}` } },
-    h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, flex: "0 0 46%", overflowWrap: "anywhere" } }, main),
-    h("span", { style: warn ? { fontWeight: 600 } : quiet }, note));
+  if (!ground) return h("div", { style: page }, title, h("div", { style: quiet }, "The receipt for this answer did not reach this page, so its grounding cannot be shown here."));
+
+  const nodes = trace && Array.isArray(trace.nodes) ? trace.nodes : [];
+  const referenced = nodes.filter((n) => n.kind !== "finding");
+  const findings = nodes.filter((n) => n.kind === "finding");
+  const confirmed = findings.filter((n) => n.warrant?.warrant === "human");
+  const unconfirmed = findings.filter((n) => n.warrant?.warrant !== "human");
+  const departed = ground.metrics.filter((m) => m.departed).length;
+  const section = (name, note, body) => h("section", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+    h("div", null, h("div", { style: heading }, name), note ? h("div", { style: { ...quiet, fontSize: 12.5, paddingTop: 2 } }, note) : null), body);
+  const nodeRow = (n) => h("div", { key: n.id, style: { ...block, gap: 4, padding: "9px 12px" } },
+    h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
+      h("span", { style: { fontWeight: 600 } }, n.label || n.id),
+      h("span", { style: tag(false) }, n.kind),
+      n.warrant?.label ? h("span", { style: tag(n.warrant.warrant === "human" || n.warrant.warrant === "declared"), title: n.warrant.detail || "" }, n.warrant.label) : null,
+      n.present === false ? h("span", { style: tag(true) }, "No longer in the ontology") : null),
+    h("div", { style: { ...quiet, fontSize: 12.5 } }, [n.why, n.warrant?.detail ? `Warrant: ${n.warrant.detail}.` : ""].filter(Boolean).join(" ")),
+    n.kind === "finding" && n.summary ? h("div", { style: { fontSize: 12.5 } }, n.summary) : null);
+
   return h("div", { style: page }, title,
-    ground.count ? h(GroundingMap, { ground, headline: answer.answer || "" }) : h("div", { style: quiet }, "The receipt records nothing this answer was grounded in."),
-    list("Approved metrics", ground.metrics, (m) => row(m.name, m.name, m.departed ? `Not used as approved: ${m.note || "the answer wrote its own formula"}.` : "Used as approved.", m.departed)),
-    list("Ontology", ground.objects, (o) => row(o, o, "An object the answer was grounded in.")),
-    list("Earlier findings", ground.findings, (f) => row(f, f, "A finding already on record that the answer was given.")),
-    list("Tables read", ground.tables, (t) => row(t, t, "Read by the SQL.")),
-    list("Columns", ground.columns, (c) => row(c.name, c.name, c.roles.length ? c.roles.join(", ") : "read")));
+    h("div", { style: { ...block, gap: 4, background: faint } },
+      h("div", { style: { fontWeight: 600 } },
+        !ground.metrics.length ? "No approved definition applied to this question." :
+        departed ? `${departed} of ${ground.metrics.length} approved ${ground.metrics.length === 1 ? "definition" : "definitions"} was not used as approved.`
+                 : `${ground.metrics.length === 1 ? "The approved definition was" : `All ${ground.metrics.length} approved definitions were`} used as approved.`),
+      h("div", { style: { ...quiet, fontSize: 12.5 } },
+        `${ground.tables.length} ${ground.tables.length === 1 ? "table" : "tables"} and ${ground.columns.length} ${ground.columns.length === 1 ? "column" : "columns"} read. `
+        + (trace ? `${confirmed.length} of ${findings.length} earlier findings shown to the planner were confirmed by a person.` : ""))),
+
+    section("Metric definitions", "Each metric this answer was held to: its approved formula and where it came from, beside what the answer ran.",
+      ground.metrics.length ? ground.metrics.map((m) => h(MetricGrounding, {
+        key: m.name, metric: m, sql: answer.sql, connection,
+        definition: Array.isArray(definitions) ? definitions.find((d) => d.name === m.name) ?? null : null,
+      })) : h("div", { style: quiet }, "The receipt names no metric this answer was held to. Its figure is the SQL's own, with no approved definition behind it.")),
+    definitions === false && ground.metrics.length ? h("div", { style: quiet }, "The definitions could not be read from Pramanyx just now; what is shown is the receipt's.") : null,
+
+    section("Ontology referenced", "What the answer stood on, why it is here, and on what warrant.",
+      trace === null ? h("div", { style: quiet }, "Reading what was referenced…")
+        : trace === false || !trace.available ? h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+            h("div", { style: quiet }, "The references could not be resolved just now. From the receipt alone:"),
+            [...ground.objects, ...ground.tables].map((t) => h("div", { key: t, style: { fontFamily: code.fontFamily, fontSize: 12.5 } }, t)))
+        : referenced.length ? referenced.map(nodeRow) : h("div", { style: quiet }, "Nothing of the ontology was referenced.")),
+    ground.columns.length ? h("div", { style: { display: "flex", flexDirection: "column" } },
+      h("div", { style: { ...quiet, fontSize: 12, paddingBottom: 2 } }, "Columns the SQL read"),
+      ground.columns.map((c) => h("div", { key: c.name, style: { display: "flex", gap: 10, padding: "5px 0", borderTop: `1px solid ${line}` } },
+        h("span", { style: { fontFamily: code.fontFamily, fontSize: 12.5, flex: "0 0 50%", overflowWrap: "anywhere" } }, c.name),
+        h("span", { style: quiet }, c.roles.length ? c.roles.join(", ") : "read")))) : null,
+
+    trace && findings.length ? section("Earlier findings", "Something Pramanyx computed before is context for the planner, not ground, unless a person has confirmed it.",
+      h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+        confirmed.length ? confirmed.map(nodeRow) : h("div", null, `None of the ${findings.length} shown to the planner was confirmed by a person, so none counts as grounding.`),
+        unconfirmed.length ? h("details", null,
+          h("summary", { style: { cursor: "pointer", ...quiet } }, `${unconfirmed.length} unconfirmed, shown to the planner before it wrote the SQL`),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 8, paddingTop: 8 } }, unconfirmed.map(nodeRow))) : null)) : null);
 }
 
 // ── a thing a step read, laid out to be read ─────────────────────────────────────────────────────────────────
@@ -427,7 +495,7 @@ export function PaneTitle(props) {
   const known = at ? seen(at.id) : null;
   if (at?.what === "thing") return h("span", { title: known?.title || "" }, known?.title || "What was read");
   const of = known?.answer ?? null;
-  const what = at?.what === "viz" ? "Edit visualization" : at?.what === "ground" ? "Grounded in" : "SQL";
+  const what = at?.what === "viz" ? "Edit visualization" : at?.what === "ground" ? "Grounding" : "SQL";
   const name = of ? (of.answer || of.question || "") : "";
   return h("span", { title: name ? `${what} — ${name}` : what }, name ? `${what} · ${name}` : what);
 }

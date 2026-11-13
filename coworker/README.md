@@ -108,11 +108,17 @@ turned back on from the interface.
 - **What a step read opens beside the conversation.** A metric's definition, an object of the ontology, the
   Briefing, earlier findings: each step's result can be opened as a tab and is laid out to be read — facts as
   name and value, SQL as SQL, a list of like things as a grid that sorts.
-- **What an answer stood on.** Under an answer, "Grounded in N" opens a tab that draws it: on one side the
-  approved metrics it touched, the ontology objects and the earlier findings it was grounded in; on the other the
-  tables and columns its SQL read; the answer between them. A metric the answer did not use as approved is drawn
-  dashed, counted on the chip ("1 not as approved") and said in words. Every item is a line of the receipt
-  Pramanyx keeps for the answer; this page infers none of it. Metrics that were only on offer are left out.
+- **How an answer is grounded.** Under an answer, a "Grounding" button says the state in its own words
+  ("1 definition not used as approved") and opens a tab with three things a person needs to judge a figure.
+  *The definitions*: each metric the answer was held to — its approved formula, whether it was fetched from this
+  connection's own definition or the organisation-wide one, who approved it and when — beside the SQL the answer
+  ran and Pramanyx's own check of whether it used the formula. *What it referenced*: the objects of the ontology,
+  each with why it is there (the SQL read it, or the planner was shown it) and its warrant (declared by the
+  schema, asserted by a person, inferred from a name), and the columns read by role. *Earlier findings, only when
+  a person has confirmed them*: something Pramanyx computed before is context for the planner, not ground;
+  unconfirmed ones are counted, said to be unconfirmed and kept behind a fold. The receipt comes with the answer;
+  the definitions (`/metrics`) and the resolved references (`/receipt/<id>/trace`, the platform's own answer
+  trace) are read through the relay when the tab opens.
 - **A conversation is held to its connection.** The agent is told which connection a conversation is about, and
   that is an instruction, not a boundary. The boundary is the shell's tool guard: a call to one of Pramanyx's
   tools from a connection's workspace that names another connection is refused before it runs, with a sentence
@@ -120,8 +126,8 @@ turned back on from the interface.
   answer on its own. A guard can only refuse; nothing later in the shell turns that back into permission.
   `node --test plugins/home/test/held.test.mjs` covers the rule.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
-  allowed origins being changed. It relays four paths (`/connections`, `/suggestions`, `/agents/custom`,
-  `/investigations`), GET and HEAD only, and answers 404 for anything else.
+  allowed origins being changed. It relays six reads (`/connections`, `/suggestions`, `/agents/custom`,
+  `/investigations`, `/metrics`, `/receipt/<id>/trace`), GET and HEAD only, and answers 404 for anything else.
 
 ## Run it
 
@@ -144,8 +150,8 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   money. The app's editor also offers a transform (period over period, share, rolling, cumulative), an annotation
   and a pivot; those are not here. Nothing but an answer opens in the right-hand pane yet: not an object of the
   ontology, a metric's definition, a document or a sheet.
-- An earlier finding is shown by its id: its sentence is not in the receipt, and this page does not read it. A
-  node of the map does not open the thing it names yet.
+- The grounding tab shows the approved formula beside the answer's SQL and repeats the platform's verdict on
+  whether one used the other; it does not compare them itself. Nothing in it opens the thing it names yet.
 - The exhibit, the table and the editor were checked by hand on a live answer (sort, totals against the approved
   figure, pie, labels off, vertical, back to as answered). No test draws them.
 - A result longer than the shell's cap reaches the page cut short. The card reads it without its receipt; a

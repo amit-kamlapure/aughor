@@ -579,10 +579,11 @@ function Exhibit({ answer, whole, asked }) {
         `${open === "table" ? "⌄" : "›"} Table`),
       h("button", { type: "button", style: button(open === "sql"), onClick: () => { if (!openBeside("sql", id)) toggle("sql"); } }, "SQL"),
       h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered"),
-      ground && ground.count && hasPane() ? h("button", {
-        type: "button", style: button(false), title: "What this answer stood on: metrics, ontology, tables and columns",
+      ground && hasPane() ? h("button", {
+        type: "button", style: button(false), title: "The definitions this answer was held to, what it referenced, and on what warrant",
         onClick: () => openBeside("ground", id),
-      }, departed ? `Grounded in ${ground.count} · ${departed} not as approved` : `Grounded in ${ground.count}`) : null),
+      }, departed ? `Grounding · ${departed} ${departed === 1 ? "definition" : "definitions"} not used as approved`
+        : ground.metrics.length ? "Grounding · definitions used as approved" : "Grounding · no approved definition") : null),
     open === "table" ? h("div", { style: { paddingTop: 10 } }, h(ResultGrid, { answer })) : null,
     open === "sql" ? h("div", { style: { paddingTop: 10 } }, h(Sql, { answer })) : null,
     open === "how" ? h("div", { style: { paddingTop: 10 } }, h(How, { answer, whole })) : null,
