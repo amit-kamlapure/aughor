@@ -68,9 +68,26 @@ function inOneShape(answer) {
   return out;
 }
 
+/**
+ * The chart, drawn to the width it has — and drawn again when that width changes. A chart is laid out for a width
+ * in pixels when it is drawn; when the right-hand pane opened and the conversation narrowed, the chart kept its
+ * old width and ran off the edge of its card.
+ */
 function Chart({ answer, viz }) {
   const box = useRef(null);
   const [none, setNone] = useState(false);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let waiting = 0;
+    const watch = new ResizeObserver(() => {
+      clearTimeout(waiting);
+      waiting = setTimeout(() => setWidth(Math.floor(el.clientWidth)), 120);
+    });
+    watch.observe(el);
+    return () => { clearTimeout(waiting); watch.disconnect(); };
+  }, []);
   useEffect(() => {
     if (!box.current) return undefined;
     let remove = null;
@@ -84,9 +101,9 @@ function Chart({ answer, viz }) {
     }
     setNone(!remove);
     return () => { if (remove) remove(); };
-  }, [answer, viz]);
-  return h("div", null,
-    h("div", { ref: box, style: { width: "100%", minHeight: none ? 0 : 220 } }),
+  }, [answer, viz, width]);
+  return h("div", { style: { minWidth: 0 } },
+    h("div", { ref: box, style: { width: "100%", minHeight: none ? 0 : 220, overflow: "hidden" } }),
     none ? h("div", { style: { ...quiet, padding: "8px 0" } },
       "These rows have no chart worth drawing. The table has them.") : null);
 }
