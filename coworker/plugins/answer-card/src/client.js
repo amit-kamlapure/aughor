@@ -16,7 +16,7 @@ import { createElement as h, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
 import {
-  PANE, PANE_PATTERN, PaneBody, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
+  PANE, PANE_PATTERN, PaneBody, groundingOf, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
   rememberThing, setOpener, thingId, useChosen,
 } from "./exhibit";
 
@@ -561,6 +561,8 @@ function Exhibit({ answer, whole, asked }) {
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
   const tables = (answer.tables_used ?? []).join(", ");
   const toggle = (what) => setOpen((was) => (was === what ? "" : what));
+  const ground = groundingOf(answer);
+  const departed = ground ? ground.metrics.filter((m) => m.departed).length : 0;
   return h("div", { style: frame },
     h("div", { style: { fontSize: 15, fontWeight: 600, padding: "0 0 10px" } }, answer.answer || answer.question || "Answer"),
     h("div", { className: "pramanyx-exhibit-chart", style: { position: "relative" } },
@@ -576,7 +578,11 @@ function Exhibit({ answer, whole, asked }) {
       h("button", { type: "button", "aria-expanded": open === "table", style: button(open === "table"), onClick: () => toggle("table") },
         `${open === "table" ? "⌄" : "›"} Table`),
       h("button", { type: "button", style: button(open === "sql"), onClick: () => { if (!openBeside("sql", id)) toggle("sql"); } }, "SQL"),
-      h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered")),
+      h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered"),
+      ground && ground.count && hasPane() ? h("button", {
+        type: "button", style: button(false), title: "What this answer stood on: metrics, ontology, tables and columns",
+        onClick: () => openBeside("ground", id),
+      }, departed ? `Grounded in ${ground.count} · ${departed} not as approved` : `Grounded in ${ground.count}`) : null),
     open === "table" ? h("div", { style: { paddingTop: 10 } }, h(ResultGrid, { answer })) : null,
     open === "sql" ? h("div", { style: { paddingTop: 10 } }, h(Sql, { answer })) : null,
     open === "how" ? h("div", { style: { paddingTop: 10 } }, h(How, { answer, whole })) : null,

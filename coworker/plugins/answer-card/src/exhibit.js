@@ -88,7 +88,7 @@ export const PANE_PATTERN = "dsh-resource://pramanyx-answer/[\\s\\S]+";
 export const addressOf = (what, id) => `dsh-resource://pramanyx-answer/${what}/${encodeURIComponent(id)}`;
 
 export function readAddress(address) {
-  const m = /^dsh-resource:\/\/pramanyx-answer\/(sql|viz|thing)\/(.+)$/.exec(String(address || ""));
+  const m = /^dsh-resource:\/\/pramanyx-answer\/(sql|viz|thing|ground)\/(.+)$/.exec(String(address || ""));
   if (!m) return null;
   let id = m[2];
   try { id = decodeURIComponent(m[2]); } catch { /* as it came */ }
@@ -263,6 +263,100 @@ function Editor({ id, answer }) {
     h("div", null, h("button", { type: "button", style: button(false), disabled: chosen(id) === null, onClick: () => choose(id, null) }, "Back to the chart as answered")));
 }
 
+// ── what an answer stood on ──────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What an answer stood on, read from the receipt Pramanyx keeps for it: the tables and columns its SQL read, the
+ * objects of the ontology it was grounded in, and the approved metrics it touched — and, for each of those,
+ * whether the answer used the approved formula or departed from it. Metrics that were merely on offer are left
+ * out: being available is not being used. Nothing here is inferred by this page; every item is a line of the
+ * receipt, and an answer whose receipt did not reach the page says so.
+ */
+export function groundingOf(answer) {
+  const lines = answer?.receipt?.lineage;
+  if (!Array.isArray(lines)) return null;
+  const after = (ref) => String(ref || "").split(":").slice(1).join(":");
+  const out = { tables: [], columns: [], objects: [], findings: [], metrics: [] };
+  for (const item of lines) {
+    const name = after(item?.ref);
+    if (!name) continue;
+    if (item.relation === "input" && !out.tables.includes(name)) out.tables.push(name);
+    else if (item.relation === "column") {
+      let roles = [];
+      try { roles = JSON.parse(item.detail || "{}").roles ?? []; } catch { roles = []; }
+      out.columns.push({ name, roles });
+    } else if (item.relation === "grounded_in_graph") {
+      // The graph holds two kinds of thing an answer leans on: an object of the ontology, and an earlier finding.
+      const into = String(item.ref).startsWith("finding:") ? out.findings : out.objects;
+      if (!into.includes(name)) into.push(name);
+    }
+    else if (item.relation === "metric_drift") out.metrics.push({ name, departed: true, note: String(item.detail || "") });
+    else if (item.relation === "metric_used" || item.relation === "trusted_metric") out.metrics.push({ name, departed: false, note: "" });
+  }
+  out.count = out.tables.length + out.columns.length + out.objects.length + out.findings.length + out.metrics.length;
+  return out;
+}
+
+const NODE_W = 168, NODE_H = 34, GAP = 10, COL = [0, 206, 412], WIDTH = 580;
+
+/** The picture: what the answer was grounded in on the left, the answer, and what it read on the right. */
+function GroundingMap({ ground, headline }) {
+  const cap = (items, kind) => {
+    const shown = items.slice(0, 7).map((it) => ({ ...it, kind }));
+    return items.length > 7 ? [...shown, { label: `and ${items.length - 7} more`, kind: "more" }] : shown;
+  };
+  const left = [
+    ...cap(ground.metrics.map((m) => ({ label: m.name, sub: m.departed ? "approved metric · not used as approved" : "approved metric", warn: m.departed })), "metric"),
+    ...cap(ground.objects.map((o) => ({ label: o, sub: "ontology object" })), "object"),
+    ...cap(ground.findings.map((f) => ({ label: `finding ${f.slice(0, 8)}`, sub: "earlier finding" })), "finding"),
+  ];
+  const right = [
+    ...cap(ground.tables.map((t) => ({ label: t, sub: "table" })), "table"),
+    ...cap(ground.columns.map((c) => ({ label: c.name, sub: c.roles.length ? `column · ${c.roles.join(", ")}` : "column" })), "column"),
+  ];
+  const rows = Math.max(left.length, right.length, 1);
+  const height = rows * (NODE_H + GAP) + GAP;
+  const y = (i, n) => GAP + (height - 2 * GAP - n * (NODE_H + GAP) + GAP) / 2 + i * (NODE_H + GAP);
+  const mid = height / 2 - NODE_H / 2;
+  const node = (it, x, top, key, strong) => h("g", { key },
+    h("rect", { x, y: top, width: NODE_W, height: NODE_H, rx: 5, fill: strong ? "color-mix(in srgb, currentColor 10%, transparent)" : "transparent",
+                stroke: "currentColor", strokeOpacity: it.warn ? 0.85 : 0.3, strokeDasharray: it.warn ? "4 3" : undefined }),
+    h("text", { x: x + 10, y: top + (it.sub ? 14 : 21), fontSize: 12, fontWeight: 600, fill: "currentColor" },
+      it.label.length > 24 ? `${it.label.slice(0, 23)}…` : it.label),
+    it.sub ? h("text", { x: x + 10, y: top + 27, fontSize: 10.5, fill: "currentColor", fillOpacity: 0.62 }, it.sub.length > 30 ? `${it.sub.slice(0, 29)}…` : it.sub) : null,
+    h("title", null, it.sub ? `${it.label} — ${it.sub}` : it.label));
+  const link = (x1, y1, x2, y2, key, dashed) => h("path", {
+    key, d: `M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}`, fill: "none", stroke: "currentColor",
+    strokeOpacity: 0.3, strokeDasharray: dashed ? "4 3" : undefined });
+  return h("svg", { viewBox: `0 0 ${WIDTH} ${height}`, width: "100%", role: "img", style: { maxWidth: WIDTH, display: "block" },
+                    "aria-label": `What this answer stood on: ${left.length} on the semantic side, ${right.length} read from the warehouse` },
+    left.map((it, i) => link(COL[0] + NODE_W, y(i, left.length) + NODE_H / 2, COL[1], mid + NODE_H / 2, `l${i}`, it.warn)),
+    right.map((it, i) => link(COL[1] + NODE_W, mid + NODE_H / 2, COL[2], y(i, right.length) + NODE_H / 2, `r${i}`)),
+    left.map((it, i) => node(it, COL[0], y(i, left.length), `ln${i}`)),
+    right.map((it, i) => node(it, COL[2], y(i, right.length), `rn${i}`)),
+    node({ label: headline || "This answer", sub: "the answer" }, COL[1], mid, "answer", true));
+}
+
+function Grounding({ answer }) {
+  const ground = groundingOf(answer);
+  const title = h("div", null,
+    h("div", { style: { fontSize: 15, fontWeight: 600 } }, "What this answer stood on"),
+    h("div", { style: { ...quiet, fontSize: 12.5, paddingTop: 2 } }, answer.answer || answer.question || ""));
+  if (!ground) return h("div", { style: page }, title, h("div", { style: quiet }, "The receipt for this answer did not reach this page, so what it stood on cannot be shown here."));
+  const list = (name, items, each) => (items.length ? h("section", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+    h("div", { style: heading }, name), items.map(each)) : null);
+  const row = (key, main, note, warn) => h("div", { key, style: { display: "flex", gap: 10, alignItems: "baseline", padding: "5px 0", borderTop: `1px solid ${line}` } },
+    h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, flex: "0 0 46%", overflowWrap: "anywhere" } }, main),
+    h("span", { style: warn ? { fontWeight: 600 } : quiet }, note));
+  return h("div", { style: page }, title,
+    ground.count ? h(GroundingMap, { ground, headline: answer.answer || "" }) : h("div", { style: quiet }, "The receipt records nothing this answer was grounded in."),
+    list("Approved metrics", ground.metrics, (m) => row(m.name, m.name, m.departed ? `Not used as approved: ${m.note || "the answer wrote its own formula"}.` : "Used as approved.", m.departed)),
+    list("Ontology", ground.objects, (o) => row(o, o, "An object the answer was grounded in.")),
+    list("Earlier findings", ground.findings, (f) => row(f, f, "A finding already on record that the answer was given.")),
+    list("Tables read", ground.tables, (t) => row(t, t, "Read by the SQL.")),
+    list("Columns", ground.columns, (c) => row(c.name, c.name, c.roles.length ? c.roles.join(", ") : "read")));
+}
+
 // ── a thing a step read, laid out to be read ─────────────────────────────────────────────────────────────────
 
 const isScalar = (v) => v === null || ["string", "number", "boolean"].includes(typeof v);
@@ -322,6 +416,7 @@ export function PaneBody(props) {
       "This tab shows something from a conversation. Open that conversation and it is filled in; or close the tab.");
   }
   if (at.what === "thing") return h(Thing, { title: known.title, value: known.value });
+  if (at.what === "ground") return h(Grounding, { answer: known.answer });
   return at.what === "viz" ? h(Editor, { id: at.id, answer: known.answer }) : h(SqlAndResult, { answer: known.answer });
 }
 
@@ -332,7 +427,7 @@ export function PaneTitle(props) {
   const known = at ? seen(at.id) : null;
   if (at?.what === "thing") return h("span", { title: known?.title || "" }, known?.title || "What was read");
   const of = known?.answer ?? null;
-  const what = at?.what === "viz" ? "Edit visualization" : "SQL";
+  const what = at?.what === "viz" ? "Edit visualization" : at?.what === "ground" ? "Grounded in" : "SQL";
   const name = of ? (of.answer || of.question || "") : "";
   return h("span", { title: name ? `${what} — ${name}` : what }, name ? `${what} · ${name}` : what);
 }
