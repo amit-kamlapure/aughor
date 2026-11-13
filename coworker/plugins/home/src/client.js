@@ -52,6 +52,13 @@ function ago(stamp) {
  */
 const HOME_LOOK = `
 [class*="composerHero"] { gap: 14px; }
+/*
+ * The shell centres the first screen in its scroller. Centred content taller than the window is cut off at the
+ * top, where no scrolling reaches: the mark and half the headline were gone in a short window. The screen is
+ * centred with free space instead, which is nothing when there is none, so it starts at the top and scrolls.
+ */
+[data-conversation-scroll]:has(> [data-composer-seat] [class*="composerHero"]) { justify-content: flex-start; }
+[data-conversation-scroll] > [data-composer-seat]:has([class*="composerHero"]) { margin-block: auto; flex: none; padding-block: 28px 36px; }
 [class*="composerHero"] [class*="_headline"] { flex-direction: column; gap: 22px; padding-bottom: 14px; }
 [class*="composerHero"] [class*="_fishHitbox"] {
   width: 72px; height: 72px; border-radius: 14px; display: grid; place-items: center;
