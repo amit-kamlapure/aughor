@@ -33,7 +33,12 @@
 - id: preset-standard
   name: '@deepseek-ai/dsh-agent-preset'
   config:
+    # The app's own two ways to answer, in its own words (ChatPanel's "How to answer": Quick · Agent, Agent the
+    # default). This one keeps the shell's id `standard`: it is the shell's default for a new conversation, and
+    # the mode a spawned agent runs under. A preset that names itself owns its words, so the page says "Agent".
     id: standard
+    name: Agent
+    description: Works the question through — reads the approved definitions, asks for each figure, checks what looks off, and runs a deep analysis for a why. Takes longer.
     order: 1
     plugins:
       - id: persona
@@ -62,11 +67,19 @@
             below your reply: do not repeat the table and do not restate the SQL. Say what the answer means
             in two or three sentences, say plainly what was not checked or did not use the approved
             definition, and offer the next question worth asking.
-      - id: agent-instructions
+
+
+            You are in Agent mode: work the question through. Read the approved definition of what is
+            asked about before you ask for its figures, check an answer that looks off before you report
+            it, and for a question about why something happened or what is driving it, run a deep analysis
+            rather than a string of single questions.
+      - &agent_instructions
+        id: agent-instructions
         name: '@deepseek-ai/dsh-agent-instructions'
         config:
           maxBytes: 65536
-      - id: time-context
+      - &time_context
+        id: time-context
         name: '@deepseek-ai/dsh-time-context'
       - id: tool-schedule
         name: '@deepseek-ai/dsh-tool-schedule'
@@ -139,7 +152,8 @@
                 If the review channel is unavailable or aborted, stay in plan
                 mode and ask the user to switch modes manually; do not proceed
                 with implementation.
-      - id: compaction
+      - &compaction
+        id: compaction
         name: cordis:group
         group: true
         isolate:
@@ -260,9 +274,57 @@
     provider: pramanyx
     model: narrator
 
+# ── off: the model picker under the question box, and the shell's page of models. narrator · coder · fast are how
+#    Pramanyx routes its own work, chosen by an admin in Pramanyx; a person asking a question is not shown them.
+#    The model is still the one named above.
+- id: ui-model-selection
+  disabled: true
+- id: ui-settings-models
+  disabled: true
+
 # ── on: Pramanyx, over the MCP server it ships (a thin client of the running API), and the card that draws its
 #    answers.
 - insert:
+    # Quick: the app's other way to answer. One question to the governed path, and the answer. It mounts what a
+    # conversation needs and none of Agent's planning, delegation, schedules or to-do tools. ITS VOICE PARAGRAPHS
+    # ARE AGENT'S, COPIED: a change to how the coworker speaks is made in both.
+    - id: preset-quick
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: quick
+        name: Quick
+        description: One straight answer — a single question to the governed path, and what it means. Switch to Agent to have it worked through.
+        order: 2
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are Pramanyx, the organisation's data coworker, running on the {{model}} model. You are part
+                of the Pramanyx platform, not a visitor to it: the tools named mcp__pramanyx__ are your own ways
+                of working. Their descriptions were written for outside callers and speak of "Pramanyx" as
+                someone else; that someone is you.
+
+
+                Speak in the first person and never of Pramanyx as another party. Not "I'll ask Pramanyx" or
+                "what Pramanyx flagged"; say "I'll check", "what to be careful of", "not checked". Do not name
+                tools or say that you called one.
+
+
+                You are in Quick mode: one straight answer. Put the person's question to the governed query
+                path (ask) once, as they asked it, and answer from what comes back. Do not read definitions
+                first, do not make follow-up checks, and do not run a deep analysis. If the question cannot be
+                answered that way, or asks why something happened, say so in one sentence and say that Agent
+                mode will work it through.
+
+
+                Every business figure you state comes from that answer. Never work one out yourself or give
+                one from memory. The chart, the table and the SQL are shown to the reader below your reply:
+                do not repeat them. Say what the answer means in one or two sentences and say plainly what
+                was not checked.
+          - *agent_instructions
+          - *time_context
+          - *compaction
     - id: pramanyx-mcp
       name: '@deepseek-ai/dsh-mcp-client'
       config:

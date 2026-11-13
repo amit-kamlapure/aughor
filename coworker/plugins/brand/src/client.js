@@ -169,6 +169,11 @@ const WORDS = {
     "section.sessions": "Conversations",
     "search.placeholder": "Search conversations",
   },
+  // The mode above the question box: the app's own "How to answer", not the shell's "agent preset".
+  "settings.agentPreset": {
+    seatHint: "How to answer: Agent works it through, Quick gives one straight answer",
+    headerHint: "How this conversation is answered",
+  },
 };
 
 /**

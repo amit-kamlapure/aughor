@@ -36,10 +36,16 @@ turned back on from the interface.
 ## What is on
 
 - **Pramanyx's model door** (`pramanyx/routers/model_door.py`). The coworker has no model key of its own: it asks
-  Pramanyx, which asks the organisation's provider, checks the usage caps first and records the call. Its model
-  picker lists the organisation's three roles — narrator, coder, fast — and which model each is, is chosen in
-  Pramanyx. The door is an organisation's setting, off by default; closed, the coworker shows the door's own
+  Pramanyx, which asks the organisation's provider, checks the usage caps first and records the call. It asks
+  as the narrator role; which model that is, is chosen in Pramanyx. The roles — narrator, coder, fast — are how
+  Pramanyx routes its own work, so the shell's model picker and its page of models are off: a person asking a
+  question is not shown them. The door is an organisation's setting, off by default; closed, the coworker shows the door's own
   sentence saying so and where an admin opens it.
+- **Two ways to answer, in the app's own words.** Above the question box: **Agent**, the default, works the
+  question through — reads the approved definitions, asks for each figure, checks what looks off, runs a deep
+  analysis for a why. **Quick** puts the question to the governed path once and says what came back. These are
+  the two the app's own chat offers ("How to answer": Quick · Agent). A new conversation starts in Agent. Quick
+  mounts none of Agent's planning, delegation, schedule or to-do tools.
 - **Pramanyx's MCP server** (`python -m pramanyx.mcp`), a thin client of the running API. The agent reaches
   Pramanyx through it and through nothing else.
 - **The answer card.** It takes over the display of the `ask` tool, and of each custom agent's `ask_<agent>` tool
@@ -130,11 +136,13 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
 - Reading the suggested questions is a cached read in Pramanyx; the first read for a connection costs a model call.
 - The light theme takes only the accent, the corners and the type. The app's light palette was not measured.
 - Source Sans 3 is used when it is installed; it is not bundled.
-- Still the shell's wording: "Standard mode", "Workspace Write", "Deep diving", "New Session" on an untitled
+- Still the shell's wording: "Workspace Write", "Deep diving", "New Session" on an untitled
   conversation, and its preview notice on first open.
 - Not built from the target layout: sidebar entries for discovery and a person's own things; day headings in the
   conversation list (the shell's list has no place for them, and replacing its list would drop its per-row
   rename, archive and delete); pinned items.
+- Both modes ask as the narrator role. Quick does not use the fast one: a mode has no model of its own here yet.
+  Quick's voice paragraphs are a copy of Agent's in `profile.patch.yml`; a change to one is made in both.
 - **A schedule made here spends Pramanyx model calls unattended**, and Pramanyx's own setting for scheduled model
   work does not see it: the run arrives as an ordinary question over MCP.
 - The door relays to a provider on the chat-completions wire. An organisation whose roles are bound to one that
