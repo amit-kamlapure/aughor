@@ -16,8 +16,8 @@ import { createElement as h, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
 import {
-  PANE, PANE_PATTERN, PaneBody, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
-  setOpener, useChosen,
+  PANE, PANE_PATTERN, PaneBody, groundingOf, pageFor, PaneTitle, ResultGrid, button, faint, hasPane, idOf, line, openBeside, quiet, remember,
+  rememberThing, setOpener, sheetsByTable, thingId, useChosen,
 } from "./exhibit";
 
 const TOOL = "mcp__pramanyx__ask";
@@ -68,9 +68,26 @@ function inOneShape(answer) {
   return out;
 }
 
+/**
+ * The chart, drawn to the width it has — and drawn again when that width changes. A chart is laid out for a width
+ * in pixels when it is drawn; when the right-hand pane opened and the conversation narrowed, the chart kept its
+ * old width and ran off the edge of its card.
+ */
 function Chart({ answer, viz }) {
   const box = useRef(null);
   const [none, setNone] = useState(false);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let waiting = 0;
+    const watch = new ResizeObserver(() => {
+      clearTimeout(waiting);
+      waiting = setTimeout(() => setWidth(Math.floor(el.clientWidth)), 120);
+    });
+    watch.observe(el);
+    return () => { clearTimeout(waiting); watch.disconnect(); };
+  }, []);
   useEffect(() => {
     if (!box.current) return undefined;
     let remove = null;
@@ -84,9 +101,9 @@ function Chart({ answer, viz }) {
     }
     setNone(!remove);
     return () => { if (remove) remove(); };
-  }, [answer, viz]);
-  return h("div", null,
-    h("div", { ref: box, style: { width: "100%", minHeight: none ? 0 : 220 } }),
+  }, [answer, viz, width]);
+  return h("div", { style: { minWidth: 0 } },
+    h("div", { ref: box, style: { width: "100%", minHeight: none ? 0 : 220, overflow: "hidden" } }),
     none ? h("div", { style: { ...quiet, padding: "8px 0" } },
       "These rows have no chart worth drawing. The table has them.") : null);
 }
@@ -315,12 +332,25 @@ function saidOf(toolName, args) {
   return which ? `${does}: ${which}` : does;
 }
 
-/** Any other Pramanyx tool in the list of steps: named by what it does, opening to what came back. */
+/**
+ * Any other Pramanyx tool in the list of steps: named by what it does, opening to what came back. What came back
+ * — a metric's definition, an object of the ontology, the Briefing, earlier findings — can be opened beside the
+ * conversation, laid out to be read, as a tab that stays while the conversation goes on.
+ */
 function ToolStep(props) {
-  const title = saidOf(props.toolName || "", argsOf(props.block));
-  if (props.phase !== "result") return h(Step, { kind: "read", busy: true, title });
-  const text = resultText(props.block);
-  return h(Step, { kind: "read", title, failed: Boolean(props.block?.isError) },
+  const args = argsOf(props.block);
+  const title = saidOf(props.toolName || "", args);
+  const done = props.phase === "result";
+  const text = done ? resultText(props.block) : "";
+  const failed = Boolean(props.block?.isError);
+  const id = thingId(props.toolName || "", args);
+  let value = null;
+  if (done && !failed && text) { try { value = JSON.parse(text); } catch { value = null; } }
+  const opens = value !== null && typeof value === "object" && hasPane();
+  useEffect(() => { if (opens) rememberThing(id, title, value); }, [opens, id, title, text]);
+  if (!done) return h(Step, { kind: "read", busy: true, title });
+  return h(Step, { kind: "read", title, failed },
+    opens ? h("div", null, h("button", { type: "button", style: button(false), onClick: () => openBeside("thing", id) }, "Open beside the conversation")) : null,
     text ? h("pre", { style: { margin: 0, fontSize: 12, whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 320, overflow: "auto" } },
       text.length > 6000 ? `${text.slice(0, 6000)}\n… and ${text.length - 6000} more characters, not shown` : text) : null);
 }
@@ -529,6 +559,8 @@ function Feedback({ answer }) {
     failed ? h("div", null, "That was not recorded. Try again.") : null);
 }
 
+const OBJECTS_SHOWN = 3;
+
 /** A pencil, for "Edit visualization". */
 const Pencil = () => h("svg", { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.4, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" },
   h("path", { d: "M11.2 2.6l2.2 2.2-7.6 7.6-3 .8.8-3z" }), h("path", { d: "M9.8 4l2.2 2.2" }));
@@ -543,11 +575,25 @@ function Exhibit({ answer, whole, asked }) {
   const id = idOf(answer, asked);
   const viz = useChosen(id);
   const [open, setOpen] = useState("");
+  const [allObjects, setAllObjects] = useState(false);
+  const [sheets, setSheets] = useState(null);
+  // An answer over the Sheets connection read spreadsheets: each opens as itself, beside the conversation.
+  const overSheets = String(answer.connection || answer.receipt?.artifact?.conn_id || "") === "sheets";
+  useEffect(() => { if (overSheets) sheetsByTable().then(setSheets); }, [overSheets]);
   useEffect(() => { remember(id, answer, asked); }, [id, answer, asked]);
   const frame = { border: `1px solid ${line}`, borderRadius: 6, padding: 12, margin: "6px 0", fontSize: 13 };
   const count = typeof answer.row_count === "number" ? answer.row_count : (answer.rows ?? []).length;
-  const tables = (answer.tables_used ?? []).join(", ");
+  const read = (answer.tables_used ?? []).join(", ");
   const toggle = (what) => setOpen((was) => (was === what ? "" : what));
+  const ground = groundingOf(answer);
+  const metrics = ground ? ground.metrics : [];
+  // The ontology's objects the receipt names, then any table read that is not one of them under another spelling
+  // (`orders` is the object `Order`).
+  const same = (a, b) => a.toLowerCase().replace(/s$/, "") === b.toLowerCase().replace(/s$/, "");
+  const objects = ground ? ground.objects : [];
+  const tables = [...objects, ...(answer.tables_used ?? []).filter((t) => !objects.some((o) => same(o, t)))];
+  const receipt = answer.receipt?.artifact?.id || "";
+  const connection = String(answer.connection || answer.receipt?.artifact?.conn_id || "");
   return h("div", { style: frame },
     h("div", { style: { fontSize: 15, fontWeight: 600, padding: "0 0 10px" } }, answer.answer || answer.question || "Answer"),
     h("div", { className: "pramanyx-exhibit-chart", style: { position: "relative" } },
@@ -557,13 +603,32 @@ function Exhibit({ answer, whole, asked }) {
         onClick: () => openBeside("viz", id),
       }, h(Pencil)) : null),
     h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", paddingTop: 8 } },
-      tables ? h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5 } }, tables) : null,
+      read ? h("span", { style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5 } }, read) : null,
       h("span", { style: { ...quiet, fontSize: 12.5 } }, `${count} ${count === 1 ? "row" : "rows"}`),
       h("span", { style: { flex: "1 1 auto" } }),
       h("button", { type: "button", "aria-expanded": open === "table", style: button(open === "table"), onClick: () => toggle("table") },
         `${open === "table" ? "⌄" : "›"} Table`),
       h("button", { type: "button", style: button(open === "sql"), onClick: () => { if (!openBeside("sql", id)) toggle("sql"); } }, "SQL"),
-      h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered")),
+      h("button", { type: "button", "aria-expanded": open === "how", style: button(open === "how"), onClick: () => toggle("how") }, "How it was answered"),
+      receipt && hasPane() ? h("button", { type: "button", style: button(false), title: "The app's own page for how this number was produced",
+        onClick: () => openBeside("page", pageFor.receipt(receipt)) }, "Why this number") : null),
+    // What the answer was held to and what it read, each opening the app's own page for it beside the conversation.
+    hasPane() && connection && (metrics.length || tables.length) ? h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", paddingTop: 8, fontSize: 12.5 } },
+      metrics.map((m) => h("button", {
+        key: `m-${m.name}`, type: "button", style: button(false), title: m.departed ? "The answer did not use this metric as approved. Opens its definition." : "Opens this metric's definition",
+        onClick: () => openBeside("page", pageFor.metric(m.name, connection)),
+      }, m.departed ? `Metric · ${m.name} · not used as approved` : `Metric · ${m.name}`)),
+      (overSheets && sheets ? (answer.tables_used ?? []) : []).map((t) => sheets.get(String(t).split(".").pop().toLowerCase())).filter(Boolean).map((sheet) =>
+        h("button", { key: `s-${sheet.id}`, type: "button", style: button(false), title: "Opens this spreadsheet",
+                      onClick: () => openBeside("page", pageFor.sheet(sheet.id)) }, `Sheet · ${sheet.name}`)),
+      // The first few objects, and the rest behind one button: an answer grounded in eight would otherwise put
+      // a wall of buttons under its chart.
+      (allObjects ? tables : tables.slice(0, OBJECTS_SHOWN)).map((t) => h("button", {
+        key: `t-${t}`, type: "button", style: button(false), title: "Opens this object in the ontology",
+        onClick: () => openBeside("page", pageFor.type(t, connection)),
+      }, `Ontology · ${t}`)),
+      tables.length > OBJECTS_SHOWN ? h("button", { type: "button", "aria-expanded": allObjects, style: button(false), onClick: () => setAllObjects((was) => !was) },
+        allObjects ? "Fewer" : `and ${tables.length - OBJECTS_SHOWN} more`) : null) : null,
     open === "table" ? h("div", { style: { paddingTop: 10 } }, h(ResultGrid, { answer })) : null,
     open === "sql" ? h("div", { style: { paddingTop: 10 } }, h(Sql, { answer })) : null,
     open === "how" ? h("div", { style: { paddingTop: 10 } }, h(How, { answer, whole })) : null,

@@ -225,3 +225,41 @@ class TestSummary:
         s = enforcement_summary(verdicts)
         assert s["targeted"] == 2 and s["used"] == ["revenue"] and s["drift"] == ["aov"]
         assert s["enforced"] is False
+
+
+# ── a definition stored as a whole statement is judged by its formula ─────────────────────
+# Receipt 2026-11-13 (LuxExperience): the approved `gmv` is stored as
+# `SELECT SUM(gmv_eur) AS gmv_eur FROM orders`. Every answer over it — grouped, rounded,
+# renamed — read "did not use the governed formula", because the whole statement was looked
+# for inside the answer's SQL.
+
+class _Stored:
+    def __init__(self, name, label, sql, wrong=()):
+        self.name, self.label, self.sql, self.wrong_usage_examples = name, label, sql, list(wrong)
+
+
+_GMV = _Stored("gmv", "GMV (EUR)", "SELECT SUM(gmv_eur) AS gmv_eur FROM orders")
+
+
+def test_an_answer_that_groups_and_rounds_the_approved_formula_used_it():
+    from pramanyx.semantic.enforcement import check_metric_enforcement
+    sql = ("SELECT platform, ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM orders "
+           "GROUP BY platform ORDER BY total_gmv_eur DESC")
+    assert [(v["metric"], v["status"]) for v in check_metric_enforcement("total gmv by platform", sql, [_GMV])] == [("gmv", "used")]
+
+
+def test_an_answer_that_measures_something_else_still_departed():
+    from pramanyx.semantic.enforcement import check_metric_enforcement
+    sql = "SELECT platform, SUM(quantity * unit_price) AS gmv FROM order_items GROUP BY platform"
+    assert [(v["metric"], v["status"]) for v in check_metric_enforcement("total gmv by platform", sql, [_GMV])] == [("gmv", "drift")]
+
+
+def test_the_formula_of_a_definition():
+    from pramanyx.semantic.enforcement import _formula_of
+    assert _formula_of("SELECT SUM(gmv_eur) AS gmv_eur FROM orders") == "sum(gmv_eur)"
+    assert _formula_of("select  sum( gmv_eur )  from orders;") == "sum(gmv_eur)"
+    assert _formula_of("SUM(amount) FILTER (WHERE status='active')") == "sum(amount)filter(wherestatus='active')"
+    assert _formula_of("SELECT COALESCE(SUM(a), 0) AS a FROM t") == "coalesce(sum(a),0)"     # a comma inside brackets is one expression
+    # More than one expression, or a subquery in the list, is not reduced: the whole text stands.
+    assert _formula_of("SELECT SUM(a), COUNT(*) FROM t") == "selectsum(a),count(*)fromt"
+    assert _formula_of("SELECT (SELECT MAX(x) FROM u) AS m FROM t").startswith("select(select")

@@ -105,9 +105,26 @@ turned back on from the interface.
   (`/pramanyx-enter`), not the shell's address: the shell's sign-in is a cookie a browser withholds on an arrival
   from another site, and the entry page makes the move from inside the coworker's address. Here the dots are
   mounted in the shell's overlay and shown in the header's corner, which holds one thing of the shell's already.
+- **What a step read opens beside the conversation.** A metric's definition, an object of the ontology, the
+  Briefing, earlier findings: each step's result can be opened as a tab and is laid out to be read — facts as
+  name and value, SQL as SQL, a list of like things as a grid that sorts.
+- **The app's own pages open beside the conversation.** Under an answer: "Why this number" opens the app's
+  receipt page for it; each metric the answer was held to opens that metric's page (`/metrics/<name>`, the
+  Semantic Layer's provenance panel: where the definition came from, whose it is, what disagrees with it); each
+  table it read opens that entity's page (`/ontology/<type>`, the Ontology's own panel). These are the app's
+  pages in a frame, not summaries drawn here, so everything on them works. A metric the answer did not use as
+  approved says so on its button. An answer over the Sheets connection offers each spreadsheet it read, which
+  opens as `/sheets/<id>`, the app's own sheet view. Past three ontology objects the rest fold behind one
+  button. The tab shows only those four kinds of page.
+- **A conversation is held to its connection.** The agent is told which connection a conversation is about, and
+  that is an instruction, not a boundary. The boundary is the shell's tool guard: a call to one of Pramanyx's
+  tools from a connection's workspace that names another connection is refused before it runs, with a sentence
+  the agent repeats to the person. A custom agent asked without a connection is refused too, since it would
+  answer on its own. A guard can only refuse; nothing later in the shell turns that back into permission.
+  `node --test plugins/home/test/held.test.mjs` covers the rule.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
-  allowed origins being changed. It relays four paths (`/connections`, `/suggestions`, `/agents/custom`,
-  `/investigations`), GET and HEAD only, and answers 404 for anything else.
+  allowed origins being changed. It relays five paths (`/connections`, `/suggestions`, `/agents/custom`,
+  `/investigations`, `/sheets`), GET and HEAD only, and answers 404 for anything else.
 
 ## Run it
 
@@ -115,7 +132,8 @@ turned back on from the interface.
 ./start.sh
 ```
 
-Needs Node 24.9+, pnpm, and the Pramanyx API running. Open the address it prints. No model key is asked for: an
+`scripts/start_all.sh`, at the root, starts the API, the web app and the coworker together, each only if it is
+not already up; nothing starts by itself after a reboot. Needs Node 24.9+, pnpm, and the Pramanyx API running. Open the address it prints. No model key is asked for: an
 admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ Organization, once.
 
 ## What is not done
@@ -130,6 +148,9 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   money. The app's editor also offers a transform (period over period, share, rolling, cumulative), an annotation
   and a pivot; those are not here. Nothing but an answer opens in the right-hand pane yet: not an object of the
   ontology, a metric's definition, a document or a sheet.
+- The app's pages are found at the address the coworker was reached from, else `http://localhost:3000`. An install
+  that serves the app elsewhere and is opened directly shows an empty frame. The sheet page was type-checked
+  and served; it has not been opened from a live answer over a sheet.
 - The exhibit, the table and the editor were checked by hand on a live answer (sort, totals against the approved
   figure, pie, labels off, vertical, back to as answered). No test draws them.
 - A result longer than the shell's cap reaches the page cut short. The card reads it without its receipt; a
@@ -147,8 +168,9 @@ admin allows "Let the coworker ask its models through Pramanyx" in Settings ▸ 
   shell changes that line, the work stays folded while it runs and opens when the turn ends.
 - The voice is an instruction to a model, checked on two live answers. The MCP server's own tool descriptions
   still speak of Pramanyx as someone else, because other callers read them.
-- A conversation is about a connection because the agent is told so, not because anything holds it there: it can
-  still list connections and ask another. Nothing fixes a conversation to a set of tables.
+- A conversation is held to a connection, not to a set of tables: nothing yet fixes one to a Data Canvas's
+  tables. A conversation in the folder the shell was started in, and not a connection's workspace, is not held.
+  The agent can still list the connections' names.
 - **Four things work around the shell rather than through it**, and each falls back to the shell's own if the shell
   changes: the tab title (a literal in the shell's layout), the first screen's wording (written into the shell's
   dictionary, which cannot be added to), the block under the question box (the shell has no place there) and the

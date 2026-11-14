@@ -100,6 +100,61 @@ def count_star_over_finer_grain(question: str, sql: str,
             f"{key}). Use COUNT(DISTINCT {key}) so each {entity} is counted once.")
 
 
+_AGG_ASK = re.compile(r"\b(total|sum|average|avg|mean|count|number of|how many|share|rate)\b", re.I)
+_BY_PHRASE = re.compile(r"\bby\s+([a-z][a-z _]*?)(?=[?.,;]|\s+(?:for|in|on|over|during|since|where|with|ranked|sorted|ordered|from)\b|$)", re.I)
+_PER_ROW_ASK = re.compile(r"\b(per|each|every|individual)\b", re.I)
+_GROUP_BY = re.compile(r"\bgroup\s+by\s+(.+?)(?=\border\s+by\b|\bhaving\b|\blimit\b|\bqualify\b|\)|;|$)", re.I | re.S)
+_AGG_FN = re.compile(r"\b(sum|avg|count|min|max)\s*\(", re.I)
+_KEY_COL = re.compile(r"^(?:[a-z_][a-z0-9_]*\.)?([a-z][a-z0-9_]*)_id$|^(?:[a-z_][a-z0-9_]*\.)?id$", re.I)
+
+
+def grouped_by_a_row_key(question: str, sql: str) -> Optional[str]:
+    """A total asked "by <dimension>" whose SQL ALSO groups by a row's own key.
+
+    Receipt 2026-11-13 (LuxExperience): "What is total GMV by order status?" came back as
+    ``GROUP BY order_id, status`` — 500 rows, one per order, each its own "total" — because
+    "order status" was read as two things. It executes, it returns plausible rows, and it is
+    not an aggregate at all.
+
+    Precision-first, like its neighbours. Fires only when (a) the question asks for an
+    aggregate and names what to break it down by, and asks for nothing per row ("per", "each");
+    (b) the SQL has one GROUP BY of two or more plain items and an aggregate; (c) one item is a
+    key (``<entity>_id`` or ``id``) and the question's breakdown does not END in that entity
+    ("by customer" grouped by ``customer_id, name`` is right; "by order status" grouped by
+    ``order_id, status`` is not) nor name the key itself. Returns the repair diagnosis, else
+    None."""
+    q = (question or "").strip()
+    if not q or not sql or not _AGG_ASK.search(q) or _PER_ROW_ASK.search(q):
+        return None
+    by = _BY_PHRASE.search(q)
+    if not by:
+        return None
+    parts = [p.strip() for p in re.split(r"\s*(?:,|\band\b)\s*", by.group(1).lower()) if p.strip()]
+    heads = {p.split()[-1].rstrip("s") for p in parts}
+    if not heads or not _AGG_FN.search(sql):
+        return None
+    groups = _GROUP_BY.findall(sql)
+    if len(groups) != 1:
+        return None                      # nested or several groupings: not this detector's shape
+    items = [i.strip().strip('"`') for i in groups[0].split(",") if i.strip()]
+    if len(items) < 2 or any(not re.fullmatch(r"[A-Za-z_][\w.]*", i) for i in items):
+        return None                      # positions and expressions are left alone
+    ql = q.lower()
+    for item in items:
+        m = _KEY_COL.match(item)
+        if not m:
+            continue
+        entity = (m.group(1) or "").lower()
+        key = item.split(".")[-1].lower()
+        if (entity and entity.rstrip("s") in heads) or key in ql or key.replace("_", " ") in ql:
+            continue
+        rest = ", ".join(i for i in items if i != item)
+        return (f"GRAIN MISMATCH: the question asks for a total by {by.group(1).strip()}, but the SQL "
+                f"also groups by {item}, a row's own key — that makes one group per row, so nothing "
+                f"is totalled. Group by {rest} only, and do not select {item}.")
+    return None
+
+
 @dataclass
 class GrainExpectation:
     kind: str            # "exact" | "per_entity"

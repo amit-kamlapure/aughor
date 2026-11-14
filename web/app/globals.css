@@ -1122,7 +1122,10 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-rview td.num, .aug-rview th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* The rail's toggle in the top bar, left of the wordmark (moved from the rail's head): an icon on the bar's own
    ground, no edge. */
-.aug-topbar .rt-BaseButton.aug-nav-toggle { box-shadow: none; background: transparent; color: var(--t2); margin-right: 2px; }
+/* The top bar's left block sits on the rail's two columns: the toggle's glyph over the rail's icons, the wordmark
+   over its labels. They were 4px and 13px to the right of them, so the bar read as set off from the rail below it. */
+.aug-topbar .rt-BaseButton.aug-nav-toggle { box-shadow: none; background: transparent; color: var(--t2); margin-left: -4px; margin-right: 0; }
+.aug-topbar .aug-nav-toggle + .aug-wordmark { margin-left: -7px; }
 .aug-topbar .rt-BaseButton.aug-nav-toggle:hover { background: var(--bg-hover); color: var(--t1); }
 /* A work surface's chrome (bare): no title row — only the toolbar row, and only when something is
    in it, the page's actions at its right end. */

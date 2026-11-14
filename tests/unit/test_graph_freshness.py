@@ -120,7 +120,8 @@ def test_readback_slice_respects_its_token_budget(monkeypatch, tmp_path):
                           data={"source_tables": ["orders"], "columns": ["id"]}))
     for i in range(20):
         cg.add_node(GraphNode(id=f"finding:f{i}", kind="finding", label=f"finding {i} about orders",
-                              summary="orders " + ("blah " * 60), provenance=Provenance(source="dossier"),
+                              # person-approved, so the read-back shows them: an unconfirmed finding is withheld
+                              summary="orders " + ("blah " * 60), provenance=Provenance(source="record", note="tier=approved"),
                               data={"tables": ["orders"]}))
         cg.add_edge(GraphEdge(id=f"e{i}", kind="grounded_in", from_id=f"finding:f{i}",
                               to_id="table:Order", provenance=Provenance(source="dossier")))
